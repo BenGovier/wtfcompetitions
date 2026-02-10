@@ -38,11 +38,11 @@ export default function EntryDetailsDrawer({
             <h2 className="text-lg font-semibold">Entry Details</h2>
             <Button
               variant="ghost"
-              size="icon-sm"
+              size="icon"
               onClick={onClose}
-              className="shrink-0"
+              className="h-8 w-8 shrink-0"
             >
-              <X />
+              <X className="h-4 w-4" />
             </Button>
           </div>
 
@@ -124,18 +124,18 @@ export default function EntryDetailsDrawer({
           <div className="border-t p-6 space-y-2">
             <Button
               variant="outline"
-              className="w-full"
+              className="w-full gap-2"
               disabled
             >
-              <Flag />
+              <Flag className="h-4 w-4" />
               Mark Flagged
             </Button>
             <Button
               variant="outline"
-              className="w-full"
+              className="w-full gap-2"
               disabled
             >
-              <DollarSign />
+              <DollarSign className="h-4 w-4" />
               Refund
             </Button>
             <Button variant="secondary" className="w-full" onClick={onClose}>
