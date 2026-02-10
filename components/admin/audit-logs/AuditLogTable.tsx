@@ -12,6 +12,7 @@ import type { AuditLogEntry, AuditEventType } from "@/lib/types/auditLog"
 
 type AuditLogTableProps = {
   logs: AuditLogEntry[]
+  onSelect?: (log: AuditLogEntry) => void
 }
 
 function getEventBadgeVariant(eventType: AuditEventType): 'default' | 'secondary' | 'outline' | 'destructive' {
@@ -57,7 +58,7 @@ function getActorLabel(actor: AuditLogEntry['actor']): string {
   return actor.label
 }
 
-export default function AuditLogTable({ logs }: AuditLogTableProps) {
+export default function AuditLogTable({ logs, onSelect }: AuditLogTableProps) {
   return (
     <Card>
       <CardHeader>
@@ -75,7 +76,11 @@ export default function AuditLogTable({ logs }: AuditLogTableProps) {
           </TableHeader>
           <TableBody>
             {logs.map((log) => (
-              <TableRow key={log.id}>
+              <TableRow 
+                key={log.id}
+                onClick={() => onSelect?.(log)}
+                className="cursor-pointer"
+              >
                 <TableCell className="text-muted-foreground">
                   {formatTime(log.createdAt)}
                 </TableCell>

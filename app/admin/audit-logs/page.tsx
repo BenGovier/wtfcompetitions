@@ -1,4 +1,4 @@
-import AuditLogTable from "@/components/admin/audit-logs/AuditLogTable"
+import AuditLogsPanel from "@/components/admin/audit-logs/AuditLogsPanel"
 import type { AuditLogEntry } from "@/lib/types/auditLog"
 
 // Mock audit logs data
@@ -215,7 +215,7 @@ export default function AuditLogsPage() {
         </p>
       </div>
 
-      <AuditLogTable logs={mockLogs} />
+      <AuditLogsPanel logs={mockLogs} />
     </div>
   )
 }
