@@ -6,7 +6,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import EntriesTable from "@/components/admin/entries/EntriesTable"
+import EntriesPanel from "@/components/admin/entries/EntriesPanel"
 import type { Entry, EntriesCampaignLite } from "@/lib/types/entry"
 
 // Mock campaigns data
@@ -293,7 +293,7 @@ export default function EntriesPage() {
         </Card>
       </div>
 
-      <EntriesTable entries={mockEntries} />
+      <EntriesPanel entries={mockEntries} />
     </div>
   )
 }

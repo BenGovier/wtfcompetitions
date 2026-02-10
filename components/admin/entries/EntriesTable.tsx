@@ -13,9 +13,10 @@ import type { Entry } from "@/lib/types/entry"
 
 type EntriesTableProps = {
   entries: Entry[]
+  onView?: (entry: Entry) => void
 }
 
-export default function EntriesTable({ entries }: EntriesTableProps) {
+export default function EntriesTable({ entries, onView }: EntriesTableProps) {
   return (
     <Card>
       <CardHeader>
@@ -76,7 +77,11 @@ export default function EntriesTable({ entries }: EntriesTableProps) {
                   </Badge>
                 </TableCell>
                 <TableCell>
-                  <Button size="sm" variant="outline" disabled>
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    onClick={() => onView?.(entry)}
+                  >
                     View
                   </Button>
                 </TableCell>
