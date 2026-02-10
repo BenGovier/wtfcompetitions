@@ -1,0 +1,72 @@
+import { Button } from "@/components/ui/button"
+import { TrustBadges } from "@/components/trust-badges"
+import { GiveawayCard } from "@/components/giveaway-card"
+import { WinnerCard } from "@/components/winner-card"
+import { SectionHeader } from "@/components/section-header"
+import { mockGiveaways, mockWinners } from "@/lib/mock-data"
+import Link from "next/link"
+import { ArrowRight } from "lucide-react"
+
+export default function HomePage() {
+  return (
+    <div className="container px-4 py-8 md:py-16">
+      {/* Hero Section */}
+      <section className="mb-16 text-center">
+        <h1 className="text-balance text-4xl font-bold tracking-tight md:text-5xl lg:text-6xl">Win Amazing Prizes</h1>
+        <p className="mx-auto mt-4 max-w-2xl text-pretty text-lg text-muted-foreground md:text-xl">
+          Enter giveaways for tech, gaming gear, and exclusive prizes. Trusted by thousands, with verified winners every
+          week.
+        </p>
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+          <Button size="lg" className="text-base font-semibold" asChild>
+            <Link href="/giveaways">Browse Giveaways</Link>
+          </Button>
+          <Button size="lg" variant="outline" className="text-base bg-transparent" asChild>
+            <Link href="/winners">See Winners</Link>
+          </Button>
+        </div>
+        <TrustBadges />
+      </section>
+
+      {/* Featured Giveaways */}
+      <section className="mb-16">
+        <SectionHeader
+          title="Featured Giveaways"
+          subtitle="Enter now for your chance to win"
+          action={
+            <Button variant="ghost" asChild>
+              <Link href="/giveaways">
+                View All <ArrowRight className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+          }
+        />
+        <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {mockGiveaways.map((giveaway) => (
+            <GiveawayCard key={giveaway.slug} giveaway={giveaway} />
+          ))}
+        </div>
+      </section>
+
+      {/* Recent Winners */}
+      <section>
+        <SectionHeader
+          title="Recent Winners"
+          subtitle="Real people winning real prizes"
+          action={
+            <Button variant="ghost" asChild>
+              <Link href="/winners">
+                View All <ArrowRight className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+          }
+        />
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {mockWinners.map((winner, i) => (
+            <WinnerCard key={i} winner={winner} />
+          ))}
+        </div>
+      </section>
+    </div>
+  )
+}
