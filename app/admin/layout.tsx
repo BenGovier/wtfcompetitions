@@ -17,14 +17,13 @@ export default async function AdminLayout({
   }
   
   // Check if user is an enabled admin
-  const { data: adminUser, error: adminError } = await supabase
+  const { data: adminUser } = await supabase
     .from('admin_users')
-    .select('role, is_enabled')
+    .select('role,is_enabled')
     .eq('user_id', user.id)
-    .limit(1)
-    .single()
+    .maybeSingle()
   
-  if (adminError || !adminUser || !adminUser.is_enabled) {
+  if (!adminUser || adminUser.is_enabled !== true) {
     redirect('/auth/unauthorized')
   }
 
