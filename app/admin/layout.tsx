@@ -8,7 +8,7 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode
 }) {
-  // Verify user is authenticated and is admin
+  // Verify user is authenticated
   const supabase = await createClient()
   const { data: { user }, error } = await supabase.auth.getUser()
   
@@ -16,8 +16,15 @@ export default async function AdminLayout({
     redirect('/auth/login?redirect=/admin')
   }
   
-  const isAdmin = user.user_metadata?.is_admin === true
-  if (!isAdmin) {
+  // Check if user is an enabled admin
+  const { data: adminUser, error: adminError } = await supabase
+    .from('admin_users')
+    .select('role, is_enabled')
+    .eq('user_id', user.id)
+    .limit(1)
+    .single()
+  
+  if (adminError || !adminUser || !adminUser.is_enabled) {
     redirect('/auth/unauthorized')
   }
 
