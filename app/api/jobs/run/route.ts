@@ -5,6 +5,16 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 async function handleJobProcessing(request: NextRequest) {
+  // Debug info
+  const method = request.method
+  const url = request.nextUrl.pathname + request.nextUrl.search
+  const userAgent = request.headers.get('user-agent')
+  const xVercelCron = request.headers.get('x-vercel-cron')
+  const xVercelCronJob = request.headers.get('x-vercel-cron-job')
+  const hasAuthorization = Boolean(request.headers.get('authorization'))
+
+  console.log(`[jobs/run] method=${method} url=${url} ua=${userAgent} x-vercel-cron=${xVercelCron} x-vercel-cron-job=${xVercelCronJob} hasAuth=${hasAuthorization}`)
+
   // 1. Verify authorization
   const authHeader = request.headers.get('authorization')
   const expectedToken = process.env.CRON_SECRET
@@ -19,7 +29,10 @@ async function handleJobProcessing(request: NextRequest) {
     (request.headers.get('user-agent') ?? '').includes('vercel-cron')
 
   if (!isManualTrigger && !isVercelCron) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json({
+      error: 'Unauthorized',
+      debug: { method, url, ua: userAgent, xVercelCron, xVercelCronJob, hasAuthorization }
+    }, { status: 401 })
   }
 
   // 2. Create Supabase client with SERVICE ROLE key
