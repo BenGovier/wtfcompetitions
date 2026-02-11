@@ -4,12 +4,16 @@ import { NextRequest, NextResponse } from 'next/server'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-export async function POST(request: NextRequest) {
-  // 1. Verify Bearer token
+async function handleJobProcessing(request: NextRequest) {
+  // 1. Verify authorization
+  const isCronRequest = request.headers.get('x-vercel-cron') === '1'
   const authHeader = request.headers.get('authorization')
   const expectedToken = process.env.CRON_SECRET
   
-  if (!expectedToken || !authHeader || authHeader !== `Bearer ${expectedToken}`) {
+  // Allow if Vercel Cron OR valid Bearer token
+  const isAuthorized = isCronRequest || (expectedToken && authHeader === `Bearer ${expectedToken}`)
+  
+  if (!isAuthorized) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -135,6 +139,14 @@ export async function POST(request: NextRequest) {
     console.error('[v0] Unexpected error in job processing:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
+}
+
+export async function GET(request: NextRequest) {
+  return handleJobProcessing(request)
+}
+
+export async function POST(request: NextRequest) {
+  return handleJobProcessing(request)
 }
 
 async function processRefreshSnapshots(
