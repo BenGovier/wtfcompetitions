@@ -22,9 +22,9 @@ export default async function GiveawaysPage() {
           title: p.title || 'Untitled',
           prizeTitle: p.prize_title || p.title || 'Prize',
           imageUrl: p.hero_image_url || '/placeholder.svg',
-          ticketPrice: p.base_ticket_price_pence ? p.base_ticket_price_pence / 100 : 0,
-          endsAt: p.ends_at ? new Date(p.ends_at) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-          status: p.status === 'live' || p.status === 'active' ? 'active' : 'completed',
+          ticketPrice: (p.base_ticket_price_pence ?? 0) / 100,
+          endsAt: new Date(p.ends_at),
+          status: p.status,
           prizeValue: p.prize_value_text || undefined,
           bundles: p.bundles || undefined,
           rulesText: 'See full terms and conditions for complete rules.',
@@ -47,7 +47,7 @@ export default async function GiveawaysPage() {
           ))
         ) : (
           <div className="col-span-full py-12 text-center text-muted-foreground">
-            No giveaways available right now. Check back soon!
+            No live giveaways yet. Check back soon.
           </div>
         )}
       </div>
