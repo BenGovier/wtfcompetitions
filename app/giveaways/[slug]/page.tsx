@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation"
 import Link from "next/link"
-import { mockGiveaways } from "@/lib/mock-data"
+import { createClient } from "@/lib/supabase/server"
 import { CountdownBadge } from "@/components/countdown-badge"
 import { TicketSelector } from "@/components/ticket-selector"
 import { SocialProofRow } from "@/components/social-proof-row"
@@ -12,22 +12,43 @@ import { Separator } from "@/components/ui/separator"
 import { Shield, Award, ChevronRight } from "lucide-react"
 
 interface GiveawayPageProps {
-  params: {
+  params: Promise<{
     slug: string
-  }
+  }>
 }
 
-export default function GiveawayPage({ params }: GiveawayPageProps) {
-  // Mock data lookup (in real app, this would be ISR with DB snapshot)
-  const giveaway = mockGiveaways.find((g) => g.slug === params.slug)
+export default async function GiveawayPage({ params }: GiveawayPageProps) {
+  const { slug } = await params
+  const supabase = await createClient()
 
-  if (!giveaway) {
+  const { data: row, error } = await supabase
+    .from('giveaway_snapshots')
+    .select('payload')
+    .eq('kind', 'detail')
+    .eq('payload->>slug', slug)
+    .single()
+
+  if (error || !row) {
     notFound()
   }
 
-  const displayImages = giveaway.images || [giveaway.imageUrl]
+  const p = row.payload as Record<string, any>
 
-  const isLive = giveaway.status === "active" || giveaway.status === "live"
+  const title = p.title || 'Untitled'
+  const prizeTitle = p.prize_title || p.title || 'Prize'
+  const prizeValueText = p.prize_value_text || null
+  const heroImageUrl = p.hero_image_url || '/placeholder.svg'
+  const images: string[] = p.images || [heroImageUrl]
+  const status = p.status || 'active'
+  const endsAt = new Date(p.ends_at)
+  const ticketPrice = (p.base_ticket_price_pence ?? 0) / 100
+  const bundles = p.bundles || undefined
+  const rulesText = p.rules_text || 'See full terms and conditions for complete rules.'
+  const faqSnippet = p.faq_snippet || null
+  const socialProof = p.social_proof || null
+
+  const displayImages = images
+  const isLive = status === "active" || status === "live"
 
   return (
     <div className="min-h-screen bg-background pb-24 md:pb-8">
@@ -40,7 +61,7 @@ export default function GiveawayPage({ params }: GiveawayPageProps) {
               <div className="aspect-[4/3] overflow-hidden rounded-lg border bg-white">
                 <img
                   src={displayImages[0] || "/placeholder.svg"}
-                  alt={giveaway.prizeTitle}
+                  alt={prizeTitle}
                   className="h-full w-full object-contain"
                 />
               </div>
@@ -50,7 +71,7 @@ export default function GiveawayPage({ params }: GiveawayPageProps) {
                     <div key={i} className="aspect-square overflow-hidden rounded-md border bg-white">
                       <img
                         src={img || "/placeholder.svg"}
-                        alt={`${giveaway.prizeTitle} view ${i + 2}`}
+                        alt={`${prizeTitle} view ${i + 2}`}
                         className="h-full w-full object-cover"
                         loading="lazy"
                       />
@@ -64,19 +85,19 @@ export default function GiveawayPage({ params }: GiveawayPageProps) {
             <div className="space-y-6">
               <div>
                 <div className="flex flex-wrap items-center gap-2 pb-3">
-                  <CountdownBadge endsAt={giveaway.endsAt} status={giveaway.status} />
+                  <CountdownBadge endsAt={endsAt} status={status} />
                   {isLive && (
                     <Badge variant="secondary" className="bg-green-100 text-green-800">
                       Live Now
                     </Badge>
                   )}
                 </div>
-                <h1 className="text-balance text-3xl font-bold leading-tight md:text-4xl">{giveaway.title}</h1>
-                <p className="mt-2 text-pretty text-lg text-muted-foreground">{giveaway.prizeTitle}</p>
-                {giveaway.prizeValue && (
+                <h1 className="text-balance text-3xl font-bold leading-tight md:text-4xl">{title}</h1>
+                <p className="mt-2 text-pretty text-lg text-muted-foreground">{prizeTitle}</p>
+                {prizeValueText && (
                   <div className="mt-3 flex items-baseline gap-2">
                     <span className="text-sm text-muted-foreground">Retail Value:</span>
-                    <span className="text-2xl font-bold text-brand">{giveaway.prizeValue}</span>
+                    <span className="text-2xl font-bold text-brand">{prizeValueText}</span>
                   </div>
                 )}
               </div>
@@ -84,7 +105,7 @@ export default function GiveawayPage({ params }: GiveawayPageProps) {
               <Separator />
 
               <div id="ticket-selector" className="scroll-mt-24">
-                <TicketSelector basePrice={giveaway.ticketPrice} bundles={giveaway.bundles} />
+                <TicketSelector basePrice={ticketPrice} bundles={bundles} />
               </div>
             </div>
           </div>
@@ -98,10 +119,10 @@ export default function GiveawayPage({ params }: GiveawayPageProps) {
           <InstantWinDisclosure />
 
           {/* Social Proof */}
-          {giveaway.socialProof && (
+          {socialProof && (
             <SocialProofRow
-              entrantCountBucket={giveaway.socialProof.entrantCountBucket}
-              recentAvatars={giveaway.socialProof.recentAvatars}
+              entrantCountBucket={socialProof.entrantCountBucket}
+              recentAvatars={socialProof.recentAvatars}
             />
           )}
 
@@ -133,14 +154,14 @@ export default function GiveawayPage({ params }: GiveawayPageProps) {
 
           {/* Rules & Eligibility */}
           <section className="space-y-4">
-            <RulesAccordion rulesText={giveaway.rulesText} />
+            <RulesAccordion rulesText={rulesText} />
           </section>
 
           {/* FAQ Snippet */}
-          {giveaway.faqSnippet && (
+          {faqSnippet && (
             <section className="rounded-lg border bg-muted/30 p-6">
               <h2 className="text-lg font-semibold">Frequently Asked Questions</h2>
-              <p className="mt-2 text-sm text-muted-foreground">{giveaway.faqSnippet}</p>
+              <p className="mt-2 text-sm text-muted-foreground">{faqSnippet}</p>
               <Link
                 href="/faq"
                 className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline"
@@ -158,7 +179,7 @@ export default function GiveawayPage({ params }: GiveawayPageProps) {
         <div className="flex items-center justify-between gap-4">
           <div>
             <div className="text-xs text-muted-foreground">Entry from</div>
-            <div className="text-xl font-bold text-brand">${giveaway.ticketPrice.toFixed(2)}</div>
+            <div className="text-xl font-bold text-brand">${ticketPrice.toFixed(2)}</div>
           </div>
           <Link
             href="#ticket-selector"
