@@ -37,6 +37,12 @@ async function handleJobProcessing(request: NextRequest) {
 
   // 2. Create Supabase client with SERVICE ROLE key
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  console.log(
+    '[jobs/run] supabaseUrlHost=',
+    (() => {
+      try { return supabaseUrl ? new URL(supabaseUrl).host : 'missing' } catch { return 'invalid' }
+    })(),
+  )
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
   if (!supabaseUrl || !serviceRoleKey) {
