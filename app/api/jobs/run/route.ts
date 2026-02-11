@@ -59,7 +59,7 @@ async function handleJobProcessing(request: NextRequest) {
       .select('id, type, payload, attempts, max_attempts')
       .eq('status', 'queued')
       .lte('run_after', now)
-      .or(`locked_until.is.null,locked_until.lt.${now}`)
+      .or(`locked_until.is.null,locked_until.lt."${now}"`)
       .order('created_at', { ascending: true })
       .limit(1)
 
@@ -86,7 +86,7 @@ async function handleJobProcessing(request: NextRequest) {
       })
       .eq('id', job.id)
       .eq('status', 'queued')
-      .or(`locked_until.is.null,locked_until.lt.${now}`)
+      .or(`locked_until.is.null,locked_until.lt."${now}"`)
       .select()
       .single()
 
