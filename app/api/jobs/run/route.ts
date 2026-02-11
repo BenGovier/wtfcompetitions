@@ -56,6 +56,7 @@ async function handleJobProcessing(request: NextRequest) {
   try {
     // 3. Lock ONE eligible job
     const nowIso = new Date().toISOString()
+    console.log('[jobs/run] nowIso=', nowIso)
     const lockDuration = 60 // seconds
     const lockedUntil = new Date(Date.now() + lockDuration * 1000).toISOString()
 
@@ -70,9 +71,11 @@ async function handleJobProcessing(request: NextRequest) {
       .limit(1)
 
     if (selectError1) {
-      console.error('[v0] Error selecting eligible job (null lock):', selectError1)
+      console.error('[jobs/run] selectError=', JSON.stringify(selectError1))
       return NextResponse.json({ error: 'Database error' }, { status: 500 })
     }
+
+    console.log('[jobs/run] eligible_null_count=', nullLockJobs?.length ?? 0)
 
     let eligibleJobs = nullLockJobs
 
@@ -87,9 +90,11 @@ async function handleJobProcessing(request: NextRequest) {
         .limit(1)
 
       if (selectError2) {
-        console.error('[v0] Error selecting eligible job (expired lock):', selectError2)
+        console.error('[jobs/run] selectError=', JSON.stringify(selectError2))
         return NextResponse.json({ error: 'Database error' }, { status: 500 })
       }
+
+      console.log('[jobs/run] eligible_lt_count=', expiredLockJobs?.length ?? 0)
 
       eligibleJobs = expiredLockJobs
     }
@@ -99,6 +104,7 @@ async function handleJobProcessing(request: NextRequest) {
     }
 
     const job = eligibleJobs[0]
+    console.log('[jobs/run] picked_job=', job.id)
 
     // Lock the job: first try with locked_until IS NULL, then locked_until < now
     const lockPayload = {
@@ -121,6 +127,7 @@ async function handleJobProcessing(request: NextRequest) {
     let lockedJob = lockedByNull
 
     if (lockError1 || !lockedByNull) {
+      if (lockError1) console.error('[jobs/run] lockError=', JSON.stringify(lockError1))
       const { data: lockedByExpired, error: lockError2 } = await supabase
         .from('jobs')
         .update(lockPayload)
@@ -131,6 +138,7 @@ async function handleJobProcessing(request: NextRequest) {
         .single()
 
       if (lockError2 || !lockedByExpired) {
+        if (lockError2) console.error('[jobs/run] lockError=', JSON.stringify(lockError2))
         // Job was locked by another process
         return new NextResponse(null, { status: 204 })
       }
