@@ -111,7 +111,7 @@ async function handleJobProcessing(request: NextRequest) {
       locked_at: nowIso,
       locked_until: lockedUntil,
       locked_by: 'api/jobs/run',
-      status: 'running',
+      status: 'processing',
       updated_at: nowIso
     }
 
