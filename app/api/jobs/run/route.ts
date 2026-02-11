@@ -222,6 +222,7 @@ async function processRefreshSnapshots(
   supabase: ReturnType<typeof createClient>,
   payload: any
 ) {
+  console.log('[snapshots] start payload=', JSON.stringify(payload))
   const giveawayId = payload?.giveawayId
 
   // Build query
@@ -238,6 +239,9 @@ async function processRefreshSnapshots(
   if (fetchError) {
     throw new Error(`Failed to fetch giveaways: ${fetchError.message}`)
   }
+
+  console.log('[snapshots] fetched_count=', giveaways?.length ?? 0)
+  console.log('[snapshots] fetched_ids=', (giveaways ?? []).map(g => g.id))
 
   if (!giveaways || giveaways.length === 0) {
     console.log('[v0] No giveaways to refresh')
@@ -264,6 +268,8 @@ async function processRefreshSnapshots(
       hard_cap_total_tickets: giveaway.hard_cap_total_tickets
     }
 
+    console.log('[snapshots] writing_snapshot giveaway=', giveaway.id)
+
     // Delete existing snapshot for this giveaway/kind
     await supabase
       .from('giveaway_snapshots')
@@ -284,6 +290,8 @@ async function processRefreshSnapshots(
     if (upsertError) {
       throw new Error(`Failed to upsert snapshot for giveaway ${giveaway.id}: ${upsertError.message}`)
     }
+
+    console.log('[snapshots] wrote_snapshot giveaway=', giveaway.id)
   }
 
   console.log(`[v0] Refreshed ${giveaways.length} giveaway snapshot(s)`)
