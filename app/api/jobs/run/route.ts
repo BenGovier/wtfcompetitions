@@ -55,7 +55,7 @@ async function handleJobProcessing(request: NextRequest) {
 
   try {
     // 3. Lock ONE eligible job
-    const now = new Date().toISOString()
+    const nowIso = new Date().toISOString()
     const lockDuration = 60 // seconds
     const lockedUntil = new Date(Date.now() + lockDuration * 1000).toISOString()
 
@@ -64,7 +64,7 @@ async function handleJobProcessing(request: NextRequest) {
       .from('jobs')
       .select('id, type, payload, attempts, max_attempts')
       .eq('status', 'queued')
-      .lte('run_after', now)
+      .lte('run_after', nowIso)
       .is('locked_until', null)
       .order('created_at', { ascending: true })
       .limit(1)
@@ -81,8 +81,8 @@ async function handleJobProcessing(request: NextRequest) {
         .from('jobs')
         .select('id, type, payload, attempts, max_attempts')
         .eq('status', 'queued')
-        .lte('run_after', now)
-        .lt('locked_until', now)
+        .lte('run_after', nowIso)
+        .lt('locked_until', nowIso)
         .order('created_at', { ascending: true })
         .limit(1)
 
@@ -102,11 +102,11 @@ async function handleJobProcessing(request: NextRequest) {
 
     // Lock the job: first try with locked_until IS NULL, then locked_until < now
     const lockPayload = {
-      locked_at: now,
+      locked_at: nowIso,
       locked_until: lockedUntil,
       locked_by: 'api/jobs/run',
       status: 'running',
-      updated_at: now
+      updated_at: nowIso
     }
 
     const { data: lockedByNull, error: lockError1 } = await supabase
@@ -126,7 +126,7 @@ async function handleJobProcessing(request: NextRequest) {
         .update(lockPayload)
         .eq('id', job.id)
         .eq('status', 'queued')
-        .lt('locked_until', now)
+        .lt('locked_until', nowIso)
         .select()
         .single()
 
