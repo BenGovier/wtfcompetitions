@@ -53,19 +53,39 @@ async function handleJobProcessing(request: NextRequest) {
     const lockDuration = 60 // seconds
     const lockedUntil = new Date(Date.now() + lockDuration * 1000).toISOString()
 
-    // Find eligible job
-    const { data: eligibleJobs, error: selectError } = await supabase
+    // Find eligible job: first try locked_until IS NULL, then locked_until < now
+    const { data: nullLockJobs, error: selectError1 } = await supabase
       .from('jobs')
       .select('id, type, payload, attempts, max_attempts')
       .eq('status', 'queued')
       .lte('run_after', now)
-      .or(`locked_until.is.null,locked_until.lt."${now}"`)
+      .is('locked_until', null)
       .order('created_at', { ascending: true })
       .limit(1)
 
-    if (selectError) {
-      console.error('[v0] Error selecting eligible job:', selectError)
+    if (selectError1) {
+      console.error('[v0] Error selecting eligible job (null lock):', selectError1)
       return NextResponse.json({ error: 'Database error' }, { status: 500 })
+    }
+
+    let eligibleJobs = nullLockJobs
+
+    if (!eligibleJobs || eligibleJobs.length === 0) {
+      const { data: expiredLockJobs, error: selectError2 } = await supabase
+        .from('jobs')
+        .select('id, type, payload, attempts, max_attempts')
+        .eq('status', 'queued')
+        .lte('run_after', now)
+        .lt('locked_until', now)
+        .order('created_at', { ascending: true })
+        .limit(1)
+
+      if (selectError2) {
+        console.error('[v0] Error selecting eligible job (expired lock):', selectError2)
+        return NextResponse.json({ error: 'Database error' }, { status: 500 })
+      }
+
+      eligibleJobs = expiredLockJobs
     }
 
     if (!eligibleJobs || eligibleJobs.length === 0) {
@@ -74,25 +94,42 @@ async function handleJobProcessing(request: NextRequest) {
 
     const job = eligibleJobs[0]
 
-    // Lock the job
-    const { data: lockedJob, error: lockError } = await supabase
+    // Lock the job: first try with locked_until IS NULL, then locked_until < now
+    const lockPayload = {
+      locked_at: now,
+      locked_until: lockedUntil,
+      locked_by: 'api/jobs/run',
+      status: 'running',
+      updated_at: now
+    }
+
+    const { data: lockedByNull, error: lockError1 } = await supabase
       .from('jobs')
-      .update({
-        locked_at: now,
-        locked_until: lockedUntil,
-        locked_by: 'api/jobs/run',
-        status: 'running',
-        updated_at: now
-      })
+      .update(lockPayload)
       .eq('id', job.id)
       .eq('status', 'queued')
-      .or(`locked_until.is.null,locked_until.lt."${now}"`)
+      .is('locked_until', null)
       .select()
       .single()
 
-    if (lockError || !lockedJob) {
-      // Job was locked by another process
-      return new NextResponse(null, { status: 204 })
+    let lockedJob = lockedByNull
+
+    if (lockError1 || !lockedByNull) {
+      const { data: lockedByExpired, error: lockError2 } = await supabase
+        .from('jobs')
+        .update(lockPayload)
+        .eq('id', job.id)
+        .eq('status', 'queued')
+        .lt('locked_until', now)
+        .select()
+        .single()
+
+      if (lockError2 || !lockedByExpired) {
+        // Job was locked by another process
+        return new NextResponse(null, { status: 204 })
+      }
+
+      lockedJob = lockedByExpired
     }
 
     // 4. Process the job
