@@ -6,14 +6,19 @@ export const revalidate = 0
 
 async function handleJobProcessing(request: NextRequest) {
   // 1. Verify authorization
-  const isCronRequest = request.headers.get('x-vercel-cron') === '1'
   const authHeader = request.headers.get('authorization')
   const expectedToken = process.env.CRON_SECRET
-  
-  // Allow if Vercel Cron OR valid Bearer token
-  const isAuthorized = isCronRequest || (expectedToken && authHeader === `Bearer ${expectedToken}`)
-  
-  if (!isAuthorized) {
+
+  // A) Manual trigger: valid Bearer token
+  const isManualTrigger = !!(expectedToken && authHeader === `Bearer ${expectedToken}`)
+
+  // B) Vercel cron trigger: accept if ANY of these is true
+  const isVercelCron =
+    request.headers.get('x-vercel-cron') === '1' ||
+    request.headers.has('x-vercel-cron-job') ||
+    (request.headers.get('user-agent') ?? '').includes('vercel-cron')
+
+  if (!isManualTrigger && !isVercelCron) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
