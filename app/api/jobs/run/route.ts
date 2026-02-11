@@ -270,25 +270,52 @@ async function processRefreshSnapshots(
 
     console.log('[snapshots] writing_snapshot giveaway=', giveaway.id)
 
-    // Delete existing snapshot for this giveaway/kind
+    // Delete existing snapshots for this giveaway (both list and detail)
     await supabase
       .from('giveaway_snapshots')
       .delete()
       .eq('giveaway_id', giveaway.id)
-      .eq('kind', 'public')
+      .in('kind', ['list', 'detail'])
 
-    // Insert new snapshot
-    const { error: upsertError } = await supabase
+    const generatedAt = new Date().toISOString()
+
+    // Insert list snapshot (minimal payload)
+    const listPayload = {
+      id: giveaway.id,
+      slug: giveaway.slug,
+      title: giveaway.title,
+      prize_title: giveaway.prize_title,
+      prize_value_text: giveaway.prize_value_text,
+      hero_image_url: giveaway.hero_image_url,
+      ends_at: giveaway.ends_at,
+      base_ticket_price_pence: giveaway.base_ticket_price_pence
+    }
+
+    const { error: listError } = await supabase
       .from('giveaway_snapshots')
       .insert({
         giveaway_id: giveaway.id,
-        kind: 'public',
-        generated_at: new Date().toISOString(),
+        kind: 'list',
+        generated_at: generatedAt,
+        payload: listPayload
+      })
+
+    if (listError) {
+      throw new Error(`Failed to insert list snapshot for giveaway ${giveaway.id}: ${listError.message}`)
+    }
+
+    // Insert detail snapshot (full payload)
+    const { error: detailError } = await supabase
+      .from('giveaway_snapshots')
+      .insert({
+        giveaway_id: giveaway.id,
+        kind: 'detail',
+        generated_at: generatedAt,
         payload: publicPayload
       })
 
-    if (upsertError) {
-      throw new Error(`Failed to upsert snapshot for giveaway ${giveaway.id}: ${upsertError.message}`)
+    if (detailError) {
+      throw new Error(`Failed to insert detail snapshot for giveaway ${giveaway.id}: ${detailError.message}`)
     }
 
     console.log('[snapshots] wrote_snapshot giveaway=', giveaway.id)
