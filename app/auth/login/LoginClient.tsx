@@ -33,8 +33,14 @@ export default function LoginClient({ redirect }: { redirect: string }) {
         password,
       })
       if (error) throw error
-      
-      router.push(redirect || '/me')
+
+      const raw = redirect
+      const decoded = typeof raw === 'string' ? decodeURIComponent(raw) : ''
+      const target = decoded && decoded.startsWith('/') ? decoded : '/me'
+      console.log('[login] redirect prop raw=', raw)
+      console.log('[login] redirect decoded=', decoded)
+      console.log('[login] redirect target=', target)
+      router.push(target)
       router.refresh()
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : 'An error occurred')
