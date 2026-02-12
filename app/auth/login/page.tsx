@@ -5,13 +5,12 @@ import LoginClient from './LoginClient'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-export default async function LoginPage({
+export default function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ redirect?: string }>
+  searchParams?: { redirect?: string }
 }) {
-  const resolvedParams = await searchParams
-  const redirectTo = typeof resolvedParams?.redirect === 'string' ? resolvedParams.redirect : '/me'
+  const redirectTo = typeof searchParams?.redirect === 'string' ? searchParams.redirect : '/me'
 
   return (
     <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
