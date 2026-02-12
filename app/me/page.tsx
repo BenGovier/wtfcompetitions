@@ -5,6 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
+import { SignOutButton } from "./sign-out-button"
 
 export default async function AccountPage() {
   const supabase = await createClient()
@@ -164,9 +165,7 @@ export default async function AccountPage() {
 
       {/* Sign Out Button */}
       <div className="mt-6">
-        <Button variant="outline" size="sm" disabled>
-          Sign Out
-        </Button>
+        <SignOutButton />
       </div>
     </div>
   )
