@@ -223,103 +223,104 @@ async function processRefreshSnapshots(
   payload: any
 ) {
   console.log('[snapshots] start payload=', JSON.stringify(payload))
-  const giveawayId = payload?.giveawayId
+  const campaignId = payload?.giveawayId || payload?.campaignId
 
-  // Build query
+  // Build query from campaigns table
   let query = supabase
-    .from('giveaways')
-    .select('id, slug, title, prize_title, prize_value_text, hero_image_url, images, variant, status, starts_at, ends_at, currency, base_ticket_price_pence, bundles, hard_cap_total_tickets')
+    .from('campaigns')
+    .select('id, slug, title, summary, description, status, start_at, end_at, main_prize_title, main_prize_description, hero_image_url, ticket_price_pence, max_tickets_total, max_tickets_per_user')
 
-  if (giveawayId) {
-    query = query.eq('id', giveawayId)
+  if (campaignId) {
+    query = query.eq('id', campaignId)
   }
 
-  const { data: giveaways, error: fetchError } = await query
+  const { data: campaigns, error: fetchError } = await query
 
   if (fetchError) {
-    throw new Error(`Failed to fetch giveaways: ${fetchError.message}`)
+    throw new Error(`Failed to fetch campaigns: ${fetchError.message}`)
   }
 
-  console.log('[snapshots] fetched_count=', giveaways?.length ?? 0)
-  console.log('[snapshots] fetched_ids=', (giveaways ?? []).map(g => g.id))
+  console.log('[snapshots] campaigns fetched_count=', campaigns?.length ?? 0)
+  console.log('[snapshots] campaigns fetched_ids=', (campaigns ?? []).map(c => c.id))
 
-  if (!giveaways || giveaways.length === 0) {
-    console.log('[v0] No giveaways to refresh')
+  if (!campaigns || campaigns.length === 0) {
+    console.log('[snapshots] No campaigns to refresh')
     return
   }
 
-  // Process each giveaway
-  for (const giveaway of giveaways) {
-    const publicPayload = {
-      id: giveaway.id,
-      slug: giveaway.slug,
-      title: giveaway.title,
-      prize_title: giveaway.prize_title,
-      prize_value_text: giveaway.prize_value_text,
-      hero_image_url: giveaway.hero_image_url,
-      images: giveaway.images,
-      variant: giveaway.variant,
-      status: giveaway.status,
-      starts_at: giveaway.starts_at,
-      ends_at: giveaway.ends_at,
-      currency: giveaway.currency,
-      base_ticket_price_pence: giveaway.base_ticket_price_pence,
-      bundles: giveaway.bundles,
-      hard_cap_total_tickets: giveaway.hard_cap_total_tickets
+  // Process each campaign
+  for (const campaign of campaigns) {
+    const detailPayload = {
+      id: campaign.id,
+      slug: campaign.slug,
+      title: campaign.title,
+      prize_title: campaign.main_prize_title,
+      prize_value_text: null,
+      hero_image_url: campaign.hero_image_url,
+      images: null,
+      variant: 'raffle',
+      status: campaign.status,
+      starts_at: campaign.start_at,
+      ends_at: campaign.end_at,
+      currency: 'GBP',
+      base_ticket_price_pence: campaign.ticket_price_pence,
+      bundles: null,
+      hard_cap_total_tickets: campaign.max_tickets_total
     }
 
-    console.log('[snapshots] writing_snapshot giveaway=', giveaway.id)
+    console.log('[snapshots] writing_snapshot campaign=', campaign.id)
 
-    // Delete existing snapshots for this giveaway (both list and detail)
+    // Delete existing snapshots for this campaign (both list and detail)
     await supabase
       .from('giveaway_snapshots')
       .delete()
-      .eq('giveaway_id', giveaway.id)
+      .eq('giveaway_id', campaign.id)
       .in('kind', ['list', 'detail'])
 
     const generatedAt = new Date().toISOString()
 
-    // Insert list snapshot (minimal payload)
+    // Insert list snapshot (minimal payload for /giveaways listing)
     const listPayload = {
-      id: giveaway.id,
-      slug: giveaway.slug,
-      title: giveaway.title,
-      prize_title: giveaway.prize_title,
-      prize_value_text: giveaway.prize_value_text,
-      hero_image_url: giveaway.hero_image_url,
-      ends_at: giveaway.ends_at,
-      base_ticket_price_pence: giveaway.base_ticket_price_pence
+      id: campaign.id,
+      slug: campaign.slug,
+      title: campaign.title,
+      prize_title: campaign.main_prize_title,
+      prize_value_text: null,
+      hero_image_url: campaign.hero_image_url,
+      ends_at: campaign.end_at,
+      base_ticket_price_pence: campaign.ticket_price_pence,
+      status: campaign.status
     }
 
     const { error: listError } = await supabase
       .from('giveaway_snapshots')
       .insert({
-        giveaway_id: giveaway.id,
+        giveaway_id: campaign.id,
         kind: 'list',
         generated_at: generatedAt,
         payload: listPayload
       })
 
     if (listError) {
-      throw new Error(`Failed to insert list snapshot for giveaway ${giveaway.id}: ${listError.message}`)
+      throw new Error(`Failed to insert list snapshot for campaign ${campaign.id}: ${listError.message}`)
     }
 
-    // Insert detail snapshot (full payload)
+    // Insert detail snapshot (full payload for /giveaways/[slug])
     const { error: detailError } = await supabase
       .from('giveaway_snapshots')
       .insert({
-        giveaway_id: giveaway.id,
+        giveaway_id: campaign.id,
         kind: 'detail',
         generated_at: generatedAt,
-        payload: publicPayload
+        payload: detailPayload
       })
 
     if (detailError) {
-      throw new Error(`Failed to insert detail snapshot for giveaway ${giveaway.id}: ${detailError.message}`)
+      throw new Error(`Failed to insert detail snapshot for campaign ${campaign.id}: ${detailError.message}`)
     }
 
-    console.log('[snapshots] wrote_snapshot giveaway=', giveaway.id)
+    console.log('[snapshots] wrote_snapshot campaign=', campaign.id)
   }
 
-  console.log(`[v0] Refreshed ${giveaways.length} giveaway snapshot(s)`)
+  console.log(`[snapshots] Refreshed ${campaigns.length} campaign snapshot(s)`)
 }
