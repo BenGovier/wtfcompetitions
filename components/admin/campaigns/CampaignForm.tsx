@@ -1,6 +1,7 @@
 "use client"
 
 import { useRef, useState } from "react"
+import { useRouter } from "next/navigation"
 import Link from "next/link"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
@@ -24,10 +25,13 @@ interface CampaignFormProps {
 }
 
 export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
+  const router = useRouter()
   const [formData, setFormData] = useState<Campaign>(campaign)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleChange = (
@@ -68,6 +72,34 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
       setUploadError(err?.message || 'Upload failed')
     } finally {
       setIsUploading(false)
+    }
+  }
+
+  async function handleSave() {
+    setIsSaving(true)
+    setSaveError(null)
+
+    try {
+      const method = isNew ? 'POST' : 'PUT'
+      const res = await fetch('/api/admin/campaigns', {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      })
+
+      const json = await res.json()
+
+      if (!res.ok || !json.ok) {
+        setSaveError(json.error || `Request failed (${res.status})`)
+        return
+      }
+
+      router.push('/admin/campaigns')
+      router.refresh()
+    } catch (err: any) {
+      setSaveError(err?.message || 'Save failed')
+    } finally {
+      setIsSaving(false)
     }
   }
 
@@ -321,8 +353,14 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
         </CardContent>
       </Card>
 
+      {saveError && (
+        <p className="text-sm text-destructive">{saveError}</p>
+      )}
+
       <div className="flex items-center gap-4">
-        <Button disabled>{isNew ? "Create Campaign" : "Save Changes"}</Button>
+        <Button disabled={isSaving} onClick={handleSave}>
+          {isSaving ? 'Saving...' : isNew ? 'Create Campaign' : 'Save Changes'}
+        </Button>
         <Button asChild variant="outline" className="bg-transparent">
           <Link href="/admin/campaigns">Cancel</Link>
         </Button>
