@@ -38,7 +38,7 @@ export function GiveawayCard({ giveaway }: GiveawayCardProps) {
       <CardFooter className="flex items-center justify-between gap-3 border-t bg-muted/30 p-4">
         <div>
           <div className="text-xs text-muted-foreground">Entry from</div>
-          <div className="text-xl font-bold text-brand">${giveaway.ticketPrice.toFixed(2)}</div>
+          <div className="text-xl font-bold text-brand">£{giveaway.ticketPrice.toFixed(2)}</div>
         </div>
         <Button size="lg" className="font-semibold">
           Enter Now
