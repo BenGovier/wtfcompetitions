@@ -10,7 +10,17 @@ export default function LoginPage({
 }: {
   searchParams?: { redirect?: string }
 }) {
-  const redirectTo = typeof searchParams?.redirect === 'string' ? searchParams.redirect : '/me'
+  let redirectTo = '/me'
+  if (typeof searchParams?.redirect === 'string') {
+    try {
+      const decoded = decodeURIComponent(searchParams.redirect)
+      if (decoded.startsWith('/')) {
+        redirectTo = decoded
+      }
+    } catch {
+      // malformed URI — keep default /me
+    }
+  }
 
   return (
     <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
