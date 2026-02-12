@@ -67,6 +67,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
 
       handleChange('heroImageUrl', publicUrlData.publicUrl)
       setSelectedFile(null)
+      setSaveError(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
     } catch (err: any) {
       setUploadError(err?.message || 'Upload failed')
@@ -76,6 +77,14 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
   }
 
   async function handleSave() {
+    if (isUploading) {
+      setSaveError('Image is still uploading — please wait')
+      return
+    }
+    if (selectedFile && !formData.heroImageUrl) {
+      setSaveError('Click Upload to attach the hero image')
+      return
+    }
     setIsSaving(true)
     setSaveError(null)
 
@@ -358,7 +367,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
       )}
 
       <div className="flex items-center gap-4">
-        <Button disabled={isSaving} onClick={handleSave}>
+        <Button disabled={isSaving || isUploading} onClick={handleSave}>
           {isSaving ? 'Saving...' : isNew ? 'Create Campaign' : 'Save Changes'}
         </Button>
         <Button asChild variant="outline" className="bg-transparent">
