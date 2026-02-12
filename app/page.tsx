@@ -3,11 +3,44 @@ import { TrustBadges } from "@/components/trust-badges"
 import { GiveawayCard } from "@/components/giveaway-card"
 import { WinnerCard } from "@/components/winner-card"
 import { SectionHeader } from "@/components/section-header"
-import { mockGiveaways, mockWinners } from "@/lib/mock-data"
+import { mockWinners } from "@/lib/mock-data"
+import { createClient } from "@/lib/supabase/server"
 import Link from "next/link"
 import { ArrowRight } from "lucide-react"
+import type { GiveawayPublic } from "@/lib/types"
 
-export default function HomePage() {
+export default async function HomePage() {
+  const supabase = await createClient()
+
+  let giveaways: GiveawayPublic[] = []
+  try {
+    const { data, error } = await supabase
+      .from('giveaway_snapshots')
+      .select('payload')
+      .eq('kind', 'list')
+      .order('generated_at', { ascending: false })
+      .limit(3)
+
+    if (!error && data && data.length > 0) {
+      giveaways = data.map((row) => {
+        const p = row.payload as Record<string, any>
+        return {
+          slug: p.slug || 'unknown',
+          title: p.title || 'Untitled',
+          prizeTitle: p.prize_title || p.title || 'Prize',
+          imageUrl: p.hero_image_url || '/placeholder.svg',
+          ticketPrice: (p.base_ticket_price_pence ?? 0) / 100,
+          endsAt: new Date(p.ends_at),
+          status: p.status,
+          prizeValue: p.prize_value_text || undefined,
+          bundles: p.bundles || undefined,
+          rulesText: 'See full terms and conditions for complete rules.',
+        }
+      })
+    }
+  } catch (err) {
+    console.error('[homepage] Failed to fetch snapshots:', err)
+  }
   return (
     <div className="container px-4 py-8 md:py-16">
       {/* Hero Section */}
@@ -42,9 +75,15 @@ export default function HomePage() {
           }
         />
         <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {mockGiveaways.map((giveaway) => (
-            <GiveawayCard key={giveaway.slug} giveaway={giveaway} />
-          ))}
+          {giveaways.length > 0 ? (
+            giveaways.map((giveaway) => (
+              <GiveawayCard key={giveaway.slug} giveaway={giveaway} />
+            ))
+          ) : (
+            <div className="col-span-full py-12 text-center text-muted-foreground">
+              No live giveaways yet. Check back soon.
+            </div>
+          )}
         </div>
       </section>
 
