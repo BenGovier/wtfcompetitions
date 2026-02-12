@@ -17,10 +17,11 @@ async function handleJobProcessing(request: NextRequest) {
 
   // 1. Verify authorization
   const authHeader = request.headers.get('authorization')
+  const tokenParam = request.nextUrl.searchParams.get('token')
   const expectedToken = process.env.CRON_SECRET
 
-  // A) Manual trigger: valid Bearer token
-  const isManualTrigger = !!(expectedToken && authHeader === `Bearer ${expectedToken}`)
+  // A) Manual trigger: valid Bearer token OR valid query param token
+  const isManualTrigger = !!(expectedToken && (authHeader === `Bearer ${expectedToken}` || tokenParam === expectedToken))
 
   // B) Vercel cron trigger: accept if ANY of these is true
   const isVercelCron =
