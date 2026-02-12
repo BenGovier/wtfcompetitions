@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
 
 function toDbRow(body: Record<string, any>) {
   return {
@@ -34,6 +35,37 @@ async function authorize(supabase: Awaited<ReturnType<typeof createClient>>) {
   return { user, error: null }
 }
 
+async function enqueueRefreshSnapshots() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!supabaseUrl || !serviceRoleKey) {
+    console.error('[jobs] missing supabaseUrl or service role key')
+    return
+  }
+
+  const svc = createServiceClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } })
+
+  const nowIso = new Date().toISOString()
+
+  const { error } = await svc
+    .from('jobs')
+    .upsert({
+      type: 'REFRESH_SNAPSHOTS',
+      payload: {},
+      dedupe_key: 'REFRESH_SNAPSHOTS:campaigns',
+      status: 'queued',
+      attempts: 0,
+      max_attempts: 3,
+      run_after: nowIso,
+      locked_until: null,
+      locked_at: null,
+      locked_by: null,
+      updated_at: nowIso,
+    }, { onConflict: 'dedupe_key' })
+
+  if (error) console.error('[jobs] failed to enqueue REFRESH_SNAPSHOTS', error)
+}
+
 export async function POST(request: Request) {
   const supabase = await createClient()
   const { user, error: authError } = await authorize(supabase)
@@ -57,6 +89,8 @@ export async function POST(request: Request) {
   if (error) {
     return NextResponse.json({ ok: false, error: error.message, details: error }, { status: 500 })
   }
+
+  await enqueueRefreshSnapshots()
 
   return NextResponse.json({ ok: true, id: data.id })
 }
@@ -87,6 +121,8 @@ export async function PUT(request: Request) {
   if (error) {
     return NextResponse.json({ ok: false, error: error.message, details: error }, { status: 500 })
   }
+
+  await enqueueRefreshSnapshots()
 
   return NextResponse.json({ ok: true, id: body.id })
 }
