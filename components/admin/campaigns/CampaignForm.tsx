@@ -1,7 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -14,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { createClient } from "@/lib/supabase/client"
 import type { Campaign } from "@/lib/types/campaign"
 
 interface CampaignFormProps {
@@ -23,12 +25,50 @@ interface CampaignFormProps {
 
 export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
   const [formData, setFormData] = useState<Campaign>(campaign)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [isUploading, setIsUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleChange = (
     field: keyof Campaign,
     value: string | number | null
   ) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
+  }
+
+  async function handleUpload() {
+    if (!selectedFile) return
+    setIsUploading(true)
+    setUploadError(null)
+
+    try {
+      const supabase = createClient()
+      const folder = isNew && !campaign.id ? 'new' : campaign.id
+      const safeName = selectedFile.name.toLowerCase().replace(/\s+/g, '-')
+      const path = `campaigns/${folder}/${Date.now()}-${safeName}`
+
+      const { error } = await supabase.storage
+        .from('campaign-hero')
+        .upload(path, selectedFile, { upsert: true, contentType: selectedFile.type })
+
+      if (error) {
+        setUploadError(error.message)
+        return
+      }
+
+      const { data: publicUrlData } = supabase.storage
+        .from('campaign-hero')
+        .getPublicUrl(path)
+
+      handleChange('heroImageUrl', publicUrlData.publicUrl)
+      setSelectedFile(null)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    } catch (err: any) {
+      setUploadError(err?.message || 'Upload failed')
+    } finally {
+      setIsUploading(false)
+    }
   }
 
   return (
@@ -173,13 +213,55 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="heroImageUrl">Hero Image URL</Label>
-            <Input
-              id="heroImageUrl"
-              value={formData.heroImageUrl}
-              onChange={(e) => handleChange("heroImageUrl", e.target.value)}
-              placeholder="/image.jpg"
-            />
+            <Label>Hero Image</Label>
+
+            {formData.heroImageUrl && (
+              <div className="flex items-start gap-3">
+                <Image
+                  src={formData.heroImageUrl}
+                  alt="Hero preview"
+                  width={160}
+                  height={100}
+                  className="rounded-md border object-cover"
+                  unoptimized
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleChange('heroImageUrl', '')}
+                >
+                  Remove
+                </Button>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <Input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  setSelectedFile(e.target.files?.[0] ?? null)
+                  setUploadError(null)
+                }}
+              />
+              <Button
+                type="button"
+                size="sm"
+                disabled={!selectedFile || isUploading}
+                onClick={handleUpload}
+              >
+                {isUploading ? 'Uploading...' : 'Upload'}
+              </Button>
+            </div>
+
+            {isUploading && (
+              <p className="text-xs text-muted-foreground">Uploading image...</p>
+            )}
+            {uploadError && (
+              <p className="text-xs text-destructive">{uploadError}</p>
+            )}
           </div>
         </CardContent>
       </Card>
