@@ -5,6 +5,10 @@ import { createClient } from '@/lib/supabase/server'
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
+  console.log('DEBUG_ROUTE_SUPABASE_ENV', {
+    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL ? 'set' : 'missing',
+    SUPABASE_URL: process.env.SUPABASE_URL ? 'set' : 'missing'
+  })
   const headerStore = await headers()
   const cookieHeader = headerStore.get('cookie')
 
