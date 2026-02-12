@@ -17,7 +17,6 @@ function formatPriceGBP(price: number) {
 
 export function GiveawayCard({ giveaway }: GiveawayCardProps) {
   const timeRemaining = Math.floor((giveaway.endsAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
-  console.log('PRICE DEBUG:', giveaway.ticketPrice, typeof giveaway.ticketPrice)
 
   return (
     <Card className="overflow-hidden transition-shadow hover:shadow-lg">
