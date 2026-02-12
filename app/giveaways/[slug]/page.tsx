@@ -25,7 +25,7 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
     .from('giveaway_snapshots')
     .select('payload')
     .eq('kind', 'detail')
-    .eq('payload->>slug', slug)
+    .filter('payload->>slug', 'eq', slug)
     .single()
 
   if (error || !row) {
@@ -179,7 +179,7 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
         <div className="flex items-center justify-between gap-4">
           <div>
             <div className="text-xs text-muted-foreground">Entry from</div>
-            <div className="text-xl font-bold text-brand">${ticketPrice.toFixed(2)}</div>
+            <div className="text-xl font-bold text-brand">£{ticketPrice.toFixed(2)}</div>
           </div>
           <Link
             href="#ticket-selector"
