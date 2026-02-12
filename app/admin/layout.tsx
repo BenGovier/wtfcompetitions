@@ -12,7 +12,7 @@ export default async function AdminLayout({
   const supabase = await createClient()
   const { data: { user }, error } = await supabase.auth.getUser()
 
-  console.log('[admin] auth user_id=', user?.id, 'email=', user?.email, 'error=', !!error)
+  console.log('[admin] user=', user?.id, user?.email, 'authErr=', !!error)
 
   if (error || !user) {
     redirect('/auth/login?redirect=/admin')
@@ -26,20 +26,11 @@ export default async function AdminLayout({
     .eq('is_enabled', true)
     .single()
 
-  console.log('[admin] adminUser=', JSON.stringify(adminUser), 'adminErr=', JSON.stringify(adminErr))
+  console.log('[admin] adminUser=', adminUser)
+  if (adminErr) console.error('[admin] admin_users query error', adminErr)
 
-  if (adminErr) {
-    console.error('[admin] admin_users query failed', adminErr)
-    redirect('/auth/unauthorized?reason=admin_query_failed')
-  }
-
-  if (!adminUser) {
-    redirect('/auth/unauthorized?reason=not_admin')
-  }
-
-  if (!adminUser.role) {
-    console.error('[admin] admin role missing', adminUser)
-    redirect('/auth/unauthorized?reason=admin_role_missing')
+  if (!adminUser || adminUser.is_enabled !== true) {
+    redirect('/auth/unauthorized')
   }
 
   return <AdminShell user={user}>{children}</AdminShell>
