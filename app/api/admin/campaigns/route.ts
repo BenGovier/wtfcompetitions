@@ -35,7 +35,7 @@ async function authorize(supabase: Awaited<ReturnType<typeof createClient>>) {
   return { user, error: null }
 }
 
-async function refreshSnapshotsNow() {
+async function refreshSnapshotsNow(campaignId: string) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!supabaseUrl || !serviceRoleKey) {
@@ -45,70 +45,70 @@ async function refreshSnapshotsNow() {
 
   const svc = createServiceClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } })
 
-  const { data: campaigns, error: fetchError } = await svc
+  const { data: c, error: fetchError } = await svc
     .from('campaigns')
     .select('id, slug, title, summary, description, status, start_at, end_at, main_prize_title, main_prize_description, hero_image_url, ticket_price_pence, max_tickets_total, max_tickets_per_user')
+    .eq('id', campaignId)
+    .single()
 
-  if (fetchError) throw new Error(`Failed to fetch campaigns: ${fetchError.message}`)
-  if (!campaigns || campaigns.length === 0) return
+  if (fetchError) throw new Error(`Failed to fetch campaign: ${fetchError.message}`)
+  if (!c) return
 
   const generatedAt = new Date().toISOString()
 
-  for (const c of campaigns) {
-    const { error: delErr } = await svc
-      .from('giveaway_snapshots')
-      .delete()
-      .eq('giveaway_id', c.id)
-      .in('kind', ['list', 'detail'])
+  const { error: delErr } = await svc
+    .from('giveaway_snapshots')
+    .delete()
+    .eq('giveaway_id', c.id)
+    .in('kind', ['list', 'detail'])
 
-    if (delErr) throw new Error(`Failed to delete snapshots for ${c.id}: ${delErr.message}`)
+  if (delErr) throw new Error(`Failed to delete snapshots for ${c.id}: ${delErr.message}`)
 
-    const listPayload = {
-      id: c.id,
-      slug: c.slug,
-      title: c.title,
-      prize_title: c.main_prize_title,
-      prize_value_text: null,
-      hero_image_url: c.hero_image_url,
-      ends_at: c.end_at,
-      base_ticket_price_pence: c.ticket_price_pence,
-      status: c.status,
-    }
-
-    const detailPayload = {
-      id: c.id,
-      slug: c.slug,
-      title: c.title,
-      prize_title: c.main_prize_title,
-      prize_value_text: null,
-      hero_image_url: c.hero_image_url,
-      images: null,
-      variant: 'raffle',
-      status: c.status,
-      starts_at: c.start_at,
-      ends_at: c.end_at,
-      currency: 'GBP',
-      base_ticket_price_pence: c.ticket_price_pence,
-      bundles: null,
-      hard_cap_total_tickets: c.max_tickets_total,
-    }
-
-    const { error: ins1 } = await svc.from('giveaway_snapshots').insert({
-      giveaway_id: c.id,
-      kind: 'list',
-      generated_at: generatedAt,
-      payload: listPayload
-    })
-    if (ins1) throw new Error(`Failed to insert list snapshot for ${c.id}: ${ins1.message}`)
-
-    const { error: ins2 } = await svc.from('giveaway_snapshots').insert({
-      giveaway_id: c.id,
-      kind: 'detail',
-      generated_at: generatedAt,
-      payload: detailPayload
-    })
-    if (ins2) throw new Error(`Failed to insert detail snapshot for ${c.id}: ${ins2.message}`)
+  const listPayload = {
+    id: c.id,
+    slug: c.slug,
+    title: c.title,
+    prize_title: c.main_prize_title,
+    prize_value_text: null,
+    hero_image_url: c.hero_image_url,
+    ends_at: c.end_at,
+    base_ticket_price_pence: c.ticket_price_pence,
+    status: c.status,
   }
+
+  const detailPayload = {
+    id: c.id,
+    slug: c.slug,
+    title: c.title,
+    prize_title: c.main_prize_title,
+    prize_value_text: null,
+    hero_image_url: c.hero_image_url,
+    images: null,
+    variant: 'raffle',
+    status: c.status,
+    starts_at: c.start_at,
+    ends_at: c.end_at,
+    currency: 'GBP',
+    base_ticket_price_pence: c.ticket_price_pence,
+    bundles: null,
+    hard_cap_total_tickets: c.max_tickets_total,
+  }
+
+  const { error: ins1 } = await svc.from('giveaway_snapshots').insert({
+    giveaway_id: c.id,
+    kind: 'list',
+    generated_at: generatedAt,
+    payload: listPayload
+  })
+  if (ins1) throw new Error(`Failed to insert list snapshot for ${c.id}: ${ins1.message}`)
+
+  const { error: ins2 } = await svc.from('giveaway_snapshots').insert({
+    giveaway_id: c.id,
+    kind: 'detail',
+    generated_at: generatedAt,
+    payload: detailPayload
+  })
+  if (ins2) throw new Error(`Failed to insert detail snapshot for ${c.id}: ${ins2.message}`)
 }
 
 export async function POST(request: Request) {
@@ -135,7 +135,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: error.message, details: error }, { status: 500 })
   }
 
-  try { await refreshSnapshotsNow() } catch (e) { console.error('[snapshots] refresh failed', e) }
+  try { await refreshSnapshotsNow(data.id) } catch (e) { console.error('[snapshots] refresh failed', e) }
 
   return NextResponse.json({ ok: true, id: data.id })
 }
@@ -167,7 +167,7 @@ export async function PUT(request: Request) {
     return NextResponse.json({ ok: false, error: error.message, details: error }, { status: 500 })
   }
 
-  try { await refreshSnapshotsNow() } catch (e) { console.error('[snapshots] refresh failed', e) }
+  try { await refreshSnapshotsNow(body.id) } catch (e) { console.error('[snapshots] refresh failed', e) }
 
   return NextResponse.json({ ok: true, id: body.id })
 }
