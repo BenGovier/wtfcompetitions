@@ -8,8 +8,16 @@ interface GiveawayCardProps {
   giveaway: GiveawayPublic
 }
 
+function formatPriceGBP(price: number) {
+  if (price < 1) {
+    return `${Math.round(price * 100)}p`
+  }
+  return `£${price.toFixed(2)}`
+}
+
 export function GiveawayCard({ giveaway }: GiveawayCardProps) {
   const timeRemaining = Math.floor((giveaway.endsAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+  console.log('PRICE DEBUG:', giveaway.ticketPrice, typeof giveaway.ticketPrice)
 
   return (
     <Card className="overflow-hidden transition-shadow hover:shadow-lg">
@@ -38,7 +46,7 @@ export function GiveawayCard({ giveaway }: GiveawayCardProps) {
       <CardFooter className="flex items-center justify-between gap-3 border-t bg-muted/30 p-4">
         <div>
           <div className="text-xs text-muted-foreground">Entry from</div>
-          <div className="text-xl font-bold text-brand">£{giveaway.ticketPrice.toFixed(2)}</div>
+          <div className="text-xl font-bold text-brand">{formatPriceGBP(giveaway.ticketPrice)}</div>
         </div>
         <Button size="lg" className="font-semibold">
           Enter Now
