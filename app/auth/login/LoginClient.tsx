@@ -42,8 +42,7 @@ export default function LoginClient({ redirect }: { redirect: string }) {
       console.log('[login] urlRedirectRaw=', urlRedirectRaw)
       console.log('[login] urlRedirectDecoded=', urlRedirect)
       console.log('[login] finalTarget=', target)
-      router.push(target)
-      router.refresh()
+      window.location.href = target
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : 'An error occurred')
     } finally {
