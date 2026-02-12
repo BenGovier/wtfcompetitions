@@ -34,12 +34,14 @@ export default function LoginClient({ redirect }: { redirect: string }) {
       })
       if (error) throw error
 
-      const raw = redirect
-      const decoded = typeof raw === 'string' ? decodeURIComponent(raw) : ''
-      const target = decoded && decoded.startsWith('/') ? decoded : '/me'
-      console.log('[login] redirect prop raw=', raw)
-      console.log('[login] redirect decoded=', decoded)
-      console.log('[login] redirect target=', target)
+      const urlRedirectRaw = new URLSearchParams(window.location.search).get('redirect')
+      const urlRedirect = urlRedirectRaw ? decodeURIComponent(urlRedirectRaw) : null
+      const candidate = (urlRedirect ?? redirect ?? '/me')
+      const target = typeof candidate === 'string' && candidate.startsWith('/') ? candidate : '/me'
+      console.log('[login] propRedirect=', redirect)
+      console.log('[login] urlRedirectRaw=', urlRedirectRaw)
+      console.log('[login] urlRedirectDecoded=', urlRedirect)
+      console.log('[login] finalTarget=', target)
       router.push(target)
       router.refresh()
     } catch (error: unknown) {
