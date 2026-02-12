@@ -14,12 +14,41 @@ export default async function AccountPage() {
     redirect('/auth/login?redirect=/me')
   }
 
-  // Mock entries data
-  const mockEntries = [
-    { campaign: 'Win a MacBook Pro', date: '2026-02-10', status: 'active' },
-    { campaign: 'PlayStation 5 Giveaway', date: '2026-02-08', status: 'active' },
-    { campaign: 'iPhone 15 Pro Competition', date: '2026-02-05', status: 'ended' },
-  ]
+  // Fetch user's entries
+  let entries: { id: string; giveaway_id: string; qty: number; created_at: string }[] = []
+  let entriesError: string | null = null
+
+  const { data: entriesData, error: entriesErr } = await supabase
+    .from('entries')
+    .select('id, giveaway_id, qty, created_at')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+    .limit(50)
+
+  if (entriesErr) {
+    entriesError = entriesErr.message
+  } else {
+    entries = entriesData ?? []
+  }
+
+  // Fetch giveaway titles from snapshots
+  const titleMap = new Map<string, { title: string; status: string }>()
+  const { data: snapshots } = await supabase
+    .from('giveaway_snapshots')
+    .select('payload')
+    .eq('kind', 'list')
+
+  if (snapshots) {
+    for (const row of snapshots) {
+      const p = row.payload as Record<string, any>
+      if (p?.id) {
+        titleMap.set(String(p.id), {
+          title: p.title || 'Giveaway',
+          status: p.status || 'unknown',
+        })
+      }
+    }
+  }
 
   return (
     <div className="container px-4 py-8">
@@ -80,28 +109,56 @@ export default async function AccountPage() {
           <CardDescription>Your active and past giveaway entries</CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Campaign</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {mockEntries.map((entry, index) => (
-                <TableRow key={index}>
-                  <TableCell className="font-medium">{entry.campaign}</TableCell>
-                  <TableCell>{entry.date}</TableCell>
-                  <TableCell>
-                    <Badge variant={entry.status === 'active' ? 'default' : 'secondary'}>
-                      {entry.status}
-                    </Badge>
-                  </TableCell>
+          {entriesError ? (
+            <p className="py-4 text-sm text-destructive">
+              {'Failed to load entries: ' + entriesError}
+            </p>
+          ) : entries.length === 0 ? (
+            <div className="flex flex-col items-center gap-4 py-8 text-center">
+              <p className="text-sm text-muted-foreground">No entries yet.</p>
+              <Button asChild size="sm">
+                <a href="/giveaways">Browse Giveaways</a>
+              </Button>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Campaign</TableHead>
+                  <TableHead>Qty</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Status</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {entries.map((entry) => {
+                  const snap = titleMap.get(entry.giveaway_id)
+                  const status = snap?.status || 'unknown'
+                  const badgeVariant =
+                    status === 'live' || status === 'active'
+                      ? 'default' as const
+                      : status === 'unknown'
+                        ? 'outline' as const
+                        : 'secondary' as const
+
+                  return (
+                    <TableRow key={entry.id}>
+                      <TableCell className="font-medium">
+                        {snap?.title || 'Giveaway'}
+                      </TableCell>
+                      <TableCell>{entry.qty}</TableCell>
+                      <TableCell>
+                        {new Date(entry.created_at).toLocaleDateString('en-GB')}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={badgeVariant}>{status}</Badge>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
 
