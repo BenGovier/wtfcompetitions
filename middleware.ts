@@ -2,6 +2,7 @@ import { updateSession } from '@/lib/supabase/proxy'
 import { type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
+  console.log('[mw] path=', request.nextUrl.pathname, 'search=', request.nextUrl.search)
   return await updateSession(request)
 }
 
