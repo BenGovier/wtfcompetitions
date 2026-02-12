@@ -8,6 +8,10 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode
 }) {
+  console.log('ADMIN_LAYOUT_SUPABASE_ENV', {
+    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL ? 'set' : 'missing',
+    SUPABASE_URL: process.env.SUPABASE_URL ? 'set' : 'missing'
+  })
   // Verify user is authenticated
   const supabase = await createClient()
   const { data: { user }, error } = await supabase.auth.getUser()
