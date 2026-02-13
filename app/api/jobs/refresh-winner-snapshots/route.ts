@@ -79,8 +79,8 @@ export async function GET(request: NextRequest) {
     const rows = winners.map((w) => {
       const campaign = campaignMap.get(String(w.campaign_id))
       return {
-        winner_id: w.id,
         kind: 'list',
+        campaign_id: w.campaign_id,
         generated_at: generatedAt,
         payload: {
           nickname: w.nickname || 'Winner',
