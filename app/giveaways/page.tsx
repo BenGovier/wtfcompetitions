@@ -1,3 +1,6 @@
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 import { SectionHeader } from "@/components/section-header"
 import { GiveawayCard } from "@/components/giveaway-card"
 import { createClient } from "@/lib/supabase/server"
