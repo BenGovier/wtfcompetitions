@@ -1,11 +1,44 @@
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 import { SectionHeader } from "@/components/section-header"
 import { WinnerSpotlight } from "@/components/winner-spotlight"
 import { WinnersPageClient } from "@/components/winners-page-client"
 import { mockWinners } from "@/lib/mock-data"
+import { createClient } from "@/lib/supabase/server"
 import { ShieldCheck } from "lucide-react"
+import type { WinnerSnapshot } from "@/lib/types"
 
-export default function WinnersPage() {
-  const featuredWinner = mockWinners.find((w) => w.quote) || mockWinners[0]
+export default async function WinnersPage() {
+  let winners: WinnerSnapshot[] = mockWinners
+
+  try {
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from('winner_snapshots')
+      .select('payload')
+      .eq('kind', 'list')
+      .order('generated_at', { ascending: false })
+
+    if (!error && data && data.length > 0) {
+      winners = data.map((row) => {
+        const p = row.payload as Record<string, any>
+        return {
+          name: p.name || p.nickname || 'Winner',
+          avatarUrl: p.avatar_url || '/placeholder.svg',
+          prizeTitle: p.prize_title || 'Prize',
+          giveawayTitle: p.campaign_title || '',
+          giveawaySlug: p.campaign_slug || undefined,
+          announcedAt: p.announced_at || new Date().toISOString(),
+          quote: p.quote || undefined,
+        }
+      })
+    }
+  } catch (err) {
+    console.error('[winners] Failed to fetch winner_snapshots:', err)
+  }
+
+  const featuredWinner = winners.find((w) => w.quote) || winners[0]
 
   return (
     <div className="container px-4 py-8 md:py-12">
@@ -31,7 +64,7 @@ export default function WinnersPage() {
       )}
 
       {/* Client Component for Filtering */}
-      <WinnersPageClient winners={mockWinners} featuredWinner={featuredWinner} />
+      <WinnersPageClient winners={winners} featuredWinner={featuredWinner} />
     </div>
   )
 }
