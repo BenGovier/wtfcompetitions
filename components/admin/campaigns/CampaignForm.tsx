@@ -103,6 +103,15 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
         return
       }
 
+      if (formData.status === 'ended') {
+        try {
+          const token = process.env.NEXT_PUBLIC_CRON_SECRET
+          await fetch(`/api/jobs/refresh-winner-snapshots${token ? `?token=${token}` : ''}`)
+        } catch (e) {
+          console.error('[winners] refresh snapshot trigger failed', e)
+        }
+      }
+
       router.push('/admin/campaigns')
       router.refresh()
     } catch (err: any) {
