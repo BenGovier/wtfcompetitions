@@ -6,7 +6,8 @@ export interface GiveawayPublic {
   imageUrl: string
   ticketPrice: number
   endsAt: Date
-  status: "active" | "ending-soon" | "completed"
+  /** Canonical campaign statuses from DB. UI should not use "active"/"completed". */
+  status: "draft" | "live" | "paused" | "ended"
   prizeValue?: string
   images?: string[]
   bundles?: { qty: number; price: number; label?: string }[]
