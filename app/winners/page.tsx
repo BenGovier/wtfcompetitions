@@ -1,6 +1,3 @@
-export const dynamic = 'force-dynamic'
-export const revalidate = 0
-
 import { SectionHeader } from "@/components/section-header"
 import { WinnerSpotlight } from "@/components/winner-spotlight"
 import { WinnersPageClient } from "@/components/winners-page-client"
@@ -8,6 +5,9 @@ import { mockWinners } from "@/lib/mock-data"
 import { createClient } from "@/lib/supabase/server"
 import { ShieldCheck } from "lucide-react"
 import type { WinnerSnapshot } from "@/lib/types"
+
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 export default async function WinnersPage() {
   let winners: WinnerSnapshot[] = mockWinners
