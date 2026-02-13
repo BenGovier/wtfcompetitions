@@ -30,6 +30,8 @@ export default async function GiveawaysPage() {
           rulesText: 'See full terms and conditions for complete rules.',
         }
       })
+      console.log("SNAPSHOT STATUS DEBUG:", giveaways.map(g => g.status))
+      giveaways = giveaways.filter(g => g.status === "live")
     }
   } catch (err) {
     console.error('[giveaways] Failed to fetch snapshots from Supabase:', err)

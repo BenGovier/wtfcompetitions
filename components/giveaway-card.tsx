@@ -17,7 +17,6 @@ function formatPriceGBP(price: number) {
 
 export function GiveawayCard({ giveaway }: GiveawayCardProps) {
   const timeRemaining = Math.floor((giveaway.endsAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
-  console.log('PRICE DEBUG:', giveaway.ticketPrice, typeof giveaway.ticketPrice)
 
   return (
     <Card className="overflow-hidden transition-shadow hover:shadow-lg">
@@ -28,9 +27,14 @@ export function GiveawayCard({ giveaway }: GiveawayCardProps) {
             alt={giveaway.prizeTitle}
             className="h-full w-full object-cover transition-transform hover:scale-105"
           />
-          {giveaway.status === "ending-soon" && (
+          {giveaway.status === "paused" && (
+            <div className="absolute right-2 top-2 rounded-full bg-muted px-3 py-1 text-xs font-semibold text-muted-foreground">
+              Paused
+            </div>
+          )}
+          {giveaway.status === "ended" && (
             <div className="absolute right-2 top-2 rounded-full bg-destructive px-3 py-1 text-xs font-semibold text-white">
-              Ending Soon
+              Ended
             </div>
           )}
         </div>
@@ -48,7 +52,11 @@ export function GiveawayCard({ giveaway }: GiveawayCardProps) {
           <div className="text-xs text-muted-foreground">Entry from</div>
           <div className="text-xl font-bold text-brand">{formatPriceGBP(giveaway.ticketPrice)}</div>
         </div>
-        <Button size="lg" className="font-semibold">
+        <Button
+          size="lg"
+          className="font-semibold"
+          disabled={giveaway.status !== "live"}
+        >
           Enter Now
         </Button>
       </CardFooter>

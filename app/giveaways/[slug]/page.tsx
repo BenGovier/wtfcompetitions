@@ -39,7 +39,7 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
   const prizeValueText = p.prize_value_text || null
   const heroImageUrl = p.hero_image_url || '/placeholder.svg'
   const images: string[] = p.images || [heroImageUrl]
-  const status = p.status || 'active'
+  const status = p.status as "draft" | "live" | "paused" | "ended"
   const endsAt = new Date(p.ends_at)
   const ticketPrice = (p.base_ticket_price_pence ?? 0) / 100
   const bundles = p.bundles || undefined
@@ -48,7 +48,7 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
   const socialProof = p.social_proof || null
 
   const displayImages = images
-  const isLive = status === "active" || status === "live"
+  const isLive = status === "live"
 
   return (
     <div className="min-h-screen bg-background pb-24 md:pb-8">
