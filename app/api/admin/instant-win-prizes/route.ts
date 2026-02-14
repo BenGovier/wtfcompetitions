@@ -1,5 +1,12 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
+
+function getServiceSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!
+  return createServiceClient(url, key, { auth: { persistSession: false } })
+}
 
 async function authorize(supabase: Awaited<ReturnType<typeof createClient>>) {
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
@@ -25,14 +32,18 @@ export async function GET(request: Request) {
   const campaignId = searchParams.get('campaignId')
   if (!campaignId) return NextResponse.json({ ok: false, error: 'Missing campaignId' }, { status: 400 })
 
-  const { data, error } = await supabase
+  const svc = getServiceSupabase()
+  const { data, error } = await svc
     .from('instant_win_prizes')
     .select('id, campaign_id, prize_title, prize_value_text, unlock_ratio, image_url, created_at')
     .eq('campaign_id', campaignId)
     .order('unlock_ratio', { ascending: true })
     .order('created_at', { ascending: true })
 
-  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+  if (error) {
+    console.error('[instant-win-prizes] GET error:', error)
+    return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+  }
 
   return NextResponse.json({ ok: true, items: data })
 }
@@ -59,12 +70,16 @@ export async function POST(request: Request) {
     image_url: item.image_url ?? null,
   }))
 
-  const { data, error } = await supabase
+  const svc = getServiceSupabase()
+  const { data, error } = await svc
     .from('instant_win_prizes')
     .insert(rows)
     .select('id, campaign_id, prize_title, prize_value_text, unlock_ratio, image_url, created_at')
 
-  if (error) return NextResponse.json({ ok: false, error: error.message, details: error }, { status: 500 })
+  if (error) {
+    console.error('[instant-win-prizes] POST error:', error)
+    return NextResponse.json({ ok: false, error: error.message, details: error }, { status: 500 })
+  }
 
   return NextResponse.json({ ok: true, items: data })
 }
@@ -91,13 +106,17 @@ export async function PUT(request: Request) {
   if (body.unlock_ratio !== undefined) update.unlock_ratio = body.unlock_ratio
   if (body.image_url !== undefined) update.image_url = body.image_url
 
-  const { error } = await supabase
+  const svc = getServiceSupabase()
+  const { error } = await svc
     .from('instant_win_prizes')
     .update(update)
     .eq('id', body.id)
     .eq('campaign_id', body.campaign_id)
 
-  if (error) return NextResponse.json({ ok: false, error: error.message, details: error }, { status: 500 })
+  if (error) {
+    console.error('[instant-win-prizes] PUT error:', error)
+    return NextResponse.json({ ok: false, error: error.message, details: error }, { status: 500 })
+  }
 
   return NextResponse.json({ ok: true })
 }
@@ -112,13 +131,17 @@ export async function DELETE(request: Request) {
   const campaignId = searchParams.get('campaignId')
   if (!id || !campaignId) return NextResponse.json({ ok: false, error: 'Missing id or campaignId' }, { status: 400 })
 
-  const { error } = await supabase
+  const svc = getServiceSupabase()
+  const { error } = await svc
     .from('instant_win_prizes')
     .delete()
     .eq('id', id)
     .eq('campaign_id', campaignId)
 
-  if (error) return NextResponse.json({ ok: false, error: error.message, details: error }, { status: 500 })
+  if (error) {
+    console.error('[instant-win-prizes] DELETE error:', error)
+    return NextResponse.json({ ok: false, error: error.message, details: error }, { status: 500 })
+  }
 
   return NextResponse.json({ ok: true })
 }
