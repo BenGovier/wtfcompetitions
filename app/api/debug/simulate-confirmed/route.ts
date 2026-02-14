@@ -138,7 +138,7 @@ export async function GET(request: NextRequest) {
         .from('instant_win_awards')
         .insert({
           campaign_id: campaignId,
-          giveaway_id: prize.giveaway_id,
+          giveaway_id: campaignId,
           checkout_intent_id: intent.id,
           prize_id: prize.id,
           awarded_at: nowIso,
