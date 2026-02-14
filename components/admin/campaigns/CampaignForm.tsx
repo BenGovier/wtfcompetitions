@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import Image from "next/image"
@@ -18,6 +18,8 @@ import {
 } from "@/components/ui/select"
 import { createClient } from "@/lib/supabase/client"
 import type { Campaign } from "@/lib/types/campaign"
+import type { InstantWinPrizeRow } from "@/lib/types/instantWins"
+import { Trash2, Save, Upload, Plus, Wand2 } from "lucide-react"
 
 interface CampaignFormProps {
   campaign: Campaign
@@ -34,12 +36,50 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
   const [saveError, setSaveError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Instant wins state
+  const [instantWins, setInstantWins] = useState<InstantWinPrizeRow[]>([])
+  const [iwLoading, setIwLoading] = useState(false)
+  const [iwError, setIwError] = useState<string | null>(null)
+  const [iwSaving, setIwSaving] = useState<Record<string, boolean>>({})
+  const [iwUploadingId, setIwUploadingId] = useState<string | null>(null)
+
+  // Ladder generator state
+  const [ladderCount, setLadderCount] = useState(5)
+  const [ladderStart, setLadderStart] = useState(0.01)
+  const [ladderEnd, setLadderEnd] = useState(0.95)
+
+  const campaignId = formData.id || campaign.id
+
   const handleChange = (
     field: keyof Campaign,
     value: string | number | null
   ) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
   }
+
+  // Fetch instant wins when campaign has an id
+  const fetchInstantWins = useCallback(async () => {
+    if (!campaignId) return
+    setIwLoading(true)
+    setIwError(null)
+    try {
+      const res = await fetch(`/api/admin/instant-win-prizes?campaignId=${campaignId}`)
+      const json = await res.json()
+      if (!res.ok || !json.ok) {
+        setIwError(json.error || 'Failed to fetch instant wins')
+        return
+      }
+      setInstantWins(json.items || [])
+    } catch (err: any) {
+      setIwError(err?.message || 'Failed to fetch instant wins')
+    } finally {
+      setIwLoading(false)
+    }
+  }, [campaignId])
+
+  useEffect(() => {
+    if (campaignId) fetchInstantWins()
+  }, [campaignId, fetchInstantWins])
 
   async function handleUpload() {
     if (!selectedFile) return
@@ -118,6 +158,168 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
       setSaveError(err?.message || 'Save failed')
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  // --- Instant Win handlers ---
+
+  async function handleAddPrize() {
+    if (!campaignId) return
+    setIwError(null)
+    try {
+      const res = await fetch('/api/admin/instant-win-prizes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          campaign_id: campaignId,
+          prize_title: 'New Prize',
+          unlock_ratio: 0.5,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) {
+        setIwError(json.error || 'Failed to add prize')
+        return
+      }
+      setInstantWins((prev) => [...prev, ...(json.items || [])])
+    } catch (err: any) {
+      setIwError(err?.message || 'Failed to add prize')
+    }
+  }
+
+  async function handleGenerateLadder() {
+    if (!campaignId || ladderCount < 1) return
+    setIwError(null)
+    const items = []
+    for (let i = 0; i < ladderCount; i++) {
+      const ratio = ladderCount === 1
+        ? ladderStart
+        : ladderStart + (ladderEnd - ladderStart) * (i / (ladderCount - 1))
+      items.push({
+        campaign_id: campaignId,
+        prize_title: `Instant Win #${i + 1}`,
+        unlock_ratio: Math.round(ratio * 1000) / 1000,
+      })
+    }
+
+    try {
+      const res = await fetch('/api/admin/instant-win-prizes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) {
+        setIwError(json.error || 'Failed to generate ladder')
+        return
+      }
+      setInstantWins((prev) => [...prev, ...(json.items || [])])
+    } catch (err: any) {
+      setIwError(err?.message || 'Failed to generate ladder')
+    }
+  }
+
+  function handlePrizeFieldChange(id: string, field: keyof InstantWinPrizeRow, value: string | number | null) {
+    setInstantWins((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, [field]: value } : p))
+    )
+  }
+
+  async function handleSavePrize(prize: InstantWinPrizeRow) {
+    const ratio = Number(prize.unlock_ratio)
+    if (isNaN(ratio) || ratio < 0 || ratio > 1) {
+      setIwError(`Unlock ratio for "${prize.prize_title}" must be between 0 and 1`)
+      return
+    }
+
+    setIwSaving((prev) => ({ ...prev, [prize.id]: true }))
+    setIwError(null)
+    try {
+      const res = await fetch('/api/admin/instant-win-prizes', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: prize.id,
+          campaign_id: prize.campaign_id,
+          prize_title: prize.prize_title,
+          prize_value_text: prize.prize_value_text,
+          unlock_ratio: ratio,
+          image_url: prize.image_url,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) {
+        setIwError(json.error || 'Failed to save prize')
+      }
+    } catch (err: any) {
+      setIwError(err?.message || 'Failed to save prize')
+    } finally {
+      setIwSaving((prev) => ({ ...prev, [prize.id]: false }))
+    }
+  }
+
+  async function handleDeletePrize(prizeId: string) {
+    if (!confirm('Delete this instant win prize?')) return
+    setIwError(null)
+    try {
+      const res = await fetch(`/api/admin/instant-win-prizes?id=${prizeId}&campaignId=${campaignId}`, {
+        method: 'DELETE',
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) {
+        setIwError(json.error || 'Failed to delete prize')
+        return
+      }
+      setInstantWins((prev) => prev.filter((p) => p.id !== prizeId))
+    } catch (err: any) {
+      setIwError(err?.message || 'Failed to delete prize')
+    }
+  }
+
+  async function handlePrizeImageUpload(prize: InstantWinPrizeRow, file: File) {
+    setIwUploadingId(prize.id)
+    setIwError(null)
+    try {
+      const supabase = createClient()
+      const safeName = file.name.toLowerCase().replace(/\s+/g, '-')
+      const path = `campaigns/${campaignId}/${prize.id}/${Date.now()}-${safeName}`
+
+      const { error } = await supabase.storage
+        .from('instant-win-prizes')
+        .upload(path, file, { upsert: true, contentType: file.type })
+
+      if (error) {
+        setIwError(error.message)
+        return
+      }
+
+      const { data: publicUrlData } = supabase.storage
+        .from('instant-win-prizes')
+        .getPublicUrl(path)
+
+      const imageUrl = publicUrlData.publicUrl
+
+      // Update local state
+      handlePrizeFieldChange(prize.id, 'image_url', imageUrl)
+
+      // Persist to DB
+      const res = await fetch('/api/admin/instant-win-prizes', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: prize.id,
+          campaign_id: prize.campaign_id,
+          image_url: imageUrl,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) {
+        setIwError(json.error || 'Failed to update image URL')
+      }
+    } catch (err: any) {
+      setIwError(err?.message || 'Image upload failed')
+    } finally {
+      setIwUploadingId(null)
     }
   }
 
@@ -368,6 +570,190 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
               placeholder="Leave empty for unlimited"
             />
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Instant Wins Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Instant Wins</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-xs text-muted-foreground">
+            Unlock ratio = ticketsSold / maxTicketsTotal threshold. We cap ladder end at 0.95 so prizes
+            don&apos;t all release at the very end.
+          </p>
+
+          {!campaignId ? (
+            <p className="text-sm text-muted-foreground italic">
+              Save campaign first to add instant wins.
+            </p>
+          ) : (
+            <>
+              {/* Ladder Generator */}
+              <div className="rounded-md border p-4 space-y-3">
+                <p className="text-sm font-medium">Generate Ladder</p>
+                <div className="flex flex-wrap items-end gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Prizes (N)</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={100}
+                      className="w-20"
+                      value={ladderCount}
+                      onChange={(e) => setLadderCount(Number(e.target.value))}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Start Ratio</Label>
+                    <Input
+                      type="number"
+                      step={0.01}
+                      min={0}
+                      max={1}
+                      className="w-24"
+                      value={ladderStart}
+                      onChange={(e) => setLadderStart(Number(e.target.value))}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">End Ratio</Label>
+                    <Input
+                      type="number"
+                      step={0.01}
+                      min={0}
+                      max={1}
+                      className="w-24"
+                      value={ladderEnd}
+                      onChange={(e) => setLadderEnd(Number(e.target.value))}
+                    />
+                  </div>
+                  <Button type="button" variant="outline" size="sm" onClick={handleGenerateLadder}>
+                    <Wand2 className="mr-1 h-4 w-4" />
+                    Generate
+                  </Button>
+                </div>
+              </div>
+
+              {/* Add single */}
+              <Button type="button" variant="outline" size="sm" onClick={handleAddPrize}>
+                <Plus className="mr-1 h-4 w-4" />
+                Add Instant Win
+              </Button>
+
+              {iwLoading && <p className="text-sm text-muted-foreground">Loading instant wins...</p>}
+
+              {iwError && <p className="text-sm text-destructive">{iwError}</p>}
+
+              {/* Prize list */}
+              {instantWins.length > 0 && (
+                <div className="space-y-3">
+                  {instantWins.map((prize) => (
+                    <div key={prize.id} className="rounded-md border p-3 space-y-3">
+                      <div className="flex flex-wrap items-start gap-3">
+                        {/* Thumbnail */}
+                        {prize.image_url && (
+                          <Image
+                            src={prize.image_url}
+                            alt={prize.prize_title}
+                            width={48}
+                            height={48}
+                            className="rounded border object-cover"
+                            unoptimized
+                          />
+                        )}
+
+                        <div className="flex-1 space-y-2 min-w-[200px]">
+                          <div className="flex flex-wrap gap-2">
+                            <div className="flex-1 min-w-[150px] space-y-1">
+                              <Label className="text-xs">Prize Title</Label>
+                              <Input
+                                value={prize.prize_title}
+                                onChange={(e) =>
+                                  handlePrizeFieldChange(prize.id, 'prize_title', e.target.value)
+                                }
+                                placeholder="Prize title"
+                              />
+                            </div>
+                            <div className="w-32 space-y-1">
+                              <Label className="text-xs">Value Text</Label>
+                              <Input
+                                value={prize.prize_value_text || ''}
+                                onChange={(e) =>
+                                  handlePrizeFieldChange(prize.id, 'prize_value_text', e.target.value || null)
+                                }
+                                placeholder="e.g. £50"
+                              />
+                            </div>
+                            <div className="w-28 space-y-1">
+                              <Label className="text-xs">Unlock Ratio</Label>
+                              <Input
+                                type="number"
+                                step={0.01}
+                                min={0}
+                                max={1}
+                                value={prize.unlock_ratio}
+                                onChange={(e) =>
+                                  handlePrizeFieldChange(prize.id, 'unlock_ratio', Number(e.target.value))
+                                }
+                              />
+                            </div>
+                          </div>
+
+                          {/* Image upload */}
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="file"
+                              accept="image/*"
+                              className="max-w-xs text-xs"
+                              disabled={iwUploadingId === prize.id}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0]
+                                if (file) handlePrizeImageUpload(prize, file)
+                              }}
+                            />
+                            {iwUploadingId === prize.id && (
+                              <span className="text-xs text-muted-foreground">Uploading...</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex gap-1 pt-5">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            disabled={!!iwSaving[prize.id]}
+                            onClick={() => handleSavePrize(prize)}
+                            title="Save prize"
+                          >
+                            <Save className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            onClick={() => handleDeletePrize(prize.id)}
+                            title="Delete prize"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {!iwLoading && instantWins.length === 0 && (
+                <p className="text-sm text-muted-foreground italic">
+                  No instant wins yet. Add one or generate a ladder.
+                </p>
+              )}
+            </>
+          )}
         </CardContent>
       </Card>
 

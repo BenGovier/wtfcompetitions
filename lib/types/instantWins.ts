@@ -36,6 +36,17 @@ export type ReleaseRule = {
   eligibleTiers: InstantWinTier[]
 }
 
+/** DB-aligned row from instant_win_prizes table */
+export type InstantWinPrizeRow = {
+  id: string
+  campaign_id: string
+  prize_title: string
+  prize_value_text: string | null
+  unlock_ratio: number
+  image_url: string | null
+  created_at: string
+}
+
 export type InstantWinAttemptLog = {
   id: string
   campaignId: string
