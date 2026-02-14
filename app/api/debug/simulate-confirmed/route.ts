@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { randomUUID } from 'crypto'
 
+const VERSION = 'simulate-confirmed-v2'
+
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
@@ -104,7 +106,7 @@ export async function GET(request: NextRequest) {
     // 6) Fetch eligible instant-win prizes (unlock_ratio <= currentRatio)
     const { data: allPrizes, error: prizesErr } = await supabase
       .from('instant_win_prizes')
-      .select('id, title, value_text, unlock_ratio')
+      .select('id, prize_title, prize_value_text, unlock_ratio')
       .eq('campaign_id', campaignId)
 
     if (prizesErr) {
@@ -146,15 +148,17 @@ export async function GET(request: NextRequest) {
       }
 
       return NextResponse.json({
+        version: VERSION,
         ok: true,
         won: true,
-        prize: { id: prize.id, title: prize.title, valueText: prize.value_text },
+        prize: { id: prize.id, title: prize.prize_title, valueText: prize.prize_value_text, unlockRatio: prize.unlock_ratio },
         ticketsSold,
         ratio,
       })
     }
 
     return NextResponse.json({
+      version: VERSION,
       ok: true,
       won: false,
       ticketsSold,
