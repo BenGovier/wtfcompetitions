@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { randomUUID } from 'crypto'
 
+const VERSION = 'simulate-confirmed-v2'
+
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
@@ -146,15 +148,17 @@ export async function GET(request: NextRequest) {
       }
 
       return NextResponse.json({
+        version: VERSION,
         ok: true,
         won: true,
-        prize: { id: prize.id, title: prize.prize_title, valueText: prize.prize_value_text },
+        prize: { id: prize.id, title: prize.prize_title, valueText: prize.prize_value_text, unlockRatio: prize.unlock_ratio },
         ticketsSold,
         ratio,
       })
     }
 
     return NextResponse.json({
+      version: VERSION,
       ok: true,
       won: false,
       ticketsSold,
