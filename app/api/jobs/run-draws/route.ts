@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
         const { data: sumData, error: sumErr } = await supabase
           .from('entries')
           .select('qty')
-          .eq('giveaway_id', campaign.id)
+          .eq('campaign_id', campaign.id)
 
         if (sumErr) {
           summary.errors.push(`${campaign.id}: entries query failed - ${sumErr.message}`)
@@ -102,7 +102,7 @@ export async function GET(request: NextRequest) {
         const { data: entries, error: entriesErr } = await supabase
           .from('entries')
           .select('user_id, qty')
-          .eq('giveaway_id', campaign.id)
+          .eq('campaign_id', campaign.id)
           .order('created_at', { ascending: true })
 
         if (entriesErr || !entries || entries.length === 0) {
