@@ -27,12 +27,11 @@ export async function GET(request: NextRequest) {
   const summary = { ok: true, processed: 0, ended: 0, extended: 0, errors: [] as string[] }
 
   try {
-    // 1) Fetch eligible campaigns: live + end_at <= now
+    // 1) Fetch eligible campaigns: live or sold_out
     const { data: campaigns, error: fetchErr } = await supabase
       .from('campaigns')
-      .select('id, title, slug, status, end_at, main_prize_title')
-      .eq('status', 'live')
-      .lte('end_at', new Date().toISOString())
+      .select('id, title, slug, status, end_at, main_prize_title, max_tickets_total')
+      .in('status', ['live', 'sold_out'])
       .order('end_at', { ascending: true })
       .limit(10)
 
@@ -62,7 +61,28 @@ export async function GET(request: NextRequest) {
 
         const ticketsSold = (sumData ?? []).reduce((acc, row) => acc + (row.qty || 0), 0)
 
-        // b) If zero sales, extend by 7 days
+        // b) Hard-cap: if max_tickets_total reached and not yet sold_out, mark sold_out
+        if (
+          campaign.max_tickets_total != null &&
+          ticketsSold >= campaign.max_tickets_total &&
+          campaign.status !== 'sold_out'
+        ) {
+          await supabase
+            .from('campaigns')
+            .update({ status: 'sold_out' })
+            .eq('id', campaign.id)
+          campaign.status = 'sold_out'
+        }
+
+        // c) Eligibility: only draw if sold_out or past end_at
+        const isPastEnd = new Date(campaign.end_at) <= new Date()
+        const isEligibleToDraw = campaign.status === 'sold_out' || isPastEnd
+
+        if (!isEligibleToDraw) {
+          continue
+        }
+
+        // d) If zero sales, extend by 7 days
         if (ticketsSold === 0) {
           const currentEnd = new Date(campaign.end_at)
           const newEnd = new Date(currentEnd.getTime() + 7 * 24 * 60 * 60 * 1000)
@@ -80,7 +100,7 @@ export async function GET(request: NextRequest) {
           continue
         }
 
-        // c) Idempotency: check if winner already exists for this campaign
+        // e) Idempotency: check if winner already exists for this campaign
         const { data: existingWinner } = await supabase
           .from('winners')
           .select('id')
@@ -98,7 +118,7 @@ export async function GET(request: NextRequest) {
           continue
         }
 
-        // d) Pick winner weighted by qty
+        // f) Pick winner weighted by qty
         const { data: entries, error: entriesErr } = await supabase
           .from('entries')
           .select('user_id, qty')
@@ -128,7 +148,7 @@ export async function GET(request: NextRequest) {
           continue
         }
 
-        // e) Insert winner
+        // g) Insert winner
         const { error: winErr } = await supabase
           .from('winners')
           .insert({
@@ -144,7 +164,7 @@ export async function GET(request: NextRequest) {
           continue
         }
 
-        // f) Set campaign to ended
+        // h) Set campaign to ended
         const { error: endErr } = await supabase
           .from('campaigns')
           .update({ status: 'ended' })
@@ -156,7 +176,7 @@ export async function GET(request: NextRequest) {
 
         summary.ended++
 
-        // g) Trigger snapshot refreshes (non-blocking, collect errors)
+        // i) Trigger snapshot refreshes (non-blocking, collect errors)
         try {
           const baseUrl = request.nextUrl.origin
           await fetch(`${baseUrl}/api/jobs/refresh-winner-snapshots?token=${expectedToken}`)
