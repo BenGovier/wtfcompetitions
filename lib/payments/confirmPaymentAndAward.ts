@@ -98,20 +98,10 @@ export async function confirmPaymentAndAward(args: ConfirmArgs): Promise<AwardPa
     throw new Error(`RPC confirm_payment_and_award failed: ${rpcErr.message}`)
   }
 
-  // 5) Map RPC result to AwardPayload
-  const row = rpcData as Record<string, any>
-
-  return {
-    confirmed: true,
-    checkout_ref: ref,
-    qty: row.qty ?? 0,
-    won: !!row.won,
-    prize: row.won
-      ? {
-          title: row.prize_title ?? '',
-          value_text: row.prize_value_text ?? null,
-          image_url: row.prize_image_url ?? null,
-        }
-      : null,
+  // 5) Return RPC result directly as AwardPayload (Postgres returns jsonb)
+  if (!rpcData || typeof rpcData !== 'object') {
+    throw new Error('invalid_rpc_payload')
   }
+
+  return rpcData as AwardPayload
 }
