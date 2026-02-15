@@ -42,6 +42,7 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
   const status = p.status as "draft" | "live" | "paused" | "ended"
   const endsAt = new Date(p.ends_at)
   const ticketPrice = (p.base_ticket_price_pence ?? 0) / 100
+  const campaignId = p.id as string
   const bundles = p.bundles || undefined
   const rulesText = p.rules_text || 'See full terms and conditions for complete rules.'
   const faqSnippet = p.faq_snippet || null
@@ -105,7 +106,7 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
               <Separator />
 
               <div id="ticket-selector" className="scroll-mt-24">
-                <TicketSelector basePrice={ticketPrice} bundles={bundles} />
+                <TicketSelector basePrice={ticketPrice} bundles={bundles} campaignId={campaignId} />
               </div>
             </div>
           </div>

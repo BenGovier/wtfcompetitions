@@ -15,9 +15,10 @@ interface Bundle {
 interface TicketSelectorProps {
   basePrice: number
   bundles?: Bundle[]
+  campaignId: string
 }
 
-export function TicketSelector({ basePrice, bundles }: TicketSelectorProps) {
+export function TicketSelector({ basePrice, bundles, campaignId }: TicketSelectorProps) {
   const [selectedBundle, setSelectedBundle] = useState<Bundle | null>(
     bundles?.length ? null : { qty: 1, price: basePrice },
   )
@@ -38,8 +39,25 @@ export function TicketSelector({ basePrice, bundles }: TicketSelectorProps) {
     setError(null)
 
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-      console.log("[v0] Starting checkout:", { qty: currentQty, total: currentTotal })
+      const res = await fetch('/api/checkout/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaignId, qty: currentQty }),
+      })
+
+      if (res.status === 401) {
+        window.location.href = '/auth/login'
+        return
+      }
+
+      const json = await res.json()
+
+      if (res.ok && json.ok && json.ref) {
+        window.location.href = `/checkout/success?ref=${encodeURIComponent(json.ref)}&provider=debug`
+        return
+      }
+
+      setError(json.error || 'Something went wrong. Please try again.')
     } catch {
       setError("We couldn't start checkout. Please try again.")
     } finally {
