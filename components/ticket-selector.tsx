@@ -46,18 +46,25 @@ export function TicketSelector({ basePrice, bundles, campaignId }: TicketSelecto
       })
 
       if (res.status === 401) {
-        window.location.href = '/auth/login'
+        const returnTo = window.location.pathname + window.location.search + '#ticket-selector'
+        window.location.href = `/auth/login?redirect=${encodeURIComponent(returnTo)}`
         return
       }
 
-      const json = await res.json()
+      let json: Record<string, unknown>
+      try {
+        json = await res.json()
+      } catch {
+        setError('Something went wrong. Please try again.')
+        return
+      }
 
       if (res.ok && json.ok && json.ref) {
-        window.location.href = `/checkout/success?ref=${encodeURIComponent(json.ref)}&provider=debug`
+        window.location.href = `/checkout/success?ref=${encodeURIComponent(json.ref as string)}&provider=debug`
         return
       }
 
-      setError(json.error || 'Something went wrong. Please try again.')
+      setError((json.error as string) || 'Something went wrong. Please try again.')
     } catch {
       setError("We couldn't start checkout. Please try again.")
     } finally {
