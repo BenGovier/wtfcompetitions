@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation"
 import Link from "next/link"
-import { createClient } from "@/lib/supabase/server"
+import { createPublicClient } from "@/lib/supabase/public"
 import { CountdownBadge } from "@/components/countdown-badge"
 import { TicketSelector } from "@/components/ticket-selector"
 import { SocialProofRow } from "@/components/social-proof-row"
@@ -11,6 +11,8 @@ import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Shield, Award, ChevronRight } from "lucide-react"
 
+export const revalidate = 60
+
 interface GiveawayPageProps {
   params: Promise<{
     slug: string
@@ -19,7 +21,7 @@ interface GiveawayPageProps {
 
 export default async function GiveawayPage({ params }: GiveawayPageProps) {
   const { slug } = await params
-  const supabase = await createClient()
+  const supabase = createPublicClient()
 
   const { data: row, error } = await supabase
     .from('giveaway_snapshots')
