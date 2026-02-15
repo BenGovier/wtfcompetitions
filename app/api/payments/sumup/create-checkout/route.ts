@@ -5,8 +5,6 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-const NO_STORE = { headers: { 'Cache-Control': 'no-store' } }
-
 function getServiceSupabase() {
   return createServiceClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -23,78 +21,124 @@ export async function POST(request: Request) {
   } = await supabase.auth.getUser()
 
   if (!user) {
-    return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401, ...NO_STORE })
+    return NextResponse.json({ ok: false, error: 'Not authenticated' }, { status: 401 })
   }
 
-  // 2) Validate body
+  // 2) Parse body
   let body: Record<string, unknown>
   try {
     body = await request.json()
   } catch {
-    return NextResponse.json({ ok: false, error: 'Invalid JSON' }, { status: 400, ...NO_STORE })
+    return NextResponse.json({ ok: false, error: 'Missing or invalid ref' }, { status: 400 })
   }
 
   const ref = body.ref as string | undefined
   if (!ref || typeof ref !== 'string') {
-    return NextResponse.json({ ok: false, error: 'Missing ref' }, { status: 400, ...NO_STORE })
+    return NextResponse.json({ ok: false, error: 'Missing or invalid ref' }, { status: 400 })
   }
 
-  // 3) Load checkout_intent (anon cookie client, scoped to user)
-  const { data: intent, error: intentErr } = await supabase
+  // 3) Fetch checkout_intent via service role
+  const svc = getServiceSupabase()
+  const { data: intent, error: intentErr } = await svc
     .from('checkout_intents')
-    .select('ref, user_id, total_pence, currency, state')
+    .select('ref, user_id, total_pence, currency, state, provider_session_id')
     .eq('ref', ref)
-    .eq('user_id', user.id)
     .single()
 
   if (intentErr || !intent) {
-    return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404, ...NO_STORE })
+    return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 })
   }
 
-  // 4) Already confirmed
-  if (intent.state === 'confirmed') {
-    return NextResponse.json({ ok: true, alreadyConfirmed: true }, NO_STORE)
+  // 4) Ownership check
+  if (intent.user_id !== user.id) {
+    return NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 })
   }
 
-  // 5) Call SumUp API
+  // 5) State check
+  if (intent.state !== 'pending') {
+    return NextResponse.json({ ok: false, error: 'Intent is not pending' }, { status: 409 })
+  }
+
+  // 6) Env vars
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL
   const sumupToken = process.env.SUMUP_ACCESS_TOKEN
 
-  if (!siteUrl || !sumupToken) {
-    console.error('[payments/sumup] Missing NEXT_PUBLIC_SITE_URL or SUMUP_ACCESS_TOKEN')
-    return NextResponse.json({ ok: false }, { status: 500, ...NO_STORE })
+  if (!sumupToken) {
+    console.error('[payments/sumup] Missing SUMUP_ACCESS_TOKEN')
+    return NextResponse.json({ ok: false, error: 'Server configuration error' }, { status: 500 })
   }
 
-  const amountDecimal = (intent.total_pence / 100).toFixed(2)
+  if (!siteUrl) {
+    console.error('[payments/sumup] Missing NEXT_PUBLIC_SITE_URL')
+    return NextResponse.json({ ok: false, error: 'Server configuration error' }, { status: 500 })
+  }
+
+  const redirectUrl = `${siteUrl}/checkout/success?ref=${encodeURIComponent(ref)}&provider=sumup`
+  const webhookUrl = `${siteUrl}/api/webhooks/sumup`
+
+  // 7) If provider_session_id already exists, retrieve existing checkout
+  if (intent.provider_session_id) {
+    try {
+      const getRes = await fetch(
+        `https://api.sumup.com/v0.1/checkouts/${encodeURIComponent(intent.provider_session_id)}`,
+        {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${sumupToken}` },
+        },
+      )
+
+      if (!getRes.ok) {
+        console.error('[payments/sumup] SumUp GET error:', getRes.status)
+        return NextResponse.json({ ok: false, error: 'sumup_checkout_retrieval_failed' }, { status: 502 })
+      }
+
+      const getData = await getRes.json()
+      const checkoutUrl =
+        (getData.hosted_checkout_url as string) ||
+        (getData.checkout_url as string) ||
+        (getData.url as string) ||
+        ''
+
+      if (!checkoutUrl) {
+        return NextResponse.json({ ok: false, error: 'sumup_missing_checkout_url' }, { status: 502 })
+      }
+
+      return NextResponse.json({ ok: true, checkoutUrl })
+    } catch (err: any) {
+      console.error('[payments/sumup] SumUp GET fetch error:', err?.message)
+      return NextResponse.json({ ok: false, error: 'sumup_checkout_retrieval_failed' }, { status: 502 })
+    }
+  }
+
+  // 8) Create new SumUp checkout
+  const amountDecimal = parseFloat((intent.total_pence / 100).toFixed(2))
 
   let sumupData: Record<string, unknown>
   try {
     const sumupRes = await fetch('https://api.sumup.com/v0.1/checkouts', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${sumupToken}`,
+        Authorization: `Bearer ${sumupToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        amount: parseFloat(amountDecimal),
-        currency: 'GBP',
+        amount: amountDecimal,
+        currency: intent.currency || 'GBP',
         checkout_reference: ref,
-        description: `WTF Giveaways entry (${ref})`,
-        redirect_url: `${siteUrl}/checkout/success?ref=${encodeURIComponent(ref)}&provider=sumup`,
-        return_url: `${siteUrl}/api/webhooks/sumup`,
+        redirect_url: redirectUrl,
+        webhook_url: webhookUrl,
       }),
     })
 
     if (!sumupRes.ok) {
-      const errText = await sumupRes.text().catch(() => '')
-      console.error('[payments/sumup] SumUp API error:', sumupRes.status, errText)
-      return NextResponse.json({ ok: false }, { status: 502, ...NO_STORE })
+      console.error('[payments/sumup] SumUp POST error:', sumupRes.status)
+      return NextResponse.json({ ok: false, error: 'sumup_checkout_creation_failed' }, { status: 502 })
     }
 
     sumupData = await sumupRes.json()
   } catch (err: any) {
-    console.error('[payments/sumup] SumUp fetch error:', err?.message)
-    return NextResponse.json({ ok: false }, { status: 502, ...NO_STORE })
+    console.error('[payments/sumup] SumUp POST fetch error:', err?.message)
+    return NextResponse.json({ ok: false, error: 'sumup_checkout_creation_failed' }, { status: 502 })
   }
 
   const checkoutId = (sumupData.id as string) || ''
@@ -104,13 +148,12 @@ export async function POST(request: Request) {
     (sumupData.url as string) ||
     ''
 
-  if (!checkoutId) {
-    console.error('[payments/sumup] No checkout id in SumUp response:', Object.keys(sumupData))
-    return NextResponse.json({ ok: false }, { status: 502, ...NO_STORE })
+  if (!checkoutId || !checkoutUrl) {
+    console.error('[payments/sumup] Missing id or checkout_url in response:', Object.keys(sumupData))
+    return NextResponse.json({ ok: false, error: 'sumup_checkout_creation_failed' }, { status: 502 })
   }
 
-  // 6) Update checkout_intent with provider details (service role)
-  const svc = getServiceSupabase()
+  // 9) Update checkout_intent with provider details
   const { error: updateErr } = await svc
     .from('checkout_intents')
     .update({
@@ -122,9 +165,8 @@ export async function POST(request: Request) {
 
   if (updateErr) {
     console.error('[payments/sumup] DB update error:', updateErr)
-    return NextResponse.json({ ok: false }, { status: 500, ...NO_STORE })
+    return NextResponse.json({ ok: false, error: 'Failed to update intent' }, { status: 500 })
   }
 
-  // 7) Success
-  return NextResponse.json({ ok: true, checkoutId, checkoutUrl }, NO_STORE)
+  return NextResponse.json({ ok: true, checkoutUrl })
 }
