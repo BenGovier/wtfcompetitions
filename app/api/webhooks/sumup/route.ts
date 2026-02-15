@@ -35,15 +35,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
-  const eventType = body.event_type as string | undefined
   const checkoutId = body.id as string | undefined
 
-  if (!eventType || !checkoutId) {
-    return NextResponse.json({ ok: true })
-  }
-
-  // 3) Only handle CHECKOUT_STATUS_CHANGED
-  if (eventType !== 'CHECKOUT_STATUS_CHANGED') {
+  if (!checkoutId) {
     return NextResponse.json({ ok: true })
   }
 
@@ -120,27 +114,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
-  // 7) Confirm + award via RPC (idempotent, forward-compatible)
+  // 7) Confirm + award via RPC (idempotent)
   const { error: rpcErr } = await supabase.rpc('confirm_payment_and_award', {
     p_ref: intent.ref,
+    p_user_id: intent.user_id,
   })
 
   if (rpcErr) {
-    const msg = rpcErr.message || ''
-    if (msg.includes('function') || msg.includes('p_user_id') || msg.includes('parameters')) {
-      // Retry with p_user_id for older RPC signature
-      const { error: retryErr } = await supabase.rpc('confirm_payment_and_award', {
-        p_ref: intent.ref,
-        p_user_id: intent.user_id,
-      })
-      if (retryErr) {
-        console.error('[webhooks/sumup] RPC retry error:', retryErr)
-        return NextResponse.json({ ok: false }, { status: 500 })
-      }
-    } else {
-      console.error('[webhooks/sumup] RPC error:', rpcErr)
-      return NextResponse.json({ ok: false }, { status: 500 })
-    }
+    console.error('[webhooks/sumup] RPC error:', rpcErr)
+    return NextResponse.json({ ok: false }, { status: 500 })
   }
 
   console.log('[webhooks/sumup] confirmed:', intent.ref)
