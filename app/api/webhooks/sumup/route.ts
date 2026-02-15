@@ -12,7 +12,7 @@ function getServiceSupabase() {
   )
 }
 
-const PAID_STATUSES = new Set(['paid', 'successful'])
+const PAID_STATUSES = new Set(['paid', 'successful', 'completed'])
 const FAILED_STATUSES = new Set(['failed', 'cancelled', 'expired'])
 
 export async function POST(request: NextRequest) {
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
   const sumupToken = process.env.SUMUP_ACCESS_TOKEN
   if (!sumupToken) {
     console.error('[webhooks/sumup] SUMUP_ACCESS_TOKEN not configured')
-    return NextResponse.json({ ok: false, error: 'Server misconfiguration' }, { status: 500 })
+    return NextResponse.json({ ok: false }, { status: 500 })
   }
 
   let sumupStatus: string
@@ -66,6 +66,10 @@ export async function POST(request: NextRequest) {
 
     const verifyData = await verifyRes.json()
     sumupStatus = (verifyData.status as string || '').toLowerCase()
+
+    if (!PAID_STATUSES.has(sumupStatus) && !FAILED_STATUSES.has(sumupStatus)) {
+      console.log('[webhooks/sumup] status_raw=', verifyData.status, 'payload_keys=', Object.keys(verifyData || {}))
+    }
   } catch (err: any) {
     console.error('[webhooks/sumup] SumUp API error:', err?.message)
     return NextResponse.json({ ok: false }, { status: 500 })
@@ -113,15 +117,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
-  // 7) Confirm + award via RPC (idempotent)
+  // 7) Confirm + award via RPC (idempotent, forward-compatible)
   const { error: rpcErr } = await supabase.rpc('confirm_payment_and_award', {
     p_ref: intent.ref,
-    p_user_id: intent.user_id,
   })
 
   if (rpcErr) {
-    console.error('[webhooks/sumup] RPC error:', rpcErr)
-    return NextResponse.json({ ok: false }, { status: 500 })
+    const msg = rpcErr.message || ''
+    if (msg.includes('function') || msg.includes('p_user_id') || msg.includes('parameters')) {
+      // Retry with p_user_id for older RPC signature
+      const { error: retryErr } = await supabase.rpc('confirm_payment_and_award', {
+        p_ref: intent.ref,
+        p_user_id: intent.user_id,
+      })
+      if (retryErr) {
+        console.error('[webhooks/sumup] RPC retry error:', retryErr)
+        return NextResponse.json({ ok: false }, { status: 500 })
+      }
+    } else {
+      console.error('[webhooks/sumup] RPC error:', rpcErr)
+      return NextResponse.json({ ok: false }, { status: 500 })
+    }
   }
 
   console.log('[webhooks/sumup] confirmed:', intent.ref)
