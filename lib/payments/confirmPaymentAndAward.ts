@@ -16,9 +16,7 @@ export type AwardPayload = {
 export type ConfirmArgs = {
   ref: string
   userId: string
-  provider: 'stripe' | 'paypal' | 'debug'
-  stripePaymentIntentId?: string
-  paypalOrderId?: string
+  provider: 'sumup' | 'paypal' | 'debug'
 }
 
 // ---------------------------------------------------------------------------
@@ -33,31 +31,17 @@ function getServiceSupabase() {
 }
 
 // ---------------------------------------------------------------------------
-// Provider verification stubs
-// ---------------------------------------------------------------------------
-
-async function verifyStripe(_paymentIntentId: string): Promise<void> {
-  // TODO: call Stripe API to verify payment_intent status === 'succeeded'
-  throw new Error('provider_verification_not_implemented')
-}
-
-async function verifyPaypal(_orderId: string): Promise<void> {
-  // TODO: call PayPal Orders API to verify capture status === 'COMPLETED'
-  throw new Error('provider_verification_not_implemented')
-}
-
-// ---------------------------------------------------------------------------
 // Main function
 // ---------------------------------------------------------------------------
 
 export async function confirmPaymentAndAward(args: ConfirmArgs): Promise<AwardPayload> {
-  const { ref, userId, provider, stripePaymentIntentId, paypalOrderId } = args
+  const { ref, userId } = args
   const supabase = getServiceSupabase()
 
   // 1) Load checkout_intent by ref
   const { data: intent, error: intentErr } = await supabase
     .from('checkout_intents')
-    .select('id, ref, user_id, provider, state')
+    .select('id, ref, user_id, state')
     .eq('ref', ref)
     .single()
 
@@ -65,30 +49,14 @@ export async function confirmPaymentAndAward(args: ConfirmArgs): Promise<AwardPa
     throw new Error(`checkout_intent not found for ref="${ref}": ${intentErr?.message ?? 'no row'}`)
   }
 
-  // 2) Validate ownership + provider match
+  // 2) Validate ownership
   if (intent.user_id !== userId) {
     throw new Error('user_id mismatch: caller does not own this checkout_intent')
   }
 
-  if (intent.provider !== provider) {
-    throw new Error(`provider mismatch: intent has "${intent.provider}", caller sent "${provider}"`)
-  }
-
-  // 3) If not yet confirmed, run provider verification (skip for debug provider)
+  // 3) If not yet confirmed by webhook/provider, reject
   if (intent.state !== 'confirmed') {
-    if (provider === 'debug') {
-      // no external verification required for debug provider
-    } else if (provider === 'stripe') {
-      if (!stripePaymentIntentId) {
-        throw new Error('stripePaymentIntentId required for unconfirmed Stripe intent')
-      }
-      await verifyStripe(stripePaymentIntentId)
-    } else if (provider === 'paypal') {
-      if (!paypalOrderId) {
-        throw new Error('paypalOrderId required for unconfirmed PayPal intent')
-      }
-      await verifyPaypal(paypalOrderId)
-    }
+    throw new Error('awaiting_provider_confirmation')
   }
 
   // 4) Call the DB RPC (idempotent at DB level)
