@@ -50,6 +50,7 @@ export async function POST(request: Request) {
 
   const totalPence = qty * (campaign.ticket_price_pence ?? 0)
   const ref = `CHK-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const providerSessionId = randomUUID()
 
   // 4) Insert checkout_intent
   const { error: insertErr } = await supabase
@@ -63,6 +64,7 @@ export async function POST(request: Request) {
       total_pence: totalPence,
       currency: 'GBP',
       provider: 'debug',
+      provider_session_id: providerSessionId,
       state: 'pending',
     })
 
@@ -71,5 +73,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: 'Failed to create checkout intent' }, { status: 500, ...NO_STORE })
   }
 
-  return NextResponse.json({ ok: true, ref }, NO_STORE)
+  return NextResponse.json({ ok: true, ref, providerSessionId }, NO_STORE)
 }
