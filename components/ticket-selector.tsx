@@ -60,7 +60,33 @@ export function TicketSelector({ basePrice, bundles, campaignId }: TicketSelecto
       }
 
       if (res.ok && json.ok && json.ref) {
-        window.location.href = `/checkout/success?ref=${encodeURIComponent(json.ref as string)}&provider=debug`
+        // Create SumUp hosted checkout
+        const sumupRes = await fetch('/api/payments/sumup/create-checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ref: json.ref }),
+        })
+
+        if (sumupRes.status === 401) {
+          const returnTo = window.location.pathname + window.location.search + '#ticket-selector'
+          window.location.href = `/auth/login?redirect=${encodeURIComponent(returnTo)}`
+          return
+        }
+
+        let sumupJson: Record<string, unknown>
+        try {
+          sumupJson = await sumupRes.json()
+        } catch {
+          setError('Something went wrong. Please try again.')
+          return
+        }
+
+        if (sumupRes.ok && sumupJson.ok && sumupJson.checkoutUrl) {
+          window.location.href = sumupJson.checkoutUrl as string
+          return
+        }
+
+        setError((sumupJson.error as string) || 'Something went wrong. Please try again.')
         return
       }
 
