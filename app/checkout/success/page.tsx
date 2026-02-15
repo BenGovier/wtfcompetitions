@@ -44,6 +44,7 @@ export default function CheckoutSuccessPage() {
 
   const attemptRef = useRef(0)
   const abortRef = useRef<AbortController | null>(null)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const confirm = useCallback(async () => {
     if (!ref) return
@@ -78,7 +79,8 @@ export default function CheckoutSuccessPage() {
           setState({ kind: 'failed', error: 'Payment confirmation timed out. Please contact support.' })
           return
         }
-        setTimeout(() => confirm(), POLL_INTERVAL)
+        if (timeoutRef.current) clearTimeout(timeoutRef.current)
+        timeoutRef.current = setTimeout(() => confirm(), POLL_INTERVAL)
         return
       }
 
@@ -96,6 +98,7 @@ export default function CheckoutSuccessPage() {
 
     return () => {
       abortRef.current?.abort()
+      if (timeoutRef.current) clearTimeout(timeoutRef.current)
     }
   }, [ref, confirm])
 
