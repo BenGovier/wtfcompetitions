@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
         qty,
         total_pence: totalPence,
         currency: 'GBP',
-        provider: 'stripe',
+        provider: 'debug',
         state: 'pending',
       })
       .select('id, ref')
