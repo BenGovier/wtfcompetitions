@@ -16,7 +16,7 @@ export type AwardPayload = {
 export type ConfirmArgs = {
   ref: string
   userId: string
-  provider: 'stripe' | 'paypal'
+  provider: 'stripe' | 'paypal' | 'debug'
   stripePaymentIntentId?: string
   paypalOrderId?: string
 }
