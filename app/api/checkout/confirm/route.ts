@@ -29,15 +29,13 @@ export async function POST(request: Request) {
 
   const ref = body.ref as string | undefined
   const provider = body.provider as string | undefined
-  const stripePaymentIntentId = body.stripePaymentIntentId as string | undefined
-  const paypalOrderId = body.paypalOrderId as string | undefined
 
   if (!ref || typeof ref !== 'string') {
     return NextResponse.json({ ok: false, error: 'Missing or invalid ref' }, { status: 400, ...NO_STORE })
   }
 
-  if (provider !== 'stripe' && provider !== 'paypal') {
-    return NextResponse.json({ ok: false, error: 'Missing or invalid provider (must be "stripe" or "paypal")' }, { status: 400, ...NO_STORE })
+  if (provider !== 'sumup' && provider !== 'paypal' && provider !== 'debug') {
+    return NextResponse.json({ ok: false, error: 'Missing or invalid provider' }, { status: 400, ...NO_STORE })
   }
 
   // 3) Call confirmPaymentAndAward
@@ -46,15 +44,13 @@ export async function POST(request: Request) {
       ref,
       userId: user.id,
       provider,
-      stripePaymentIntentId,
-      paypalOrderId,
     })
 
     return NextResponse.json({ ok: true, award }, NO_STORE)
   } catch (err: any) {
     const message = err?.message || ''
 
-    if (message.includes('provider_verification_not_implemented')) {
+    if (message.includes('awaiting_provider_confirmation')) {
       return NextResponse.json({ ok: false, error: 'awaiting_provider_confirmation' }, { status: 409, ...NO_STORE })
     }
 
