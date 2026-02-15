@@ -64,6 +64,9 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
                   src={displayImages[0] || "/placeholder.svg"}
                   alt={prizeTitle}
                   className="h-full w-full object-contain"
+                  loading="eager"
+                  fetchPriority="high"
+                  decoding="async"
                 />
               </div>
               {displayImages.length > 1 && (
@@ -75,6 +78,7 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
                         alt={`${prizeTitle} view ${i + 2}`}
                         className="h-full w-full object-cover"
                         loading="lazy"
+                        decoding="async"
                       />
                     </div>
                   ))}
