@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { randomUUID } from 'crypto'
 
-const VERSION = 'simulate-confirmed-v2'
+const VERSION = 'simulate-confirmed-v3'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -35,10 +35,10 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // 1) Fetch campaign
+    // 1) Fetch campaign for price calculation
     const { data: campaign, error: campErr } = await supabase
       .from('campaigns')
-      .select('id, ticket_price_pence, max_tickets_total')
+      .select('id, ticket_price_pence')
       .eq('id', campaignId)
       .single()
 
@@ -48,12 +48,13 @@ export async function GET(request: NextRequest) {
 
     const totalPence = qty * (campaign.ticket_price_pence ?? 0)
     const nowIso = new Date().toISOString()
+    const ref = `SIM-${Date.now()}`
 
-    // 2) Create checkout_intent
+    // 2) Create checkout_intent (state=pending, not yet confirmed)
     const { data: intent, error: intentErr } = await supabase
       .from('checkout_intents')
       .insert({
-        ref: `SIM-${Date.now()}`,
+        ref,
         idempotency_key: randomUUID(),
         user_id: userId,
         campaign_id: campaignId,
@@ -61,111 +62,34 @@ export async function GET(request: NextRequest) {
         total_pence: totalPence,
         currency: 'GBP',
         provider: 'stripe',
-        state: 'confirmed',
-        confirmed_at: nowIso,
+        state: 'pending',
       })
-      .select('id')
+      .select('id, ref')
       .single()
 
     if (intentErr || !intent) {
       return NextResponse.json({ error: 'Failed to create checkout_intent', details: intentErr }, { status: 500 })
     }
 
-    // 3) Insert entries row
-    const { error: entryErr } = await supabase
-      .from('entries')
-      .insert({
-        user_id: userId,
-        campaign_id: campaignId,
-        checkout_intent_id: intent.id,
-        qty,
+    // 3) Delegate ALL confirmation + entry + award logic to the DB RPC
+    const { data: rpcData, error: rpcErr } = await supabase
+      .rpc('confirm_payment_and_award', {
+        p_ref: intent.ref,
+        p_user_id: userId,
       })
 
-    if (entryErr) {
-      return NextResponse.json({ error: 'Failed to create entry', details: entryErr }, { status: 500 })
-    }
-
-    // 4) Compute ticketsSold
-    const { data: sumData, error: sumErr } = await supabase
-      .from('entries')
-      .select('qty')
-      .eq('campaign_id', campaignId)
-
-    if (sumErr) {
-      return NextResponse.json({ error: 'Failed to sum entries', details: sumErr }, { status: 500 })
-    }
-
-    const ticketsSold = (sumData ?? []).reduce((acc, row) => acc + (row.qty || 0), 0)
-
-    // 5) Compute ratio
-    const maxTickets = campaign.max_tickets_total
-    const ratio = maxTickets != null && maxTickets > 0
-      ? ticketsSold / maxTickets
-      : 0
-
-    // 6) Fetch eligible instant-win prizes (unlock_ratio <= currentRatio)
-    const { data: allPrizes, error: prizesErr } = await supabase
-      .from('instant_win_prizes')
-      .select('id, giveaway_id, prize_title, prize_value_text, unlock_ratio')
-      .eq('campaign_id', campaignId)
-
-    if (prizesErr) {
-      return NextResponse.json({ error: 'Failed to fetch prizes', details: prizesErr }, { status: 500 })
-    }
-
-    const eligible = (allPrizes ?? []).filter(
-      (p) => p.unlock_ratio != null && p.unlock_ratio <= ratio
-    )
-
-    // 7) Exclude already-awarded prizes
-    const { data: awardedRows, error: awardedErr } = await supabase
-      .from('instant_win_awards')
-      .select('prize_id')
-      .eq('campaign_id', campaignId)
-
-    if (awardedErr) {
-      return NextResponse.json({ error: 'Failed to fetch awards', details: awardedErr }, { status: 500 })
-    }
-
-    const awardedPrizeIds = new Set((awardedRows ?? []).map((r) => r.prize_id))
-    const unawarded = eligible.filter((p) => !awardedPrizeIds.has(p.id))
-
-    // 8) Award if eligible
-    if (unawarded.length > 0) {
-      const prize = unawarded[Math.floor(Math.random() * unawarded.length)]
-
-      const { error: awardErr } = await supabase
-        .from('instant_win_awards')
-        .insert({
-          campaign_id: campaignId,
-          giveaway_id: campaignId,
-          checkout_intent_id: intent.id,
-          prize_id: prize.id,
-          awarded_at: nowIso,
-        })
-
-      if (awardErr) {
-        return NextResponse.json({ error: 'Failed to insert award', details: awardErr }, { status: 500 })
-      }
-
-      return NextResponse.json({
-        version: VERSION,
-        ok: true,
-        won: true,
-        prize: { id: prize.id, title: prize.prize_title, valueText: prize.prize_value_text, unlockRatio: prize.unlock_ratio },
-        ticketsSold,
-        ratio,
-      })
+    if (rpcErr) {
+      console.error('[simulate-confirmed] RPC error:', rpcErr)
+      return NextResponse.json({ error: 'RPC failed', details: rpcErr.message }, { status: 500 })
     }
 
     return NextResponse.json({
       version: VERSION,
       ok: true,
-      won: false,
-      ticketsSold,
-      ratio,
+      ...((rpcData && typeof rpcData === 'object') ? rpcData : {}),
     })
   } catch (err: any) {
+    console.error('[simulate-confirmed] Unexpected error:', err)
     return NextResponse.json({ error: err?.message || 'Unknown error' }, { status: 500 })
   }
 }
