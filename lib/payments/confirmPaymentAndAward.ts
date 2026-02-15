@@ -74,9 +74,11 @@ export async function confirmPaymentAndAward(args: ConfirmArgs): Promise<AwardPa
     throw new Error(`provider mismatch: intent has "${intent.provider}", caller sent "${provider}"`)
   }
 
-  // 3) If not yet confirmed, run provider verification (strict stubs that throw)
+  // 3) If not yet confirmed, run provider verification (skip for debug provider)
   if (intent.state !== 'confirmed') {
-    if (provider === 'stripe') {
+    if (provider === 'debug') {
+      // no external verification required for debug provider
+    } else if (provider === 'stripe') {
       if (!stripePaymentIntentId) {
         throw new Error('stripePaymentIntentId required for unconfirmed Stripe intent')
       }
