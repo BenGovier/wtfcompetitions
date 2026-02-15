@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation"
 import Link from "next/link"
-import { createClient } from "@/lib/supabase/server"
+import { createPublicClient } from "@/lib/supabase/public"
 import { CountdownBadge } from "@/components/countdown-badge"
 import { TicketSelector } from "@/components/ticket-selector"
 import { SocialProofRow } from "@/components/social-proof-row"
@@ -11,6 +11,8 @@ import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Shield, Award, ChevronRight } from "lucide-react"
 
+export const revalidate = 60
+
 interface GiveawayPageProps {
   params: Promise<{
     slug: string
@@ -19,7 +21,7 @@ interface GiveawayPageProps {
 
 export default async function GiveawayPage({ params }: GiveawayPageProps) {
   const { slug } = await params
-  const supabase = await createClient()
+  const supabase = createPublicClient()
 
   const { data: row, error } = await supabase
     .from('giveaway_snapshots')
@@ -42,6 +44,7 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
   const status = p.status as "draft" | "live" | "paused" | "ended"
   const endsAt = new Date(p.ends_at)
   const ticketPrice = (p.base_ticket_price_pence ?? 0) / 100
+  const campaignId = p.id as string
   const bundles = p.bundles || undefined
   const rulesText = p.rules_text || 'See full terms and conditions for complete rules.'
   const faqSnippet = p.faq_snippet || null
@@ -63,6 +66,9 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
                   src={displayImages[0] || "/placeholder.svg"}
                   alt={prizeTitle}
                   className="h-full w-full object-contain"
+                  loading="eager"
+                  fetchPriority="high"
+                  decoding="async"
                 />
               </div>
               {displayImages.length > 1 && (
@@ -74,6 +80,7 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
                         alt={`${prizeTitle} view ${i + 2}`}
                         className="h-full w-full object-cover"
                         loading="lazy"
+                        decoding="async"
                       />
                     </div>
                   ))}
@@ -105,7 +112,7 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
               <Separator />
 
               <div id="ticket-selector" className="scroll-mt-24">
-                <TicketSelector basePrice={ticketPrice} bundles={bundles} />
+                <TicketSelector basePrice={ticketPrice} bundles={bundles} campaignId={campaignId} />
               </div>
             </div>
           </div>

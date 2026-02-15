@@ -15,9 +15,10 @@ interface Bundle {
 interface TicketSelectorProps {
   basePrice: number
   bundles?: Bundle[]
+  campaignId: string
 }
 
-export function TicketSelector({ basePrice, bundles }: TicketSelectorProps) {
+export function TicketSelector({ basePrice, bundles, campaignId }: TicketSelectorProps) {
   const [selectedBundle, setSelectedBundle] = useState<Bundle | null>(
     bundles?.length ? null : { qty: 1, price: basePrice },
   )
@@ -38,8 +39,58 @@ export function TicketSelector({ basePrice, bundles }: TicketSelectorProps) {
     setError(null)
 
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-      console.log("[v0] Starting checkout:", { qty: currentQty, total: currentTotal })
+      const res = await fetch('/api/checkout/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaignId, qty: currentQty }),
+      })
+
+      if (res.status === 401) {
+        const returnTo = window.location.pathname + window.location.search + '#ticket-selector'
+        window.location.href = `/auth/login?redirect=${encodeURIComponent(returnTo)}`
+        return
+      }
+
+      let json: Record<string, unknown>
+      try {
+        json = await res.json()
+      } catch {
+        setError('Something went wrong. Please try again.')
+        return
+      }
+
+      if (res.ok && json.ok && json.ref) {
+        // Create SumUp hosted checkout
+        const sumupRes = await fetch('/api/payments/sumup/create-checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ref: json.ref }),
+        })
+
+        if (sumupRes.status === 401) {
+          const returnTo = window.location.pathname + window.location.search + '#ticket-selector'
+          window.location.href = `/auth/login?redirect=${encodeURIComponent(returnTo)}`
+          return
+        }
+
+        let sumupJson: Record<string, unknown>
+        try {
+          sumupJson = await sumupRes.json()
+        } catch {
+          setError('Something went wrong. Please try again.')
+          return
+        }
+
+        if (sumupRes.ok && sumupJson.ok && sumupJson.checkoutUrl) {
+          window.location.href = sumupJson.checkoutUrl as string
+          return
+        }
+
+        setError((sumupJson.error as string) || 'Something went wrong. Please try again.')
+        return
+      }
+
+      setError((json.error as string) || 'Something went wrong. Please try again.')
     } catch {
       setError("We couldn't start checkout. Please try again.")
     } finally {

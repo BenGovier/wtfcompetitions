@@ -97,6 +97,12 @@ function CheckoutSuccessClient() {
         signal: abortRef.current.signal,
       })
 
+      if (res.status === 401) {
+        const returnTo = window.location.pathname + window.location.search
+        window.location.href = `/auth/login?redirect=${encodeURIComponent(returnTo)}`
+        return
+      }
+
       const json = await res.json()
 
       if (res.ok && json.ok) {
@@ -251,12 +257,12 @@ function ConfirmedState({ award }: { award: AwardPayload }) {
           {"Your entry has been confirmed. You're now in the draw — good luck!"}
         </p>
       </div>
-      {award.qty > 1 && (
-        <div className="flex items-center gap-2 rounded-lg bg-secondary px-4 py-2">
-          <Gift className="size-4 text-muted-foreground" />
-          <span className="text-sm font-medium text-foreground">{award.qty} entries</span>
-        </div>
-      )}
+      <div className="flex items-center gap-2 rounded-lg bg-secondary px-4 py-2">
+        <Gift className="size-4 text-muted-foreground" />
+        <span className="text-sm font-medium text-foreground">
+          {award.qty} {award.qty === 1 ? 'entry confirmed' : 'entries confirmed'}
+        </span>
+      </div>
       <div className="flex flex-col gap-2 w-full pt-2">
         <Button asChild className="w-full">
           <Link href="/me">View My Entries</Link>
