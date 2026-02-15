@@ -141,8 +141,18 @@ export async function POST(request: Request) {
     })
 
     if (!sumupRes.ok) {
-      console.error('[payments/sumup] SumUp POST error:', sumupRes.status)
-      return NextResponse.json({ ok: false, error: 'sumup_checkout_creation_failed' }, { status: 502 })
+      const errText = await sumupRes.text().catch(() => '')
+      console.error('[payments/sumup] SumUp POST error:', sumupRes.status, errText)
+
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'sumup_checkout_creation_failed',
+          sumup_status: sumupRes.status,
+          sumup_body: errText,
+        },
+        { status: 502 },
+      )
     }
 
     sumupData = await sumupRes.json()
