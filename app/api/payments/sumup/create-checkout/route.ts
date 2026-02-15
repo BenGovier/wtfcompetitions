@@ -74,7 +74,9 @@ export async function POST(request: Request) {
   }
 
   const redirectUrl = `${siteUrl}/checkout/success?ref=${encodeURIComponent(ref)}&provider=sumup`
-  const webhookUrl = `${siteUrl}/api/webhooks/sumup`
+  const expectedSecret = process.env.WEBHOOK_SECRET
+  const baseWebhookUrl = `${siteUrl}/api/webhooks/sumup`
+  const webhookUrl = expectedSecret ? `${baseWebhookUrl}?secret=${encodeURIComponent(expectedSecret)}` : baseWebhookUrl
 
   // 7) If provider_session_id already exists, retrieve existing checkout
   if (intent.provider_session_id) {

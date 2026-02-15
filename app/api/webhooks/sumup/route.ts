@@ -16,12 +16,15 @@ const PAID_STATUSES = new Set(['paid', 'successful', 'completed'])
 const FAILED_STATUSES = new Set(['failed', 'cancelled', 'expired'])
 
 export async function POST(request: NextRequest) {
-  // 1) Auth
-  const secret = request.headers.get('x-webhook-secret')
+  // 1) Auth via query param (SumUp cannot send custom headers)
   const expected = process.env.WEBHOOK_SECRET
-  if (!expected || secret !== expected) {
+  const provided = request.nextUrl.searchParams.get('secret')
+  if (expected && provided !== expected) {
     console.error('[webhooks/sumup] unauthorized request')
     return NextResponse.json({ ok: false }, { status: 401 })
+  }
+  if (!expected) {
+    console.warn('[webhooks/sumup] WEBHOOK_SECRET not set, allowing request without auth')
   }
 
   // 2) Parse body
