@@ -45,9 +45,11 @@ export default function CheckoutSuccessPage() {
   const attemptRef = useRef(0)
   const abortRef = useRef<AbortController | null>(null)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const doneRef = useRef(false)
 
   const confirm = useCallback(async () => {
     if (!ref) return
+    if (doneRef.current) return
 
     attemptRef.current += 1
     const currentAttempt = attemptRef.current
@@ -70,12 +72,14 @@ export default function CheckoutSuccessPage() {
       const json = await res.json()
 
       if (res.ok && json.ok) {
+        doneRef.current = true
         setState({ kind: 'confirmed', award: json.award })
         return
       }
 
       if (res.status === 409 && json.error === 'awaiting_provider_confirmation') {
         if (currentAttempt >= MAX_ATTEMPTS) {
+          doneRef.current = true
           setState({ kind: 'failed', error: 'Payment confirmation timed out. Please contact support.' })
           return
         }
@@ -84,15 +88,18 @@ export default function CheckoutSuccessPage() {
         return
       }
 
+      doneRef.current = true
       setState({ kind: 'failed', error: json.error || 'Something went wrong. Please try again.' })
     } catch (err: any) {
       if (err?.name === 'AbortError') return
+      doneRef.current = true
       setState({ kind: 'failed', error: 'Network error. Please check your connection and try again.' })
     }
   }, [ref, provider, paymentIntent, paypalOrder])
 
   useEffect(() => {
     if (!ref) return
+    doneRef.current = false
     attemptRef.current = 0
     confirm()
 
@@ -103,7 +110,9 @@ export default function CheckoutSuccessPage() {
   }, [ref, confirm])
 
   const handleRetry = () => {
+    doneRef.current = false
     attemptRef.current = 0
+    if (timeoutRef.current) clearTimeout(timeoutRef.current)
     confirm()
   }
 
