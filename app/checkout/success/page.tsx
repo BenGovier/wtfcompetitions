@@ -97,6 +97,12 @@ function CheckoutSuccessClient() {
         signal: abortRef.current.signal,
       })
 
+      if (res.status === 401) {
+        const returnTo = window.location.pathname + window.location.search
+        window.location.href = `/auth/login?redirect=${encodeURIComponent(returnTo)}`
+        return
+      }
+
       const json = await res.json()
 
       if (res.ok && json.ok) {
