@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { Suspense, useEffect, useRef, useState, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
@@ -31,7 +31,35 @@ type PageState =
 const MAX_ATTEMPTS = 20
 const POLL_INTERVAL = 2500
 
+function LoadingCard() {
+  return (
+    <main className="flex min-h-[60vh] items-center justify-center px-4 py-16">
+      <Card className="w-full max-w-md border-0 shadow-lg">
+        <CardContent className="flex flex-col items-center gap-6 p-8 text-center">
+          <div className="flex size-16 items-center justify-center rounded-full bg-primary/10">
+            <Spinner className="size-8 text-primary" />
+          </div>
+          <div className="flex flex-col gap-2">
+            <h1 className="text-xl font-semibold text-foreground">Loading...</h1>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Preparing your checkout confirmation.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    </main>
+  )
+}
+
 export default function CheckoutSuccessPage() {
+  return (
+    <Suspense fallback={<LoadingCard />}>
+      <CheckoutSuccessClient />
+    </Suspense>
+  )
+}
+
+function CheckoutSuccessClient() {
   const searchParams = useSearchParams()
   const ref = searchParams.get('ref')
   const provider = searchParams.get('provider') || 'debug'
