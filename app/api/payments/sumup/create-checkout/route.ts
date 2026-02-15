@@ -63,8 +63,15 @@ export async function POST(request: Request) {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL
   const sumupToken = process.env.SUMUP_ACCESS_TOKEN
 
+  const sumupMerchantCode = process.env.SUMUP_MERCHANT_CODE
+
   if (!sumupToken) {
     console.error('[payments/sumup] Missing SUMUP_ACCESS_TOKEN')
+    return NextResponse.json({ ok: false, error: 'Server configuration error' }, { status: 500 })
+  }
+
+  if (!sumupMerchantCode) {
+    console.error('[payments/sumup] Missing SUMUP_MERCHANT_CODE')
     return NextResponse.json({ ok: false, error: 'Server configuration error' }, { status: 500 })
   }
 
@@ -124,11 +131,12 @@ export async function POST(request: Request) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        merchant_code: sumupMerchantCode,
         amount: amountDecimal,
         currency: intent.currency || 'GBP',
         checkout_reference: ref,
         redirect_url: redirectUrl,
-        webhook_url: webhookUrl,
+        return_url: webhookUrl,
       }),
     })
 
