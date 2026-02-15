@@ -35,15 +35,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
-  const eventType = body.event_type as string | undefined
   const checkoutId = body.id as string | undefined
 
-  if (!eventType || !checkoutId) {
-    return NextResponse.json({ ok: true })
-  }
-
-  // 3) Only handle CHECKOUT_STATUS_CHANGED
-  if (eventType !== 'CHECKOUT_STATUS_CHANGED') {
+  if (!checkoutId) {
     return NextResponse.json({ ok: true })
   }
 
