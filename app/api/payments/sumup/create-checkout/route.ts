@@ -109,6 +109,7 @@ export async function POST(request: Request) {
         checkout_reference: ref,
         redirect_url: redirectUrl,
         return_url: webhookUrl,
+        hosted_checkout: { enabled: true },
       }),
     })
 
@@ -187,8 +188,9 @@ export async function POST(request: Request) {
   const checkoutUrl =
     (sumupData.hosted_checkout_url as string) ||
     (sumupData.checkout_url as string) ||
+    ((sumupData.hosted_checkout as any)?.hosted_checkout_url as string) ||
     (sumupData.url as string) ||
-    (checkoutId ? `https://pay.sumup.com/b2c/${encodeURIComponent(checkoutId)}` : '')
+    ''
 
   if (!checkoutId || !checkoutUrl) {
     console.error('[payments/sumup] Missing id or checkout_url in response:', Object.keys(sumupData))
