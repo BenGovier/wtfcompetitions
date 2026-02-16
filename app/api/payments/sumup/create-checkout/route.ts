@@ -150,6 +150,37 @@ export async function POST(request: Request) {
   console.log('[payments/sumup] create response raw:', sumupData)
 
   const checkoutId = (sumupData.id as string) || ''
+
+  // Validate checkoutId is a real SumUp checkout (prevents storing garbage IDs)
+  if (!checkoutId) {
+    console.error('[payments/sumup] Missing checkout id in response:', sumupData)
+    return NextResponse.json({ ok: false, error: 'sumup_missing_checkout_id' }, { status: 502 })
+  }
+
+  const verifyRes = await fetch(
+    `https://api.sumup.com/v0.1/checkouts/${encodeURIComponent(checkoutId)}`,
+    { headers: { Authorization: `Bearer ${sumupToken}` } }
+  )
+
+  if (!verifyRes.ok) {
+    const verifyText = await verifyRes.text().catch(() => '')
+    console.error(
+      '[payments/sumup] Created id not retrievable:',
+      verifyRes.status,
+      verifyText,
+      { checkoutId, ref }
+    )
+    return NextResponse.json(
+      {
+        ok: false,
+        error: 'sumup_created_id_not_retrievable',
+        sumup_status: verifyRes.status,
+        sumup_body: verifyText,
+      },
+      { status: 502 }
+    )
+  }
+
   const checkoutUrl =
     (sumupData.hosted_checkout_url as string) ||
     (sumupData.checkout_url as string) ||
