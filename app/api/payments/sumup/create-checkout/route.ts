@@ -141,6 +141,14 @@ export async function POST(request: Request) {
     )
   }
 
+  console.log('[payments/sumup] create response keys:', Object.keys(sumupData))
+  console.log('[payments/sumup] create response id fields:', {
+    id: (sumupData as any).id,
+    checkout_id: (sumupData as any).checkout_id,
+    uuid: (sumupData as any).uuid,
+  })
+  console.log('[payments/sumup] create response raw:', sumupData)
+
   const checkoutId = (sumupData.id as string) || ''
   const checkoutUrl =
     (sumupData.hosted_checkout_url as string) ||
