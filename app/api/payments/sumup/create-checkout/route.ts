@@ -85,56 +85,10 @@ export async function POST(request: Request) {
   const baseWebhookUrl = `${siteUrl}/api/webhooks/sumup`
   const webhookUrl = expectedSecret ? `${baseWebhookUrl}?secret=${encodeURIComponent(expectedSecret)}` : baseWebhookUrl
 
-  // 7) If provider_session_id already exists, retrieve existing checkout
+  // 7) If provider_session_id already exists, return hosted URL directly
   if (intent.provider_session_id) {
-    try {
-      console.log('[payments/sumup] GET checkout', {
-        ref: intent.ref,
-        checkoutId: intent.provider_session_id,
-        merchantCode: process.env.SUMUP_MERCHANT_CODE,
-      })
-
-      const getRes = await fetch(
-        `https://api.sumup.com/v0.1/checkouts/${encodeURIComponent(intent.provider_session_id)}`,
-        {
-          method: 'GET',
-          headers: { Authorization: `Bearer ${sumupToken}` },
-        },
-      )
-
-      if (!getRes.ok) {
-        const errText = await getRes.text().catch(() => '')
-        console.error('[payments/sumup] SumUp GET error:', getRes.status, errText)
-
-        return NextResponse.json(
-          {
-            ok: false,
-            error: 'sumup_checkout_retrieval_failed',
-            sumup_status: getRes.status,
-            sumup_body: errText,
-          },
-          { status: 502 },
-        )
-      }
-
-      const getData = await getRes.json()
-      const checkoutUrl =
-        (getData.hosted_checkout_url as string) ||
-        (getData.checkout_url as string) ||
-        (getData.url as string) ||
-        (intent.provider_session_id
-          ? `https://pay.sumup.com/b2c/${encodeURIComponent(intent.provider_session_id)}`
-          : '')
-
-      if (!checkoutUrl) {
-        return NextResponse.json({ ok: false, error: 'sumup_missing_checkout_url' }, { status: 502 })
-      }
-
-      return NextResponse.json({ ok: true, checkoutUrl })
-    } catch (err: any) {
-      console.error('[payments/sumup] SumUp GET fetch error:', err?.message)
-      return NextResponse.json({ ok: false, error: 'sumup_checkout_retrieval_failed' }, { status: 502 })
-    }
+    const checkoutUrl = `https://pay.sumup.com/b2c/${encodeURIComponent(intent.provider_session_id)}`
+    return NextResponse.json({ ok: true, checkoutUrl })
   }
 
   // 8) Create new SumUp checkout
