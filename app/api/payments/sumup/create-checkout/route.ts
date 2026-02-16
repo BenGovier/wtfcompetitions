@@ -88,6 +88,12 @@ export async function POST(request: Request) {
   // 7) If provider_session_id already exists, retrieve existing checkout
   if (intent.provider_session_id) {
     try {
+      console.log('[payments/sumup] GET checkout', {
+        ref: intent.ref,
+        checkoutId: intent.provider_session_id,
+        merchantCode: process.env.SUMUP_MERCHANT_CODE,
+      })
+
       const getRes = await fetch(
         `https://api.sumup.com/v0.1/checkouts/${encodeURIComponent(intent.provider_session_id)}`,
         {
