@@ -157,13 +157,13 @@ export async function POST(request: Request) {
 
     sumupData = JSON.parse(raw)
   } catch (err: any) {
-    console.error('[payments/sumup] SumUp POST fetch error:', err?.message)
+    console.error('[payments/sumup] SumUp POST fetch error:', err)
 
     return NextResponse.json(
       {
         ok: false,
         error: 'sumup_checkout_creation_failed',
-        fetch_error: err?.message || 'unknown_fetch_error',
+        fetch_error: String(err?.message || err || 'unknown_fetch_error'),
       },
       { status: 502 },
     )
@@ -182,7 +182,7 @@ export async function POST(request: Request) {
   }
 
   // 9) Update checkout_intent with provider details
-  const { error: updateErr } = await svc
+  const { data: updated, error: updateErr } = await svc
     .from('checkout_intents')
     .update({
       provider: 'sumup',
@@ -190,10 +190,20 @@ export async function POST(request: Request) {
       updated_at: new Date().toISOString(),
     })
     .eq('ref', ref)
+    .select('ref, provider_session_id')
+    .maybeSingle()
 
-  if (updateErr) {
-    console.error('[payments/sumup] DB update error:', updateErr)
-    return NextResponse.json({ ok: false, error: 'Failed to update intent' }, { status: 500 })
+  if (updateErr || !updated?.provider_session_id) {
+    console.error(
+      '[payments/sumup] DB update failed or no row updated:',
+      updateErr,
+      updated
+    )
+
+    return NextResponse.json(
+      { ok: false, error: 'Failed to update intent' },
+      { status: 500 }
+    )
   }
 
   return NextResponse.json({ ok: true, checkoutUrl })
