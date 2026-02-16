@@ -144,57 +144,19 @@ export async function POST(request: Request) {
       const errText = await sumupRes.text().catch(() => '')
       console.error('[payments/sumup] SumUp POST error:', sumupRes.status, errText)
 
-      // HANDLE DUPLICATE CHECKOUT (IDEMPOTENT)
       if (errText.includes('DUPLICATED_CHECKOUT')) {
-        console.log('[payments/sumup] duplicate checkout — retrieving existing')
-
-        // retrieve existing checkout using reference search
-        const searchRes = await fetch(
-          `https://api.sumup.com/v0.1/checkouts?reference=${encodeURIComponent(ref)}`,
-          {
-            headers: { Authorization: `Bearer ${sumupToken}` },
-          }
+        return NextResponse.json(
+          { ok: false, error: 'checkout_reference_already_used' },
+          { status: 409 },
         )
-
-        if (!searchRes.ok) {
-          return NextResponse.json({ ok: false, error: 'sumup_duplicate_lookup_failed' }, { status: 502 })
-        }
-
-        const list = await searchRes.json()
-        const existing = list?.items?.[0]
-
-        if (!existing?.id) {
-          return NextResponse.json({ ok: false, error: 'sumup_duplicate_not_found' }, { status: 502 })
-        }
-
-        const checkoutId = existing.id
-        const checkoutUrl =
-          existing.hosted_checkout_url ||
-          existing.checkout_url ||
-          existing.url
-
-        // SAVE ID IN DB
-        await svc
-          .from('checkout_intents')
-          .update({
-            provider: 'sumup',
-            provider_session_id: checkoutId,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('ref', ref)
-
-        return NextResponse.json({ ok: true, checkoutUrl })
       }
 
-      return NextResponse.json(
-        {
-          ok: false,
-          error: 'sumup_checkout_creation_failed',
-          sumup_status: sumupRes.status,
-          sumup_body: errText,
-        },
-        { status: 502 },
-      )
+      return NextResponse.json({
+        ok: false,
+        error: 'sumup_checkout_creation_failed',
+        sumup_status: sumupRes.status,
+        sumup_body: errText,
+      }, { status: 502 })
     }
 
     sumupData = await sumupRes.json()
