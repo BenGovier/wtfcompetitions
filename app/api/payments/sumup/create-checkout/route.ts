@@ -193,13 +193,9 @@ export async function POST(request: Request) {
     .select('ref, provider_session_id')
     .maybeSingle()
 
-  if (updateErr || !updated?.provider_session_id) {
-    console.error(
-      '[payments/sumup] DB update failed or no row updated:',
-      updateErr,
-      updated
-    )
+  console.log('[payments/sumup] update result:', { updateErr, updated, ref, checkoutId })
 
+  if (updateErr || !updated?.provider_session_id) {
     return NextResponse.json(
       { ok: false, error: 'Failed to update intent' },
       { status: 500 }
