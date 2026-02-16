@@ -116,7 +116,9 @@ export async function POST(request: Request) {
         (getData.hosted_checkout_url as string) ||
         (getData.checkout_url as string) ||
         (getData.url as string) ||
-        ''
+        (intent.provider_session_id
+          ? `https://pay.sumup.com/b2c/${encodeURIComponent(intent.provider_session_id)}`
+          : '')
 
       if (!checkoutUrl) {
         return NextResponse.json({ ok: false, error: 'sumup_missing_checkout_url' }, { status: 502 })
