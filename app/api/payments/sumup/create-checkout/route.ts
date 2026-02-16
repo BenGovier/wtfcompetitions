@@ -140,26 +140,22 @@ export async function POST(request: Request) {
       }),
     })
 
+    const raw = await sumupRes.text()
+    console.log('[payments/sumup] RAW RESPONSE:', raw)
+
     if (!sumupRes.ok) {
-      const errText = await sumupRes.text().catch(() => '')
-      console.error('[payments/sumup] SumUp POST error:', sumupRes.status, errText)
-
-      if (errText.includes('DUPLICATED_CHECKOUT')) {
-        return NextResponse.json(
-          { ok: false, error: 'checkout_reference_already_used' },
-          { status: 409 },
-        )
-      }
-
-      return NextResponse.json({
-        ok: false,
-        error: 'sumup_checkout_creation_failed',
-        sumup_status: sumupRes.status,
-        sumup_body: errText,
-      }, { status: 502 })
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'sumup_checkout_creation_failed',
+          sumup_status: sumupRes.status,
+          sumup_body: raw,
+        },
+        { status: 502 },
+      )
     }
 
-    sumupData = await sumupRes.json()
+    sumupData = JSON.parse(raw)
   } catch (err: any) {
     console.error('[payments/sumup] SumUp POST fetch error:', err?.message)
 
