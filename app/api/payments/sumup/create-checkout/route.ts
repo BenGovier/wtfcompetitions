@@ -49,10 +49,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 })
   }
 
-  // 4) Ownership check
-  if (intent.user_id !== user.id) {
-    return NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 })
-  }
+  // TEMP DEBUG — disable ownership check
+  // if (intent.user_id !== user.id) {
+  //   return NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 })
+  // }
 
   // 5) State check
   if (intent.state !== 'pending') {
