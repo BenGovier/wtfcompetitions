@@ -157,13 +157,13 @@ export async function POST(request: Request) {
 
     sumupData = JSON.parse(raw)
   } catch (err: any) {
-    console.error('[payments/sumup] SumUp POST fetch error:', err?.message)
+    console.error('[payments/sumup] SumUp POST fetch error:', err)
 
     return NextResponse.json(
       {
         ok: false,
         error: 'sumup_checkout_creation_failed',
-        fetch_error: err?.message || 'unknown_fetch_error',
+        fetch_error: String(err?.message || err || 'unknown_fetch_error'),
       },
       { status: 502 },
     )
