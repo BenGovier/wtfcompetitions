@@ -150,6 +150,7 @@ export async function POST(request: Request) {
   console.log('[payments/sumup] create response raw:', sumupData)
 
   const checkoutId = (sumupData.id as string) || ''
+  console.log('@@SUMUP_VERIFY_START@@', { ref, checkoutId })
 
   // Validate checkoutId is a real SumUp checkout (prevents storing garbage IDs)
   if (!checkoutId) {
@@ -161,6 +162,8 @@ export async function POST(request: Request) {
     `https://api.sumup.com/v0.1/checkouts/${encodeURIComponent(checkoutId)}`,
     { headers: { Authorization: `Bearer ${sumupToken}` } }
   )
+
+  console.log('@@SUMUP_VERIFY_RESULT@@', { ref, checkoutId, status: verifyRes.status, ok: verifyRes.ok })
 
   if (!verifyRes.ok) {
     const verifyText = await verifyRes.text().catch(() => '')
@@ -205,6 +208,7 @@ export async function POST(request: Request) {
     .maybeSingle()
 
   console.log('[payments/sumup] update result:', { updateErr, updated, ref, checkoutId })
+  console.log('@@SUMUP_DB_SAVED@@', { ref, checkoutId })
 
   if (updateErr || !updated?.provider_session_id) {
     return NextResponse.json(
