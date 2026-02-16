@@ -158,7 +158,15 @@ export async function POST(request: Request) {
     sumupData = await sumupRes.json()
   } catch (err: any) {
     console.error('[payments/sumup] SumUp POST fetch error:', err?.message)
-    return NextResponse.json({ ok: false, error: 'sumup_checkout_creation_failed' }, { status: 502 })
+
+    return NextResponse.json(
+      {
+        ok: false,
+        error: 'sumup_checkout_creation_failed',
+        fetch_error: err?.message || 'unknown_fetch_error',
+      },
+      { status: 502 },
+    )
   }
 
   const checkoutId = (sumupData.id as string) || ''
