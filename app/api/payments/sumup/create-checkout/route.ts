@@ -87,7 +87,7 @@ export async function POST(request: Request) {
 
   // 7) If provider_session_id already exists, return hosted URL directly
   if (intent.provider_session_id) {
-    const checkoutUrl = `https://pay.sumup.com/b2c/${encodeURIComponent(intent.provider_session_id)}`
+    const checkoutUrl = `https://checkout.sumup.com/pay/c-${encodeURIComponent(intent.provider_session_id)}`
     return NextResponse.json({ ok: true, checkoutUrl })
   }
 
@@ -184,17 +184,13 @@ export async function POST(request: Request) {
     )
   }
 
+  const fallbackUrl = `https://checkout.sumup.com/pay/c-${encodeURIComponent(checkoutId)}`
   const checkoutUrl =
     (sumupData.hosted_checkout_url as string) ||
     (sumupData.checkout_url as string) ||
     ((sumupData.hosted_checkout as any)?.hosted_checkout_url as string) ||
     (sumupData.url as string) ||
-    ''
-
-  if (!checkoutId || !checkoutUrl) {
-    console.error('[payments/sumup] Missing id or checkout_url in response:', Object.keys(sumupData))
-    return NextResponse.json({ ok: false, error: 'sumup_checkout_creation_failed' }, { status: 502 })
-  }
+    fallbackUrl
 
   // 9) Update checkout_intent with provider details
   const { data: updated, error: updateErr } = await svc
