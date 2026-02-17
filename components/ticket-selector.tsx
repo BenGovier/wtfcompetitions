@@ -82,7 +82,12 @@ export function TicketSelector({ basePrice, bundles, campaignId }: TicketSelecto
         }
 
         if (sumupRes.ok && sumupJson.ok && sumupJson.checkoutUrl) {
-          window.location.href = sumupJson.checkoutUrl as string
+          const checkoutUrl = sumupJson.checkoutUrl as string
+          if (!checkoutUrl || typeof checkoutUrl !== 'string') {
+            throw new Error('Missing checkoutUrl')
+          }
+          // IMPORTANT: top-level hard redirect (SumUp hosted checkout must not be embedded)
+          window.location.assign(checkoutUrl)
           return
         }
 
