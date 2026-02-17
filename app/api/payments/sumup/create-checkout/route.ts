@@ -96,39 +96,38 @@ export async function POST(request: Request) {
 
   let sumupData: Record<string, unknown>
   try {
+    const payload = {
+      merchant_code: sumupMerchantCode,
+      amount: amountDecimal,
+      currency: intent.currency || 'GBP',
+      checkout_reference: ref,
+      redirect_url: redirectUrl,
+      return_url: webhookUrl,
+      hosted_checkout: { enabled: true },
+    }
+
+    console.log('[payments/sumup] CREATE PAYLOAD:', payload)
+
     const sumupRes = await fetch('https://api.sumup.com/v0.1/checkouts', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${sumupToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        merchant_code: sumupMerchantCode,
-        amount: amountDecimal,
-        currency: intent.currency || 'GBP',
-        checkout_reference: ref,
-        redirect_url: redirectUrl,
-        return_url: webhookUrl,
-        hosted_checkout: { enabled: true },
-      }),
+      body: JSON.stringify(payload),
     })
 
-    const raw = await sumupRes.text()
-    console.log('[payments/sumup] RAW RESPONSE:', raw)
+    const raw = await sumupRes.text().catch(() => '')
+    console.log('[payments/sumup] RAW CREATE RESPONSE:', sumupRes.status, raw)
 
     if (!sumupRes.ok) {
       return NextResponse.json(
-        {
-          ok: false,
-          error: 'sumup_checkout_creation_failed',
-          sumup_status: sumupRes.status,
-          sumup_body: raw,
-        },
+        { ok: false, error: 'sumup_checkout_creation_failed', sumup_status: sumupRes.status, sumup_body: raw },
         { status: 502 },
       )
     }
 
-    sumupData = JSON.parse(raw)
+    sumupData = JSON.parse(raw || '{}')
   } catch (err: any) {
     console.error('[payments/sumup] SumUp POST fetch error:', err)
 
