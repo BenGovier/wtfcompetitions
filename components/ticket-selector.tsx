@@ -6,6 +6,11 @@ import { Card } from "@/components/ui/card"
 import { Minus, Plus, Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
 
+function formatGBP(amount: number) {
+  if (amount < 1) return `${Math.round(amount * 100)}p`
+  return `£${amount.toFixed(2)}`
+}
+
 interface Bundle {
   qty: number
   price: number
@@ -132,7 +137,7 @@ export function TicketSelector({ basePrice, bundles, campaignId }: TicketSelecto
                   <div className="text-center">
                     <div className="text-2xl font-bold">{bundle.qty}</div>
                     <div className="text-xs text-muted-foreground">{bundle.qty === 1 ? "entry" : "entries"}</div>
-                    <div className="mt-2 text-lg font-semibold text-brand">${bundle.price.toFixed(2)}</div>
+                    <div className="mt-2 text-lg font-semibold text-brand">{formatGBP(bundle.price)}</div>
                     {savingsPercent > 0 && (
                       <div className="mt-1 text-xs font-medium text-green-600">Save {savingsPercent}%</div>
                     )}
@@ -200,7 +205,7 @@ export function TicketSelector({ basePrice, bundles, campaignId }: TicketSelecto
         <div className="flex items-baseline justify-between">
           <span className="text-sm text-muted-foreground">Total</span>
           <div className="text-right">
-            <div className="text-3xl font-bold text-brand">${currentTotal.toFixed(2)}</div>
+            <div className="text-3xl font-bold text-brand">{formatGBP(currentTotal)}</div>
             <div className="text-xs text-muted-foreground">
               {currentQty} {currentQty === 1 ? "entry" : "entries"}
             </div>
