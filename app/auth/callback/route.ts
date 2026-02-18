@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL('/auth/login?error=missing_code', request.url))
   }
 
-  const response = NextResponse.redirect(new URL(next, request.url))
+  let supabaseResponse = NextResponse.redirect(new URL(next, request.url))
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -21,9 +21,14 @@ export async function GET(request: NextRequest) {
           return request.cookies.getAll()
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            response.cookies.set(name, value, options)
-          })
+          // keep request + response in sync (same pattern as lib/supabase/proxy.ts)
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
+
+          supabaseResponse = NextResponse.redirect(new URL(next, request.url))
+
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseResponse.cookies.set(name, value, options),
+          )
         },
       },
     },
@@ -36,5 +41,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL('/auth/login?error=confirm_failed', request.url))
   }
 
-  return response
+  return supabaseResponse
 }
