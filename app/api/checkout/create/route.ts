@@ -74,5 +74,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: 'Failed to create checkout intent' }, { status: 500, ...NO_STORE })
   }
 
+  console.log('[checkout/create] created intent', { ref, campaignId, giveawayId: campaignId, qty })
+
   return NextResponse.json({ ok: true, ref, providerSessionId }, NO_STORE)
 }
