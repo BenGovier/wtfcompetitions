@@ -1,8 +1,16 @@
 import { updateSession } from '@/lib/supabase/proxy'
-import { type NextRequest } from 'next/server'
+import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
-  console.log('[mw] path=', request.nextUrl.pathname, 'search=', request.nextUrl.search)
+  const { pathname, searchParams } = request.nextUrl
+
+  // Intercept email confirmation codes landing on / and route to auth callback
+  if (pathname === '/' && searchParams.has('code')) {
+    const callbackUrl = new URL('/auth/callback', request.url)
+    callbackUrl.search = request.nextUrl.search
+    return NextResponse.redirect(callbackUrl)
+  }
+
   return await updateSession(request)
 }
 
