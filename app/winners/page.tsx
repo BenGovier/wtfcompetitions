@@ -51,7 +51,7 @@ export default async function WinnersPage() {
         </p>
         <div className="mt-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
           <ShieldCheck className="h-5 w-5 text-primary" aria-hidden="true" />
-          <span>Winners announced publicly within 48 hours of each draw</span>
+          <span>Winners announced publicly within 48 hours </span>
         </div>
       </div>
 
