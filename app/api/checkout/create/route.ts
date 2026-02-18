@@ -60,6 +60,7 @@ export async function POST(request: Request) {
       idempotency_key: randomUUID(),
       user_id: user.id,
       campaign_id: campaignId,
+      giveaway_id: campaignId,
       qty,
       total_pence: totalPence,
       currency: 'GBP',
