@@ -33,7 +33,18 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
 
   const row = data?.[0] ?? null
 
-  if (error || !row) {
+  if (error) {
+    console.error('[giveaways/[slug]] snapshot fetch failed', {
+      slug,
+      message: error.message,
+      details: (error as any).details,
+      hint: (error as any).hint,
+      code: (error as any).code,
+    })
+  }
+
+  if (!row) {
+    console.error('[giveaways/[slug]] snapshot missing', { slug })
     notFound()
   }
 
