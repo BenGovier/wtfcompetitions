@@ -41,7 +41,7 @@ export async function confirmPaymentAndAward(args: ConfirmArgs): Promise<AwardPa
   // 1) Load checkout_intent by ref
   const { data: intent, error: intentErr } = await supabase
     .from('checkout_intents')
-    .select('id, ref, user_id, state')
+    .select('id, ref, user_id, state, provider_session_id, currency, total_pence')
     .eq('ref', ref)
     .single()
 
@@ -54,9 +54,27 @@ export async function confirmPaymentAndAward(args: ConfirmArgs): Promise<AwardPa
     throw new Error('user_id mismatch: caller does not own this checkout_intent')
   }
 
-  // 3) If not yet confirmed by webhook/provider, reject
+  // 3) If not yet confirmed, try SumUp confirm-on-return; otherwise reject
   if (intent.state !== 'confirmed') {
-    throw new Error('awaiting_provider_confirmation')
+    if (args.provider !== 'sumup') throw new Error('awaiting_provider_confirmation')
+
+    // SumUp confirm-on-return:
+    if (!intent.provider_session_id) throw new Error('awaiting_provider_confirmation')
+    const token = process.env.SUMUP_ACCESS_TOKEN
+    if (!token) throw new Error('Missing SUMUP_ACCESS_TOKEN')
+
+    const res = await fetch(
+      `https://api.sumup.com/v0.1/checkouts/${encodeURIComponent(intent.provider_session_id)}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+
+    if (!res.ok) throw new Error('awaiting_provider_confirmation')
+
+    const data = await res.json().catch(() => ({}) as any)
+    const status = String((data as any).status || '').toUpperCase()
+
+    const paid = status === 'PAID' || status === 'SUCCESSFUL' || status === 'COMPLETED'
+    if (!paid) throw new Error('awaiting_provider_confirmation')
   }
 
   // 4) Call the DB RPC (idempotent at DB level)
