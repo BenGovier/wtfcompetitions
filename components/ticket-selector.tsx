@@ -21,10 +21,9 @@ interface TicketSelectorProps {
   basePrice: number
   bundles?: Bundle[]
   campaignId: string
-  giveawayId: string
 }
 
-export function TicketSelector({ basePrice, bundles, campaignId, giveawayId }: TicketSelectorProps) {
+export function TicketSelector({ basePrice, bundles, campaignId }: TicketSelectorProps) {
   const [selectedBundle, setSelectedBundle] = useState<Bundle | null>(
     bundles?.length ? null : { qty: 1, price: basePrice },
   )
@@ -48,7 +47,7 @@ export function TicketSelector({ basePrice, bundles, campaignId, giveawayId }: T
       const res = await fetch('/api/checkout/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ campaignId, giveawayId, qty: currentQty }),
+        body: JSON.stringify({ campaignId, qty: currentQty }),
       })
 
       if (res.status === 401) {

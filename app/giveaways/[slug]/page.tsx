@@ -23,28 +23,51 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
   const { slug } = await params
   const supabase = createPublicClient()
 
-  const { data, error } = await supabase
+  // 1) Try detail snapshot
+  const { data: detailData, error: detailErr } = await supabase
     .from('giveaway_snapshots')
     .select('payload')
     .eq('kind', 'detail')
-    .filter('payload->>slug', 'eq', slug)
+    .contains('payload', { slug })
     .order('generated_at', { ascending: false })
     .limit(1)
 
-  const row = data?.[0] ?? null
-
-  if (error) {
-    console.error('[giveaways/[slug]] snapshot fetch failed', {
+  if (detailErr) {
+    console.error('[giveaways/[slug]] detail fetch failed', {
       slug,
-      message: error.message,
-      details: (error as any).details,
-      hint: (error as any).hint,
-      code: (error as any).code,
+      message: detailErr.message,
+      code: (detailErr as any).code,
     })
   }
 
+  const detailRow = detailData?.[0] ?? null
+
+  // 2) Fallback to list snapshot if no detail
+  let listRow: typeof detailRow = null
+  if (!detailRow) {
+    const { data: listData, error: listErr } = await supabase
+      .from('giveaway_snapshots')
+      .select('payload')
+      .eq('kind', 'list')
+      .contains('payload', { slug })
+      .order('generated_at', { ascending: false })
+      .limit(1)
+
+    if (listErr) {
+      console.error('[giveaways/[slug]] list fetch failed', {
+        slug,
+        message: listErr.message,
+        code: (listErr as any).code,
+      })
+    }
+
+    listRow = listData?.[0] ?? null
+  }
+
+  const row = detailRow || listRow
+
   if (!row) {
-    console.error('[giveaways/[slug]] snapshot missing', { slug })
+    console.error('[giveaways/[slug]] snapshot missing', { slug, detailFound: !!detailRow, listFound: !!listRow })
     notFound()
   }
 
@@ -58,10 +81,11 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
   const status = p.status as "draft" | "live" | "paused" | "ended"
   const endsAt = new Date(p.ends_at)
   const ticketPrice = (p.base_ticket_price_pence ?? 0) / 100
-  const giveawayId = (p.giveaway_id as string) || (p.id as string)
-  const campaignId = (p.campaign_id as string) || (p.campaignId as string)
+  // Snapshot payload `id` is the campaign id in our current snapshot shape
+  const campaignId = p.id as string
 
-  if (!giveawayId || !campaignId) {
+  if (!campaignId) {
+    console.error('[giveaways/[slug]] missing campaignId in snapshot payload', { slug, payloadKeys: Object.keys(p || {}) })
     notFound()
   }
 
@@ -132,7 +156,7 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
               <Separator />
 
               <div id="ticket-selector" className="scroll-mt-24">
-                <TicketSelector basePrice={ticketPrice} bundles={bundles} campaignId={campaignId} giveawayId={giveawayId} />
+                <TicketSelector basePrice={ticketPrice} bundles={bundles} campaignId={campaignId} />
               </div>
             </div>
           </div>
