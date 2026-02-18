@@ -20,6 +20,26 @@ type AwardPayload = {
   qty: number
   won: boolean
   prize: Prize | null
+  ticket_start?: number | null
+  ticket_end?: number | null
+}
+
+function TicketNumbers({ award }: { award: AwardPayload }) {
+  const start = award.ticket_start
+  const end = award.ticket_end
+
+  if (typeof start !== 'number' || typeof end !== 'number') return null
+
+  return (
+    <div className="w-full rounded-lg border border-border bg-muted/50 px-4 py-3 text-center">
+      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-1">
+        {start === end ? 'Your Ticket Number' : 'Your Ticket Numbers'}
+      </p>
+      <p className="text-lg font-bold text-foreground font-mono">
+        {start === end ? `#${start}` : `#${start}\u2013#${end}`}
+      </p>
+    </div>
+  )
 }
 
 type PageState =
@@ -229,6 +249,7 @@ function ConfirmedState({ award }: { award: AwardPayload }) {
             />
           </div>
         )}
+        <TicketNumbers award={award} />
         <div className="flex flex-col gap-2 w-full">
           <p className="text-sm text-muted-foreground leading-relaxed">
             {"You've also been entered into the main draw. We'll be in touch about your instant win prize."}
@@ -263,6 +284,10 @@ function ConfirmedState({ award }: { award: AwardPayload }) {
           {award.qty} {award.qty === 1 ? 'entry confirmed' : 'entries confirmed'}
         </span>
       </div>
+      <TicketNumbers award={award} />
+      <p className="text-sm text-muted-foreground leading-relaxed">
+        {"No instant win this time \u2014 you're still in the main draw."}
+      </p>
       <div className="flex flex-col gap-2 w-full pt-2">
         <Button asChild className="w-full">
           <Link href="/me">View My Entries</Link>
