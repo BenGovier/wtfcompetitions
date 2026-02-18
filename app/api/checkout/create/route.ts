@@ -52,6 +52,18 @@ export async function POST(request: Request) {
   const ref = `CHK-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   const providerSessionId = randomUUID()
 
+  // 3b) Fetch giveaway_id for this campaign
+  const { data: giveaway, error: giveErr } = await supabase
+    .from('giveaways')
+    .select('id')
+    .eq('campaign_id', campaignId)
+    .limit(1)
+    .maybeSingle()
+
+  if (giveErr || !giveaway) {
+    return NextResponse.json({ ok: false, error: 'giveaway_not_found_for_campaign' }, { status: 400, ...NO_STORE })
+  }
+
   // 4) Insert checkout_intent
   const { error: insertErr } = await supabase
     .from('checkout_intents')
@@ -60,6 +72,7 @@ export async function POST(request: Request) {
       idempotency_key: randomUUID(),
       user_id: user.id,
       campaign_id: campaignId,
+      giveaway_id: giveaway.id,
       qty,
       total_pence: totalPence,
       currency: 'GBP',
