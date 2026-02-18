@@ -27,15 +27,10 @@ export async function POST(request: Request) {
   }
 
   const campaignId = body.campaignId as string | undefined
-  const giveawayId = body.giveawayId as string | undefined
   const qty = typeof body.qty === 'number' ? body.qty : parseInt(String(body.qty || ''), 10)
 
   if (!campaignId || typeof campaignId !== 'string') {
     return NextResponse.json({ ok: false, error: 'Missing or invalid campaignId' }, { status: 400, ...NO_STORE })
-  }
-
-  if (!giveawayId || typeof giveawayId !== 'string') {
-    return NextResponse.json({ ok: false, error: 'missing_giveaway_id' }, { status: 400, ...NO_STORE })
   }
 
   if (!qty || qty < 1 || !Number.isFinite(qty)) {
@@ -57,6 +52,19 @@ export async function POST(request: Request) {
   const ref = `CHK-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   const providerSessionId = randomUUID()
 
+  // 3b) Fetch giveaway_id for this campaign
+  const { data: giveaway, error: giveErr } = await supabase
+    .from('giveaways')
+    .select('id')
+    .eq('campaign_id', campaignId)
+    .limit(1)
+    .maybeSingle()
+
+  if (giveErr || !giveaway) {
+    console.error('[checkout/create] giveaway not found for campaign:', campaignId, giveErr)
+    return NextResponse.json({ ok: false, error: 'giveaway_not_found_for_campaign' }, { status: 400, ...NO_STORE })
+  }
+
   // 4) Insert checkout_intent
   const { error: insertErr } = await supabase
     .from('checkout_intents')
@@ -65,7 +73,7 @@ export async function POST(request: Request) {
       idempotency_key: randomUUID(),
       user_id: user.id,
       campaign_id: campaignId,
-      giveaway_id: giveawayId,
+      giveaway_id: giveaway.id,
       qty,
       total_pence: totalPence,
       currency: 'GBP',

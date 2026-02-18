@@ -58,10 +58,11 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
   const status = p.status as "draft" | "live" | "paused" | "ended"
   const endsAt = new Date(p.ends_at)
   const ticketPrice = (p.base_ticket_price_pence ?? 0) / 100
-  const giveawayId = (p.giveaway_id as string) || (p.id as string)
-  const campaignId = (p.campaign_id as string) || (p.campaignId as string)
+  // Snapshot payload `id` is the campaign id in our current snapshot shape
+  const campaignId = p.id as string
 
-  if (!giveawayId || !campaignId) {
+  if (!campaignId) {
+    console.error('[giveaways/[slug]] missing campaignId in snapshot payload', { slug, payloadKeys: Object.keys(p || {}) })
     notFound()
   }
 
@@ -132,7 +133,7 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
               <Separator />
 
               <div id="ticket-selector" className="scroll-mt-24">
-                <TicketSelector basePrice={ticketPrice} bundles={bundles} campaignId={campaignId} giveawayId={giveawayId} />
+                <TicketSelector basePrice={ticketPrice} bundles={bundles} campaignId={campaignId} />
               </div>
             </div>
           </div>
