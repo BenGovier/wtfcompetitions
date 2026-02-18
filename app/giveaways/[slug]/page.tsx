@@ -23,12 +23,15 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
   const { slug } = await params
   const supabase = createPublicClient()
 
-  const { data: row, error } = await supabase
+  const { data, error } = await supabase
     .from('giveaway_snapshots')
     .select('payload')
     .eq('kind', 'detail')
     .filter('payload->>slug', 'eq', slug)
-    .single()
+    .order('generated_at', { ascending: false })
+    .limit(1)
+
+  const row = data?.[0] ?? null
 
   if (error || !row) {
     notFound()
