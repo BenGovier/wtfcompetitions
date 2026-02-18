@@ -85,10 +85,26 @@ export async function POST(request: Request) {
   const baseWebhookUrl = `${siteUrl}/api/webhooks/sumup`
   const webhookUrl = expectedSecret ? `${baseWebhookUrl}?secret=${encodeURIComponent(expectedSecret)}` : baseWebhookUrl
 
-  // 7) If provider_session_id already exists, return hosted URL directly
+  // 7) If provider_session_id already exists, GET the checkout from SumUp for hosted_checkout_url
   if (intent.provider_session_id) {
-    const checkoutUrl = `https://checkout.sumup.com/pay/${encodeURIComponent(intent.provider_session_id)}`
-    return NextResponse.json({ ok: true, checkoutUrl })
+    try {
+      const getRes = await fetch(
+        `https://api.sumup.com/v0.1/checkouts/${encodeURIComponent(intent.provider_session_id)}`,
+        { headers: { Authorization: `Bearer ${sumupToken}` } },
+      )
+
+      if (getRes.ok) {
+        const getData = await getRes.json()
+        const hostedUrl = (getData.hosted_checkout_url as string) || ''
+
+        if (hostedUrl) {
+          return NextResponse.json({ ok: true, checkoutUrl: hostedUrl })
+        }
+      }
+    } catch {
+      // Fall through to create a new checkout
+    }
+    // If GET failed or no hosted_checkout_url, fall through to create a new one
   }
 
   // 8) Create new SumUp checkout
@@ -141,56 +157,23 @@ export async function POST(request: Request) {
     )
   }
 
-  console.log('[payments/sumup] create response keys:', Object.keys(sumupData))
-  console.log('[payments/sumup] create response id fields:', {
-    id: (sumupData as any).id,
-    checkout_id: (sumupData as any).checkout_id,
-    uuid: (sumupData as any).uuid,
-  })
-  console.log('[payments/sumup] create response raw:', sumupData)
-
   const checkoutId = (sumupData.id as string) || ''
-  console.log('@@SUMUP_VERIFY_START@@', { ref, checkoutId })
+  const hostedCheckoutUrl = (sumupData.hosted_checkout_url as string) || ''
 
-  // Validate checkoutId is a real SumUp checkout (prevents storing garbage IDs)
+  console.log('[payments/sumup] create response:', { checkoutId, hostedCheckoutUrl, keys: Object.keys(sumupData) })
+
   if (!checkoutId) {
     console.error('[payments/sumup] Missing checkout id in response:', sumupData)
     return NextResponse.json({ ok: false, error: 'sumup_missing_checkout_id' }, { status: 502 })
   }
 
-  const verifyRes = await fetch(
-    `https://api.sumup.com/v0.1/checkouts/${encodeURIComponent(checkoutId)}`,
-    { headers: { Authorization: `Bearer ${sumupToken}` } }
-  )
-
-  console.log('@@SUMUP_VERIFY_RESULT@@', { ref, checkoutId, status: verifyRes.status, ok: verifyRes.ok })
-
-  if (!verifyRes.ok) {
-    const verifyText = await verifyRes.text().catch(() => '')
-    console.error(
-      '[payments/sumup] Created id not retrievable:',
-      verifyRes.status,
-      verifyText,
-      { checkoutId, ref }
-    )
+  if (!hostedCheckoutUrl) {
+    console.error('[payments/sumup] Missing hosted_checkout_url in response:', sumupData)
     return NextResponse.json(
-      {
-        ok: false,
-        error: 'sumup_created_id_not_retrievable',
-        sumup_status: verifyRes.status,
-        sumup_body: verifyText,
-      },
-      { status: 502 }
+      { ok: false, error: 'sumup_missing_hosted_checkout_url', sumup_body: JSON.stringify(sumupData) },
+      { status: 502 },
     )
   }
-
-  const fallbackUrl = `https://checkout.sumup.com/pay/${encodeURIComponent(checkoutId)}`
-  const checkoutUrl =
-    (sumupData.hosted_checkout_url as string) ||
-    (sumupData.checkout_url as string) ||
-    ((sumupData.hosted_checkout as any)?.hosted_checkout_url as string) ||
-    (sumupData.url as string) ||
-    fallbackUrl
 
   // 9) Update checkout_intent with provider details
   const { data: updated, error: updateErr } = await svc
@@ -204,15 +187,10 @@ export async function POST(request: Request) {
     .select('ref, provider_session_id')
     .maybeSingle()
 
-  console.log('[payments/sumup] update result:', { updateErr, updated, ref, checkoutId })
-  console.log('@@SUMUP_DB_SAVED@@', { ref, checkoutId })
-
   if (updateErr || !updated?.provider_session_id) {
-    return NextResponse.json(
-      { ok: false, error: 'Failed to update intent' },
-      { status: 500 }
-    )
+    console.error('[payments/sumup] DB update failed:', { updateErr, updated, ref, checkoutId })
+    return NextResponse.json({ ok: false, error: 'Failed to update intent' }, { status: 500 })
   }
 
-  return NextResponse.json({ ok: true, checkoutUrl })
+  return NextResponse.json({ ok: true, checkoutUrl: hostedCheckoutUrl })
 }
