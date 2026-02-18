@@ -87,7 +87,7 @@ export async function POST(request: Request) {
 
   // 7) If provider_session_id already exists, return hosted URL directly
   if (intent.provider_session_id) {
-    const checkoutUrl = `https://checkout.sumup.com/pay/c-${encodeURIComponent(intent.provider_session_id)}`
+    const checkoutUrl = `https://checkout.sumup.com/pay/${encodeURIComponent(intent.provider_session_id)}`
     return NextResponse.json({ ok: true, checkoutUrl })
   }
 
@@ -184,7 +184,7 @@ export async function POST(request: Request) {
     )
   }
 
-  const fallbackUrl = `https://checkout.sumup.com/pay/c-${encodeURIComponent(checkoutId)}`
+  const fallbackUrl = `https://checkout.sumup.com/pay/${encodeURIComponent(checkoutId)}`
   const checkoutUrl =
     (sumupData.hosted_checkout_url as string) ||
     (sumupData.checkout_url as string) ||
