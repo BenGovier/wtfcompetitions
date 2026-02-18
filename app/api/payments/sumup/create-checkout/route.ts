@@ -98,7 +98,7 @@ export async function POST(request: Request) {
         const hostedUrl = (getData.hosted_checkout_url as string) || ''
 
         if (hostedUrl) {
-          return NextResponse.json({ ok: true, checkoutUrl: hostedUrl })
+          return NextResponse.json({ ok: true, checkoutUrl: hostedUrl, ref, checkoutId: intent.provider_session_id, reused: true })
         }
       }
     } catch {
@@ -192,5 +192,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: 'Failed to update intent' }, { status: 500 })
   }
 
-  return NextResponse.json({ ok: true, checkoutUrl: hostedCheckoutUrl })
+  return NextResponse.json({
+    ok: true,
+    checkoutUrl: hostedCheckoutUrl,
+    ref,
+    checkoutId,
+    db_update: { updateErr: updateErr ? String(updateErr.message || updateErr) : null, updated },
+  })
 }
