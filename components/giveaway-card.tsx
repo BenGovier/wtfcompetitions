@@ -53,11 +53,12 @@ export function GiveawayCard({ giveaway }: GiveawayCardProps) {
           <div className="text-xl font-bold text-brand">{formatPriceGBP(giveaway.ticketPrice)}</div>
         </div>
         <Button
+          asChild
           size="lg"
           className="font-semibold"
           disabled={giveaway.status !== "live"}
         >
-          Enter Now
+          <Link href={`/giveaways/${giveaway.slug}`}>Enter Now</Link>
         </Button>
       </CardFooter>
     </Card>
