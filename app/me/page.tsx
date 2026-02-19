@@ -1,11 +1,33 @@
 import { SectionHeader } from "@/components/section-header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
 import { SignOutButton } from "./sign-out-button"
+
+function formatDateUK(dateStr: string) {
+  const d = new Date(dateStr)
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+
+function TicketDisplay({ start, end }: { start?: number | null; end?: number | null }) {
+  if (typeof start !== 'number' || typeof end !== 'number') {
+    return <span className="text-muted-foreground">Tickets: pending</span>
+  }
+  if (start === end) {
+    return <span className="font-mono font-semibold">Ticket #{start}</span>
+  }
+  const count = end - start + 1
+  return (
+    <span className="font-mono font-semibold">
+      {'Tickets #' + start + '\u2013#' + end}
+      <span className="ml-1 text-xs font-normal text-muted-foreground">
+        {'(' + count + ' ticket' + (count === 1 ? '' : 's') + ')'}
+      </span>
+    </span>
+  )
+}
 
 export default async function AccountPage() {
   const supabase = await createClient()
@@ -15,16 +37,16 @@ export default async function AccountPage() {
     redirect('/auth/login?redirect=/me')
   }
 
-  // Fetch user's entries
-  let entries: { id: string; giveaway_id: string; qty: number; created_at: string }[] = []
+  // Step 1: Fetch entries
+  let entries: { id: string; campaign_id: string; qty: number; created_at: string }[] = []
   let entriesError: string | null = null
 
   const { data: entriesData, error: entriesErr } = await supabase
     .from('entries')
-    .select('id, giveaway_id, qty, created_at')
+    .select('id, campaign_id, qty, created_at')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
-    .limit(50)
+    .limit(100)
 
   if (entriesErr) {
     entriesError = entriesErr.message
@@ -32,21 +54,39 @@ export default async function AccountPage() {
     entries = entriesData ?? []
   }
 
-  // Fetch giveaway titles from snapshots
-  const titleMap = new Map<string, { title: string; status: string }>()
-  const { data: snapshots } = await supabase
-    .from('giveaway_snapshots')
-    .select('payload')
-    .eq('kind', 'list')
+  // Step 2: Fetch ticket allocations
+  const allocationMap = new Map<string, { start_ticket: number; end_ticket: number }>()
 
-  if (snapshots) {
-    for (const row of snapshots) {
-      const p = row.payload as Record<string, any>
-      if (p?.id) {
-        titleMap.set(String(p.id), {
-          title: p.title || 'Giveaway',
-          status: p.status || 'unknown',
+  if (entries.length > 0) {
+    const entryIds = entries.map((e) => e.id)
+    const { data: allocations } = await supabase
+      .from('ticket_allocations')
+      .select('entry_id, start_ticket, end_ticket')
+      .in('entry_id', entryIds)
+
+    if (allocations) {
+      for (const a of allocations) {
+        allocationMap.set(a.entry_id, {
+          start_ticket: a.start_ticket,
+          end_ticket: a.end_ticket,
         })
+      }
+    }
+  }
+
+  // Step 3: Fetch campaigns
+  const campaignMap = new Map<string, { title: string; status: string }>()
+
+  if (entries.length > 0) {
+    const campaignIds = [...new Set(entries.map((e) => e.campaign_id))]
+    const { data: campaigns } = await supabase
+      .from('campaigns')
+      .select('id, title, status')
+      .in('id', campaignIds)
+
+    if (campaigns) {
+      for (const c of campaigns) {
+        campaignMap.set(c.id, { title: c.title || 'Giveaway', status: c.status || 'unknown' })
       }
     }
   }
@@ -103,7 +143,7 @@ export default async function AccountPage() {
         </Card>
       </div>
 
-      {/* My Entries Card */}
+      {/* My Entries */}
       <Card className="mt-6">
         <CardHeader>
           <CardTitle>My Entries</CardTitle>
@@ -122,43 +162,45 @@ export default async function AccountPage() {
               </Button>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Campaign</TableHead>
-                  <TableHead>Qty</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {entries.map((entry) => {
-                  const snap = titleMap.get(entry.giveaway_id)
-                  const status = snap?.status || 'unknown'
-                  const badgeVariant =
-                    status === 'live' || status === 'active'
-                      ? 'default' as const
-                      : status === 'unknown'
-                        ? 'outline' as const
-                        : 'secondary' as const
+            <div className="grid gap-3 sm:grid-cols-2">
+              {entries.map((entry) => {
+                const campaign = campaignMap.get(entry.campaign_id)
+                const allocation = allocationMap.get(entry.id)
+                const status = campaign?.status || 'unknown'
+                const isLive = status === 'live' || status === 'active'
 
-                  return (
-                    <TableRow key={entry.id}>
-                      <TableCell className="font-medium">
-                        {snap?.title || 'Giveaway'}
-                      </TableCell>
-                      <TableCell>{entry.qty}</TableCell>
-                      <TableCell>
-                        {new Date(entry.created_at).toLocaleDateString('en-GB')}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={badgeVariant}>{status}</Badge>
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
+                return (
+                  <div
+                    key={entry.id}
+                    className="flex flex-col gap-2 rounded-lg border border-border bg-card p-4"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="text-sm font-semibold text-foreground leading-tight">
+                        {campaign?.title || 'Giveaway'}
+                      </h3>
+                      <Badge
+                        variant={isLive ? 'default' : status === 'unknown' ? 'outline' : 'secondary'}
+                        className="shrink-0"
+                      >
+                        {isLive ? 'Live' : 'Ended'}
+                      </Badge>
+                    </div>
+
+                    <div className="text-sm">
+                      <TicketDisplay
+                        start={allocation?.start_ticket}
+                        end={allocation?.end_ticket}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>{entry.qty === 1 ? '1 entry' : entry.qty + ' entries'}</span>
+                      <span>{formatDateUK(entry.created_at)}</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           )}
         </CardContent>
       </Card>
