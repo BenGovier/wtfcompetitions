@@ -251,6 +251,30 @@ async function processRefreshSnapshots(
 
   // Process each campaign
   for (const campaign of campaigns) {
+    // Fetch instant win prizes for this campaign
+    const { data: prizes } = await supabase
+      .from('instant_win_prizes')
+      .select('id, prize_title, image_url, created_at')
+      .eq('campaign_id', campaign.id)
+      .order('created_at', { ascending: true })
+
+    // Fetch which prizes have been won
+    const { data: awards } = await supabase
+      .from('instant_win_awards')
+      .select('prize_id')
+      .eq('campaign_id', campaign.id)
+
+    const wonSet = new Set((awards ?? []).map((a: any) => a.prize_id))
+
+    const instantWins = (prizes ?? []).map((p: any) => ({
+      id: p.id,
+      title: p.prize_title,
+      image_url: p.image_url ?? null,
+      is_won: wonSet.has(p.id),
+    }))
+
+    console.log('[snapshots] instant_wins_count', campaign.id, instantWins.length)
+
     const detailPayload = {
       id: campaign.id,
       slug: campaign.slug,
@@ -266,7 +290,8 @@ async function processRefreshSnapshots(
       currency: 'GBP',
       base_ticket_price_pence: campaign.ticket_price_pence,
       bundles: null,
-      hard_cap_total_tickets: campaign.max_tickets_total
+      hard_cap_total_tickets: campaign.max_tickets_total,
+      instant_wins: instantWins,
     }
 
     console.log('[snapshots] writing_snapshot campaign=', campaign.id)
