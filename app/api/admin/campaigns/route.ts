@@ -54,6 +54,29 @@ async function refreshSnapshotsNow(campaignId: string) {
   if (fetchError) throw new Error(`Failed to fetch campaign: ${fetchError.message}`)
   if (!c) return
 
+  // Fetch instant win prizes + awards for this campaign
+  const { data: prizes } = await svc
+    .from('instant_win_prizes')
+    .select('id, prize_title, image_url, created_at')
+    .eq('campaign_id', c.id)
+    .order('created_at', { ascending: true })
+
+  const { data: awards } = await svc
+    .from('instant_win_awards')
+    .select('prize_id')
+    .eq('campaign_id', c.id)
+
+  const wonSet = new Set((awards ?? []).map((a: any) => a.prize_id))
+
+  const instantWins = (prizes ?? []).map((p: any) => ({
+    id: p.id,
+    title: p.prize_title,
+    image_url: p.image_url ?? null,
+    is_won: wonSet.has(p.id),
+  }))
+
+  console.log('[admin/campaigns/refreshSnapshotsNow] campaignId=', c.id, 'slug=', c.slug, 'instant_wins=', instantWins.length)
+
   const generatedAt = new Date().toISOString()
 
   const { error: delErr } = await svc
@@ -92,6 +115,7 @@ async function refreshSnapshotsNow(campaignId: string) {
     base_ticket_price_pence: c.ticket_price_pence,
     bundles: null,
     hard_cap_total_tickets: c.max_tickets_total,
+    instant_wins: instantWins,
   }
 
   const { error: ins1 } = await svc.from('giveaway_snapshots').insert({

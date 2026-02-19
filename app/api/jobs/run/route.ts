@@ -294,7 +294,7 @@ async function processRefreshSnapshots(
       instant_wins: instantWins,
     }
 
-    console.log('[snapshots] writing_snapshot campaign=', campaign.id)
+    console.log('[jobs/run/processRefreshSnapshots] campaignId=', campaign.id, 'slug=', campaign.slug, 'instant_wins=', Array.isArray(detailPayload.instant_wins) ? detailPayload.instant_wins.length : 'MISSING_KEY')
 
     // Delete existing snapshots for this campaign (both list and detail)
     await supabase
