@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
     is_won: wonSet.has(p.id),
   }))
 
-  console.log('[refresh-giveaway-snapshots] campaignId=', campaign.id, 'instantWinsCount=', instantWins.length)
+  console.log('[refresh-giveaway-snapshots] campaignId=', campaign.id, 'slug=', campaign.slug, 'instant_wins=', Array.isArray(instantWins) ? instantWins.length : 'MISSING_KEY')
 
   // 6) Build payloads
   const listPayload = {
