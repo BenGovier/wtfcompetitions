@@ -90,6 +90,7 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
     notFound()
   }
 
+  const instantWins = Array.isArray(p.instant_wins) ? p.instant_wins : []
   const bundles = p.bundles || undefined
   const rulesText = p.rules_text || 'See full terms and conditions for complete rules.'
   const faqSnippet = p.faq_snippet || null
@@ -169,7 +170,7 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
         <div className="space-y-8">
           {/* Instant Win Prizes */}
           <InstantWinDisclosure />
-          <InstantWinList campaignId={campaignId} />
+          <InstantWinList instantWins={instantWins} />
 
           {/* Social Proof */}
           {socialProof && (
