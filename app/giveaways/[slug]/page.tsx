@@ -6,6 +6,7 @@ import { TicketSelector } from "@/components/ticket-selector"
 import { SocialProofRow } from "@/components/social-proof-row"
 import { RulesAccordion } from "@/components/rules-accordion"
 import { InstantWinDisclosure } from "@/components/instant-win-disclosure"
+import { InstantWinList } from "@/components/instant-win-list"
 import { TrustBadges } from "@/components/trust-badges"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
@@ -166,8 +167,9 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
       {/* Main Content */}
       <div className="container max-w-5xl px-4 py-8">
         <div className="space-y-8">
-          {/* Instant Win Disclosure */}
+          {/* Instant Win Prizes */}
           <InstantWinDisclosure />
+          <InstantWinList campaignId={campaignId} />
 
           {/* Social Proof */}
           {socialProof && (
