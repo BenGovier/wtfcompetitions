@@ -37,15 +37,31 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: 'Missing or invalid qty' }, { status: 400, ...NO_STORE })
   }
 
-  // 3) Fetch campaign for price
+  // 3) Fetch campaign for price + hard cap
   const { data: campaign, error: campErr } = await supabase
     .from('campaigns')
-    .select('id, ticket_price_pence')
+    .select('id, ticket_price_pence, max_tickets_total')
     .eq('id', campaignId)
     .single()
 
   if (campErr || !campaign) {
     return NextResponse.json({ ok: false, error: 'Campaign not found' }, { status: 400, ...NO_STORE })
+  }
+
+  // 3b) Hard-cap check: ensure tickets are still available
+  if (campaign.max_tickets_total != null) {
+    const { data: counter } = await supabase
+      .from('giveaway_ticket_counters')
+      .select('next_ticket')
+      .eq('giveaway_id', campaignId)
+      .maybeSingle()
+
+    const nextTicket = counter?.next_ticket ?? 1
+    const endTicket = nextTicket + qty - 1
+
+    if (endTicket > campaign.max_tickets_total) {
+      return NextResponse.json({ ok: false, error: 'sold_out' }, { status: 409, ...NO_STORE })
+    }
   }
 
   const totalPence = qty * (campaign.ticket_price_pence ?? 0)
