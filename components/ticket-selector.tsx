@@ -21,9 +21,11 @@ interface TicketSelectorProps {
   basePrice: number
   bundles?: Bundle[]
   campaignId: string
+  soldCount?: number | null
+  capTotal?: number | null
 }
 
-export function TicketSelector({ basePrice, bundles, campaignId }: TicketSelectorProps) {
+export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capTotal }: TicketSelectorProps) {
   const [selectedBundle, setSelectedBundle] = useState<Bundle | null>(
     bundles?.length ? null : { qty: 1, price: basePrice },
   )
@@ -31,12 +33,16 @@ export function TicketSelector({ basePrice, bundles, campaignId }: TicketSelecto
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const hasCapInfo = typeof soldCount === 'number' && typeof capTotal === 'number' && capTotal > 0
+  const remaining = hasCapInfo ? Math.max(0, capTotal - soldCount) : null
+  const maxQty = remaining !== null ? Math.min(100, remaining) : 100
+
   const useCustomQty = !bundles || selectedBundle === null
   const currentQty = useCustomQty ? customQty : selectedBundle.qty
   const currentTotal = useCustomQty ? customQty * basePrice : selectedBundle.price
 
   const handleQuantityChange = (delta: number) => {
-    setCustomQty((prev) => Math.max(1, Math.min(100, prev + delta)))
+    setCustomQty((prev) => Math.max(1, Math.min(maxQty, prev + delta)))
   }
 
   const handleEnter = async () => {
@@ -100,7 +106,15 @@ export function TicketSelector({ basePrice, bundles, campaignId }: TicketSelecto
         return
       }
 
-      setError((json.error as string) || 'Something went wrong. Please try again.')
+      if (json.error === 'sold_out' && remaining !== null && remaining > 0) {
+        setError(`Only ${remaining} ticket${remaining === 1 ? '' : 's'} left!`)
+        setCustomQty(Math.min(customQty, remaining))
+        setSelectedBundle(null)
+      } else if (json.error === 'sold_out') {
+        setError('This giveaway is sold out!')
+      } else {
+        setError((json.error as string) || 'Something went wrong. Please try again.')
+      }
     } catch {
       setError("We couldn't start checkout. Please try again.")
     } finally {
@@ -176,7 +190,7 @@ export function TicketSelector({ basePrice, bundles, campaignId }: TicketSelecto
               <div className="text-3xl font-bold">{customQty}</div>
               <div className="text-xs text-muted-foreground">{customQty === 1 ? "entry" : "entries"}</div>
             </div>
-            <Button variant="outline" size="icon" onClick={() => handleQuantityChange(1)} disabled={customQty >= 100}>
+            <Button variant="outline" size="icon" onClick={() => handleQuantityChange(1)} disabled={customQty >= maxQty}>
               <Plus className="h-4 w-4" />
               <span className="sr-only">Increase quantity</span>
             </Button>
@@ -200,6 +214,27 @@ export function TicketSelector({ basePrice, bundles, campaignId }: TicketSelecto
         </div>
       )}
 
+      {/* Progress bar */}
+      {hasCapInfo && (
+        <div className="space-y-1.5">
+          <div className="flex items-baseline justify-between text-sm">
+            <span className="font-medium">{soldCount} / {capTotal} sold</span>
+            {remaining !== null && remaining > 0 && (
+              <span className="text-muted-foreground">Only {remaining} left!</span>
+            )}
+            {remaining === 0 && (
+              <span className="font-semibold text-destructive">Sold out</span>
+            )}
+          </div>
+          <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full rounded-full bg-brand transition-all"
+              style={{ width: `${Math.min(100, (soldCount / capTotal) * 100)}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Total and CTA */}
       <div className="space-y-3 rounded-lg border-2 border-brand/20 bg-muted/30 p-4">
         <div className="flex items-baseline justify-between">
@@ -217,7 +252,7 @@ export function TicketSelector({ basePrice, bundles, campaignId }: TicketSelecto
         <Button
           size="lg"
           className="w-full text-base font-semibold"
-          disabled={isProcessing || currentQty < 1}
+          disabled={isProcessing || currentQty < 1 || remaining === 0}
           onClick={handleEnter}
         >
           {isProcessing ? "Starting checkout..." : "Enter Now"}
