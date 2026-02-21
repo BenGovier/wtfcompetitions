@@ -90,6 +90,19 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
     notFound()
   }
 
+  // Fetch ticket counter for progress display
+  const capTotal: number | null = p.hard_cap_total_tickets ?? null
+  let soldCount = 0
+  {
+    const { data: counter } = await supabase
+      .from('giveaway_ticket_counters')
+      .select('next_ticket')
+      .eq('giveaway_id', campaignId)
+      .limit(1)
+      .maybeSingle()
+    soldCount = Math.max(0, (counter?.next_ticket ?? 1) - 1)
+  }
+
   const instantWins = Array.isArray(p.instant_wins) ? p.instant_wins : []
   const bundles = p.bundles || undefined
   const rulesText = p.rules_text || 'See full terms and conditions for complete rules.'
@@ -158,7 +171,7 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
               <Separator />
 
               <div id="ticket-selector" className="scroll-mt-24">
-                <TicketSelector basePrice={ticketPrice} bundles={bundles} campaignId={campaignId} />
+                <TicketSelector basePrice={ticketPrice} bundles={bundles} campaignId={campaignId} soldCount={soldCount} capTotal={capTotal} />
               </div>
             </div>
           </div>
