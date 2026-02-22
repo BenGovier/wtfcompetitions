@@ -48,12 +48,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: 'Campaign not found' }, { status: 400, ...NO_STORE })
   }
 
-  // 3b) Hard-cap check: ensure tickets are still available
+  // 3b) Resolve the real giveaway_id from the giveaways table (FK target)
+  const { data: giveaway, error: giveErr } = await supabase
+    .from('giveaways')
+    .select('id')
+    .eq('campaign_id', campaignId)
+    .limit(1)
+    .maybeSingle()
+
+  if (giveErr || !giveaway) {
+    console.error('[checkout/create] giveaway not found for campaign:', campaignId, giveErr)
+    return NextResponse.json({ ok: false, error: 'Invalid giveaway_id' }, { status: 400, ...NO_STORE })
+  }
+
+  const giveawayId = giveaway.id as string
+
+  // 3c) Hard-cap check: ensure tickets are still available
   if (campaign.max_tickets_total != null) {
     const { data: counter } = await supabase
       .from('giveaway_ticket_counters')
       .select('next_ticket')
-      .eq('giveaway_id', campaignId)
+      .eq('giveaway_id', giveawayId)
       .maybeSingle()
 
     const nextTicket = counter?.next_ticket ?? 1
@@ -76,7 +91,7 @@ export async function POST(request: Request) {
       idempotency_key: randomUUID(),
       user_id: user.id,
       campaign_id: campaignId,
-      giveaway_id: campaignId,
+      giveaway_id: giveawayId,
       qty,
       total_pence: totalPence,
       currency: 'GBP',
@@ -90,7 +105,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: 'Failed to create checkout intent' }, { status: 500, ...NO_STORE })
   }
 
-  console.log('[checkout/create] created intent', { ref, campaignId, giveawayId: campaignId, qty })
+  console.log('[checkout/create] created intent', { ref, campaignId, giveawayId, qty })
 
   return NextResponse.json({ ok: true, ref, providerSessionId }, NO_STORE)
 }
