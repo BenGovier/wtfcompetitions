@@ -54,6 +54,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: 'awaiting_provider_confirmation' }, { status: 409, ...NO_STORE })
     }
 
+    if (message.includes('user_id mismatch') || message.includes('caller does not own')) {
+      return NextResponse.json({ ok: false, error: 'forbidden_checkout_intent_owner' }, { status: 403, ...NO_STORE })
+    }
+
     console.error('[checkout/confirm] Error:', message, err)
     return NextResponse.json({ ok: false, error: 'Internal server error' }, { status: 500, ...NO_STORE })
   }
