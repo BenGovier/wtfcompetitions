@@ -15,6 +15,8 @@ export async function POST(request: Request) {
     data: { user },
   } = await supabase.auth.getUser()
 
+  console.log('[checkout/confirm] caller user:', user?.id ?? null)
+
   if (!user) {
     return NextResponse.json({ ok: false, error: 'Not authenticated' }, { status: 401, ...NO_STORE })
   }
@@ -39,6 +41,12 @@ export async function POST(request: Request) {
   }
 
   // 3) Call confirmPaymentAndAward
+  console.log('[checkout/confirm] confirm attempt:', {
+    ref,
+    provider,
+    callerUserId: user?.id ?? null,
+  })
+
   try {
     const award: AwardPayload = await confirmPaymentAndAward({
       ref,
@@ -58,7 +66,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: 'forbidden_checkout_intent_owner' }, { status: 403, ...NO_STORE })
     }
 
-    console.error('[checkout/confirm] Error:', message, err)
+    console.error('[checkout/confirm] Error detail:', {
+      message,
+      ref,
+      provider,
+      callerUserId: user?.id ?? null,
+    })
     return NextResponse.json({ ok: false, error: 'Internal server error' }, { status: 500, ...NO_STORE })
   }
 }
