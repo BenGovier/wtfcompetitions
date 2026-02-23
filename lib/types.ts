@@ -27,6 +27,7 @@ export interface WinnerSnapshot {
   announcedAt: string
   giveawaySlug?: string
   quote?: string
+  kind?: 'main' | 'instant'
 }
 
 export interface Profile {
