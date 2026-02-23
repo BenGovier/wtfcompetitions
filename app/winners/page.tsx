@@ -10,32 +10,35 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 export default async function WinnersPage() {
-  let winners: WinnerSnapshot[] = mockWinners
+  let winners: WinnerSnapshot[] = []
 
   try {
     const supabase = await createClient()
     const { data, error } = await supabase
-      .from('winner_snapshots')
-      .select('payload')
-      .eq('kind', 'list')
-      .order('generated_at', { ascending: false })
+      .from('winners_feed')
+      .select('*')
+      .order('happened_at', { ascending: false })
+      .limit(200)
 
     if (!error && data && data.length > 0) {
-      winners = data.map((row) => {
-        const p = row.payload as Record<string, any>
-        return {
-          name: p.name || p.nickname || 'Winner',
-          avatarUrl: p.avatar_url || '/placeholder.svg',
-          prizeTitle: p.prize_title || 'Prize',
-          giveawayTitle: p.campaign_title || '',
-          giveawaySlug: p.campaign_slug || undefined,
-          announcedAt: p.announced_at || new Date().toISOString(),
-          quote: p.quote || undefined,
-        }
-      })
+      winners = data.map((row: any) => ({
+        name: 'Verified winner',
+        avatarUrl: '/placeholder.svg',
+        prizeTitle: row.prize_title || 'Prize',
+        giveawayTitle: row.campaign_title || '',
+        giveawaySlug: row.campaign_slug || undefined,
+        announcedAt: row.happened_at || new Date().toISOString(),
+        quote: undefined,
+        kind: (row.kind === 'main' ? 'main' : 'instant') as 'main' | 'instant',
+      }))
+    }
+
+    if (winners.length === 0) {
+      winners = mockWinners
     }
   } catch (err) {
-    console.error('[winners] Failed to fetch winner_snapshots:', err)
+    console.error('[winners] Failed to fetch winners_feed:', err)
+    winners = mockWinners
   }
 
   const featuredWinner = winners.find((w) => w.quote) || winners[0]

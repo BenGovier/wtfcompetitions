@@ -1,7 +1,7 @@
 import type { WinnerSnapshot } from "@/lib/types"
 import { Card, CardContent } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Trophy } from "lucide-react"
+import { Trophy, Zap } from "lucide-react"
 
 interface WinnerCardProps {
   winner: WinnerSnapshot
@@ -29,6 +29,19 @@ export function WinnerCard({ winner }: WinnerCardProps) {
               <Trophy className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
             </div>
             <p className="text-sm text-muted-foreground truncate">{winner.prizeTitle}</p>
+            {winner.kind && (
+              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
+                winner.kind === 'main'
+                  ? 'bg-primary/10 text-primary'
+                  : 'bg-amber-500/10 text-amber-600'
+              }`}>
+                {winner.kind === 'main' ? (
+                  <><Trophy className="h-2.5 w-2.5" aria-hidden="true" />Main Winner</>
+                ) : (
+                  <><Zap className="h-2.5 w-2.5" aria-hidden="true" />Instant Win</>
+                )}
+              </span>
+            )}
             <p className="text-xs text-muted-foreground truncate">{winner.giveawayTitle}</p>
             <p className="text-xs text-muted-foreground mt-1">
               {new Date(winner.announcedAt).toLocaleDateString("en-US", {
