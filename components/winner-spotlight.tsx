@@ -1,6 +1,5 @@
 import type { WinnerSnapshot } from "@/lib/types"
 import { Card, CardContent } from "@/components/ui/card"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Trophy, Quote } from "lucide-react"
 
 interface WinnerSpotlightProps {
@@ -13,15 +12,9 @@ export function WinnerSpotlight({ winner }: WinnerSpotlightProps) {
       <CardContent className="p-6 md:p-8">
         <div className="flex flex-col items-center gap-6 text-center md:flex-row md:items-start md:gap-8 md:text-left">
           <div className="relative">
-            <Avatar className="h-24 w-24 border-4 border-primary/30 md:h-32 md:w-32">
-              <AvatarImage src={winner.avatarUrl || "/placeholder.svg"} alt={winner.name} />
-              <AvatarFallback className="text-2xl">
-                {winner.name
-                  .split(" ")
-                  .map((n) => n[0])
-                  .join("")}
-              </AvatarFallback>
-            </Avatar>
+            <div className="flex h-24 w-24 items-center justify-center rounded-full border-4 border-primary/30 bg-primary/10 text-3xl font-bold text-primary md:h-32 md:w-32 md:text-4xl" aria-hidden="true">
+              {(winner.name?.[0] || '?').toUpperCase()}
+            </div>
             <div className="absolute -bottom-2 -right-2 flex h-10 w-10 items-center justify-center rounded-full bg-primary text-white shadow-lg">
               <Trophy className="h-5 w-5" aria-hidden="true" />
             </div>
