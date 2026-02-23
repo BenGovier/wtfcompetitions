@@ -53,8 +53,8 @@ export default async function HomePage() {
 
     if (!winErr && winData && winData.length > 0) {
       recentWinners = winData.map((row: any) => ({
-        name: 'Verified winner',
-        avatarUrl: '/placeholder.svg',
+        name: row.display_name || 'Winner',
+        avatarUrl: undefined,
         prizeTitle: row.prize_title || 'Prize',
         giveawayTitle: row.campaign_title || '',
         giveawaySlug: row.campaign_slug || undefined,

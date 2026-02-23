@@ -22,8 +22,8 @@ export default async function WinnersPage() {
 
     if (!error && data && data.length > 0) {
       winners = data.map((row: any) => ({
-        name: 'Verified winner',
-        avatarUrl: '/placeholder.svg',
+        name: row.display_name || 'Winner',
+        avatarUrl: undefined,
         prizeTitle: row.prize_title || 'Prize',
         giveawayTitle: row.campaign_title || '',
         giveawaySlug: row.campaign_slug || undefined,
