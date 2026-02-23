@@ -7,7 +7,7 @@ import { mockWinners } from "@/lib/mock-data"
 import { createClient } from "@/lib/supabase/server"
 import Link from "next/link"
 import { ArrowRight } from "lucide-react"
-import type { GiveawayPublic } from "@/lib/types"
+import type { GiveawayPublic, WinnerSnapshot } from "@/lib/types"
 
 export default async function HomePage() {
   const supabase = await createClient()
@@ -41,6 +41,35 @@ export default async function HomePage() {
   } catch (err) {
     console.error('[homepage] Failed to fetch snapshots:', err)
   }
+
+  // Fetch recent winners from live view
+  let recentWinners: WinnerSnapshot[] = []
+  try {
+    const { data: winData, error: winErr } = await supabase
+      .from('winners_feed')
+      .select('*')
+      .order('happened_at', { ascending: false })
+      .limit(6)
+
+    if (!winErr && winData && winData.length > 0) {
+      recentWinners = winData.map((row: any) => ({
+        name: 'Verified winner',
+        avatarUrl: '/placeholder.svg',
+        prizeTitle: row.prize_title || 'Prize',
+        giveawayTitle: row.campaign_title || '',
+        giveawaySlug: row.campaign_slug || undefined,
+        announcedAt: row.happened_at || new Date().toISOString(),
+        kind: (row.kind === 'main' ? 'main' : 'instant') as 'main' | 'instant',
+      }))
+    }
+  } catch (err) {
+    console.error('[homepage] Failed to fetch winners_feed:', err)
+  }
+
+  if (recentWinners.length === 0) {
+    recentWinners = mockWinners
+  }
+
   return (
     <div className="container px-4 py-8 md:py-16">
       {/* Hero Section */}
@@ -101,7 +130,7 @@ export default async function HomePage() {
           }
         />
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {mockWinners.map((winner, i) => (
+          {recentWinners.map((winner, i) => (
             <WinnerCard key={i} winner={winner} />
           ))}
         </div>
