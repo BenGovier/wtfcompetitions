@@ -10,7 +10,6 @@ import { ShieldCheck, ExternalLink } from "lucide-react"
 
 interface WinnersPageClientProps {
   winners: WinnerSnapshot[]
-  featuredWinner: WinnerSnapshot
 }
 
 export function WinnersPageClient({ winners }: WinnersPageClientProps) {

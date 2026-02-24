@@ -21,7 +21,7 @@ export interface GiveawayPublic {
 
 export interface WinnerSnapshot {
   name: string
-  avatarUrl: string
+  avatarUrl?: string
   prizeTitle: string
   giveawayTitle: string
   announcedAt: string

@@ -49,7 +49,7 @@ export default async function HomePage() {
       .from('winners_feed')
       .select('*')
       .order('happened_at', { ascending: false })
-      .limit(6)
+      .limit(9)
 
     if (!winErr && winData && winData.length > 0) {
       recentWinners = winData.map((row: any) => ({
@@ -133,6 +133,11 @@ export default async function HomePage() {
           {recentWinners.map((winner, i) => (
             <WinnerCard key={i} winner={winner} />
           ))}
+        </div>
+        <div className="mt-8 text-center">
+          <Button size="lg" variant="outline" asChild>
+            <Link href="/winners">View all winners</Link>
+          </Button>
         </div>
       </section>
     </div>
