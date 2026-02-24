@@ -73,21 +73,29 @@ export default async function HomePage() {
   return (
     <div className="container px-4 py-8 md:py-16">
       {/* Hero Section */}
-      <section className="mb-16 text-center">
-        <h1 className="text-balance text-4xl font-bold tracking-tight md:text-5xl lg:text-6xl">Win Amazing Prizes</h1>
-        <p className="mx-auto mt-4 max-w-2xl text-pretty text-lg text-muted-foreground md:text-xl">
-          Enter giveaways for tech, gaming gear, and exclusive prizes. Trusted by thousands, with verified winners every
-          week.
-        </p>
-        <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
-          <Button size="lg" className="text-base font-semibold" asChild>
-            <Link href="/giveaways">Browse Giveaways</Link>
-          </Button>
-          <Button size="lg" variant="outline" className="text-base bg-transparent" asChild>
-            <Link href="/winners">See Winners</Link>
-          </Button>
+      <section className="relative mb-16 overflow-hidden rounded-2xl px-6 py-16 text-center md:py-24" style={{ background: 'linear-gradient(180deg, #F3F4F6 0%, #FFFFFF 100%)' }}>
+        <div className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(circle at 50% 0%, rgba(109,40,217,0.12), transparent 60%)' }} aria-hidden="true" />
+        <div className="relative">
+          <h1 className="text-balance text-4xl font-extrabold tracking-tight text-foreground md:text-5xl lg:text-6xl">Win Amazing Prizes</h1>
+          <p className="mx-auto mt-4 max-w-2xl text-pretty text-lg leading-relaxed text-muted-foreground md:text-xl">
+            Enter giveaways for tech, gaming gear, and exclusive prizes. Trusted by thousands, with verified winners every
+            week.
+          </p>
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+            <Button size="lg" className="rounded-xl bg-primary text-base font-semibold text-primary-foreground shadow-md transition-all duration-300 hover:-translate-y-0.5 hover:bg-[#5B21B6] hover:shadow-lg" asChild>
+              <Link href="/giveaways">Browse Giveaways</Link>
+            </Button>
+            <Button size="lg" variant="outline" className="rounded-xl border-border text-base font-semibold transition-all duration-300 hover:-translate-y-0.5 hover:bg-accent" asChild>
+              <Link href="/winners">See Winners</Link>
+            </Button>
+          </div>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-sm">Verified Winners</span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-sm">Secure Payments</span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-sm">UK Based</span>
+          </div>
+          <TrustBadges />
         </div>
-        <TrustBadges />
       </section>
 
       {/* Featured Giveaways */}
@@ -135,7 +143,7 @@ export default async function HomePage() {
           ))}
         </div>
         <div className="mt-8 text-center">
-          <Button size="lg" variant="outline" asChild>
+          <Button size="lg" variant="outline" className="rounded-xl font-semibold transition-all duration-300 hover:-translate-y-0.5" asChild>
             <Link href="/winners">View all winners</Link>
           </Button>
         </div>

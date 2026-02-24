@@ -19,43 +19,48 @@ export function GiveawayCard({ giveaway }: GiveawayCardProps) {
   const timeRemaining = Math.floor((giveaway.endsAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
 
   return (
-    <Card className="overflow-hidden transition-shadow hover:shadow-lg">
+    <Card className="group overflow-hidden rounded-2xl border border-border shadow-sm transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-xl">
       <Link href={`/giveaways/${giveaway.slug}`} className="block">
-        <div className="relative aspect-[3/2] overflow-hidden bg-muted">
+        <div className="relative aspect-[3/2] overflow-hidden rounded-t-2xl bg-muted">
           <img
             src={giveaway.imageUrl || "/placeholder.svg"}
             alt={giveaway.prizeTitle}
-            className="h-full w-full object-cover transition-transform hover:scale-105"
+            className="h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-103"
+            crossOrigin="anonymous"
           />
+          {/* Gradient overlay for text readability */}
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/30 to-transparent" aria-hidden="true" />
           {giveaway.status === "paused" && (
-            <div className="absolute right-2 top-2 rounded-full bg-muted px-3 py-1 text-xs font-semibold text-muted-foreground">
+            <div className="absolute right-3 top-3 rounded-full bg-card/90 px-3 py-1 text-xs font-semibold text-muted-foreground shadow-sm backdrop-blur-sm">
               Paused
             </div>
           )}
           {giveaway.status === "ended" && (
-            <div className="absolute right-2 top-2 rounded-full bg-destructive px-3 py-1 text-xs font-semibold text-white">
+            <div className="absolute right-3 top-3 rounded-full bg-destructive px-3 py-1 text-xs font-semibold text-white shadow-sm">
               Ended
             </div>
           )}
         </div>
       </Link>
       <CardContent className="p-4">
-        <h3 className="text-balance text-lg font-semibold leading-snug">{giveaway.title}</h3>
+        <h3 className="text-balance text-lg font-semibold leading-snug text-foreground">{giveaway.title}</h3>
         <p className="mt-1 text-sm text-muted-foreground">{giveaway.prizeTitle}</p>
-        <div className="mt-3 flex items-center gap-1 text-sm text-muted-foreground">
+        <div className="mt-3 flex items-center gap-1.5 text-sm text-muted-foreground">
           <Clock className="h-4 w-4" aria-hidden="true" />
           <span>{timeRemaining > 1 ? `${timeRemaining} days left` : "Less than 1 day left"}</span>
         </div>
       </CardContent>
-      <CardFooter className="flex items-center justify-between gap-3 border-t bg-muted/30 p-4">
-        <div>
-          <div className="text-xs text-muted-foreground">Entry from</div>
-          <div className="text-xl font-bold text-brand">{formatPriceGBP(giveaway.ticketPrice)}</div>
+      <CardFooter className="flex flex-col gap-3 border-t border-border/60 bg-muted/20 p-4">
+        <div className="flex w-full items-center justify-between">
+          <div>
+            <div className="text-xs text-muted-foreground">Entry from</div>
+            <div className="text-2xl font-bold text-primary">{formatPriceGBP(giveaway.ticketPrice)}</div>
+          </div>
         </div>
         <Button
           asChild
           size="lg"
-          className="font-semibold"
+          className="w-full rounded-xl bg-primary font-semibold text-primary-foreground shadow-sm transition-all duration-300 hover:bg-[#5B21B6] hover:shadow-md"
           disabled={giveaway.status !== "live"}
         >
           <Link href={`/giveaways/${giveaway.slug}`}>Enter Now</Link>
