@@ -104,6 +104,8 @@ async function refreshSnapshotsNow(campaignId: string) {
     slug: c.slug,
     title: c.title,
     prize_title: c.main_prize_title,
+    prize_description: c.main_prize_description ?? null,
+    description: c.description ?? null,
     prize_value_text: null,
     hero_image_url: c.hero_image_url,
     images: null,
