@@ -76,6 +76,11 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
 
   const title = p.title || 'Untitled'
   const prizeTitle = p.prize_title || p.title || 'Prize'
+  const description =
+    p.prize_description ||
+    p.description ||
+    p.subtitle ||
+    null
   const prizeValueText = p.prize_value_text || null
   const heroImageUrl = p.hero_image_url || '/placeholder.svg'
   const images: string[] = p.images || [heroImageUrl]
@@ -168,7 +173,9 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
                   )}
                 </div>
                 <h1 className="text-balance text-3xl font-bold leading-tight md:text-4xl">{title}</h1>
-                <p className="mt-2 text-pretty text-lg text-muted-foreground">{prizeTitle}</p>
+                <p className="mt-2 text-pretty text-lg text-muted-foreground">
+                  {description ?? prizeTitle}
+                </p>
                 {prizeValueText && (
                   <div className="mt-3 flex items-baseline gap-2">
                     <span className="text-sm text-muted-foreground">Retail Value:</span>
