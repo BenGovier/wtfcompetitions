@@ -280,6 +280,8 @@ async function processRefreshSnapshots(
       slug: campaign.slug,
       title: campaign.title,
       prize_title: campaign.main_prize_title,
+      prize_description: campaign.main_prize_description ?? null,
+      description: campaign.description ?? null,
       prize_value_text: null,
       hero_image_url: campaign.hero_image_url,
       images: null,
