@@ -13,6 +13,7 @@ import { Separator } from "@/components/ui/separator"
 import { Shield, Award, ChevronRight } from "lucide-react"
 
 export const revalidate = 60
+export const dynamic = 'force-dynamic'
 
 interface GiveawayPageProps {
   params: Promise<{
