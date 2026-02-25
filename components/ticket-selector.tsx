@@ -57,7 +57,7 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
       })
 
       if (res.status === 401) {
-        const returnTo = window.location.pathname + window.location.search + '#ticket-selector'
+        const returnTo = window.location.pathname + window.location.search
         window.location.href = `/auth/login?redirect=${encodeURIComponent(returnTo)}`
         return
       }
@@ -79,7 +79,7 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
         })
 
         if (sumupRes.status === 401) {
-          const returnTo = window.location.pathname + window.location.search + '#ticket-selector'
+          const returnTo = window.location.pathname + window.location.search
           window.location.href = `/auth/login?redirect=${encodeURIComponent(returnTo)}`
           return
         }
