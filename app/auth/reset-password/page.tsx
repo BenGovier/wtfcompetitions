@@ -37,7 +37,7 @@ export default function ResetPasswordPage() {
         const code = url.searchParams.get('code')
 
         if (code) {
-          const { error: exchangeErr } = await supabase.auth.exchangeCodeForSession(code)
+          const { error: exchangeErr } = await supabase.auth.exchangeCodeForSession(window.location.href)
           if (exchangeErr) {
             console.error('[reset-password] Code exchange failed:', exchangeErr.message)
             setPageState('expired')
