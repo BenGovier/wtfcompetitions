@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
+import Link from 'next/link'
 
 export default function LoginClient({ redirect }: { redirect: string }) {
   const [email, setEmail] = useState('')
@@ -88,6 +89,17 @@ export default function LoginClient({ redirect }: { redirect: string }) {
             <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? 'Logging in...' : 'Login'}
             </Button>
+            <div className="flex flex-col gap-2 text-center text-sm">
+              <p className="text-muted-foreground">
+                {"Don't have an account? "}
+                <Link href="/auth/sign-up" className="underline underline-offset-4 hover:text-foreground">
+                  Create an account
+                </Link>
+              </p>
+              <Link href="/auth/forgot-password" className="text-muted-foreground underline underline-offset-4 hover:text-foreground">
+                Forgot password?
+              </Link>
+            </div>
           </div>
         </form>
       </CardContent>
