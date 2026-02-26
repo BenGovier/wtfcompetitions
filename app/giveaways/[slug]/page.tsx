@@ -11,6 +11,7 @@ import { TrustBadges } from "@/components/trust-badges"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Shield, Award, ChevronRight } from "lucide-react"
+import { ScrollToTopOnMount } from "@/components/scroll-to-top-on-mount"
 
 export const revalidate = 60
 export const dynamic = 'force-dynamic'
@@ -128,8 +129,9 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
   const isLive = status === "live"
 
   return (
-    <div className="min-h-screen bg-background pb-24 md:pb-8">
-      {/* Prize Hero Section */}
+  <div className="min-h-screen bg-background pb-24 md:pb-8">
+  <ScrollToTopOnMount />
+  {/* Prize Hero Section */}
       <section className="border-b bg-muted/30">
         <div className="container max-w-5xl px-4 py-8">
           <div className="grid gap-8 md:grid-cols-2">
