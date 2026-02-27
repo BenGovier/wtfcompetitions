@@ -2,6 +2,7 @@ import type React from "react"
 import type { Metadata } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
+import { headers } from "next/headers"
 import "./globals.css"
 import { SiteHeader } from "@/components/site-header"
 import { MobileNav } from "@/components/mobile-nav"
@@ -35,19 +36,23 @@ export const metadata: Metadata = {
   },
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const hdrs = await headers()
+  const pathname = hdrs.get("x-next-pathname") ?? hdrs.get("x-invoke-path") ?? ""
+  const isBarePage = pathname.startsWith("/pre-register")
+
   return (
     <html lang="en">
       <body className={`font-sans antialiased`}>
-        <AnnouncementBar />
-        <SiteHeader />
-        <main className="min-h-[calc(100vh-4rem)]">{children}</main>
-        <SiteFooter />
-        <MobileNav />
+        {!isBarePage && <AnnouncementBar />}
+        {!isBarePage && <SiteHeader />}
+        <main className={isBarePage ? "" : "min-h-[calc(100vh-4rem)]"}>{children}</main>
+        {!isBarePage && <SiteFooter />}
+        {!isBarePage && <MobileNav />}
         <Analytics />
       </body>
     </html>

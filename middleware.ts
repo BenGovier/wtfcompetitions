@@ -11,7 +11,9 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(callbackUrl)
   }
 
-  return await updateSession(request)
+  const response = await updateSession(request)
+  response.headers.set('x-next-pathname', pathname)
+  return response
 }
 
 export const config = {
