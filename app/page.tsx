@@ -72,19 +72,19 @@ export default async function HomePage() {
   }
 
   return (
-    <div className="container px-4 py-8 md:py-16">
-      {/* Hero Section */}
-      <section className="relative mb-16 overflow-hidden rounded-2xl px-6 py-16 text-center md:py-24">
+    <>
+      {/* Hero Section - Full screen, full width */}
+      <section className="relative w-full h-screen overflow-hidden">
         {/* Mobile hero image */}
         <div className="absolute inset-0 z-0 md:hidden">
           <Image
             src="/images/pre-register-hero-mobile.png"
             alt="WTF Giveaways"
+            className="object-cover"
             fill
             priority
             quality={85}
             sizes="100vw"
-            style={{ objectFit: "cover" }}
           />
         </div>
         {/* Desktop hero image */}
@@ -92,16 +92,16 @@ export default async function HomePage() {
           <Image
             src="/images/pre-register-hero-desktop.png"
             alt="WTF Giveaways"
+            className="object-cover"
             fill
             priority
             quality={85}
             sizes="100vw"
-            style={{ objectFit: "cover" }}
           />
         </div>
         {/* Dark overlay for text readability */}
         <div className="absolute inset-0 z-[1] bg-black/50" aria-hidden="true" />
-        <div className="relative z-10">
+        <div className="relative z-10 flex flex-col items-center justify-center text-center h-full px-6">
           <h1 className="text-balance text-4xl font-extrabold tracking-tight text-white md:text-5xl lg:text-6xl">Win Amazing Prizes</h1>
           <p className="mx-auto mt-4 max-w-2xl text-pretty text-lg leading-relaxed text-white/80 md:text-xl">
             {"Enter the best giveaways and join everyone who\u2019s winning real cash prizes!"}
@@ -123,6 +123,7 @@ export default async function HomePage() {
         </div>
       </section>
 
+    <div className="container px-4 py-8 md:py-16">
       {/* Featured Giveaways */}
       <section className="mb-16">
         <SectionHeader
@@ -174,5 +175,6 @@ export default async function HomePage() {
         </div>
       </section>
     </div>
+    </>
   )
 }
