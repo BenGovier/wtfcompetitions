@@ -73,29 +73,34 @@ export function PreRegisterForm() {
 
   if (success) {
     return (
-      <div className="flex flex-col items-center gap-4 py-8 text-center">
-        <div className="text-4xl">&#10024;</div>
-        <h3 className="text-2xl font-bold text-white">
+      <div className="flex flex-col items-center gap-3 py-6 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#FFD700]/20 text-3xl">
+          {success.alreadyRegistered ? '\uD83D\uDC4B' : '\uD83C\uDF89'}
+        </div>
+        <h3 className="text-xl font-bold text-white">
           {success.alreadyRegistered
-            ? "You're already on the list"
-            : "You're in!"}
+            ? "You're already on the list!"
+            : "You're IN!"}
         </h3>
-        <p className="text-lg text-pink-100">
+        <p className="text-sm text-pink-200/80">
           {success.alreadyRegistered
-            ? "We already have your details. Stay tuned!"
-            : "We'll notify you when it drops."}
+            ? 'We already have your details. Stay tuned for the drop!'
+            : "VIP secured. We'll notify you when it drops."}
         </p>
+        <div className="mt-2 rounded-full bg-white/10 px-4 py-1.5 text-xs font-medium text-[#FFD700]">
+          VIP CONFIRMED
+        </div>
       </div>
     )
   }
 
   const inputBase =
-    'w-full rounded-lg border border-pink-300/40 bg-white/10 px-4 py-3 text-white placeholder-pink-200/60 backdrop-blur-sm outline-none transition focus:border-[#FFD700] focus:ring-2 focus:ring-[#FFD700]/30 text-sm'
-  const errorClass = 'mt-1 text-xs text-[#FFD700]'
+    'w-full rounded-xl border border-white/15 bg-white/[0.07] px-4 py-3 text-sm text-white placeholder-pink-200/50 outline-none transition-all duration-200 focus:border-[#FFD700]/60 focus:bg-white/[0.1] focus:ring-2 focus:ring-[#FFD700]/20 focus:shadow-[0_0_15px_rgba(255,215,0,0.1)]'
+  const errorClass = 'mt-1 text-[11px] font-medium text-[#FFD700]'
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <div className="grid grid-cols-2 gap-3">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+      <div className="grid grid-cols-2 gap-2.5">
         <div>
           <input
             type="text"
@@ -157,20 +162,20 @@ export function PreRegisterForm() {
       </div>
 
       <div>
-        <label className="flex items-start gap-3 cursor-pointer">
+        <label className="flex cursor-pointer items-start gap-2.5">
           <input
             type="checkbox"
-            className="mt-1 h-4 w-4 shrink-0 accent-[#FFD700]"
+            className="mt-0.5 h-4 w-4 shrink-0 accent-[#FFD700] rounded"
             checked={form.consent}
             onChange={(e) => updateField('consent', e.target.checked)}
           />
-          <span className="text-xs leading-relaxed text-pink-100">
+          <span className="text-[11px] leading-relaxed text-pink-200/70">
             {'I agree to the '}
-            <Link href="/legal/terms" className="underline hover:text-white">
+            <Link href="/legal/terms" className="text-pink-100 underline underline-offset-2 hover:text-white">
               Terms & Conditions
             </Link>
             {' and '}
-            <Link href="/legal/privacy" className="underline hover:text-white">
+            <Link href="/legal/privacy" className="text-pink-100 underline underline-offset-2 hover:text-white">
               Privacy Policy
             </Link>
             {' and I consent to marketing.'}
@@ -180,7 +185,7 @@ export function PreRegisterForm() {
       </div>
 
       {serverError && (
-        <p className="rounded-lg bg-red-500/20 px-4 py-2 text-center text-sm text-red-200">
+        <p className="rounded-xl bg-red-500/20 px-4 py-2 text-center text-xs text-red-200">
           {serverError}
         </p>
       )}
@@ -188,13 +193,14 @@ export function PreRegisterForm() {
       <button
         type="submit"
         disabled={submitting}
-        className="relative w-full rounded-xl bg-gradient-to-r from-[#FFD700] to-[#FFA500] px-6 py-4 text-base font-extrabold uppercase tracking-wider text-[#1a0a2e] shadow-lg transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_0_30px_rgba(255,215,0,0.4)] disabled:opacity-50 disabled:hover:translate-y-0"
+        className="relative mt-1 w-full overflow-hidden rounded-xl bg-gradient-to-r from-[#FFD700] to-[#FFA500] px-6 py-3.5 text-sm font-extrabold uppercase tracking-wider text-[#1a0a2e] shadow-lg transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_0_30px_rgba(255,215,0,0.4)] active:scale-[0.98] disabled:opacity-50 disabled:hover:translate-y-0"
+        style={{ backgroundSize: '200% auto' }}
       >
-        {submitting ? 'Registering...' : 'Pre-Register Now'}
+        {submitting ? 'Registering...' : 'JOIN THE VIP LIST'}
       </button>
 
-      <p className="text-center text-[11px] text-pink-200/60">
-        UK only &bull; 18+ &bull; No spam
+      <p className="text-center text-[10px] text-pink-200/50">
+        UK only &bull; 18+ &bull; No spam &bull; Free entry
       </p>
     </form>
   )
