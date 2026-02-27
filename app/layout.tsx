@@ -12,10 +12,16 @@ import { AnnouncementBar } from "@/components/announcement-bar"
 const _geist = Geist({ subsets: ["latin"] })
 const _geistMono = Geist_Mono({ subsets: ["latin"] })
 
+const siteDescription =
+  "Win insane prizes with WTF Giveaways. Enter giveaways, instant wins, and see real winners."
+
 export const metadata: Metadata = {
-  title: "WTF Giveaways - Win Amazing Prizes",
-  description:
-    "Enter giveaways for a chance to win tech, gaming gear, and more. Verified winners, secure payments, instant entry.",
+  metadataBase: new URL("https://wtf-giveaways.co.uk"),
+  title: {
+    default: "WTF Giveaways",
+    template: "%s | WTF Giveaways",
+  },
+  description: siteDescription,
   generator: "v0.app",
   icons: {
     icon: [
@@ -33,6 +39,27 @@ export const metadata: Metadata = {
       },
     ],
     apple: "/apple-icon.png",
+  },
+  openGraph: {
+    type: "website",
+    siteName: "WTF Giveaways",
+    url: "https://wtf-giveaways.co.uk",
+    title: "WTF Giveaways",
+    description: siteDescription,
+    images: [
+      {
+        url: "/og.jpg",
+        width: 1200,
+        height: 630,
+        alt: "WTF Giveaways",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "WTF Giveaways",
+    description: siteDescription,
+    images: ["/og.jpg"],
   },
 }
 
