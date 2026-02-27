@@ -110,16 +110,13 @@ export default async function HomePage() {
             <Button size="lg" className="rounded-xl bg-primary text-base font-semibold text-primary-foreground shadow-md transition-all duration-300 hover:-translate-y-0.5 hover:bg-[#5B21B6] hover:shadow-lg" asChild>
               <Link href="/giveaways">Browse Giveaways</Link>
             </Button>
-            <Button size="lg" variant="outline" className="rounded-xl border-white/30 text-base font-semibold text-white transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/10" asChild>
+            <Button size="lg" variant="outline" className="rounded-xl border-white/30 bg-white text-base font-semibold text-[#6D28D9] transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/90" asChild>
               <Link href="/winners">See Winners</Link>
             </Button>
           </div>
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-white/80 backdrop-blur-sm">Verified Winners</span>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-white/80 backdrop-blur-sm">Secure Payments</span>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-white/80 backdrop-blur-sm">UK Based</span>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-6 py-4 [&_span]:text-white [&_svg]:text-white">
+            <TrustBadges />
           </div>
-          <TrustBadges />
         </div>
       </section>
 
