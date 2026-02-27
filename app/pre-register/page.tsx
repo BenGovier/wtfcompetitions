@@ -1,4 +1,3 @@
-import Image from 'next/image'
 import { PreRegisterForm } from '@/components/pre-register/PreRegisterForm'
 
 export const metadata = {
@@ -41,43 +40,12 @@ export default function PreRegisterPage() {
         }
       `}</style>
 
-      <div className="relative min-h-screen overflow-hidden" style={{
-        background: 'linear-gradient(160deg, #0a0a0a 0%, #1a0011 20%, #3d0025 45%, #8b0040 70%, #d4004a 100%)',
-      }}>
-        {/* Bloom glow overlays */}
-        <div className="pointer-events-none absolute inset-0 z-0" aria-hidden="true">
-          <div className="absolute top-0 left-1/4 h-[500px] w-[500px] rounded-full" style={{
-            background: 'radial-gradient(circle, rgba(255,0,100,0.2) 0%, transparent 70%)',
-            filter: 'blur(80px)',
-          }} />
-          <div className="absolute bottom-0 right-0 h-[400px] w-[400px] rounded-full" style={{
-            background: 'radial-gradient(circle, rgba(255,215,0,0.12) 0%, transparent 70%)',
-            filter: 'blur(60px)',
-          }} />
-          <div className="absolute top-1/3 right-1/4 h-[300px] w-[300px] rounded-full" style={{
-            background: 'radial-gradient(circle, rgba(255,0,150,0.15) 0%, transparent 70%)',
-            filter: 'blur(100px)',
-          }} />
-        </div>
-
-        {/* Sparkle overlay */}
-        <div className="pointer-events-none absolute inset-0 z-[1]" style={{
-          backgroundImage:
-            'radial-gradient(1px 1px at 10% 20%, rgba(255,215,0,0.7) 0%, transparent 100%), ' +
-            'radial-gradient(1.5px 1.5px at 25% 70%, rgba(255,255,255,0.5) 0%, transparent 100%), ' +
-            'radial-gradient(1px 1px at 45% 15%, rgba(255,215,0,0.5) 0%, transparent 100%), ' +
-            'radial-gradient(1px 1px at 60% 55%, rgba(255,255,255,0.4) 0%, transparent 100%), ' +
-            'radial-gradient(1.5px 1.5px at 75% 30%, rgba(255,215,0,0.6) 0%, transparent 100%), ' +
-            'radial-gradient(1px 1px at 85% 75%, rgba(255,255,255,0.3) 0%, transparent 100%), ' +
-            'radial-gradient(1px 1px at 15% 90%, rgba(255,215,0,0.4) 0%, transparent 100%), ' +
-            'radial-gradient(1.5px 1.5px at 50% 45%, rgba(255,255,255,0.5) 0%, transparent 100%)',
-        }} aria-hidden="true" />
-
+      <div className="relative min-h-screen overflow-hidden bg-black">
         {/* ===== LIVE UI OVERLAY ===== */}
 
         {/* Top-left LIVE pill */}
         <div className="absolute top-4 left-4 z-30 flex items-center gap-2">
-          <div className="flex items-center gap-1.5 rounded-full bg-red-600 px-3 py-1 shadow-lg">
+          <div className="flex items-center gap-1.5 rounded-full bg-red-600 px-3 py-1 shadow-lg" style={{ boxShadow: '0 0 20px rgba(255,0,0,0.4)' }}>
             <span className="inline-block h-2 w-2 rounded-full bg-white" style={{ animation: 'pulse-live 1.2s ease-in-out infinite' }} />
             <span className="text-xs font-bold uppercase tracking-wider text-white">LIVE</span>
           </div>
@@ -117,110 +85,87 @@ export default function PreRegisterPage() {
           ))}
         </div>
 
-        {/* ===== MOBILE LAYOUT ===== */}
-        <div className="relative z-10 flex min-h-screen flex-col lg:hidden">
-          {/* Choleigh hero - top half */}
-          <div className="relative flex h-[55vh] min-h-[360px] items-end justify-center overflow-hidden">
-            <div className="absolute inset-0" style={{
-              background: 'linear-gradient(to bottom, transparent 40%, rgba(0,0,0,0.8) 100%)',
-            }} />
-            <Image
-              src="/images/pre-register-choleigh.png"
-              alt="Choleigh - WTF Giveaways"
-              fill
-              className="object-contain object-bottom"
-              priority
-              sizes="100vw"
-            />
-            {/* Headline overlaid on image */}
-            <div className="relative z-10 px-6 pb-6 text-center">
-              <p className="text-xs font-bold uppercase tracking-[0.3em] text-pink-300/80">WTF Giveaways</p>
-              <h1 className="mt-2 text-3xl font-black uppercase leading-none tracking-tight text-white sm:text-4xl">
-                {'Win the '}
-                <span className="bg-gradient-to-r from-[#FFD700] via-[#FFC400] to-[#FFA500] bg-clip-text text-transparent" style={{
-                  backgroundSize: '200% auto',
-                  animation: 'shimmer 3s linear infinite',
-                }}>{'£59.99'}</span>
-              </h1>
-              <h2 className="mt-1 text-xl font-extrabold uppercase tracking-wide text-white sm:text-2xl">
-                What The Collection
-              </h2>
-              <p className="text-lg font-bold uppercase text-[#FFD700]">Ultimate Kit</p>
-              <p className="mt-2 text-sm text-pink-200/70">
-                {"Choleigh is LIVE on TikTok \u2014 join the free VIP drop list."}
-              </p>
-            </div>
-          </div>
+        {/* ===== HERO SECTION ===== */}
+        <section
+          className="relative flex min-h-screen flex-col"
+          style={{
+            backgroundImage: 'url(/images/pre-register-hero-mobile.png)',
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat',
+          }}
+        >
+          {/* Desktop background override */}
+          <style>{`
+            @media (min-width: 768px) {
+              .pre-register-hero {
+                background-image: url('/images/pre-register-hero-desktop.png') !important;
+              }
+            }
+          `}</style>
+          {/* Apply the class for desktop override */}
+          <div
+            className="pre-register-hero absolute inset-0 z-0"
+            style={{
+              backgroundImage: 'url(/images/pre-register-hero-mobile.png)',
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              backgroundRepeat: 'no-repeat',
+            }}
+            aria-hidden="true"
+          />
 
-          {/* Tap to join CTA */}
-          <div className="relative z-10 -mt-3 text-center">
-            <a href="#form-card" className="inline-flex items-center gap-1 rounded-full bg-white/10 px-4 py-1.5 text-xs font-medium text-pink-200 backdrop-blur-sm transition hover:bg-white/20">
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#FFD700]" style={{ animation: 'pulse-live 1.5s ease-in-out infinite' }} />
-              Tap to join the VIP list
-            </a>
-          </div>
+          {/* Dark gradient overlay for text readability */}
+          <div className="absolute inset-0 z-[1]" style={{
+            background: 'linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.2) 40%, rgba(0,0,0,0.7) 75%, rgba(0,0,0,0.95) 100%)',
+          }} aria-hidden="true" />
 
-          {/* Form card */}
-          <div id="form-card" className="relative z-10 flex flex-1 flex-col px-4 pb-24 pt-4">
-            <div className="mx-auto w-full max-w-md rounded-2xl border border-white/10 p-5 shadow-2xl backdrop-blur-md" style={{
-              background: 'linear-gradient(135deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.02) 100%)',
-              animation: 'glow-pulse 4s ease-in-out infinite',
-            }}>
-              <h3 className="mb-1 text-center text-lg font-bold uppercase tracking-wide text-white">Secure your spot</h3>
-              <p className="mb-4 text-center text-xs text-pink-200/60">Be the first to know when it drops</p>
-              <PreRegisterForm />
-            </div>
-          </div>
-        </div>
-
-        {/* ===== DESKTOP LAYOUT ===== */}
-        <div className="relative z-10 mx-auto hidden min-h-screen max-w-7xl items-center gap-8 px-8 py-12 lg:flex xl:gap-16">
-          {/* Left: Choleigh */}
-          <div className="relative flex w-1/2 items-end justify-center" style={{ height: '85vh', maxHeight: '800px' }}>
-            <div className="relative h-full w-full max-w-[500px]">
-              <Image
-                src="/images/pre-register-choleigh.png"
-                alt="Choleigh - WTF Giveaways"
-                fill
-                className="object-contain object-bottom drop-shadow-[0_0_40px_rgba(255,0,100,0.3)]"
-                priority
-                sizes="50vw"
-              />
-              {/* Rim glow */}
-              <div className="pointer-events-none absolute inset-0 rounded-full" style={{
-                background: 'radial-gradient(ellipse at 50% 80%, rgba(255,0,100,0.15) 0%, transparent 60%)',
-              }} aria-hidden="true" />
-            </div>
-          </div>
-
-          {/* Right: Content + Form */}
-          <div className="flex w-1/2 flex-col items-start">
+          {/* Hero content - positioned at bottom of viewport */}
+          <div className="relative z-10 mt-auto px-4 pb-8 text-center md:px-8 md:pb-12">
             <p className="text-xs font-bold uppercase tracking-[0.3em] text-pink-300/80">WTF Giveaways</p>
-            <h1 className="mt-4 text-5xl font-black uppercase leading-none tracking-tight text-white xl:text-6xl">
+            <h1 className="mt-3 text-4xl font-black uppercase leading-none tracking-tight text-white md:text-5xl lg:text-6xl">
               {'Win the '}
               <span className="bg-gradient-to-r from-[#FFD700] via-[#FFC400] to-[#FFA500] bg-clip-text text-transparent" style={{
                 backgroundSize: '200% auto',
                 animation: 'shimmer 3s linear infinite',
+                textShadow: '0 0 30px rgba(255,215,0,0.3)',
               }}>{'£59.99'}</span>
             </h1>
-            <h2 className="mt-2 text-3xl font-extrabold uppercase tracking-wide text-white xl:text-4xl">
+            <h2 className="mt-1 text-2xl font-extrabold uppercase tracking-wide text-white md:text-3xl lg:text-4xl" style={{
+              textShadow: '0 2px 20px rgba(0,0,0,0.5)',
+            }}>
               What The Collection
             </h2>
-            <p className="text-2xl font-bold uppercase text-[#FFD700] xl:text-3xl">Ultimate Kit</p>
-            <p className="mt-3 max-w-md text-base leading-relaxed text-pink-200/70">
+            <p className="text-xl font-bold uppercase text-[#FFD700] md:text-2xl" style={{
+              textShadow: '0 0 20px rgba(255,215,0,0.3)',
+            }}>Ultimate Kit</p>
+            <p className="mx-auto mt-3 max-w-md text-sm text-pink-200/70 md:text-base">
               {"Choleigh is LIVE on TikTok \u2014 join the free VIP drop list."}
             </p>
 
-            {/* Tap to join */}
-            <div className="mt-4">
-              <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-medium text-pink-200 backdrop-blur-sm">
-                <span className="inline-block h-2 w-2 rounded-full bg-[#FFD700]" style={{ animation: 'pulse-live 1.5s ease-in-out infinite' }} />
-                Tap to join the VIP list
-              </span>
-            </div>
+            {/* Scroll indicator */}
+            <a href="#form-section" className="mt-6 inline-flex animate-bounce items-center gap-1.5 rounded-full bg-white/10 px-5 py-2 text-sm font-medium text-white backdrop-blur-sm transition hover:bg-white/20">
+              <span className="inline-block h-2 w-2 rounded-full bg-[#FFD700]" style={{ animation: 'pulse-live 1.5s ease-in-out infinite' }} />
+              Join the VIP list
+            </a>
+          </div>
+        </section>
 
+        {/* ===== FORM SECTION ===== */}
+        <section id="form-section" className="relative z-10 px-4 py-12 md:py-20" style={{
+          background: 'linear-gradient(180deg, rgba(0,0,0,0.95) 0%, #1a0011 30%, #2d0018 100%)',
+        }}>
+          {/* Glow effects behind form */}
+          <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+            <div className="absolute top-0 left-1/2 h-[400px] w-[600px] -translate-x-1/2 -translate-y-1/2 rounded-full" style={{
+              background: 'radial-gradient(circle, rgba(255,0,100,0.15) 0%, transparent 70%)',
+              filter: 'blur(80px)',
+            }} />
+          </div>
+
+          <div className="relative mx-auto max-w-md">
             {/* Form card */}
-            <div className="mt-8 w-full max-w-md rounded-2xl border border-white/10 p-6 shadow-2xl backdrop-blur-md xl:p-8" style={{
+            <div className="rounded-2xl border border-white/10 p-6 shadow-2xl backdrop-blur-md md:p-8" style={{
               background: 'linear-gradient(135deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.02) 100%)',
               animation: 'glow-pulse 4s ease-in-out infinite',
             }}>
@@ -229,12 +174,12 @@ export default function PreRegisterPage() {
               <PreRegisterForm />
             </div>
           </div>
-        </div>
+        </section>
 
         {/* ===== MOBILE STICKY CTA BAR ===== */}
-        <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-black/80 p-3 backdrop-blur-md lg:hidden">
+        <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-black/80 p-3 backdrop-blur-md md:hidden">
           <a
-            href="#form-card"
+            href="#form-section"
             className="block w-full rounded-xl bg-gradient-to-r from-[#FFD700] to-[#FFA500] px-6 py-3.5 text-center text-base font-extrabold uppercase tracking-wider text-[#1a0a2e] shadow-lg transition-all active:scale-[0.98]"
             style={{ backgroundSize: '200% auto', animation: 'shimmer 3s linear infinite' }}
           >
