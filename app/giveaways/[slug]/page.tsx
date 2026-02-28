@@ -190,7 +190,7 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
               <Separator />
 
               <div id="ticket-selector" className="scroll-mt-24">
-                <TicketSelector basePrice={ticketPrice} bundles={bundles} campaignId={campaignId} soldCount={soldCount} capTotal={capTotal} />
+                <TicketSelector basePrice={ticketPrice} bundles={bundles} campaignId={campaignId} soldCount={soldCount} capTotal={capTotal} startsAt={p.starts_at ?? null} endsAt={p.ends_at ?? null} />
               </div>
             </div>
           </div>
@@ -260,21 +260,23 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
         </div>
       </div>
 
-      {/* Mobile Sticky CTA */}
-      <div className="fixed bottom-16 left-0 right-0 border-t bg-background p-4 shadow-lg md:hidden">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <div className="text-xs text-muted-foreground">Entry from</div>
-            <div className="text-xl font-bold text-brand">£{ticketPrice.toFixed(2)}</div>
+      {/* Mobile Sticky CTA — hidden server-side when draw has ended */}
+      {!(p.ends_at && new Date(p.ends_at).getTime() <= Date.now()) && (
+        <div className="fixed bottom-16 left-0 right-0 border-t bg-background p-4 shadow-lg md:hidden">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-xs text-muted-foreground">Entry from</div>
+              <div className="text-xl font-bold text-brand">£{ticketPrice.toFixed(2)}</div>
+            </div>
+            <Link
+              href="#ticket-selector"
+              className="inline-flex h-11 items-center justify-center rounded-md bg-brand px-8 text-sm font-semibold text-white transition-colors hover:bg-brand/90"
+            >
+              Enter Now
+            </Link>
           </div>
-          <Link
-            href="#ticket-selector"
-            className="inline-flex h-11 items-center justify-center rounded-md bg-brand px-8 text-sm font-semibold text-white transition-colors hover:bg-brand/90"
-          >
-            Enter Now
-          </Link>
         </div>
-      </div>
+      )}
     </div>
   )
 }
