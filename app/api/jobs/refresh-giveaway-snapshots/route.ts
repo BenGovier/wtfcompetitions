@@ -63,6 +63,16 @@ export async function GET(request: NextRequest) {
 
   console.log('[refresh-giveaway-snapshots] campaignId=', campaign.id, 'slug=', campaign.slug, 'instant_wins=', Array.isArray(instantWins) ? instantWins.length : 'MISSING_KEY')
 
+  // 5b) Fetch ticket counter
+  const { data: counterRow } = await supabase
+    .from('giveaway_ticket_counters')
+    .select('next_ticket')
+    .eq('giveaway_id', campaign.id)
+    .maybeSingle()
+
+  const nextTicket = counterRow?.next_ticket ?? 1
+  const ticketsSold = Math.max(nextTicket - 1, 0)
+
   // 6) Build payloads
   const listPayload = {
     id: campaign.id,
@@ -74,6 +84,8 @@ export async function GET(request: NextRequest) {
     ends_at: campaign.end_at,
     base_ticket_price_pence: campaign.ticket_price_pence,
     status: campaign.status,
+    tickets_sold: ticketsSold,
+    next_ticket: nextTicket,
   }
 
   const detailPayload = {
@@ -95,6 +107,8 @@ export async function GET(request: NextRequest) {
     bundles: null,
     hard_cap_total_tickets: campaign.max_tickets_total,
     instant_wins: instantWins,
+    tickets_sold: ticketsSold,
+    next_ticket: nextTicket,
   }
 
   // 7) Delete existing snapshots for this campaign

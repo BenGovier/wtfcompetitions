@@ -275,6 +275,16 @@ async function processRefreshSnapshots(
 
     console.log('[snapshots] instant_wins_count', campaign.id, instantWins.length)
 
+    // Fetch ticket counter for this campaign
+    const { data: counterRow } = await supabase
+      .from('giveaway_ticket_counters')
+      .select('next_ticket')
+      .eq('giveaway_id', campaign.id)
+      .maybeSingle()
+
+    const nextTicket = counterRow?.next_ticket ?? 1
+    const ticketsSold = Math.max(nextTicket - 1, 0)
+
     const detailPayload = {
       id: campaign.id,
       slug: campaign.slug,
@@ -294,6 +304,8 @@ async function processRefreshSnapshots(
       bundles: null,
       hard_cap_total_tickets: campaign.max_tickets_total,
       instant_wins: instantWins,
+      tickets_sold: ticketsSold,
+      next_ticket: nextTicket,
     }
 
     console.log('[jobs/run/processRefreshSnapshots] campaignId=', campaign.id, 'slug=', campaign.slug, 'instant_wins=', Array.isArray(detailPayload.instant_wins) ? detailPayload.instant_wins.length : 'MISSING_KEY')
@@ -317,7 +329,9 @@ async function processRefreshSnapshots(
       hero_image_url: campaign.hero_image_url,
       ends_at: campaign.end_at,
       base_ticket_price_pence: campaign.ticket_price_pence,
-      status: campaign.status
+      status: campaign.status,
+      tickets_sold: ticketsSold,
+      next_ticket: nextTicket,
     }
 
     const { error: listError } = await supabase
