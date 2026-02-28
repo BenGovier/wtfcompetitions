@@ -47,9 +47,8 @@ export function AboutHero() {
             </p>
           </div>
 
-          {/* Choleigh image */}
+          {/* Hero banner image */}
           <div className="relative flex shrink-0 items-center justify-center">
-            {/* Pink glow ring */}
             <div
               className="absolute -inset-4 rounded-3xl opacity-60 blur-2xl"
               aria-hidden="true"
@@ -58,13 +57,13 @@ export function AboutHero() {
                   "radial-gradient(circle, rgba(236,72,153,0.25) 0%, transparent 70%)",
               }}
             />
-            <div className="relative h-72 w-72 overflow-hidden rounded-3xl border-2 border-pink-200/40 shadow-xl sm:h-80 sm:w-80 md:h-96 md:w-96">
+            <div className="relative aspect-[3/2] w-72 overflow-hidden rounded-3xl border-2 border-pink-200/40 shadow-xl sm:w-80 md:w-[28rem]">
               <Image
-                src="/images/about-choleigh.jpg"
-                alt="Choleigh, Co-Founder of WTF Giveaways"
+                src="/images/about-hero-banner.png"
+                alt="Excited winner next to a prize wheel with cash amounts from £5,000 to £100,000"
                 fill
                 className="object-cover"
-                sizes="(max-width: 768px) 288px, 384px"
+                sizes="(max-width: 768px) 288px, (max-width: 1024px) 320px, 448px"
                 priority
               />
             </div>
