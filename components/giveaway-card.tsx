@@ -6,6 +6,7 @@ import Link from "next/link"
 
 interface GiveawayCardProps {
   giveaway: GiveawayPublic
+  mode?: "live" | "past"
 }
 
 function formatPriceGBP(price: number) {
@@ -15,7 +16,7 @@ function formatPriceGBP(price: number) {
   return `£${price.toFixed(2)}`
 }
 
-export function GiveawayCard({ giveaway }: GiveawayCardProps) {
+export function GiveawayCard({ giveaway, mode = "live" }: GiveawayCardProps) {
   const msLeft = giveaway.endsAt.getTime() - Date.now()
   const isEnded = msLeft <= 0
   const daysLeft = msLeft > 0 ? Math.ceil(msLeft / (1000 * 60 * 60 * 24)) : 0
@@ -59,14 +60,42 @@ export function GiveawayCard({ giveaway }: GiveawayCardProps) {
             <div className="text-2xl font-bold text-primary">{formatPriceGBP(giveaway.ticketPrice)}</div>
           </div>
         </div>
-        <Button
-          asChild
-          size="lg"
-          className="w-full rounded-xl bg-primary font-semibold text-primary-foreground shadow-sm transition-all duration-300 hover:bg-[#5B21B6] hover:shadow-md"
-          disabled={isEnded || giveaway.status !== "live"}
-        >
-          <Link href={`/giveaways/${giveaway.slug}`}>Enter Now</Link>
-        </Button>
+        {effectiveStatus === "ended" ? (
+          mode === "past" ? (
+            <Button
+              asChild
+              size="lg"
+              variant="outline"
+              className="w-full rounded-xl font-semibold transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md"
+            >
+              <Link href={`/giveaways/${giveaway.slug}`}>View Results</Link>
+            </Button>
+          ) : (
+            <Button
+              size="lg"
+              className="w-full rounded-xl font-semibold"
+              disabled
+            >
+              Ended
+            </Button>
+          )
+        ) : giveaway.status !== "live" ? (
+          <Button
+            size="lg"
+            className="w-full rounded-xl font-semibold"
+            disabled
+          >
+            Paused
+          </Button>
+        ) : (
+          <Button
+            asChild
+            size="lg"
+            className="w-full rounded-xl bg-primary font-semibold text-primary-foreground shadow-sm transition-all duration-300 hover:bg-[#5B21B6] hover:shadow-md"
+          >
+            <Link href={`/giveaways/${giveaway.slug}`}>Enter Now</Link>
+          </Button>
+        )}
       </CardFooter>
     </Card>
   )

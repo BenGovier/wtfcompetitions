@@ -38,6 +38,7 @@ export default async function HomePage() {
           rulesText: 'See full terms and conditions for complete rules.',
         }
       })
+      giveaways = giveaways.filter(g => g.endsAt.getTime() > Date.now() && g.status === "live")
     }
   } catch (err) {
     console.error('[homepage] Failed to fetch snapshots:', err)
