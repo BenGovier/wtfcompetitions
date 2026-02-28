@@ -31,8 +31,9 @@ export function PreRegisterForm() {
     if (!form.first_name.trim()) e.first_name = 'Required'
     if (!form.last_name.trim()) e.last_name = 'Required'
     if (!form.tiktok_nickname.trim()) e.tiktok_nickname = 'Required'
-    if (!form.mobile.trim()) e.mobile = 'Required'
-    else if (!/^\d{11}$/.test(form.mobile.trim())) e.mobile = 'Must be exactly 11 digits'
+    const mobileSanitized = form.mobile.replace(/[^\d]/g, '')
+    if (!mobileSanitized) e.mobile = 'Required'
+    else if (!/^\d{10,11}$/.test(mobileSanitized)) e.mobile = 'Must be 10–11 digits'
     if (!form.email.trim()) e.email = 'Required'
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) e.email = 'Invalid email'
     if (!form.consent) e.consent = 'You must agree to continue'
@@ -140,7 +141,7 @@ export function PreRegisterForm() {
       <div>
         <input
           type="tel"
-          placeholder="Mobile (11 digits)"
+          placeholder="Mobile (10–11 digits)"
           className={inputBase}
           value={form.mobile}
           onChange={(e) => updateField('mobile', e.target.value)}
@@ -200,7 +201,7 @@ export function PreRegisterForm() {
       </button>
 
       <p className="text-center text-[10px] text-pink-200/50">
-        UK only &bull; 18+ &bull; No spam &bull; Free entry
+        UK & Ireland &bull; 18+ &bull; No spam &bull; Free entry
       </p>
     </form>
   )

@@ -80,7 +80,8 @@ export async function POST(req: Request) {
     const first_name = String(body.first_name ?? "").trim()
     const last_name = String(body.last_name ?? "").trim()
     const tiktok_nickname = String(body.tiktok_nickname ?? "").trim()
-    const mobile = String(body.mobile ?? "").trim()
+    const mobileRaw = String(body.mobile ?? "")
+    const mobile = mobileRaw.replace(/[^\d]/g, "")
     const emailRaw = String(body.email ?? "").trim()
     const consent = Boolean(body.consent)
 
@@ -89,8 +90,8 @@ export async function POST(req: Request) {
     if (!first_name || !last_name || !tiktok_nickname || !mobile || !email) {
       return NextResponse.json({ ok: false, error: "Missing fields" }, { status: 400 })
     }
-    if (!/^\d{11}$/.test(mobile)) {
-      return NextResponse.json({ ok: false, error: "Mobile must be 11 digits" }, { status: 400 })
+    if (!/^\d{10,11}$/.test(mobile)) {
+      return NextResponse.json({ ok: false, error: "Mobile must be 10–11 digits" }, { status: 400 })
     }
     if (!isValidEmail(email)) {
       return NextResponse.json({ ok: false, error: "Invalid email" }, { status: 400 })
