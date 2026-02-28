@@ -1,9 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { Minus, Plus, Sparkles } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { Minus, Plus, Sparkles, Clock, CalendarClock } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 function formatGBP(amount: number) {
@@ -23,15 +24,70 @@ interface TicketSelectorProps {
   campaignId: string
   soldCount?: number | null
   capTotal?: number | null
+  startsAt?: string | null
+  endsAt?: string | null
 }
 
-export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capTotal }: TicketSelectorProps) {
+export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capTotal, startsAt, endsAt }: TicketSelectorProps) {
+  /* ---- All hooks must be called unconditionally ---- */
+  const [now, setNow] = useState(() => Date.now())
   const [selectedBundle, setSelectedBundle] = useState<Bundle | null>(
     bundles?.length ? null : { qty: 1, price: basePrice },
   )
   const [customQty, setCustomQty] = useState(1)
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 2000)
+    return () => clearInterval(id)
+  }, [])
+
+  /* ---- Live time gating ---- */
+  const endsAtMs = endsAt ? new Date(endsAt).getTime() : null
+  const startsAtMs = startsAt ? new Date(startsAt).getTime() : null
+  const isEnded = endsAtMs !== null && !isNaN(endsAtMs) && now >= endsAtMs
+  const isNotStarted = startsAtMs !== null && !isNaN(startsAtMs) && now < startsAtMs
+
+  /* ---- Ended state ---- */
+  if (isEnded) {
+    return (
+      <Card className="border-2 border-muted p-6 text-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+            <Clock className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold">This draw has ended</h3>
+            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+              Entries are closed. Winner details will appear below.
+            </p>
+          </div>
+          <Badge variant="secondary" className="mt-1">Draw closed</Badge>
+        </div>
+      </Card>
+    )
+  }
+
+  /* ---- Not started state ---- */
+  if (isNotStarted) {
+    return (
+      <Card className="border-2 border-muted p-6 text-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-brand/10">
+            <CalendarClock className="h-6 w-6 text-brand" aria-hidden="true" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold">This draw hasn{"'"}t started yet</h3>
+            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+              Check back soon — entries will open shortly.
+            </p>
+          </div>
+          <Badge variant="outline" className="mt-1">Coming soon</Badge>
+        </div>
+      </Card>
+    )
+  }
 
   const hasCapInfo = typeof soldCount === 'number' && typeof capTotal === 'number' && capTotal > 0
   const remaining = hasCapInfo ? Math.max(0, capTotal - soldCount) : null
