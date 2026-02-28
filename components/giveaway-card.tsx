@@ -53,9 +53,11 @@ export function GiveawayCard({ giveaway, mode = "live" }: GiveawayCardProps) {
             <Clock className="h-4 w-4" aria-hidden="true" />
             <span>{isEnded ? "Ended" : daysLeft <= 1 ? "Less than 1 day left" : `${daysLeft} days left`}</span>
           </div>
-          {(giveaway.ticketsSold ?? 0) > 0 && (
-            <span className="text-xs font-medium">{giveaway.ticketsSold} tickets sold</span>
-          )}
+          {(giveaway.ticketsSold ?? 0) > 0 && (giveaway.hardCapTotalTickets ?? 0) > 0 ? (
+            <span className="text-xs font-medium">{giveaway.ticketsSold} / {giveaway.hardCapTotalTickets} sold</span>
+          ) : (giveaway.ticketsSold ?? 0) > 0 ? (
+            <span className="text-xs font-medium">{giveaway.ticketsSold} sold</span>
+          ) : null}
         </div>
       </CardContent>
       <CardFooter className="flex flex-col gap-3 border-t border-border/60 bg-muted/20 p-4">
@@ -81,7 +83,7 @@ export function GiveawayCard({ giveaway, mode = "live" }: GiveawayCardProps) {
               className="w-full rounded-xl font-semibold"
               disabled
             >
-              Ended
+              Draw Closed
             </Button>
           )
         ) : giveaway.status !== "live" ? (

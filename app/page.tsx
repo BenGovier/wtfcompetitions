@@ -38,6 +38,7 @@ export default async function HomePage() {
           rulesText: 'See full terms and conditions for complete rules.',
           ticketsSold: Number(p.tickets_sold ?? 0),
           nextTicket: Number(p.next_ticket ?? 1),
+          hardCapTotalTickets: Number(p.hard_cap_total_tickets ?? p.max_tickets_total ?? 0),
         }
       })
       giveaways = giveaways.filter(g => g.endsAt.getTime() > Date.now() && g.status === "live")
