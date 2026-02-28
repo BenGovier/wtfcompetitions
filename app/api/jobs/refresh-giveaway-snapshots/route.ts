@@ -73,6 +73,14 @@ export async function GET(request: NextRequest) {
   const nextTicket = counterRow?.next_ticket ?? 1
   const ticketsSold = Math.max(nextTicket - 1, 0)
 
+  console.log(
+    '[refresh-giveaway-snapshots] counter',
+    'next_ticket=',
+    nextTicket,
+    'tickets_sold=',
+    ticketsSold
+  )
+
   // 6) Build payloads
   const listPayload = {
     id: campaign.id,
