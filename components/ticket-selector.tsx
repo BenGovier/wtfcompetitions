@@ -13,10 +13,10 @@ function formatGBP(amount: number) {
 }
 
 function getChanceStrength(qty: number): { label: string; className: string } {
-  if (qty >= 7) return { label: "Serious contender", className: "bg-violet-100 text-violet-700 border-violet-200" }
-  if (qty >= 4) return { label: "Strong position", className: "bg-amber-50 text-amber-700 border-amber-200" }
-  if (qty >= 2) return { label: "Good position", className: "bg-emerald-50 text-emerald-700 border-emerald-200" }
-  return { label: "Basic chance", className: "bg-muted text-muted-foreground border-border" }
+  if (qty >= 7) return { label: "Serious contender", className: "bg-gradient-to-r from-purple-600/30 to-pink-500/30 text-pink-200 border-pink-400/40 shadow-[0_0_15px_rgba(168,85,247,0.3)]" }
+  if (qty >= 4) return { label: "Strong position", className: "bg-gradient-to-r from-purple-600/30 to-pink-500/30 text-pink-200 border-pink-400/40 shadow-[0_0_10px_rgba(168,85,247,0.2)]" }
+  if (qty >= 2) return { label: "Good position", className: "bg-gradient-to-r from-purple-600/20 to-pink-500/20 text-purple-200 border-purple-400/30" }
+  return { label: "Basic chance", className: "bg-white/5 text-purple-300 border-purple-500/20" }
 }
 
 interface Bundle {
@@ -93,18 +93,18 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
   /* ---- Ended state ---- */
   if (isEnded) {
     return (
-      <Card className="border-2 border-muted p-6 text-center">
+      <Card className="border border-purple-500/20 bg-[#160a26] p-6 text-center shadow-[0_0_40px_rgba(168,85,247,0.15)]">
         <div className="flex flex-col items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-            <Clock className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-purple-900/50">
+            <Clock className="h-6 w-6 text-purple-300" aria-hidden="true" />
           </div>
           <div>
-            <h3 className="text-lg font-semibold">This draw has ended</h3>
-            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+            <h3 className="text-lg font-semibold text-white">This draw has ended</h3>
+            <p className="mt-1 text-sm leading-relaxed text-purple-200">
               Entries are closed. Winner details will appear below.
             </p>
           </div>
-          <Badge variant="secondary" className="mt-1">Draw closed</Badge>
+          <Badge variant="secondary" className="mt-1 border-purple-500/30 bg-purple-900/50 text-purple-200">Draw closed</Badge>
         </div>
       </Card>
     )
@@ -113,18 +113,18 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
   /* ---- Not started state ---- */
   if (isNotStarted) {
     return (
-      <Card className="border-2 border-muted p-6 text-center">
+      <Card className="border border-purple-500/20 bg-[#160a26] p-6 text-center shadow-[0_0_40px_rgba(168,85,247,0.15)]">
         <div className="flex flex-col items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-brand/10">
-            <CalendarClock className="h-6 w-6 text-brand" aria-hidden="true" />
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-purple-900/50">
+            <CalendarClock className="h-6 w-6 text-pink-400" aria-hidden="true" />
           </div>
           <div>
-            <h3 className="text-lg font-semibold">This draw hasn{"'"}t started yet</h3>
-            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+            <h3 className="text-lg font-semibold text-white">This draw hasn{"'"}t started yet</h3>
+            <p className="mt-1 text-sm leading-relaxed text-purple-200">
               Check back soon — entries will open shortly.
             </p>
           </div>
-          <Badge variant="outline" className="mt-1">Coming soon</Badge>
+          <Badge variant="outline" className="mt-1 border-purple-500/30 text-purple-200">Coming soon</Badge>
         </div>
       </Card>
     )
@@ -232,9 +232,9 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
     <div className="space-y-5">
       {/* ---- Countdown Module ---- */}
       {endsAtMs && msRemaining > 0 && (
-        <div className="space-y-2">
-          <div className="text-center">
-            <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Draw ends in</span>
+        <div className="rounded-2xl bg-[#160a26] p-6 shadow-[0_0_40px_rgba(168,85,247,0.25)]">
+          <div className="mb-3 text-center">
+            <span className="text-xs font-semibold uppercase tracking-widest text-purple-300">Draw ends in</span>
           </div>
           <div className="flex justify-center gap-2" role="timer" aria-label={`Draw ends in ${days} days, ${hours} hours, ${minutes} minutes, ${seconds} seconds`}>
             {[
@@ -246,21 +246,23 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
               <div key={label} className="flex flex-col items-center">
                 <div
                   className={cn(
-                    "flex h-14 w-14 items-center justify-center rounded-lg bg-foreground/[0.04] text-2xl font-bold tabular-nums transition-transform duration-150 sm:h-16 sm:w-16 sm:text-3xl",
+                    "flex h-16 w-16 items-center justify-center rounded-lg border border-purple-600/30 bg-[#1f1033] shadow-inner transition-transform duration-150 sm:h-[4.5rem] sm:w-[4.5rem]",
                     label === "Sec" && secondPulse && "scale-105"
                   )}
                 >
-                  {String(value).padStart(2, "0")}
+                  <span className="bg-gradient-to-b from-[#FFD46A] to-[#F7A600] bg-clip-text text-3xl font-bold tabular-nums text-transparent sm:text-4xl">
+                    {String(value).padStart(2, "0")}
+                  </span>
                 </div>
-                <span className="mt-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
+                <span className="mt-1.5 text-[10px] font-medium uppercase tracking-wider text-purple-300">{label}</span>
               </div>
             ))}
           </div>
           {/* Time progress bar */}
           {timeProgressPct !== null && (
-            <div className="mx-auto h-1 w-3/4 overflow-hidden rounded-full bg-muted">
+            <div className="mx-auto mt-4 h-1 w-3/4 overflow-hidden rounded-full bg-purple-900/50">
               <div
-                className="h-full rounded-full bg-foreground/20 transition-all duration-1000"
+                className="h-full rounded-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-1000"
                 style={{ width: `${timeProgressPct}%` }}
               />
             </div>
@@ -272,26 +274,27 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
       {hasCapInfo && remaining !== null && (
         <div className="space-y-2">
           <div className="flex items-baseline justify-between text-sm">
-            <span className="text-muted-foreground">
-              <span className="font-semibold text-foreground">{displaySold}</span> tickets already secured
+            <span className="text-white/80">
+              <span className="font-semibold text-white">{displaySold}</span> tickets already secured
             </span>
             {remaining > 0 && (
               <span className={cn(
                 "font-medium",
-                isFinalTickets ? "text-red-600" : isNearingCapacity ? "text-amber-600" : "text-muted-foreground"
+                isFinalTickets ? "text-red-400" : isNearingCapacity ? "text-amber-400" : "text-pink-300"
               )}>
                 Only <span className="font-bold">{remaining}</span> remaining
               </span>
             )}
             {remaining === 0 && (
-              <span className="font-bold text-destructive">Sold out</span>
+              <span className="font-bold text-red-400">Sold out</span>
             )}
           </div>
           <div
             className={cn(
-              "h-3 w-full overflow-hidden rounded-full",
-              isFinalTickets ? "bg-red-100" : isNearingCapacity ? "bg-amber-100" : "bg-muted"
+              "w-full overflow-hidden rounded-full transition-all duration-300",
+              isFinalTickets ? "h-4 shadow-[0_0_20px_rgba(255,0,80,0.7)]" : "h-3"
             )}
+            style={{ backgroundColor: "rgba(255,255,255,0.1)" }}
             role="progressbar"
             aria-valuenow={displaySold}
             aria-valuemin={0}
@@ -301,16 +304,16 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
             <div
               className={cn(
                 "h-full rounded-full transition-all duration-700 ease-out",
-                isFinalTickets ? "bg-red-500" : isNearingCapacity ? "bg-amber-500" : "bg-brand"
+                "bg-gradient-to-r from-purple-600 via-pink-500 to-red-500"
               )}
               style={{ width: mounted ? `${soldPct}%` : "0%" }}
             />
           </div>
           {isFinalTickets && remaining > 0 && (
-            <p className="text-center text-xs font-semibold text-red-600">Final tickets available</p>
+            <p className="text-center text-xs font-semibold text-red-400">Final tickets available</p>
           )}
           {isNearingCapacity && !isFinalTickets && (
-            <p className="text-center text-xs font-semibold text-amber-600">Nearing capacity</p>
+            <p className="text-center text-xs font-semibold text-amber-400">Nearing capacity</p>
           )}
         </div>
       )}
@@ -318,7 +321,7 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
       {/* ---- Bundle selector ---- */}
       {bundles && bundles.length > 0 && (
         <div className="space-y-2">
-          <label className="text-sm font-medium">Select entry bundle</label>
+          <label className="text-sm font-medium text-purple-200">Select entry bundle</label>
           <div className="grid gap-2 sm:grid-cols-3">
             {bundles.map((bundle) => {
               const isSelected = selectedBundle?.qty === bundle.qty
@@ -329,22 +332,22 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
                 <Card
                   key={bundle.qty}
                   className={cn(
-                    "relative cursor-pointer border-2 p-4 transition-all hover:border-brand/50",
-                    isSelected && "border-brand bg-brand/5 shadow-sm",
+                    "relative cursor-pointer border-2 border-purple-500/20 bg-white/5 p-4 backdrop-blur-sm transition-all hover:border-pink-400/50",
+                    isSelected && "border-pink-400 bg-pink-500/10 shadow-[0_0_15px_rgba(236,72,153,0.2)]",
                   )}
                   onClick={() => setSelectedBundle(bundle)}
                 >
                   {bundle.label && (
-                    <div className="absolute -top-2 right-2 rounded-full bg-brand px-2 py-0.5 text-xs font-semibold text-white">
+                    <div className="absolute -top-2 right-2 rounded-full bg-gradient-to-r from-[#F7A600] to-[#FFD46A] px-2 py-0.5 text-xs font-bold text-black">
                       {bundle.label}
                     </div>
                   )}
                   <div className="text-center">
-                    <div className="text-2xl font-bold">{bundle.qty}</div>
-                    <div className="text-xs text-muted-foreground">{bundle.qty === 1 ? "entry" : "entries"}</div>
-                    <div className="mt-2 text-lg font-semibold text-brand">{formatGBP(bundle.price)}</div>
+                    <div className="text-2xl font-bold text-white">{bundle.qty}</div>
+                    <div className="text-xs text-purple-300">{bundle.qty === 1 ? "entry" : "entries"}</div>
+                    <div className="mt-2 bg-gradient-to-b from-[#FFD46A] to-[#F7A600] bg-clip-text text-lg font-semibold text-transparent">{formatGBP(bundle.price)}</div>
                     {savingsPercent > 0 && (
-                      <div className="mt-1 text-xs font-medium text-green-600">Save {savingsPercent}%</div>
+                      <div className="mt-1 text-xs font-medium text-green-400">Save {savingsPercent}%</div>
                     )}
                   </div>
                 </Card>
@@ -353,15 +356,15 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
 
             <Card
               className={cn(
-                "relative cursor-pointer border-2 p-4 transition-all hover:border-brand/50",
-                selectedBundle === null && "border-brand bg-brand/5 shadow-sm",
+                "relative cursor-pointer border-2 border-purple-500/20 bg-white/5 p-4 backdrop-blur-sm transition-all hover:border-pink-400/50",
+                selectedBundle === null && "border-pink-400 bg-pink-500/10 shadow-[0_0_15px_rgba(236,72,153,0.2)]",
               )}
               onClick={() => setSelectedBundle(null)}
             >
               <div className="text-center">
-                <div className="text-2xl font-bold">{customQty}</div>
-                <div className="text-xs text-muted-foreground">Custom amount</div>
-                <div className="mt-2 text-sm font-medium text-brand">Choose your own</div>
+                <div className="text-2xl font-bold text-white">{customQty}</div>
+                <div className="text-xs text-purple-300">Custom amount</div>
+                <div className="mt-2 text-sm font-medium text-pink-300">Choose your own</div>
               </div>
             </Card>
           </div>
@@ -371,12 +374,12 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
       {/* ---- Custom quantity selector ---- */}
       {(!bundles || selectedBundle === null) && (
         <div className="space-y-2">
-          <label className="text-sm font-medium">Choose your chances</label>
+          <label className="text-sm font-medium text-purple-200">Choose your chances</label>
           <div className="flex items-center gap-3">
             <Button
               variant="outline"
               size="icon"
-              className="h-11 w-11 rounded-xl sm:h-12 sm:w-12"
+              className="h-11 w-11 rounded-xl border-purple-500/30 bg-white/5 text-white hover:bg-white/10 hover:text-white sm:h-12 sm:w-12"
               onClick={() => handleQuantityChange(-1)}
               disabled={customQty <= 1}
             >
@@ -387,13 +390,13 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
               "flex-1 text-center transition-transform duration-150",
               qtyBump && "scale-110"
             )}>
-              <div className="text-3xl font-bold">{customQty}</div>
-              <div className="text-xs text-muted-foreground">{customQty === 1 ? "entry" : "entries"}</div>
+              <div className="bg-gradient-to-b from-[#FFD46A] to-[#F7A600] bg-clip-text text-4xl font-bold text-transparent">{customQty}</div>
+              <div className="text-xs text-purple-300">{customQty === 1 ? "entry" : "entries"}</div>
             </div>
             <Button
               variant="outline"
               size="icon"
-              className="h-11 w-11 rounded-xl sm:h-12 sm:w-12"
+              className="h-11 w-11 rounded-xl border-purple-500/30 bg-white/5 text-white hover:bg-white/10 hover:text-white sm:h-12 sm:w-12"
               onClick={() => handleQuantityChange(1)}
               disabled={customQty >= maxQty}
             >
@@ -415,29 +418,29 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
       </div>
 
       {/* ---- Total and CTA ---- */}
-      <div className="space-y-3 rounded-xl border-2 border-brand/20 bg-muted/30 p-4">
+      <div className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-6 shadow-2xl backdrop-blur-lg">
         <div className="flex items-baseline justify-between">
-          <span className="text-sm text-muted-foreground">Total</span>
+          <span className="text-sm text-purple-200">Total</span>
           <div className="text-right">
-            <div className="text-3xl font-bold text-brand">{formatGBP(currentTotal)}</div>
-            <div className="text-xs text-muted-foreground">
+            <div className="bg-gradient-to-b from-[#FFD46A] to-[#F7A600] bg-clip-text text-3xl font-bold text-transparent">{formatGBP(currentTotal)}</div>
+            <div className="text-xs text-purple-300">
               {currentQty} {currentQty === 1 ? "entry" : "entries"}
             </div>
           </div>
         </div>
 
-        {error && <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
+        {error && <div className="rounded-md bg-red-500/20 p-3 text-sm text-red-300">{error}</div>}
 
         <Button
           size="lg"
-          className="w-full text-base font-semibold shadow-md transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0 active:shadow-sm"
+          className="w-full rounded-xl bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] py-4 text-base font-bold text-black shadow-[0_10px_40px_rgba(255,180,0,0.4)] transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_15px_60px_rgba(255,180,0,0.6)] active:scale-[0.98]"
           disabled={isProcessing || currentQty < 1 || remaining === 0}
           onClick={handleEnter}
         >
           {isProcessing ? "Starting checkout..." : "Secure My Entries"}
         </Button>
 
-        <p className="flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground">
+        <p className="flex items-center justify-center gap-1.5 text-center text-xs text-purple-200">
           <Lock className="h-3 w-3" aria-hidden="true" />
           Secure checkout &bull; Instant confirmation
         </p>

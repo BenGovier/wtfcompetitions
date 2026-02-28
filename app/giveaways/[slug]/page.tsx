@@ -129,19 +129,19 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
   const isLive = status === "live"
 
   return (
-  <div className="min-h-screen bg-background pb-24 md:pb-8">
+  <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#3a0f4f_0%,_#1b0b2b_40%,_#0e0618_100%)] pb-24 text-white md:pb-8">
   <ScrollToTopOnMount />
   {/* Prize Hero Section */}
-      <section className="border-b bg-muted/30">
+      <section className="border-b border-purple-500/20">
         <div className="container max-w-5xl px-4 py-8">
           <div className="grid gap-8 md:grid-cols-2">
             {/* Prize Image */}
             <div className="space-y-4">
-              <div className="aspect-[4/3] overflow-hidden rounded-lg border bg-white">
+              <div className="aspect-[4/3] overflow-hidden rounded-xl shadow-2xl ring-1 ring-purple-500/30">
                 <img
                   src={displayImages[0] || "/placeholder.svg"}
                   alt={prizeTitle}
-                  className="h-full w-full object-contain"
+                  className="h-full w-full object-contain bg-white/5"
                   loading="eager"
                   fetchPriority="high"
                   decoding="async"
@@ -150,7 +150,7 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
               {displayImages.length > 1 && (
                 <div className="grid grid-cols-3 gap-2">
                   {displayImages.slice(1, 4).map((img, i) => (
-                    <div key={i} className="aspect-square overflow-hidden rounded-md border bg-white">
+                    <div key={i} className="aspect-square overflow-hidden rounded-lg ring-1 ring-purple-500/20">
                       <img
                         src={img || "/placeholder.svg"}
                         alt={`${prizeTitle} view ${i + 2}`}
@@ -175,13 +175,13 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
                     </Badge>
                   )}
                 </div>
-                <h1 className="text-balance text-3xl font-bold leading-tight md:text-4xl">{title}</h1>
-                <p className="mt-2 text-pretty text-lg text-muted-foreground">
+                <h1 className="text-balance text-4xl font-extrabold leading-tight tracking-tight drop-shadow-[0_0_15px_rgba(255,0,200,0.4)] md:text-5xl">{title}</h1>
+                <p className="mt-2 text-pretty text-lg text-purple-300">
                   {description ?? prizeTitle}
                 </p>
                 {prizeValueText && (
                   <div className="mt-3 flex items-baseline gap-2">
-                    <span className="text-sm text-muted-foreground">Retail Value:</span>
+                    <span className="text-sm text-purple-200">Retail Value:</span>
                     <span className="text-2xl font-bold text-brand">{prizeValueText}</span>
                   </div>
                 )}
@@ -216,20 +216,20 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
           <section className="space-y-4">
             <h2 className="text-xl font-semibold">Why Enter with WTF Giveaways?</h2>
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="flex gap-3 rounded-lg border bg-card p-4">
-                <Shield className="h-5 w-5 shrink-0 text-brand" aria-hidden="true" />
+              <div className="flex gap-3 rounded-lg border border-purple-500/20 bg-white/5 p-4 backdrop-blur-sm">
+                <Shield className="h-5 w-5 shrink-0 text-pink-400" aria-hidden="true" />
                 <div>
                   <h3 className="font-semibold">Secure & Verified</h3>
-                  <p className="text-sm leading-relaxed text-muted-foreground">
+                  <p className="text-sm leading-relaxed text-purple-200">
                     All payments processed through secure, encrypted channels. Your information is protected.
                   </p>
                 </div>
               </div>
-              <div className="flex gap-3 rounded-lg border bg-card p-4">
-                <Award className="h-5 w-5 shrink-0 text-brand" aria-hidden="true" />
+              <div className="flex gap-3 rounded-lg border border-purple-500/20 bg-white/5 p-4 backdrop-blur-sm">
+                <Award className="h-5 w-5 shrink-0 text-pink-400" aria-hidden="true" />
                 <div>
                   <h3 className="font-semibold">Transparent Winners</h3>
-                  <p className="text-sm leading-relaxed text-muted-foreground">
+                  <p className="text-sm leading-relaxed text-purple-200">
                     Fair draws with transparent winner announcements. All winners are publicly verified.
                   </p>
                 </div>
@@ -245,9 +245,9 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
 
           {/* FAQ Snippet */}
           {faqSnippet && (
-            <section className="rounded-lg border bg-muted/30 p-6">
+            <section className="rounded-lg border border-purple-500/20 bg-white/5 p-6 backdrop-blur-sm">
               <h2 className="text-lg font-semibold">Frequently Asked Questions</h2>
-              <p className="mt-2 text-sm text-muted-foreground">{faqSnippet}</p>
+              <p className="mt-2 text-sm text-purple-200">{faqSnippet}</p>
               <Link
                 href="/faq"
                 className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline"
@@ -262,15 +262,15 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
 
       {/* Mobile Sticky CTA — hidden server-side when draw has ended */}
       {!(p.ends_at && new Date(p.ends_at).getTime() <= Date.now()) && (
-        <div className="fixed bottom-16 left-0 right-0 border-t bg-background p-4 shadow-lg md:hidden">
+        <div className="fixed bottom-16 left-0 right-0 border-t border-purple-500/30 bg-[#0e0618]/95 p-4 shadow-[0_-4px_30px_rgba(168,85,247,0.2)] backdrop-blur-lg md:hidden">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <div className="text-xs text-muted-foreground">Entry from</div>
-              <div className="text-xl font-bold text-brand">£{ticketPrice.toFixed(2)}</div>
+              <div className="text-xs text-purple-300">Entry from</div>
+              <div className="text-xl font-bold text-[#FFD46A]">£{ticketPrice.toFixed(2)}</div>
             </div>
             <Link
               href="#ticket-selector"
-              className="inline-flex h-11 items-center justify-center rounded-md bg-brand px-8 text-sm font-semibold text-white transition-colors hover:bg-brand/90"
+              className="inline-flex h-11 items-center justify-center rounded-xl bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] px-8 text-sm font-bold text-black shadow-[0_10px_40px_rgba(255,180,0,0.4)] transition-all duration-300 hover:shadow-[0_15px_60px_rgba(255,180,0,0.6)]"
             >
               Enter Now
             </Link>
