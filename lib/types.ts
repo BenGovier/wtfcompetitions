@@ -17,6 +17,8 @@ export interface GiveawayPublic {
   }
   rulesText: string
   faqSnippet?: string
+  ticketsSold?: number
+  nextTicket?: number
 }
 
 export interface WinnerSnapshot {
