@@ -19,6 +19,7 @@ export interface GiveawayPublic {
   faqSnippet?: string
   ticketsSold?: number
   nextTicket?: number
+  hardCapTotalTickets?: number
 }
 
 export interface WinnerSnapshot {

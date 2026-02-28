@@ -26,9 +26,11 @@ interface TicketSelectorProps {
   capTotal?: number | null
   startsAt?: string | null
   endsAt?: string | null
+  ticketsSold?: number
+  hardCapTotalTickets?: number
 }
 
-export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capTotal, startsAt, endsAt }: TicketSelectorProps) {
+export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capTotal, startsAt, endsAt, ticketsSold, hardCapTotalTickets }: TicketSelectorProps) {
   /* ---- All hooks must be called unconditionally ---- */
   const [now, setNow] = useState(() => Date.now())
   const [selectedBundle, setSelectedBundle] = useState<Bundle | null>(
@@ -89,8 +91,11 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
     )
   }
 
-  const hasCapInfo = typeof soldCount === 'number' && typeof capTotal === 'number' && capTotal > 0
-  const remaining = hasCapInfo ? Math.max(0, capTotal - soldCount) : null
+  // Prefer snapshot-derived props, fall back to live counter
+  const displaySold = ticketsSold ?? soldCount ?? 0
+  const displayCap = (hardCapTotalTickets && hardCapTotalTickets > 0) ? hardCapTotalTickets : capTotal
+  const hasCapInfo = typeof displaySold === 'number' && typeof displayCap === 'number' && displayCap > 0
+  const remaining = hasCapInfo ? Math.max(0, displayCap - displaySold) : null
   const maxQty = remaining !== null ? Math.min(100, remaining) : 100
 
   const useCustomQty = !bundles || selectedBundle === null
@@ -274,7 +279,7 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
       {hasCapInfo && (
         <div className="space-y-1.5">
           <div className="flex items-baseline justify-between text-sm">
-            <span className="font-medium">{soldCount} / {capTotal} sold</span>
+            <span className="font-medium">{displaySold} / {displayCap} sold</span>
             {remaining !== null && remaining > 0 && (
               <span className="text-muted-foreground">Only {remaining} left!</span>
             )}
@@ -285,7 +290,7 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
           <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
             <div
               className="h-full rounded-full bg-brand transition-all"
-              style={{ width: `${Math.min(100, (soldCount / capTotal) * 100)}%` }}
+              style={{ width: `${Math.min(100, (displaySold / displayCap!) * 100)}%` }}
             />
           </div>
         </div>
