@@ -35,6 +35,8 @@ export default async function PastDrawsPage() {
             prizeValue: p.prize_value_text || undefined,
             bundles: p.bundles || undefined,
             rulesText: "See full terms and conditions for complete rules.",
+            ticketsSold: Number(p.tickets_sold ?? 0),
+            nextTicket: Number(p.next_ticket ?? 1),
           }
         })
         .filter((g) => g.endsAt.getTime() <= Date.now())
