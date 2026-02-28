@@ -1,20 +1,28 @@
-import { SectionHeader } from "@/components/section-header"
+import type { Metadata } from "next"
+import { AboutHero } from "@/components/about/about-hero"
+import { AboutStory } from "@/components/about/about-story"
+import { AboutHowItWorks } from "@/components/about/about-how-it-works"
+import { AboutSocial } from "@/components/about/about-social"
+import { AboutTrust } from "@/components/about/about-trust"
+import { AboutQuote } from "@/components/about/about-quote"
+import { AboutCta } from "@/components/about/about-cta"
+
+export const metadata: Metadata = {
+  title: "About Us",
+  description:
+    "Meet Choleigh, co-founder of WTF Giveaways. Learn why we built a transparent, exciting giveaway platform you can trust.",
+}
 
 export default function AboutPage() {
   return (
-    <div className="container max-w-3xl px-4 py-8">
-      <SectionHeader title="About WTF Giveaways" subtitle="Your trusted platform for winning amazing prizes" />
-
-      <div className="prose prose-gray mt-8 dark:prose-invert">
-        <p>
-          WTF Giveaways is a premium platform where you can enter giveaways for a chance to win incredible prizes, from
-          the latest tech to gaming gear and more.
-        </p>
-        <p>
-          We believe in transparency, verified winners, and secure transactions. Every winner is verified and announced
-          publicly with their consent.
-        </p>
-      </div>
-    </div>
+    <>
+      <AboutHero />
+      <AboutStory />
+      <AboutHowItWorks />
+      <AboutSocial />
+      <AboutTrust />
+      <AboutQuote />
+      <AboutCta />
+    </>
   )
 }
