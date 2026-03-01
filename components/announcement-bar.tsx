@@ -11,7 +11,7 @@ export function AnnouncementBar() {
   return (
     <div className="relative bg-brand px-4 py-2 text-center text-sm font-medium text-white">
       <p>
-        🎉 New Giveaway: Win a MacBook Pro M3 Max! <span className="underline">Enter now</span>
+        🎉 New Winners Every Day! Win £1000's! <span className="underline">Enter now</span>
       </p>
       <button
         onClick={() => setIsVisible(false)}
