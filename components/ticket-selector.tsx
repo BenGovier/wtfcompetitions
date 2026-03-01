@@ -7,9 +7,11 @@ import { Badge } from "@/components/ui/badge"
 import { Minus, Plus, Clock, CalendarClock, Lock, Flame, Zap, Crown } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-function formatGBP(amount: number) {
-  if (amount < 1) return `${Math.round(amount * 100)}p`
-  return `£${amount.toFixed(2)}`
+function formatGBP(amount: number | null | undefined) {
+  const n = Number(amount)
+  if (!Number.isFinite(n)) return "\u2014"
+  if (n < 1) return `${Math.round(n * 100)}p`
+  return `£${n.toFixed(2)}`
 }
 
 interface Bundle {
