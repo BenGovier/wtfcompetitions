@@ -13,10 +13,10 @@ function formatGBP(amount: number) {
 }
 
 function getChanceStrength(qty: number): { label: string; className: string } {
-  if (qty >= 7) return { label: "Serious contender", className: "bg-gradient-to-r from-purple-600/30 to-pink-500/30 text-pink-200 border-pink-400/40 shadow-[0_0_15px_rgba(168,85,247,0.3)]" }
-  if (qty >= 4) return { label: "Strong position", className: "bg-gradient-to-r from-purple-600/30 to-pink-500/30 text-pink-200 border-pink-400/40 shadow-[0_0_10px_rgba(168,85,247,0.2)]" }
-  if (qty >= 2) return { label: "Good position", className: "bg-gradient-to-r from-purple-600/20 to-pink-500/20 text-purple-200 border-purple-400/30" }
-  return { label: "Basic chance", className: "bg-white/5 text-purple-300 border-purple-500/20" }
+  if (qty >= 7) return { label: "Hot streak", className: "bg-gradient-to-r from-purple-600/30 to-pink-500/30 text-pink-200 border-pink-400/40 shadow-[0_0_15px_rgba(168,85,247,0.3)]" }
+  if (qty >= 4) return { label: "High roller", className: "bg-gradient-to-r from-purple-600/30 to-pink-500/30 text-pink-200 border-pink-400/40 shadow-[0_0_10px_rgba(168,85,247,0.2)]" }
+  if (qty >= 2) return { label: "Double down", className: "bg-gradient-to-r from-purple-600/20 to-pink-500/20 text-purple-200 border-purple-400/30" }
+  return { label: "Lucky dip", className: "bg-white/5 text-purple-300 border-purple-500/20" }
 }
 
 interface Bundle {
@@ -303,11 +303,13 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
           >
             <div
               className={cn(
-                "h-full rounded-full transition-all duration-700 ease-out",
+                "relative h-full overflow-hidden rounded-full transition-all duration-700 ease-out",
                 "bg-gradient-to-r from-purple-600 via-pink-500 to-red-500"
               )}
               style={{ width: mounted ? `${soldPct}%` : "0%" }}
-            />
+            >
+              <div className="absolute inset-0 animate-[shimmer_2s_ease-in-out_infinite] bg-gradient-to-r from-transparent via-white/20 to-transparent" style={{ backgroundSize: "200% 100%" }} />
+            </div>
           </div>
           {isFinalTickets && remaining > 0 && (
             <p className="text-center text-xs font-semibold text-red-400">Final tickets available</p>
@@ -374,33 +376,33 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
       {/* ---- Custom quantity selector ---- */}
       {(!bundles || selectedBundle === null) && (
         <div className="space-y-2">
-          <label className="text-sm font-medium text-purple-200">Choose your chances</label>
+          <label className="text-sm font-medium text-purple-200">Pick your luck</label>
           <div className="flex items-center gap-3">
             <Button
               variant="outline"
               size="icon"
-              className="h-11 w-11 rounded-xl border-purple-500/30 bg-white/5 text-white hover:bg-white/10 hover:text-white sm:h-12 sm:w-12"
+              className="h-14 w-14 rounded-xl border-purple-500/30 bg-white/5 text-white transition-transform duration-150 hover:bg-white/10 hover:text-white active:scale-90 sm:h-14 sm:w-14"
               onClick={() => handleQuantityChange(-1)}
               disabled={customQty <= 1}
             >
-              <Minus className="h-5 w-5" />
+              <Minus className="h-6 w-6" />
               <span className="sr-only">Decrease quantity</span>
             </Button>
             <div className={cn(
               "flex-1 text-center transition-transform duration-150",
               qtyBump && "scale-110"
             )}>
-              <div className="bg-gradient-to-b from-[#FFD46A] to-[#F7A600] bg-clip-text text-4xl font-bold text-transparent">{customQty}</div>
+              <div className="bg-gradient-to-b from-[#FFD46A] to-[#F7A600] bg-clip-text text-5xl font-bold text-transparent">{customQty}</div>
               <div className="text-xs text-purple-300">{customQty === 1 ? "entry" : "entries"}</div>
             </div>
             <Button
               variant="outline"
               size="icon"
-              className="h-11 w-11 rounded-xl border-purple-500/30 bg-white/5 text-white hover:bg-white/10 hover:text-white sm:h-12 sm:w-12"
+              className="h-14 w-14 rounded-xl border-purple-500/30 bg-white/5 text-white transition-transform duration-150 hover:bg-white/10 hover:text-white active:scale-90 sm:h-14 sm:w-14"
               onClick={() => handleQuantityChange(1)}
               disabled={customQty >= maxQty}
             >
-              <Plus className="h-5 w-5" />
+              <Plus className="h-6 w-6" />
               <span className="sr-only">Increase quantity</span>
             </Button>
           </div>

@@ -56,6 +56,14 @@ export function GiveawayCard({ giveaway, mode = "live" }: GiveawayCardProps) {
             <div className="absolute right-3 top-3 rounded-full bg-card/90 px-3 py-1 text-xs font-semibold text-muted-foreground shadow backdrop-blur-sm">
               Paused
             </div>
+          ) : giveaway.status === "live" ? (
+            <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-red-600 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-white shadow-[0_0_10px_rgba(255,0,0,0.45)]">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-white" />
+              </span>
+              LIVE
+            </span>
           ) : null}
         </div>
       </Link>

@@ -129,7 +129,7 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
   const isLive = status === "live"
 
   return (
-  <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#3a0f4f_0%,_#1b0b2b_40%,_#0e0618_100%)] pb-24 text-white md:pb-8">
+  <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#3a0f4f_0%,_#1b0b2b_40%,_#0e0618_100%)] pb-8 text-white">
   <ScrollToTopOnMount />
   {/* Prize Hero Section */}
       <section className="border-b border-purple-500/20">
@@ -170,9 +170,13 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
                 <div className="flex flex-wrap items-center gap-2 pb-3">
                   <CountdownBadge endsAt={endsAt} status={status} />
                   {isLive && (
-                    <Badge variant="secondary" className="bg-green-100 text-green-800">
-                      Live Now
-                    </Badge>
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-3 py-1 text-xs font-bold uppercase tracking-wide text-white shadow-[0_0_12px_rgba(255,0,0,0.5)]">
+                      <span className="relative flex h-2 w-2">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
+                        <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
+                      </span>
+                      LIVE
+                    </span>
                   )}
                 </div>
                 <h1 className="text-balance text-4xl font-extrabold leading-tight tracking-tight drop-shadow-[0_0_15px_rgba(255,0,200,0.4)] md:text-5xl">{title}</h1>
@@ -260,23 +264,7 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
         </div>
       </div>
 
-      {/* Mobile Sticky CTA — hidden server-side when draw has ended */}
-      {!(p.ends_at && new Date(p.ends_at).getTime() <= Date.now()) && (
-        <div className="fixed bottom-16 left-0 right-0 border-t border-purple-500/30 bg-[#0e0618]/95 p-4 shadow-[0_-4px_30px_rgba(168,85,247,0.2)] backdrop-blur-lg md:hidden">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <div className="text-xs text-purple-300">Entry from</div>
-              <div className="text-xl font-bold text-[#FFD46A]">£{ticketPrice.toFixed(2)}</div>
-            </div>
-            <Link
-              href="#ticket-selector"
-              className="inline-flex h-11 items-center justify-center rounded-xl bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] px-8 text-sm font-bold text-black shadow-[0_10px_40px_rgba(255,180,0,0.4)] transition-all duration-300 hover:shadow-[0_15px_60px_rgba(255,180,0,0.6)]"
-            >
-              Enter Now
-            </Link>
-          </div>
-        </div>
-      )}
+
     </div>
   )
 }
