@@ -14,7 +14,13 @@ function formatGBP(amount: number | null | undefined) {
   return `£${n.toFixed(2)}`
 }
 
-interface Bundle {
+interface BundleOption {
+  quantity: number
+  price_pence: number
+  label?: string
+}
+
+interface LegacyBundle {
   qty: number
   price: number
   label?: string
@@ -22,7 +28,7 @@ interface Bundle {
 
 interface TicketSelectorProps {
   basePrice: number
-  bundles?: Bundle[]
+  bundles?: LegacyBundle[]
   campaignId: string
   soldCount?: number | null
   capTotal?: number | null
@@ -32,13 +38,34 @@ interface TicketSelectorProps {
   hardCapTotalTickets?: number
 }
 
-export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capTotal, startsAt, endsAt, ticketsSold, hardCapTotalTickets }: TicketSelectorProps) {
-  /* ---- All hooks called unconditionally ---- */
+/**
+ * Normalise bundles from either legacy format ({qty, price}) or
+ * backend format ({quantity, price_pence}) into a consistent shape.
+ */
+function normaliseBundles(raw: any[] | undefined | null, basePricePence: number): BundleOption[] {
+  if (!raw || !Array.isArray(raw) || raw.length === 0) return []
+  return raw.map((b: any) => {
+    if (typeof b.quantity === "number" && typeof b.price_pence === "number") {
+      return { quantity: b.quantity, price_pence: b.price_pence, label: b.label }
+    }
+    // Legacy format: { qty, price (in GBP) }
+    return {
+      quantity: Number(b.qty ?? b.quantity ?? 1),
+      price_pence: Math.round(Number(b.price ?? 0) * 100) || (Number(b.qty ?? 1) * basePricePence),
+      label: b.label,
+    }
+  }).sort((a, b) => a.quantity - b.quantity)
+}
+
+export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, soldCount, capTotal, startsAt, endsAt, ticketsSold, hardCapTotalTickets }: TicketSelectorProps) {
+  const basePricePence = Math.round(basePrice * 100)
+  const normBundles = normaliseBundles(rawBundles, basePricePence)
+  const hasBundles = normBundles.length > 0
+
+  /* ---- Single source of truth state ---- */
   const [now, setNow] = useState(() => Date.now())
-  const [selectedBundle, setSelectedBundle] = useState<Bundle | null>(
-    bundles?.length ? null : { qty: 1, price: basePrice },
-  )
-  const [customQty, setCustomQty] = useState(1)
+  const [qty, setQty] = useState<number>(1)
+  const [selectedBundle, setSelectedBundle] = useState<BundleOption | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [qtyBump, setQtyBump] = useState(false)
@@ -132,31 +159,27 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
   const isFinalTickets = hasCapInfo && remaining !== null && remaining <= displayCap! * 0.10
   const isLowRemaining = remaining !== null && remaining <= 20 && remaining > 0
 
-  const useCustomQty = !bundles || selectedBundle === null
-  const currentQty = useCustomQty ? customQty : selectedBundle.qty
-  const currentTotal = useCustomQty ? customQty * basePrice : selectedBundle.price
+  /* ---- Correct total calculation ---- */
+  const totalPence = selectedBundle ? selectedBundle.price_pence : qty * basePricePence
+  const totalGBP = totalPence / 100
 
-  /* ---- Bundle spend anchors (computed from basePrice) ---- */
-  const ticketPriceGBP = basePrice
-  const spendAnchors = [
-    { target: 10, label: "Strong Play", icon: Flame, iconColor: "text-orange-400" },
-    { target: 20, label: "Power Move", icon: Zap, iconColor: "text-yellow-300", popular: true },
-    { target: 50, label: "High Roller", icon: Crown, iconColor: "text-amber-300" },
-  ].map(a => ({
-    ...a,
-    qty: Math.max(1, Math.ceil(a.target / ticketPriceGBP)),
-    spend: Math.max(1, Math.ceil(a.target / ticketPriceGBP)) * ticketPriceGBP,
-  }))
+  /* ---- Icons for bundle tiles ---- */
+  const bundleIcons = [
+    { icon: Flame, color: "text-orange-400" },
+    { icon: Zap, color: "text-yellow-300" },
+    { icon: Crown, color: "text-amber-300" },
+  ]
 
-  const handleQuantityChange = (delta: number) => {
-    setCustomQty((prev) => Math.max(1, Math.min(maxQty, prev + delta)))
-    setSelectedBundle(null)
+  /* ---- Handlers ---- */
+  const handleSelectBundle = (bundle: BundleOption) => {
+    setSelectedBundle(bundle)
+    setQty(bundle.quantity)
     setQtyBump(true)
     setTimeout(() => setQtyBump(false), 200)
   }
 
-  const handleSetQty = (qty: number) => {
-    setCustomQty(Math.max(1, Math.min(maxQty, qty)))
+  const handleQuantityChange = (delta: number) => {
+    setQty((prev) => Math.max(1, Math.min(maxQty, prev + delta)))
     setSelectedBundle(null)
     setQtyBump(true)
     setTimeout(() => setQtyBump(false), 200)
@@ -167,10 +190,18 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
     setError(null)
 
     try {
+      const payload: { campaignId: string; qty: number; bundlePricePence?: number } = {
+        campaignId,
+        qty,
+      }
+      if (selectedBundle) {
+        payload.bundlePricePence = selectedBundle.price_pence
+      }
+
       const res = await fetch('/api/checkout/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ campaignId, qty: currentQty }),
+        body: JSON.stringify(payload),
       })
 
       if (res.status === 401) {
@@ -223,7 +254,7 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
 
       if (json.error === 'sold_out' && remaining !== null && remaining > 0) {
         setError(`Only ${remaining} ticket${remaining === 1 ? '' : 's'} left!`)
-        setCustomQty(Math.min(customQty, remaining))
+        setQty(Math.min(qty, remaining))
         setSelectedBundle(null)
       } else if (json.error === 'sold_out') {
         setError('This giveaway is sold out!')
@@ -240,10 +271,10 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
   return (
     <div className="space-y-4">
 
-      {/* ---- A) Single Countdown Timer ---- */}
+      {/* ---- Countdown Timer ---- */}
       {endsAtMs && msRemaining > 0 && (
         <>
-          {/* Mobile: compressed 2-row grid */}
+          {/* Mobile: compressed grid */}
           <div className="rounded-xl border border-purple-500/30 bg-[#160a26] px-3 py-3 shadow-[0_0_20px_rgba(168,85,247,0.2)] md:hidden" role="timer" aria-label={`Draw ends in ${days} days, ${hours} hours, ${minutes} minutes, ${seconds} seconds`}>
             <div className="mb-1.5 text-center">
               <span className="text-[10px] font-semibold uppercase tracking-widest text-purple-300">Draw ends in</span>
@@ -344,138 +375,105 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
         </div>
       )}
 
-      {/* ---- D) Bundle Spend Anchor Cards ("Choose your play") ---- */}
-      <div className="space-y-2.5">
-        <h3 className="text-sm font-semibold text-purple-200">Choose your play</h3>
-        <div className="grid grid-cols-3 gap-2">
-          {spendAnchors.map(({ label, icon: Icon, iconColor, popular, qty, spend }) => {
-            const isActive = customQty === qty && selectedBundle === null
-            return (
-              <button
-                key={label}
-                onClick={() => handleSetQty(qty)}
-                className={cn(
-                  "relative flex flex-col items-center gap-1.5 rounded-xl border-2 px-2 py-3 transition-all duration-200 active:scale-95",
-                  isActive
-                    ? "border-pink-400 bg-pink-500/15 shadow-[0_0_20px_rgba(236,72,153,0.3)]"
-                    : "border-purple-500/25 bg-white/[0.04] hover:border-purple-400/50 hover:bg-white/[0.07]",
-                  popular && !isActive && "border-amber-500/40"
-                )}
-              >
-                {popular && (
-                  <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-gradient-to-r from-[#F7A600] to-[#FFD46A] px-2 py-0.5 text-[10px] font-bold text-black shadow">
-                    Most Popular
-                  </div>
-                )}
-                <Icon className={cn("h-5 w-5", iconColor)} aria-hidden="true" />
-                <span className="text-xs font-semibold text-white">{label}</span>
-                <span className="bg-gradient-to-b from-[#FFD46A] to-[#F7A600] bg-clip-text text-lg font-bold text-transparent">{qty}</span>
-                <span className="text-[10px] text-purple-300">{qty === 1 ? "entry" : "entries"}</span>
-                <span className="text-[11px] font-medium text-purple-200">{formatGBP(spend)}</span>
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
-      {/* ---- Backend bundle selector (if bundles exist from admin) ---- */}
-      {bundles && bundles.length > 0 && (
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-purple-200">Or select a bundle</label>
-          <div className="grid gap-2 sm:grid-cols-3">
-            {bundles.map((bundle) => {
-              const isSelected = selectedBundle?.qty === bundle.qty
-              const savingsPercent =
-                bundle.qty > 1 ? Math.round((1 - bundle.price / (bundle.qty * basePrice)) * 100) : 0
+      {/* ---- Bundle tiles (only when bundles exist) ---- */}
+      {hasBundles && (
+        <div className="space-y-2.5">
+          <h3 className="text-sm font-semibold text-purple-200">Choose your play</h3>
+          <div className="grid grid-cols-3 gap-2">
+            {normBundles.map((bundle, i) => {
+              const isActive = selectedBundle?.quantity === bundle.quantity && selectedBundle?.price_pence === bundle.price_pence
+              const savingsPercent = bundle.quantity > 1
+                ? Math.round((1 - (bundle.price_pence / (bundle.quantity * basePricePence))) * 100)
+                : 0
+              const iconDef = bundleIcons[i % bundleIcons.length]
+              const Icon = iconDef.icon
+              const isMostPopular = i === 1 && normBundles.length >= 2
 
               return (
-                <Card
-                  key={bundle.qty}
+                <button
+                  key={`${bundle.quantity}-${bundle.price_pence}`}
+                  onClick={() => handleSelectBundle(bundle)}
                   className={cn(
-                    "relative cursor-pointer border-2 border-purple-500/20 bg-white/5 p-4 backdrop-blur-sm transition-all hover:border-pink-400/50",
-                    isSelected && "border-pink-400 bg-pink-500/10 shadow-[0_0_15px_rgba(236,72,153,0.2)]",
+                    "relative flex flex-col items-center gap-1 rounded-xl border-2 px-2 py-3 transition-all duration-200 active:scale-95",
+                    isActive
+                      ? "border-pink-400 bg-pink-500/15 shadow-[0_0_20px_rgba(236,72,153,0.3)]"
+                      : "border-purple-500/25 bg-white/[0.04] hover:border-purple-400/50 hover:bg-white/[0.07]",
+                    isMostPopular && !isActive && "border-amber-500/40"
                   )}
-                  onClick={() => setSelectedBundle(bundle)}
                 >
-                  {bundle.label && (
-                    <div className="absolute -top-2 right-2 rounded-full bg-gradient-to-r from-[#F7A600] to-[#FFD46A] px-2 py-0.5 text-xs font-bold text-black">
-                      {bundle.label}
+                  {isMostPopular && (
+                    <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-gradient-to-r from-[#F7A600] to-[#FFD46A] px-2 py-0.5 text-[10px] font-bold text-black shadow">
+                      Most Popular
                     </div>
                   )}
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-white">{bundle.qty}</div>
-                    <div className="text-xs text-purple-300">{bundle.qty === 1 ? "entry" : "entries"}</div>
-                    <div className="mt-2 bg-gradient-to-b from-[#FFD46A] to-[#F7A600] bg-clip-text text-lg font-semibold text-transparent">{formatGBP(bundle.price)}</div>
-                    {savingsPercent > 0 && (
-                      <div className="mt-1 text-xs font-medium text-green-400">Save {savingsPercent}%</div>
-                    )}
-                  </div>
-                </Card>
+                  {isActive && (
+                    <div className="absolute -top-2.5 right-1 whitespace-nowrap rounded-full bg-pink-500 px-2 py-0.5 text-[10px] font-bold text-white shadow">
+                      Selected
+                    </div>
+                  )}
+                  <Icon className={cn("h-5 w-5", iconDef.color)} aria-hidden="true" />
+                  <span className="text-xs font-semibold text-white">{bundle.label || `${bundle.quantity} entries`}</span>
+                  <span className="bg-gradient-to-b from-[#FFD46A] to-[#F7A600] bg-clip-text text-lg font-bold text-transparent">{bundle.quantity}</span>
+                  <span className="text-[10px] text-purple-300">{bundle.quantity === 1 ? "entry" : "entries"}</span>
+                  <span className="text-[11px] font-medium text-purple-200">{formatGBP(bundle.price_pence / 100)}</span>
+                  {savingsPercent > 0 && (
+                    <span className="text-[10px] font-semibold text-green-400">Save {savingsPercent}%</span>
+                  )}
+                </button>
               )
             })}
-
-            <Card
-              className={cn(
-                "relative cursor-pointer border-2 border-purple-500/20 bg-white/5 p-4 backdrop-blur-sm transition-all hover:border-pink-400/50",
-                selectedBundle === null && "border-pink-400 bg-pink-500/10 shadow-[0_0_15px_rgba(236,72,153,0.2)]",
-              )}
-              onClick={() => setSelectedBundle(null)}
-            >
-              <div className="text-center">
-                <div className="text-2xl font-bold text-white">{customQty}</div>
-                <div className="text-xs text-purple-300">Custom amount</div>
-                <div className="mt-2 text-sm font-medium text-pink-300">Choose your own</div>
-              </div>
-            </Card>
           </div>
         </div>
       )}
 
-      {/* ---- G) Quantity selector (+/-) underneath bundles ---- */}
-      {(!bundles || selectedBundle === null) && (
-        <div ref={qtyRef} className="space-y-2">
-          <label className="text-sm font-medium text-purple-200">Or choose your own</label>
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-14 w-14 rounded-xl border-purple-500/30 bg-white/5 text-white transition-all duration-150 hover:bg-white/10 hover:text-white active:scale-90"
-              onClick={() => handleQuantityChange(-1)}
-              disabled={customQty <= 1}
-            >
-              <Minus className="h-6 w-6" />
-              <span className="sr-only">Decrease quantity</span>
-            </Button>
-            <div className={cn(
-              "flex-1 text-center transition-transform duration-200",
-              qtyBump && "scale-125"
-            )}>
-              <div className="bg-gradient-to-b from-[#FFD46A] to-[#F7A600] bg-clip-text text-5xl font-bold text-transparent drop-shadow-[0_0_10px_rgba(247,166,0,0.4)]">{customQty}</div>
-              <div className="text-xs text-purple-300">{customQty === 1 ? "entry" : "entries"}</div>
-            </div>
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-14 w-14 rounded-xl border-purple-500/30 bg-white/5 text-white transition-all duration-150 hover:bg-white/10 hover:text-white active:scale-90"
-              onClick={() => handleQuantityChange(1)}
-              disabled={customQty >= maxQty}
-            >
-              <Plus className="h-6 w-6" />
-              <span className="sr-only">Increase quantity</span>
-            </Button>
+      {/* ---- Quantity selector (+/-) ---- */}
+      <div ref={qtyRef} className="space-y-2">
+        <label className="text-sm font-medium text-purple-200">
+          {hasBundles ? "Or choose your own" : "Pick your entries"}
+        </label>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-14 w-14 rounded-xl border-purple-500/30 bg-white/5 text-white transition-all duration-150 hover:bg-white/10 hover:text-white active:scale-90"
+            onClick={() => handleQuantityChange(-1)}
+            disabled={qty <= 1}
+          >
+            <Minus className="h-6 w-6" />
+            <span className="sr-only">Decrease quantity</span>
+          </Button>
+          <div className={cn(
+            "flex-1 text-center transition-transform duration-200",
+            qtyBump && "scale-125"
+          )}>
+            <div className="bg-gradient-to-b from-[#FFD46A] to-[#F7A600] bg-clip-text text-5xl font-bold text-transparent drop-shadow-[0_0_10px_rgba(247,166,0,0.4)]">{qty}</div>
+            <div className="text-xs text-purple-300">{qty === 1 ? "entry" : "entries"}</div>
+            {selectedBundle && (
+              <div className="mt-0.5 text-[10px] text-pink-300">Bundle selected</div>
+            )}
           </div>
-          <p className="text-center text-[11px] text-purple-400">More entries = more chances to win</p>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-14 w-14 rounded-xl border-purple-500/30 bg-white/5 text-white transition-all duration-150 hover:bg-white/10 hover:text-white active:scale-90"
+            onClick={() => handleQuantityChange(1)}
+            disabled={qty >= maxQty}
+          >
+            <Plus className="h-6 w-6" />
+            <span className="sr-only">Increase quantity</span>
+          </Button>
         </div>
-      )}
+        <p className="text-center text-[11px] text-purple-400">More entries = more chances to win</p>
+      </div>
 
-      {/* ---- H) Total and CTA ---- */}
+      {/* ---- Total and CTA ---- */}
       <div className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-5 shadow-2xl backdrop-blur-lg">
         <div className="flex items-baseline justify-between">
           <span className="text-sm text-purple-200">Total</span>
           <div className="text-right">
-            <div className="bg-gradient-to-b from-[#FFD46A] to-[#F7A600] bg-clip-text text-3xl font-bold text-transparent">{formatGBP(currentTotal)}</div>
+            <div className="bg-gradient-to-b from-[#FFD46A] to-[#F7A600] bg-clip-text text-3xl font-bold text-transparent">{formatGBP(totalGBP)}</div>
             <div className="text-xs text-purple-300">
-              {currentQty} {currentQty === 1 ? "entry" : "entries"}
+              {qty} {qty === 1 ? "entry" : "entries"}
             </div>
           </div>
         </div>
@@ -485,10 +483,10 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
         <Button
           size="lg"
           className="w-full rounded-xl bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] py-4 text-base font-bold text-black shadow-[0_10px_40px_rgba(255,180,0,0.4)] transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_15px_60px_rgba(255,180,0,0.6)] active:scale-[0.98]"
-          disabled={isProcessing || currentQty < 1 || remaining === 0}
+          disabled={isProcessing || qty < 1 || remaining === 0}
           onClick={handleEnter}
         >
-          {isProcessing ? "Starting checkout..." : `Secure ${currentQty} ${currentQty === 1 ? "Entry" : "Entries"}`}
+          {isProcessing ? "Starting checkout..." : "Secure My Entries"}
         </Button>
 
         <p className="flex items-center justify-center gap-1.5 text-center text-xs text-purple-200">
@@ -503,15 +501,15 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
           <div className="flex items-center gap-3">
             <div className="shrink-0">
               <div className="text-[10px] font-medium uppercase text-purple-400">Total</div>
-              <div className="bg-gradient-to-r from-[#FFD46A] to-[#F7A600] bg-clip-text text-xl font-bold text-transparent">{formatGBP(currentTotal)}</div>
+              <div className="bg-gradient-to-r from-[#FFD46A] to-[#F7A600] bg-clip-text text-xl font-bold text-transparent">{formatGBP(totalGBP)}</div>
             </div>
             <Button
               size="lg"
               className="flex-1 rounded-xl bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] py-3.5 text-sm font-bold text-black shadow-[0_8px_30px_rgba(255,180,0,0.4)] transition-all active:scale-[0.98]"
-              disabled={isProcessing || currentQty < 1}
+              disabled={isProcessing || qty < 1}
               onClick={handleEnter}
             >
-              {isProcessing ? "Checking out..." : `Secure ${currentQty} ${currentQty === 1 ? "Entry" : "Entries"}`}
+              {isProcessing ? "Checking out..." : "Secure My Entries"}
             </Button>
           </div>
         </div>
