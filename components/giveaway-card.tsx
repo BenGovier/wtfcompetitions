@@ -9,11 +9,11 @@ interface GiveawayCardProps {
   mode?: "live" | "past"
 }
 
-function formatPriceGBP(price: number) {
-  if (price < 1) {
-    return `${Math.round(price * 100)}p`
-  }
-  return `£${price.toFixed(2)}`
+function formatPriceGBP(price: number | null | undefined) {
+  const n = Number(price)
+  if (!Number.isFinite(n)) return "\u2014"
+  if (n < 1) return `${Math.round(n * 100)}p`
+  return `£${n.toFixed(2)}`
 }
 
 function getTimeLabel(msLeft: number, isEnded: boolean): string {
