@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
   // 4) Fetch campaign
   const { data: campaign, error: campaignErr } = await supabase
     .from('campaigns')
-    .select('id, slug, title, summary, description, status, start_at, end_at, main_prize_title, main_prize_description, hero_image_url, ticket_price_pence, max_tickets_total, max_tickets_per_user')
+    .select('id, slug, title, summary, description, status, start_at, end_at, main_prize_title, main_prize_description, hero_image_url, ticket_price_pence, max_tickets_total, max_tickets_per_user, bundles')
     .eq('id', campaignId)
     .single()
 
@@ -94,6 +94,7 @@ export async function GET(request: NextRequest) {
     status: campaign.status,
     tickets_sold: ticketsSold,
     next_ticket: nextTicket,
+    bundles: campaign.bundles ?? null,
   }
 
   const detailPayload = {
@@ -112,7 +113,7 @@ export async function GET(request: NextRequest) {
     ends_at: campaign.end_at,
     currency: 'GBP',
     base_ticket_price_pence: campaign.ticket_price_pence,
-    bundles: null,
+    bundles: campaign.bundles ?? null,
     hard_cap_total_tickets: campaign.max_tickets_total,
     instant_wins: instantWins,
     tickets_sold: ticketsSold,
