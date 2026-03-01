@@ -1,10 +1,10 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Minus, Plus, Clock, CalendarClock, Lock } from "lucide-react"
+import { Minus, Plus, Clock, CalendarClock, Lock, Sparkles, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 function formatGBP(amount: number) {
@@ -12,11 +12,30 @@ function formatGBP(amount: number) {
   return `£${amount.toFixed(2)}`
 }
 
-function getChanceStrength(qty: number): { label: string; className: string } {
-  if (qty >= 7) return { label: "Hot streak", className: "bg-gradient-to-r from-purple-600/30 to-pink-500/30 text-pink-200 border-pink-400/40 shadow-[0_0_15px_rgba(168,85,247,0.3)]" }
-  if (qty >= 4) return { label: "High roller", className: "bg-gradient-to-r from-purple-600/30 to-pink-500/30 text-pink-200 border-pink-400/40 shadow-[0_0_10px_rgba(168,85,247,0.2)]" }
-  if (qty >= 2) return { label: "Double down", className: "bg-gradient-to-r from-purple-600/20 to-pink-500/20 text-purple-200 border-purple-400/30" }
-  return { label: "Lucky dip", className: "bg-white/5 text-purple-300 border-purple-500/20" }
+/* ---- Luck meter mapping ---- */
+function getLuckLevel(qty: number): { pct: number; label: string; color: string } {
+  if (qty >= 10) return { pct: 90, label: "VIP luck", color: "from-yellow-400 via-amber-500 to-orange-500" }
+  if (qty >= 5) return { pct: 70, label: "Hot streak", color: "from-pink-500 via-rose-500 to-red-500" }
+  if (qty >= 3) return { pct: 50, label: "Warming up", color: "from-purple-500 via-pink-500 to-rose-500" }
+  if (qty >= 2) return { pct: 35, label: "Double down", color: "from-purple-600 via-purple-500 to-pink-500" }
+  return { pct: 20, label: "Starter luck", color: "from-purple-700 to-purple-500" }
+}
+
+/* ---- Chance label ---- */
+function getChanceLabel(qty: number): string {
+  if (qty >= 10) return "VIP"
+  if (qty >= 5) return "On fire"
+  if (qty >= 3) return "Hot"
+  if (qty >= 2) return "Boosted"
+  return "Basic chance"
+}
+
+/* ---- Spin boost weighted random ---- */
+function getSpinResult(): number {
+  const r = Math.random()
+  if (r < 0.40) return 3
+  if (r < 0.80) return 5
+  return 10
 }
 
 interface Bundle {
@@ -48,16 +67,31 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
   const [error, setError] = useState<string | null>(null)
   const [qtyBump, setQtyBump] = useState(false)
   const [mounted, setMounted] = useState(false)
-  const prevSecondsRef = useRef<number | null>(null)
-  const [secondPulse, setSecondPulse] = useState(false)
+
+  // Spin boost state
+  const [spinState, setSpinState] = useState<"idle" | "spinning" | "result">("idle")
+  const [spinResult, setSpinResult] = useState<number>(3)
+
+  // Sticky CTA visibility
+  const qtyRef = useRef<HTMLDivElement>(null)
+  const [showStickyCta, setShowStickyCta] = useState(false)
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
   }, [])
 
+  useEffect(() => { setMounted(true) }, [])
+
+  // IntersectionObserver for sticky CTA
   useEffect(() => {
-    setMounted(true)
+    if (!qtyRef.current) return
+    const observer = new IntersectionObserver(
+      ([entry]) => setShowStickyCta(!entry.isIntersecting),
+      { threshold: 0 }
+    )
+    observer.observe(qtyRef.current)
+    return () => observer.disconnect()
   }, [])
 
   /* ---- Live time gating ---- */
@@ -73,22 +107,6 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
   const hours = Math.floor((totalSeconds % 86400) / 3600)
   const minutes = Math.floor((totalSeconds % 3600) / 60)
   const seconds = totalSeconds % 60
-
-  // Pulse animation on seconds change
-  useEffect(() => {
-    if (prevSecondsRef.current !== null && prevSecondsRef.current !== seconds) {
-      setSecondPulse(true)
-      const t = setTimeout(() => setSecondPulse(false), 200)
-      return () => clearTimeout(t)
-    }
-    prevSecondsRef.current = seconds
-  }, [seconds])
-
-  /* ---- Time progress ---- */
-  const timeProgressPct =
-    startsAtMs && endsAtMs && endsAtMs > startsAtMs && !isNaN(startsAtMs) && !isNaN(endsAtMs)
-      ? Math.min(100, Math.max(0, ((now - startsAtMs) / (endsAtMs - startsAtMs)) * 100))
-      : null
 
   /* ---- Ended state ---- */
   if (isEnded) {
@@ -140,17 +158,43 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
   const soldPct = hasCapInfo ? Math.min(100, (displaySold / displayCap!) * 100) : 0
   const isNearingCapacity = hasCapInfo && remaining !== null && remaining <= displayCap! * 0.25 && remaining > displayCap! * 0.10
   const isFinalTickets = hasCapInfo && remaining !== null && remaining <= displayCap! * 0.10
+  const isLowRemaining = remaining !== null && remaining <= 20 && remaining > 0
 
   const useCustomQty = !bundles || selectedBundle === null
   const currentQty = useCustomQty ? customQty : selectedBundle.qty
   const currentTotal = useCustomQty ? customQty * basePrice : selectedBundle.price
 
-  const chanceStrength = getChanceStrength(currentQty)
+  const luckLevel = getLuckLevel(currentQty)
+  const chanceLabel = getChanceLabel(currentQty)
 
   const handleQuantityChange = (delta: number) => {
     setCustomQty((prev) => Math.max(1, Math.min(maxQty, prev + delta)))
     setQtyBump(true)
     setTimeout(() => setQtyBump(false), 200)
+  }
+
+  const handleSetQty = (qty: number) => {
+    setCustomQty(Math.max(1, Math.min(maxQty, qty)))
+    setSelectedBundle(null)
+    setQtyBump(true)
+    setTimeout(() => setQtyBump(false), 200)
+  }
+
+  const handleSpin = () => {
+    if (spinState !== "idle") return
+    setSpinState("spinning")
+    const result = getSpinResult()
+    setSpinResult(result)
+    setTimeout(() => setSpinState("result"), 800)
+  }
+
+  const handleApplyBoost = () => {
+    handleSetQty(spinResult)
+    setSpinState("idle")
+  }
+
+  const handleDismissSpin = () => {
+    setSpinState("idle")
   }
 
   const handleEnter = async () => {
@@ -229,45 +273,44 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
   }
 
   return (
-    <div className="space-y-5">
-      {/* ---- Countdown Module ---- */}
+    <div className="space-y-4">
+
+      {/* ---- 1) Compact Countdown Ticker (mobile) / 4-block (desktop) ---- */}
       {endsAtMs && msRemaining > 0 && (
-        <div className="rounded-2xl bg-[#160a26] p-6 shadow-[0_0_40px_rgba(168,85,247,0.25)]">
-          <div className="mb-3 text-center">
-            <span className="text-xs font-semibold uppercase tracking-widest text-purple-300">Draw ends in</span>
+        <>
+          {/* Mobile: compact ticker strip */}
+          <div className="flex items-center justify-center gap-1.5 rounded-xl border border-purple-500/30 bg-[#160a26] px-4 py-2.5 shadow-[0_0_20px_rgba(168,85,247,0.2)] md:hidden" role="timer" aria-label={`Draw ends in ${days} days, ${hours} hours, ${minutes} minutes, ${seconds} seconds`}>
+            <Clock className="h-3.5 w-3.5 text-purple-400" aria-hidden="true" />
+            <span className="text-xs font-semibold uppercase tracking-wider text-purple-300">Ends in</span>
+            <span className="ml-1 font-mono text-sm font-bold tabular-nums text-[#FFD46A] drop-shadow-[0_0_6px_rgba(247,166,0,0.5)]">
+              {days}d {String(hours).padStart(2, "0")}h {String(minutes).padStart(2, "0")}m {String(seconds).padStart(2, "0")}s
+            </span>
           </div>
-          <div className="flex justify-center gap-2" role="timer" aria-label={`Draw ends in ${days} days, ${hours} hours, ${minutes} minutes, ${seconds} seconds`}>
-            {[
-              { value: days, label: "Days" },
-              { value: hours, label: "Hrs" },
-              { value: minutes, label: "Min" },
-              { value: seconds, label: "Sec" },
-            ].map(({ value, label }) => (
-              <div key={label} className="flex flex-col items-center">
-                <div
-                  className={cn(
-                    "flex h-16 w-16 items-center justify-center rounded-lg border border-purple-600/30 bg-[#1f1033] shadow-inner transition-transform duration-150 sm:h-[4.5rem] sm:w-[4.5rem]",
-                    label === "Sec" && secondPulse && "scale-105"
-                  )}
-                >
-                  <span className="bg-gradient-to-b from-[#FFD46A] to-[#F7A600] bg-clip-text text-3xl font-bold tabular-nums text-transparent sm:text-4xl">
-                    {String(value).padStart(2, "0")}
-                  </span>
-                </div>
-                <span className="mt-1.5 text-[10px] font-medium uppercase tracking-wider text-purple-300">{label}</span>
-              </div>
-            ))}
-          </div>
-          {/* Time progress bar */}
-          {timeProgressPct !== null && (
-            <div className="mx-auto mt-4 h-1 w-3/4 overflow-hidden rounded-full bg-purple-900/50">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-1000"
-                style={{ width: `${timeProgressPct}%` }}
-              />
+
+          {/* Desktop: 4-block countdown */}
+          <div className="hidden rounded-2xl bg-[#160a26] p-5 shadow-[0_0_40px_rgba(168,85,247,0.25)] md:block">
+            <div className="mb-2.5 text-center">
+              <span className="text-xs font-semibold uppercase tracking-widest text-purple-300">Draw ends in</span>
             </div>
-          )}
-        </div>
+            <div className="flex justify-center gap-2" role="timer" aria-label={`Draw ends in ${days} days, ${hours} hours, ${minutes} minutes, ${seconds} seconds`}>
+              {[
+                { value: days, label: "Days" },
+                { value: hours, label: "Hrs" },
+                { value: minutes, label: "Min" },
+                { value: seconds, label: "Sec" },
+              ].map(({ value, label }) => (
+                <div key={label} className="flex flex-col items-center">
+                  <div className="flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-lg border border-purple-600/30 bg-[#1f1033] shadow-inner">
+                    <span className="bg-gradient-to-b from-[#FFD46A] to-[#F7A600] bg-clip-text text-4xl font-bold tabular-nums text-transparent">
+                      {String(value).padStart(2, "0")}
+                    </span>
+                  </div>
+                  <span className="mt-1.5 text-[10px] font-medium uppercase tracking-wider text-purple-300">{label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
       )}
 
       {/* ---- Scarcity / Sold Messaging ---- */}
@@ -279,10 +322,11 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
             </span>
             {remaining > 0 && (
               <span className={cn(
-                "font-medium",
-                isFinalTickets ? "text-red-400" : isNearingCapacity ? "text-amber-400" : "text-pink-300"
+                "font-medium transition-all duration-300",
+                isFinalTickets ? "text-red-400" : isNearingCapacity ? "text-amber-400" : "text-pink-300",
+                isLowRemaining && "animate-pulse"
               )}>
-                Only <span className="font-bold">{remaining}</span> remaining
+                Only <span className={cn("font-bold", isLowRemaining && "bg-gradient-to-r from-[#FFD46A] to-[#F7A600] bg-clip-text text-transparent drop-shadow-[0_0_8px_rgba(247,166,0,0.6)]")}>{remaining}</span> remaining
               </span>
             )}
             {remaining === 0 && (
@@ -319,6 +363,84 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
           )}
         </div>
       )}
+
+      {/* ---- 2) Luck Meter + Spin Boost Casino Panel ---- */}
+      <div className="rounded-2xl border border-purple-500/20 bg-white/[0.03] p-4 backdrop-blur-sm">
+        {/* Luck Meter */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wider text-purple-300">Luck Meter</span>
+            <span className={cn(
+              "rounded-full border border-purple-500/30 bg-white/5 px-2.5 py-0.5 text-[11px] font-bold text-purple-200 transition-all duration-300",
+            )}>
+              {luckLevel.label}
+            </span>
+          </div>
+          <div className="h-3 w-full overflow-hidden rounded-full bg-purple-900/50">
+            <div
+              className={cn(
+                "h-full rounded-full bg-gradient-to-r transition-all duration-500 ease-out",
+                luckLevel.color
+              )}
+              style={{ width: `${luckLevel.pct}%` }}
+            />
+          </div>
+          <p className="text-center text-[11px] text-purple-400">More entries = more chances to win.</p>
+        </div>
+
+        {/* Spin Boost */}
+        <div className="mt-3">
+          {spinState === "idle" && (
+            <button
+              onClick={handleSpin}
+              className="group/spin flex w-full items-center justify-center gap-2 rounded-xl border border-purple-500/30 bg-gradient-to-r from-purple-600/20 to-pink-600/20 px-4 py-2.5 text-sm font-bold text-purple-200 transition-all duration-200 hover:border-pink-400/50 hover:from-purple-600/30 hover:to-pink-600/30 hover:shadow-[0_0_20px_rgba(168,85,247,0.3)] active:scale-95"
+            >
+              <span className="text-lg" aria-hidden="true">{'🎰'}</span>
+              <span>Spin Boost</span>
+              <Sparkles className="h-4 w-4 text-pink-400 transition-transform duration-200 group-hover/spin:rotate-12" aria-hidden="true" />
+            </button>
+          )}
+          {spinState === "spinning" && (
+            <div className="flex flex-col items-center gap-2 py-3">
+              <div className="flex gap-1">
+                {[0, 1, 2].map(i => (
+                  <div key={i} className="flex h-10 w-10 animate-bounce items-center justify-center rounded-lg border border-purple-500/40 bg-[#1f1033] text-xl" style={{ animationDelay: `${i * 100}ms` }}>
+                    {'🎰'}
+                  </div>
+                ))}
+              </div>
+              <span className="text-xs font-medium text-purple-300">Spinning...</span>
+            </div>
+          )}
+          {spinState === "result" && (
+            <div className="relative rounded-xl border border-pink-400/40 bg-pink-500/10 p-3">
+              <button onClick={handleDismissSpin} className="absolute right-2 top-2 text-purple-400 hover:text-white" aria-label="Dismiss">
+                <X className="h-4 w-4" />
+              </button>
+              <p className="mb-2 text-center text-sm font-semibold text-pink-200">
+                Boost unlocked: <span className="bg-gradient-to-r from-[#FFD46A] to-[#F7A600] bg-clip-text text-transparent">{spinResult} entries</span>
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  className="flex-1 rounded-lg bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] text-xs font-bold text-black shadow-[0_4px_20px_rgba(255,180,0,0.3)] transition-all hover:shadow-[0_6px_30px_rgba(255,180,0,0.5)]"
+                  onClick={handleApplyBoost}
+                >
+                  Apply Boost
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1 rounded-lg border-purple-500/30 bg-white/5 text-xs text-purple-200 hover:bg-white/10 hover:text-white"
+                  onClick={handleDismissSpin}
+                >
+                  No thanks
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* ---- Bundle selector ---- */}
       {bundles && bundles.length > 0 && (
@@ -373,15 +495,15 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
         </div>
       )}
 
-      {/* ---- Custom quantity selector ---- */}
+      {/* ---- 5) Custom quantity selector (game-like) ---- */}
       {(!bundles || selectedBundle === null) && (
-        <div className="space-y-2">
+        <div ref={qtyRef} className="space-y-2">
           <label className="text-sm font-medium text-purple-200">Pick your luck</label>
           <div className="flex items-center gap-3">
             <Button
               variant="outline"
               size="icon"
-              className="h-14 w-14 rounded-xl border-purple-500/30 bg-white/5 text-white transition-transform duration-150 hover:bg-white/10 hover:text-white active:scale-90 sm:h-14 sm:w-14"
+              className="h-14 w-14 rounded-xl border-purple-500/30 bg-white/5 text-white transition-all duration-150 hover:bg-white/10 hover:text-white active:scale-90"
               onClick={() => handleQuantityChange(-1)}
               disabled={customQty <= 1}
             >
@@ -389,16 +511,16 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
               <span className="sr-only">Decrease quantity</span>
             </Button>
             <div className={cn(
-              "flex-1 text-center transition-transform duration-150",
-              qtyBump && "scale-110"
+              "flex-1 text-center transition-transform duration-200",
+              qtyBump && "scale-125"
             )}>
-              <div className="bg-gradient-to-b from-[#FFD46A] to-[#F7A600] bg-clip-text text-5xl font-bold text-transparent">{customQty}</div>
+              <div className="bg-gradient-to-b from-[#FFD46A] to-[#F7A600] bg-clip-text text-5xl font-bold text-transparent drop-shadow-[0_0_10px_rgba(247,166,0,0.4)]">{customQty}</div>
               <div className="text-xs text-purple-300">{customQty === 1 ? "entry" : "entries"}</div>
             </div>
             <Button
               variant="outline"
               size="icon"
-              className="h-14 w-14 rounded-xl border-purple-500/30 bg-white/5 text-white transition-transform duration-150 hover:bg-white/10 hover:text-white active:scale-90 sm:h-14 sm:w-14"
+              className="h-14 w-14 rounded-xl border-purple-500/30 bg-white/5 text-white transition-all duration-150 hover:bg-white/10 hover:text-white active:scale-90"
               onClick={() => handleQuantityChange(1)}
               disabled={customQty >= maxQty}
             >
@@ -406,21 +528,45 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
               <span className="sr-only">Increase quantity</span>
             </Button>
           </div>
+
+          {/* Chance label pill */}
+          <div className="flex justify-center">
+            <span className="inline-flex items-center rounded-full border border-purple-500/30 bg-white/5 px-3 py-1 text-xs font-semibold text-purple-200 transition-all duration-200">
+              {chanceLabel}
+            </span>
+          </div>
+
+          {/* 3) Quick Picks */}
+          <div className="space-y-1.5 pt-1">
+            <span className="block text-center text-[11px] font-medium uppercase tracking-wider text-purple-400">Quick Picks</span>
+            <div className="flex justify-center gap-2">
+              {[
+                { qty: 3, emoji: "\uD83D\uDD25", tag: "Most popular" },
+                { qty: 5, emoji: "\u26A1", tag: "Better odds" },
+                { qty: 10, emoji: "\uD83D\uDC51", tag: "VIP" },
+              ].map(({ qty, emoji, tag }) => (
+                <button
+                  key={qty}
+                  onClick={() => handleSetQty(qty)}
+                  className={cn(
+                    "flex flex-col items-center rounded-xl border border-purple-500/30 bg-white/5 px-4 py-2 transition-all duration-200 hover:border-pink-400/50 hover:bg-white/10 active:scale-95",
+                    customQty === qty && "border-pink-400 bg-pink-500/10 shadow-[0_0_15px_rgba(236,72,153,0.25)] scale-105"
+                  )}
+                >
+                  <span className="text-base" aria-hidden="true">{emoji}</span>
+                  <span className="text-sm font-bold text-white">{qty}</span>
+                  <span className="text-[10px] text-purple-300">{tag}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <p className="text-center text-[11px] text-purple-400">More entries = more chances to win.</p>
         </div>
       )}
 
-      {/* ---- Chance strength pill ---- */}
-      <div className="flex justify-center">
-        <span className={cn(
-          "inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium transition-all duration-200",
-          chanceStrength.className,
-        )}>
-          {chanceStrength.label}
-        </span>
-      </div>
-
-      {/* ---- Total and CTA ---- */}
-      <div className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-6 shadow-2xl backdrop-blur-lg">
+      {/* ---- 4) Total and CTA ---- */}
+      <div className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-5 shadow-2xl backdrop-blur-lg">
         <div className="flex items-baseline justify-between">
           <span className="text-sm text-purple-200">Total</span>
           <div className="text-right">
@@ -444,9 +590,29 @@ export function TicketSelector({ basePrice, bundles, campaignId, soldCount, capT
 
         <p className="flex items-center justify-center gap-1.5 text-center text-xs text-purple-200">
           <Lock className="h-3 w-3" aria-hidden="true" />
-          Secure checkout &bull; Instant confirmation
+          Instant confirmation &bull; Secure checkout
         </p>
       </div>
+
+      {/* ---- Sticky bottom CTA (mobile only, appears after scrolling past qty controls) ---- */}
+      {showStickyCta && !isEnded && !isNotStarted && remaining !== 0 && (
+        <div className="fixed inset-x-0 bottom-0 z-50 border-t border-purple-500/30 bg-[#0e0618]/95 px-4 py-3 shadow-[0_-4px_30px_rgba(168,85,247,0.3)] backdrop-blur-xl md:hidden">
+          <div className="flex items-center gap-3">
+            <div className="shrink-0">
+              <div className="text-[10px] font-medium uppercase text-purple-400">Total</div>
+              <div className="bg-gradient-to-r from-[#FFD46A] to-[#F7A600] bg-clip-text text-xl font-bold text-transparent">{formatGBP(currentTotal)}</div>
+            </div>
+            <Button
+              size="lg"
+              className="flex-1 rounded-xl bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] py-3.5 text-sm font-bold text-black shadow-[0_8px_30px_rgba(255,180,0,0.4)] transition-all active:scale-[0.98]"
+              disabled={isProcessing || currentQty < 1}
+              onClick={handleEnter}
+            >
+              {isProcessing ? "Checking out..." : "Secure My Entries"}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
