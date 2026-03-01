@@ -28,10 +28,9 @@ export async function POST(request: Request) {
 
   const campaignId = body.campaignId as string | undefined
   const qty = typeof body.qty === 'number' ? body.qty : parseInt(String(body.qty || ''), 10)
-  const rawBundlePrice = body.bundlePricePence
-  const bundlePricePence = rawBundlePrice != null
-    ? (typeof rawBundlePrice === 'number' ? Math.round(rawBundlePrice) : parseInt(String(rawBundlePrice), 10))
-    : undefined
+  const bundlePricePenceRaw = (body as any).bundlePricePence
+  const bundlePricePenceParsed = typeof bundlePricePenceRaw === 'number' ? bundlePricePenceRaw : parseInt(String(bundlePricePenceRaw ?? ''), 10)
+  const bundlePricePence = Number.isFinite(bundlePricePenceParsed) && bundlePricePenceParsed > 0 ? bundlePricePenceParsed : undefined
 
   if (!campaignId || typeof campaignId !== 'string') {
     return NextResponse.json({ ok: false, error: 'Missing or invalid campaignId' }, { status: 400, ...NO_STORE })
@@ -79,7 +78,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: 'Invalid bundle' }, { status: 400, ...NO_STORE })
     }
     const matched = (campaign.bundles as { quantity: number; price_pence: number }[]).find(
-      (b) => b.quantity === qty && b.price_pence === bundlePricePence
+      (b) => Number(b.quantity) === qty && Number(b.price_pence) === bundlePricePence
     )
     if (!matched) {
       return NextResponse.json({ ok: false, error: 'Invalid bundle' }, { status: 400, ...NO_STORE })
