@@ -43,7 +43,7 @@ export async function POST(request: Request) {
   // 3) Fetch campaign for price + hard cap
   const { data: campaign, error: campErr } = await supabase
     .from('campaigns')
-    .select('id, ticket_price_pence, max_tickets_total, max_tickets_per_user, bundles')
+    .select('id, ticket_price_pence, max_tickets_total, bundles')
     .eq('id', campaignId)
     .single()
 
@@ -51,33 +51,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: 'Campaign not found' }, { status: 400, ...NO_STORE })
   }
 
-  // 3b) Per-user cap precheck
-  if (campaign.max_tickets_per_user != null) {
-    const { data: confirmedRows } = await supabase
-      .from('checkout_intents')
-      .select('qty')
-      .eq('user_id', user.id)
-      .eq('campaign_id', campaignId)
-      .not('confirmed_at', 'is', null)
-
-    const alreadyConfirmedQty = (confirmedRows ?? []).reduce(
-      (sum: number, row: { qty: number }) => sum + (Number(row.qty) || 0),
-      0
-    )
-
-    if (alreadyConfirmedQty + qty > campaign.max_tickets_per_user) {
-      return NextResponse.json(
-        { ok: false, error: 'user_ticket_cap_exceeded' },
-        { status: 409, ...NO_STORE }
-      )
-    }
-  }
-
-  // 3c) Compatibility bridge: legacy columns still reference giveaway_id,
+  // 3b) Compatibility bridge: legacy columns still reference giveaway_id,
   //     but our system is campaign-based. Map campaignId directly.
   const giveawayId = campaignId
 
-  // 3d) Hard-cap check: ensure tickets are still available
+  // 3c) Hard-cap check: ensure tickets are still available
   if (campaign.max_tickets_total != null) {
     const { data: counter } = await supabase
       .from('giveaway_ticket_counters')
