@@ -3,14 +3,23 @@ export const revalidate = 0
 
 import { SectionHeader } from "@/components/section-header"
 import { GiveawayCard } from "@/components/giveaway-card"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@supabase/supabase-js"
 import type { GiveawayPublic } from "@/lib/types"
 
 export default async function GiveawaysPage() {
   let giveaways: GiveawayPublic[] = []
 
   try {
-    const supabase = await createClient()
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+    if (!supabaseUrl || !supabaseAnonKey) {
+      throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY")
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: { persistSession: false },
+    })
     const { data, error } = await supabase
       .from('giveaway_snapshots')
       .select('payload')
