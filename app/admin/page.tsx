@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
+import { LiveActivityFeed } from "@/components/admin/LiveActivityFeed"
 
 const stats = [
   { label: "Active Campaigns", value: "12", sublabel: "3 ending soon" },
@@ -9,13 +10,7 @@ const stats = [
   { label: "Instant Win Status", value: "Active", sublabel: "94% inventory remaining" },
 ]
 
-const recentActivity = [
-  { time: "2 min ago", text: "New campaign created" },
-  { time: "12 min ago", text: "Winner drawn" },
-  { time: "1 hour ago", text: "Campaign ended" },
-  { time: "2 hours ago", text: "Instant win claimed" },
-  { time: "3 hours ago", text: "Campaign paused" },
-]
+
 
 export default function AdminDashboard() {
   return (
@@ -47,17 +42,7 @@ export default function AdminDashboard() {
             <CardTitle>Recent Activity</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {recentActivity.map((activity, i) => (
-                <div key={i} className="flex items-start gap-3">
-                  <div className="flex h-2 w-2 translate-y-1.5 rounded-full bg-primary" />
-                  <div className="flex-1 space-y-1">
-                    <p className="text-sm">{activity.text}</p>
-                    <p className="text-xs text-muted-foreground">{activity.time}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <LiveActivityFeed />
           </CardContent>
         </Card>
 
