@@ -1,8 +1,12 @@
 import Link from "next/link"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
+import { createClient } from "@/lib/supabase/server"
 
-export function SiteHeader() {
+export async function SiteHeader() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
   return (
     <header className="sticky top-0 z-50 border-b bg-background/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-16 items-center justify-between">
@@ -31,9 +35,15 @@ export function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" asChild className="hidden sm:inline-flex hover:bg-accent">
-            <Link href="/me">Sign In</Link>
-          </Button>
+          {user ? (
+            <Button variant="ghost" size="sm" asChild className="hidden sm:inline-flex hover:bg-accent">
+              <Link href="/me">My Account</Link>
+            </Button>
+          ) : (
+            <Button variant="ghost" size="sm" asChild className="hidden sm:inline-flex hover:bg-accent">
+              <Link href="/auth/login">Sign up / in</Link>
+            </Button>
+          )}
           <Button size="sm" asChild className="bg-primary text-primary-foreground shadow-sm hover:bg-[#5B21B6]">
             <Link href="/giveaways">Browse</Link>
           </Button>
