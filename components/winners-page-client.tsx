@@ -15,6 +15,7 @@ interface WinnersPageClientProps {
 export function WinnersPageClient({ winners }: WinnersPageClientProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [timeFilter, setTimeFilter] = useState<"all" | "week" | "month">("all")
+  const [typeFilter, setTypeFilter] = useState<"all" | "main" | "instant">("all")
 
   const filteredWinners = useMemo(() => {
     let filtered = [...winners]
@@ -40,8 +41,15 @@ export function WinnersPageClient({ winners }: WinnersPageClientProps) {
       )
     }
 
+    // Type filter
+    if (typeFilter === "main") {
+      filtered = filtered.filter((w) => w.kind === "main")
+    } else if (typeFilter === "instant") {
+      filtered = filtered.filter((w) => w.kind === "instant")
+    }
+
     return filtered
-  }, [winners, searchQuery, timeFilter])
+  }, [winners, searchQuery, timeFilter, typeFilter])
 
   return (
     <>
@@ -50,8 +58,10 @@ export function WinnersPageClient({ winners }: WinnersPageClientProps) {
         <WinnersFilters
           searchQuery={searchQuery}
           timeFilter={timeFilter}
+          typeFilter={typeFilter}
           onSearchChange={setSearchQuery}
           onTimeFilterChange={setTimeFilter}
+          onTypeFilterChange={setTypeFilter}
         />
       </div>
 
@@ -59,7 +69,7 @@ export function WinnersPageClient({ winners }: WinnersPageClientProps) {
       <div className="mb-12">
         <SectionHeader
           title={`${filteredWinners.length} ${filteredWinners.length === 1 ? "Winner" : "Winners"}`}
-          subtitle="Our verified winners from recent giveaways"
+          subtitle="Verified main prize winners and instant win winners from recent giveaways"
           className="mb-6"
         />
         {filteredWinners.length === 0 && searchQuery ? (
