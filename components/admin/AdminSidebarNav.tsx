@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
+import { Radio } from "lucide-react"
 
 const navItems = [
   { href: "/admin", label: "Dashboard" },
@@ -35,6 +36,9 @@ export function AdminSidebarNav() {
                   : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
               )}
             >
+              {item.href === "/admin/live-feed" && (
+                <Radio className="mr-2 inline-block h-4 w-4" />
+              )}
               {item.label}
             </Link>
           )
