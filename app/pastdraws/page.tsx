@@ -1,6 +1,6 @@
 import { SectionHeader } from "@/components/section-header"
 import { GiveawayCard } from "@/components/giveaway-card"
-import { createClient } from "@/lib/supabase/server"
+import { createPublicClient } from "@/lib/supabase/public"
 import type { GiveawayPublic } from "@/lib/types"
 import type { Metadata } from "next"
 
@@ -13,7 +13,7 @@ export default async function PastDrawsPage() {
   let giveaways: GiveawayPublic[] = []
 
   try {
-    const supabase = await createClient()
+    const supabase = createPublicClient()
     const { data, error } = await supabase
       .from("giveaway_snapshots")
       .select("payload")

@@ -1,3 +1,4 @@
+// trigger redeploy
 import type { Metadata } from "next"
 import { AboutHero } from "@/components/about/about-hero"
 import { AboutStory } from "@/components/about/about-story"
