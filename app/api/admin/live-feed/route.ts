@@ -35,10 +35,10 @@ export async function GET() {
 
   const svc = createServiceClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } })
 
-  // Fetch latest entries
+  // Fetch latest entries with checkout_intent_id
   const { data: entries, error: entriesError } = await svc
     .from('entries')
-    .select('id, campaign_id, qty, created_at, user_id')
+    .select('id, checkout_intent_id, campaign_id, qty, created_at, user_id')
     .order('created_at', { ascending: false })
     .limit(20)
 
@@ -59,13 +59,75 @@ export async function GET() {
 
   const campaignMap = new Map((campaigns ?? []).map((c) => [c.id, c.title]))
 
+  // Resolve profile names from profiles_public_snapshot
+  const userIds = [...new Set(entries.map((e) => e.user_id).filter(Boolean))]
+  const { data: profiles } = await svc
+    .from('profiles_public_snapshot')
+    .select('user_id, real_name')
+    .in('user_id', userIds)
+
+  const profileMap = new Map((profiles ?? []).map((p) => [p.user_id, p.real_name]))
+
+  // Resolve auth emails for users without profile names
+  const usersNeedingEmail = userIds.filter((uid) => !profileMap.get(uid))
+  const emailMap = new Map<string, string>()
+
+  for (const uid of usersNeedingEmail) {
+    try {
+      const { data: authUser } = await svc.auth.admin.getUserById(uid)
+      if (authUser?.user?.email) {
+        emailMap.set(uid, authUser.user.email)
+      }
+    } catch {
+      // Ignore errors, fallback to "User"
+    }
+  }
+
+  // Resolve instant win awards by checkout_intent_id
+  const checkoutIntentIds = [...new Set(entries.map((e) => e.checkout_intent_id).filter(Boolean))]
+  const { data: awards } = await svc
+    .from('instant_win_awards')
+    .select('checkout_intent_id, prize_id, awarded_at')
+    .in('checkout_intent_id', checkoutIntentIds)
+
+  const awardMap = new Map((awards ?? []).map((a) => [a.checkout_intent_id, { prize_id: a.prize_id, awarded_at: a.awarded_at }]))
+
+  // Resolve prize titles
+  const prizeIds = [...new Set((awards ?? []).map((a) => a.prize_id).filter(Boolean))]
+  const { data: prizes } = await svc
+    .from('instant_win_prizes')
+    .select('id, prize_title')
+    .in('id', prizeIds)
+
+  const prizeMap = new Map((prizes ?? []).map((p) => [p.id, p.prize_title]))
+
   // Build response
-  const items = entries.map((e) => ({
-    id: e.id,
-    qty: e.qty,
-    created_at: e.created_at,
-    campaign_title: campaignMap.get(e.campaign_id) ?? 'Unknown Campaign',
-  }))
+  const items = entries.map((e) => {
+    const award = e.checkout_intent_id ? awardMap.get(e.checkout_intent_id) : null
+    const wonInstantWin = !!award
+    const instantWinTitle = award ? prizeMap.get(award.prize_id) ?? null : null
+    const awardedAt = award?.awarded_at ?? null
+
+    // Resolve user display: real_name > email > "User"
+    let userDisplay: string | null = null
+    if (e.user_id) {
+      userDisplay = profileMap.get(e.user_id) || emailMap.get(e.user_id) || null
+    }
+    if (!userDisplay) {
+      userDisplay = 'User'
+    }
+
+    return {
+      id: e.id,
+      qty: e.qty,
+      created_at: e.created_at,
+      campaign_title: campaignMap.get(e.campaign_id) ?? 'Unknown Campaign',
+      user_display: userDisplay,
+      won_instant_win: wonInstantWin,
+      instant_win_title: instantWinTitle,
+      awarded_at: awardedAt,
+    }
+  })
 
   return NextResponse.json({ ok: true, items })
 }
