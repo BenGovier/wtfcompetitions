@@ -7,6 +7,10 @@ interface FeedItem {
   qty: number
   created_at: string
   campaign_title: string
+  user_display: string | null
+  won_instant_win: boolean
+  instant_win_title: string | null
+  awarded_at: string | null
 }
 
 function formatRelativeTime(dateString: string): string {
@@ -18,6 +22,11 @@ function formatRelativeTime(dateString: string): string {
   if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m ago`
   if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h ago`
   return `${Math.floor(diffSeconds / 86400)}d ago`
+}
+
+function formatExactTime(dateString: string): string {
+  const date = new Date(dateString)
+  return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
 export function LiveActivityFeed() {
@@ -41,7 +50,7 @@ export function LiveActivityFeed() {
         } else {
           setError(data.error || "Failed to load feed")
         }
-      } catch (err) {
+      } catch {
         if (mounted) {
           setError("Network error")
         }
@@ -98,14 +107,30 @@ export function LiveActivityFeed() {
     <div className="space-y-4">
       {items.map((item) => (
         <div key={item.id} className="flex items-start gap-3">
-          <span className="text-base" aria-hidden="true">🎟</span>
+          <span className="text-base" aria-hidden="true">
+            {item.won_instant_win ? "🎉" : "🎟"}
+          </span>
           <div className="flex-1 space-y-1">
-            <p className="text-sm">
-              {item.qty} {item.qty === 1 ? "entry" : "entries"} — {item.campaign_title}
-            </p>
             <p className="text-xs text-muted-foreground">
-              {formatRelativeTime(item.created_at)}
+              {formatExactTime(item.created_at)} · {formatRelativeTime(item.created_at)}
             </p>
+            <p className="text-sm">
+              <span className="font-medium">{item.user_display}</span> entered {item.qty} {item.qty === 1 ? "ticket" : "tickets"} — {item.campaign_title}
+            </p>
+            {item.won_instant_win ? (
+              <div className="text-sm">
+                <span className="text-amber-600 dark:text-amber-400">
+                  Instant win: {item.instant_win_title}
+                </span>
+                {item.awarded_at && (
+                  <span className="text-xs text-muted-foreground ml-2">
+                    at {formatExactTime(item.awarded_at)}
+                  </span>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">No instant win</p>
+            )}
           </div>
         </div>
       ))}
