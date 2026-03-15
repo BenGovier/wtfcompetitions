@@ -1,4 +1,4 @@
-import { ShieldCheck, Trophy } from "lucide-react"
+import { ShieldCheck, Trophy, Zap } from "lucide-react"
 
 /**
  * Winners page banner header.
@@ -31,7 +31,7 @@ export function WinnersHeroBanner() {
             Our Winners
           </h1>
           <p className="mx-auto max-w-xl text-pretty text-muted-foreground md:text-lg">
-            Every winner is verified and announced publicly. We believe in complete transparency and celebrating our community.
+            Celebrating all our winners - from main prize draws to instant wins. Every winner is verified and announced publicly.
           </p>
         </div>
 
@@ -42,7 +42,11 @@ export function WinnersHeroBanner() {
           </span>
           <span className="inline-flex items-center gap-1.5">
             <Trophy className="h-4 w-4 text-primary" aria-hidden="true" />
-            Announced within 48h
+            Main prize draws
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Zap className="h-4 w-4 text-amber-500" aria-hidden="true" />
+            Instant wins
           </span>
         </div>
       </div>
