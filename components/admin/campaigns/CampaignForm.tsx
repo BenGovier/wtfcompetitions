@@ -156,6 +156,8 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
     setSaveError(null)
     setIwError(null)
 
+    let instantWinsSaved = false
+
     try {
       // 1. Save all dirty instant win prizes first
       const dirtyPrizes = getDirtyPrizes()
@@ -193,6 +195,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
           dirtyPrizes.forEach((p) => { updated[p.id] = { ...p } })
           return updated
         })
+        instantWinsSaved = true
       }
 
       // 2. Save campaign
@@ -206,7 +209,12 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
       const json = await res.json()
 
       if (!res.ok || !json.ok) {
-        setSaveError(json.error || `Request failed (${res.status})`)
+        const baseError = json.error || `Request failed (${res.status})`
+        if (instantWinsSaved) {
+          setSaveError(`Instant win changes were saved, but campaign changes failed: ${baseError}`)
+        } else {
+          setSaveError(baseError)
+        }
         return
       }
 
