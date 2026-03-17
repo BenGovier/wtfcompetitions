@@ -194,7 +194,7 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
               <Separator />
 
               <div id="ticket-selector" className="scroll-mt-24">
-                <TicketSelector basePrice={ticketPrice} bundles={bundles} campaignId={campaignId} soldCount={soldCount} capTotal={capTotal} startsAt={p.starts_at ?? null} endsAt={p.ends_at ?? null} ticketsSold={Number(p.tickets_sold ?? 0)} hardCapTotalTickets={Number(p.hard_cap_total_tickets ?? 0)} />
+                <TicketSelector basePrice={ticketPrice} bundles={bundles} campaignId={campaignId} soldCount={soldCount} capTotal={capTotal} startsAt={p.starts_at ?? null} endsAt={p.ends_at ?? null} ticketsSold={p.tickets_sold != null ? Number(p.tickets_sold) : null} hardCapTotalTickets={p.hard_cap_total_tickets != null ? Number(p.hard_cap_total_tickets) : null} />
               </div>
             </div>
           </div>

@@ -34,8 +34,8 @@ interface TicketSelectorProps {
   capTotal?: number | null
   startsAt?: string | null
   endsAt?: string | null
-  ticketsSold?: number
-  hardCapTotalTickets?: number
+  ticketsSold?: number | null
+  hardCapTotalTickets?: number | null
 }
 
 /**
