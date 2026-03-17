@@ -97,26 +97,17 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
     notFound()
   }
 
-  // Resolve giveaway_id for ticket counter (FK references giveaways table, not campaigns)
+  // Query live ticket counter directly using campaignId
   const capTotal: number | null = p.hard_cap_total_tickets ?? null
   let soldCount = 0
   {
-    const { data: giveaway } = await supabase
-      .from('giveaways')
-      .select('id')
-      .eq('campaign_id', campaignId)
+    const { data: counter } = await supabase
+      .from('giveaway_ticket_counters')
+      .select('next_ticket')
+      .eq('giveaway_id', campaignId)
       .limit(1)
       .maybeSingle()
-
-    if (giveaway) {
-      const { data: counter } = await supabase
-        .from('giveaway_ticket_counters')
-        .select('next_ticket')
-        .eq('giveaway_id', giveaway.id)
-        .limit(1)
-        .maybeSingle()
-      soldCount = Math.max(0, (counter?.next_ticket ?? 1) - 1)
-    }
+    soldCount = Math.max(0, (counter?.next_ticket ?? 1) - 1)
   }
 
   const instantWins = Array.isArray(p.instant_wins) ? p.instant_wins : []
