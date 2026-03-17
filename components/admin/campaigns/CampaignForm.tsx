@@ -38,6 +38,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
 
   // Instant wins state
   const [instantWins, setInstantWins] = useState<InstantWinPrizeRow[]>([])
+  const [iwOriginal, setIwOriginal] = useState<Record<string, InstantWinPrizeRow>>({}) // Track original values for dirty checking
   const [iwLoading, setIwLoading] = useState(false)
   const [iwError, setIwError] = useState<string | null>(null)
   const [iwSaving, setIwSaving] = useState<Record<string, boolean>>({})
@@ -49,6 +50,23 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
   const [ladderEnd, setLadderEnd] = useState(0.95)
 
   const campaignId = formData.id || campaign.id
+
+  // Helper to check if a prize row is dirty (changed from original)
+  const isPrizeDirty = useCallback((prize: InstantWinPrizeRow): boolean => {
+    const orig = iwOriginal[prize.id]
+    if (!orig) return true // New row, not in original = dirty
+    return (
+      prize.prize_title !== orig.prize_title ||
+      prize.prize_value_text !== orig.prize_value_text ||
+      prize.unlock_ratio !== orig.unlock_ratio ||
+      prize.image_url !== orig.image_url
+    )
+  }, [iwOriginal])
+
+  // Get all dirty prizes
+  const getDirtyPrizes = useCallback((): InstantWinPrizeRow[] => {
+    return instantWins.filter(isPrizeDirty)
+  }, [instantWins, isPrizeDirty])
 
   const handleChange = (
     field: keyof Campaign,
@@ -69,7 +87,12 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
         setIwError(json.error || 'Failed to fetch instant wins')
         return
       }
-      setInstantWins(json.items || [])
+      const items = json.items || []
+      setInstantWins(items)
+      // Store original values for dirty checking
+      const originals: Record<string, InstantWinPrizeRow> = {}
+      items.forEach((item: InstantWinPrizeRow) => { originals[item.id] = { ...item } })
+      setIwOriginal(originals)
     } catch (err: any) {
       setIwError(err?.message || 'Failed to fetch instant wins')
     } finally {
@@ -125,10 +148,57 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
       setSaveError('Click Upload to attach the hero image')
       return
     }
+    if (iwUploadingId) {
+      setSaveError('An instant win image is still uploading — please wait')
+      return
+    }
     setIsSaving(true)
     setSaveError(null)
+    setIwError(null)
+
+    let instantWinsSaved = false
 
     try {
+      // 1. Save all dirty instant win prizes first
+      const dirtyPrizes = getDirtyPrizes()
+      if (dirtyPrizes.length > 0) {
+        for (const prize of dirtyPrizes) {
+          const ratio = Number(prize.unlock_ratio)
+          if (isNaN(ratio) || ratio < 0 || ratio > 1) {
+            setSaveError(`Unlock ratio for "${prize.prize_title}" must be between 0 and 1`)
+            setIsSaving(false)
+            return
+          }
+
+          const res = await fetch('/api/admin/instant-win-prizes', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: prize.id,
+              campaign_id: prize.campaign_id,
+              prize_title: prize.prize_title,
+              prize_value_text: prize.prize_value_text,
+              unlock_ratio: ratio,
+              image_url: prize.image_url,
+            }),
+          })
+          const json = await res.json()
+          if (!res.ok || !json.ok) {
+            setSaveError(`Failed to save instant win "${prize.prize_title}": ${json.error || 'Unknown error'}`)
+            setIsSaving(false)
+            return
+          }
+        }
+        // Update originals after successful save
+        setIwOriginal((prev) => {
+          const updated = { ...prev }
+          dirtyPrizes.forEach((p) => { updated[p.id] = { ...p } })
+          return updated
+        })
+        instantWinsSaved = true
+      }
+
+      // 2. Save campaign
       const method = isNew ? 'POST' : 'PUT'
       const res = await fetch('/api/admin/campaigns', {
         method,
@@ -139,7 +209,12 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
       const json = await res.json()
 
       if (!res.ok || !json.ok) {
-        setSaveError(json.error || `Request failed (${res.status})`)
+        const baseError = json.error || `Request failed (${res.status})`
+        if (instantWinsSaved) {
+          setSaveError(`Instant win changes were saved, but campaign changes failed: ${baseError}`)
+        } else {
+          setSaveError(baseError)
+        }
         return
       }
 
@@ -181,7 +256,14 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
         setIwError(json.error || 'Failed to add prize')
         return
       }
-      setInstantWins((prev) => [...prev, ...(json.items || [])])
+      const newItems = json.items || []
+      setInstantWins((prev) => [...prev, ...newItems])
+      // Track new items as originals (they're already saved)
+      setIwOriginal((prev) => {
+        const updated = { ...prev }
+        newItems.forEach((item: InstantWinPrizeRow) => { updated[item.id] = { ...item } })
+        return updated
+      })
     } catch (err: any) {
       setIwError(err?.message || 'Failed to add prize')
     }
@@ -213,7 +295,14 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
         setIwError(json.error || 'Failed to generate ladder')
         return
       }
-      setInstantWins((prev) => [...prev, ...(json.items || [])])
+      const newItems = json.items || []
+      setInstantWins((prev) => [...prev, ...newItems])
+      // Track new items as originals (they're already saved)
+      setIwOriginal((prev) => {
+        const updated = { ...prev }
+        newItems.forEach((item: InstantWinPrizeRow) => { updated[item.id] = { ...item } })
+        return updated
+      })
     } catch (err: any) {
       setIwError(err?.message || 'Failed to generate ladder')
     }
@@ -250,6 +339,9 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
       const json = await res.json()
       if (!res.ok || !json.ok) {
         setIwError(json.error || 'Failed to save prize')
+      } else {
+        // Update original to mark as clean
+        setIwOriginal((prev) => ({ ...prev, [prize.id]: { ...prize } }))
       }
     } catch (err: any) {
       setIwError(err?.message || 'Failed to save prize')
@@ -271,6 +363,11 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
         return
       }
       setInstantWins((prev) => prev.filter((p) => p.id !== prizeId))
+      setIwOriginal((prev) => {
+        const updated = { ...prev }
+        delete updated[prizeId]
+        return updated
+      })
     } catch (err: any) {
       setIwError(err?.message || 'Failed to delete prize')
     }
@@ -583,6 +680,9 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
             Unlock ratio = ticketsSold / maxTicketsTotal threshold. We cap ladder end at 0.95 so prizes
             don&apos;t all release at the very end.
           </p>
+          <p className="text-xs text-blue-600 dark:text-blue-400">
+            The main &quot;Save Changes&quot; button will save any edited instant win rows automatically.
+          </p>
 
           {!campaignId ? (
             <p className="text-sm text-muted-foreground italic">
@@ -650,7 +750,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
               {instantWins.length > 0 && (
                 <div className="space-y-3">
                   {instantWins.map((prize) => (
-                    <div key={prize.id} className="rounded-md border p-3 space-y-3">
+                    <div key={prize.id} className={`rounded-md border p-3 space-y-3 ${isPrizeDirty(prize) ? 'border-amber-400 bg-amber-50/50 dark:bg-amber-950/20' : ''}`}>
                       <div className="flex flex-wrap items-start gap-3">
                         {/* Thumbnail */}
                         {prize.image_url && (
@@ -720,26 +820,31 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
                         </div>
 
                         {/* Actions */}
-                        <div className="flex gap-1 pt-5">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="icon"
-                            disabled={!!iwSaving[prize.id]}
-                            onClick={() => handleSavePrize(prize)}
-                            title="Save prize"
-                          >
-                            <Save className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="icon"
-                            onClick={() => handleDeletePrize(prize.id)}
-                            title="Delete prize"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                        <div className="flex flex-col items-end gap-1 pt-5">
+                          {isPrizeDirty(prize) && (
+                            <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">Unsaved</span>
+                          )}
+                          <div className="flex gap-1">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              disabled={!!iwSaving[prize.id]}
+                              onClick={() => handleSavePrize(prize)}
+                              title="Save prize"
+                            >
+                              <Save className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              onClick={() => handleDeletePrize(prize.id)}
+                              title="Delete prize"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     </div>
