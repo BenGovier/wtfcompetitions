@@ -147,8 +147,8 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
     )
   }
 
-  // Prefer snapshot-derived props, fall back to live counter
-  const displaySold = ticketsSold ?? soldCount ?? 0
+  // Prefer live counter, fall back to snapshot-derived props
+  const displaySold = soldCount ?? ticketsSold ?? 0
   const displayCap = (hardCapTotalTickets && hardCapTotalTickets > 0) ? hardCapTotalTickets : capTotal
   const hasCapInfo = typeof displaySold === 'number' && typeof displayCap === 'number' && displayCap > 0
   const remaining = hasCapInfo ? Math.max(0, displayCap - displaySold) : null
