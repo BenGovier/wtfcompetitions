@@ -31,6 +31,9 @@ export function GiveawayCard({ giveaway, mode = "live" }: GiveawayCardProps) {
 
   const sold = giveaway.ticketsSold ?? 0
   const cap = giveaway.hardCapTotalTickets ?? 0
+  const hasCapInfo = cap > 0
+  const soldPct = hasCapInfo ? Math.min(100, (sold / cap) * 100) : 0
+  const remaining = hasCapInfo ? Math.max(0, cap - sold) : null
 
   return (
     <Card className="group flex h-full flex-col overflow-hidden rounded-2xl border border-border/80 bg-card shadow-sm transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-xl">
@@ -79,12 +82,23 @@ export function GiveawayCard({ giveaway, mode = "live" }: GiveawayCardProps) {
             <Clock className="h-4 w-4" aria-hidden="true" />
             <span className={isEnded ? "font-medium text-destructive" : ""}>{timeLabel}</span>
           </div>
-          {sold > 0 && cap > 0 ? (
-            <span className="text-xs font-medium tabular-nums">{sold} / {cap} sold</span>
-          ) : sold > 0 ? (
-            <span className="text-xs font-medium tabular-nums">{sold} sold</span>
-          ) : null}
         </div>
+
+        {/* Progress bar - only show when cap is set */}
+        {hasCapInfo && (
+          <div className="mt-2 space-y-1">
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span className="font-medium tabular-nums">{sold.toLocaleString()} sold</span>
+              <span className="tabular-nums">{remaining?.toLocaleString()} left</span>
+            </div>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-primary transition-all duration-500 ease-out"
+                style={{ width: `${soldPct}%` }}
+              />
+            </div>
+          </div>
+        )}
       </CardContent>
 
       <CardFooter className="flex flex-col gap-3 border-t border-border/50 bg-muted/20 p-4">
