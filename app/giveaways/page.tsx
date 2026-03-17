@@ -27,8 +27,32 @@ export default async function GiveawaysPage() {
       .order('generated_at', { ascending: false })
 
     if (!error && data && data.length > 0) {
+      // Extract campaign IDs from snapshot payloads
+      const campaignIds = data
+        .map((row) => (row.payload as Record<string, any>).id)
+        .filter((id): id is string => typeof id === 'string')
+
+      // Batch query live ticket counters
+      let counterMap: Record<string, number> = {}
+      if (campaignIds.length > 0) {
+        const { data: counters } = await supabase
+          .from('giveaway_ticket_counters')
+          .select('giveaway_id, next_ticket')
+          .in('giveaway_id', campaignIds)
+
+        if (counters) {
+          counterMap = Object.fromEntries(
+            counters.map((c: { giveaway_id: string; next_ticket: number }) => [c.giveaway_id, c.next_ticket])
+          )
+        }
+      }
+
       giveaways = data.map((row) => {
         const p = row.payload as Record<string, any>
+        const campaignId = p.id as string | undefined
+        const liveNextTicket = campaignId ? counterMap[campaignId] : undefined
+        const ticketsSold = Math.max(0, (liveNextTicket ?? 1) - 1)
+
         return {
           slug: p.slug || 'unknown',
           title: p.title || 'Untitled',
@@ -40,8 +64,8 @@ export default async function GiveawaysPage() {
           prizeValue: p.prize_value_text || undefined,
           bundles: p.bundles || undefined,
           rulesText: 'See full terms and conditions for complete rules.',
-          ticketsSold: p.tickets_sold != null ? Number(p.tickets_sold) : null,
-          nextTicket: Number(p.next_ticket ?? 1),
+          ticketsSold,
+          nextTicket: liveNextTicket ?? 1,
           hardCapTotalTickets: Number(p.hard_cap_total_tickets ?? p.max_tickets_total ?? 0),
         }
       })
