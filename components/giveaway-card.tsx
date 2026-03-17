@@ -29,7 +29,9 @@ export function GiveawayCard({ giveaway, mode = "live" }: GiveawayCardProps) {
   const effectiveStatus = isEnded ? "ended" : giveaway.status
   const timeLabel = getTimeLabel(msLeft, isEnded)
 
-  const sold = giveaway.ticketsSold ?? 0
+  const sold =
+    giveaway.ticketsSold ??
+    (giveaway.nextTicket != null ? Math.max(0, giveaway.nextTicket - 1) : 0)
   const cap = giveaway.hardCapTotalTickets ?? 0
   const hasCapInfo = cap > 0
   const soldPct = hasCapInfo ? Math.min(100, (sold / cap) * 100) : 0
