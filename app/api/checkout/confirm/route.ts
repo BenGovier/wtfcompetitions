@@ -83,16 +83,18 @@ export async function POST(request: Request) {
           .single()
 
         if (campaign && campaign.status !== 'ended') {
-          // Compute tickets sold
-          const { data: sumData } = await svc
-            .from('entries')
-            .select('qty')
-            .eq('campaign_id', campaign.id)
+          // Get live ticket count from counter (more reliable than entries aggregation)
+          const { data: counter } = await svc
+            .from('giveaway_ticket_counters')
+            .select('next_ticket')
+            .eq('giveaway_id', campaign.id)
+            .maybeSingle()
 
-          const ticketsSold = (sumData ?? []).reduce((acc, row) => acc + (row.qty || 0), 0)
+          const sold = Math.max(0, (counter?.next_ticket ?? 1) - 1)
+          const cap = campaign.max_tickets_total ?? 0
 
           // Check trigger conditions: sold out OR end time passed
-          const isSoldOut = campaign.max_tickets_total != null && ticketsSold >= campaign.max_tickets_total
+          const isSoldOut = cap > 0 && sold >= cap
           const isPastEnd = new Date(campaign.end_at) <= new Date()
 
           if (isSoldOut || isPastEnd) {
@@ -100,8 +102,8 @@ export async function POST(request: Request) {
               campaignId: campaign.id,
               isSoldOut,
               isPastEnd,
-              ticketsSold,
-              maxTickets: campaign.max_tickets_total,
+              sold,
+              cap,
             })
 
             // Trigger draw route with Bearer auth (awaited for reliability)
