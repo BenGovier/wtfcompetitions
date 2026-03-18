@@ -104,19 +104,27 @@ export async function POST(request: Request) {
               maxTickets: campaign.max_tickets_total,
             })
 
-            // Trigger draw route with Bearer auth (non-blocking)
+            // Trigger draw route with Bearer auth (awaited for reliability)
             const cronSecret = process.env.CRON_SECRET
             if (cronSecret) {
               const baseUrl = process.env.VERCEL_URL
                 ? `https://${process.env.VERCEL_URL}`
                 : process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
 
-              fetch(`${baseUrl}/api/jobs/run-draws`, {
+              const drawRes = await fetch(`${baseUrl}/api/jobs/run-draws`, {
                 method: 'GET',
                 headers: { Authorization: `Bearer ${cronSecret}` },
-              }).catch((e) => {
-                console.error('[checkout/confirm] draw trigger fetch failed:', e?.message)
               })
+
+              if (!drawRes.ok) {
+                const resText = await drawRes.text().catch(() => '(unable to read body)')
+                console.error('[checkout/confirm] draw trigger returned non-ok:', {
+                  status: drawRes.status,
+                  body: resText,
+                })
+              } else {
+                console.log('[checkout/confirm] draw trigger succeeded:', drawRes.status)
+              }
             }
           }
         }
