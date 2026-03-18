@@ -112,9 +112,9 @@ export async function GET(request: NextRequest) {
 
         // e) Idempotency: check if winner already exists for this campaign
         const { data: existingWinner } = await supabase
-          .from('winners')
+          .from('winner_records')
           .select('id')
-          .eq('campaign_id', campaign.id)
+          .eq('giveaway_id', campaign.id)
           .limit(1)
           .maybeSingle()
 
@@ -160,11 +160,11 @@ export async function GET(request: NextRequest) {
 
         // g) Insert winner
         const { error: winErr } = await supabase
-          .from('winners')
+          .from('winner_records')
           .insert({
-            campaign_id: campaign.id,
+            giveaway_id: campaign.id,
             user_id: winnerUserId,
-            nickname: null,
+            placed: 1,
             prize_title: campaign.main_prize_title || campaign.title || 'Prize',
             announced_at: new Date().toISOString(),
           })
