@@ -5,11 +5,21 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 export async function GET(request: NextRequest) {
-  // Auth: token query param must match CRON_SECRET
+  // Auth: Accept manual trigger (Bearer token or query param) OR Vercel cron headers
+  const authHeader = request.headers.get('authorization')
   const tokenParam = request.nextUrl.searchParams.get('token')
   const expectedToken = process.env.CRON_SECRET
 
-  if (!expectedToken || tokenParam !== expectedToken) {
+  // A) Manual trigger: valid Bearer token OR valid query param token
+  const isManualTrigger = !!(expectedToken && (authHeader === `Bearer ${expectedToken}` || tokenParam === expectedToken))
+
+  // B) Vercel cron trigger: accept if ANY of these is true
+  const isVercelCron =
+    request.headers.get('x-vercel-cron') === '1' ||
+    request.headers.has('x-vercel-cron-job') ||
+    (request.headers.get('user-agent') ?? '').includes('vercel-cron')
+
+  if (!isManualTrigger && !isVercelCron) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
