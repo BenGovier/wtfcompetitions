@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
   // 5) Lookup intent by provider_session_id
   const { data: intent, error: lookupErr } = await supabase
     .from('checkout_intents')
-    .select('ref, user_id, state')
+    .select('ref, user_id, state, campaign_id')
     .eq('provider', 'sumup')
     .eq('provider_session_id', checkoutId)
     .limit(1)
@@ -126,5 +126,73 @@ export async function POST(request: NextRequest) {
   }
 
   console.log('[webhooks/sumup] confirmed:', intent.ref)
+
+  // === INSTANT MAIN DRAW TRIGGER (best-effort, non-blocking) ===
+  // Trigger the existing draw route immediately if sold out OR end time passed
+  try {
+    const campaignId = intent.campaign_id
+    if (campaignId) {
+      // Get campaign details
+      const { data: campaign } = await supabase
+        .from('campaigns')
+        .select('id, end_at, max_tickets_total, status')
+        .eq('id', campaignId)
+        .single()
+
+      if (campaign && campaign.status !== 'ended') {
+        // Get live ticket count from counter
+        const { data: counter } = await supabase
+          .from('giveaway_ticket_counters')
+          .select('next_ticket')
+          .eq('giveaway_id', campaign.id)
+          .maybeSingle()
+
+        const sold = Math.max(0, (counter?.next_ticket ?? 1) - 1)
+        const cap = campaign.max_tickets_total ?? 0
+
+        // Check trigger conditions: sold out OR end time passed
+        const isSoldOut = cap > 0 && sold >= cap
+        const isPastEnd = new Date(campaign.end_at) <= new Date()
+
+        if (isSoldOut || isPastEnd) {
+          console.log('[webhooks/sumup] triggering immediate draw:', {
+            campaignId: campaign.id,
+            isSoldOut,
+            isPastEnd,
+            sold,
+            cap,
+          })
+
+          // Trigger draw route with Bearer auth (awaited for reliability)
+          const cronSecret = process.env.CRON_SECRET
+          if (cronSecret) {
+            const baseUrl = process.env.VERCEL_URL
+              ? `https://${process.env.VERCEL_URL}`
+              : process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+
+            const drawRes = await fetch(`${baseUrl}/api/jobs/run-draws`, {
+              method: 'GET',
+              headers: { Authorization: `Bearer ${cronSecret}` },
+            })
+
+            if (!drawRes.ok) {
+              const resText = await drawRes.text().catch(() => '(unable to read body)')
+              console.error('[webhooks/sumup] draw trigger returned non-ok:', {
+                status: drawRes.status,
+                body: resText,
+              })
+            } else {
+              console.log('[webhooks/sumup] draw trigger succeeded:', drawRes.status)
+            }
+          }
+        }
+      }
+    }
+  } catch (drawTriggerErr: any) {
+    // Log but do NOT fail the webhook response
+    console.error('[webhooks/sumup] instant draw trigger error (non-fatal):', drawTriggerErr?.message)
+  }
+  // === END INSTANT MAIN DRAW TRIGGER ===
+
   return NextResponse.json({ ok: true })
 }
