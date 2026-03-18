@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 const BATCH_SIZE = 50
+const MAX_LOOPS = 100 // Hard guard to prevent infinite loops
 
 export async function GET(request: NextRequest) {
   // Auth: Accept manual trigger (Bearer token or query param) OR Vercel cron headers
@@ -39,29 +40,32 @@ export async function GET(request: NextRequest) {
   const summary = { ok: true, processed: 0, ended: 0, extended: 0, batches: 0, errors: [] as string[] }
 
   try {
-    let offset = 0
-    let hasMore = true
+    let loopCount = 0
 
-    // Process all eligible campaigns in batches
-    while (hasMore) {
-      // 1) Fetch batch of eligible campaigns: live or sold_out, ordered by end_at ascending
+    // Queue-drain loop: always fetch FIRST batch, process, repeat until empty
+    while (loopCount < MAX_LOOPS) {
+      loopCount++
+
+      // 1) Fetch FIRST batch of eligible campaigns (no offset - always from start)
       const { data: campaigns, error: fetchErr } = await supabase
         .from('campaigns')
         .select('id, title, slug, status, end_at, main_prize_title, max_tickets_total')
         .in('status', ['live', 'sold_out'])
         .order('end_at', { ascending: true })
-        .range(offset, offset + BATCH_SIZE - 1)
+        .limit(BATCH_SIZE)
 
       if (fetchErr) {
         return NextResponse.json({ ok: false, error: fetchErr.message }, { status: 500 })
       }
 
+      // Exit when no more eligible campaigns
       if (!campaigns || campaigns.length === 0) {
-        hasMore = false
         break
       }
 
       summary.batches++
+
+      let processedAnyInBatch = false
 
       // 2) Process each campaign in this batch
       for (const campaign of campaigns) {
@@ -99,10 +103,11 @@ export async function GET(request: NextRequest) {
           const isEligibleToDraw = campaign.status === 'sold_out' || isPastEnd
 
           if (!isEligibleToDraw) {
+            // Not eligible yet - will remain in queue, skip for now
             continue
           }
 
-          // d) If zero sales, extend by 7 days
+          // d) If zero sales, extend by 7 days (removes from eligible set)
           if (ticketsSold === 0) {
             const currentEnd = new Date(campaign.end_at)
             const newEnd = new Date(currentEnd.getTime() + 7 * 24 * 60 * 60 * 1000)
@@ -116,6 +121,7 @@ export async function GET(request: NextRequest) {
               summary.errors.push(`${campaign.id}: extend failed - ${extErr.message}`)
             } else {
               summary.extended++
+              processedAnyInBatch = true
             }
             continue
           }
@@ -135,6 +141,7 @@ export async function GET(request: NextRequest) {
               .update({ status: 'ended' })
               .eq('id', campaign.id)
             summary.ended++
+            processedAnyInBatch = true
             continue
           }
 
@@ -195,6 +202,7 @@ export async function GET(request: NextRequest) {
           }
 
           summary.ended++
+          processedAnyInBatch = true
 
           // i) Trigger snapshot refreshes (non-blocking, collect errors)
           try {
@@ -216,16 +224,19 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // Move to next batch
-      offset += BATCH_SIZE
-
-      // If we got fewer than BATCH_SIZE, we've reached the end
-      if (campaigns.length < BATCH_SIZE) {
-        hasMore = false
+      // Safety: if we processed a full batch but none were actually handled (all ineligible),
+      // we'd loop forever. Break if nothing changed this batch.
+      if (!processedAnyInBatch) {
+        break
       }
     }
 
-    return NextResponse.json(summary)
+    // Add loop count to summary for monitoring
+    if (loopCount >= MAX_LOOPS) {
+      summary.errors.push(`Hit MAX_LOOPS guard (${MAX_LOOPS}) - some campaigns may remain`)
+    }
+
+    return NextResponse.json({ ...summary, loops: loopCount })
   } catch (err: any) {
     return NextResponse.json({ ok: false, error: err?.message || 'Unknown error' }, { status: 500 })
   }
