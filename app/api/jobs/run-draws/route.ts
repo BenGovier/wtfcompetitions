@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from 'next/server'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
+const BATCH_SIZE = 50
+
 export async function GET(request: NextRequest) {
   // Auth: Accept manual trigger (Bearer token or query param) OR Vercel cron headers
   const authHeader = request.headers.get('authorization')
@@ -34,175 +36,192 @@ export async function GET(request: NextRequest) {
     auth: { persistSession: false },
   })
 
-  const summary = { ok: true, processed: 0, ended: 0, extended: 0, errors: [] as string[] }
+  const summary = { ok: true, processed: 0, ended: 0, extended: 0, batches: 0, errors: [] as string[] }
 
   try {
-    // 1) Fetch eligible campaigns: live or sold_out
-    const { data: campaigns, error: fetchErr } = await supabase
-      .from('campaigns')
-      .select('id, title, slug, status, end_at, main_prize_title, max_tickets_total')
-      .in('status', ['live', 'sold_out'])
-      .order('end_at', { ascending: true })
-      .limit(10)
+    let offset = 0
+    let hasMore = true
 
-    if (fetchErr) {
-      return NextResponse.json({ ok: false, error: fetchErr.message }, { status: 500 })
-    }
+    // Process all eligible campaigns in batches
+    while (hasMore) {
+      // 1) Fetch batch of eligible campaigns: live or sold_out, ordered by end_at ascending
+      const { data: campaigns, error: fetchErr } = await supabase
+        .from('campaigns')
+        .select('id, title, slug, status, end_at, main_prize_title, max_tickets_total')
+        .in('status', ['live', 'sold_out'])
+        .order('end_at', { ascending: true })
+        .range(offset, offset + BATCH_SIZE - 1)
 
-    if (!campaigns || campaigns.length === 0) {
-      return NextResponse.json(summary)
-    }
+      if (fetchErr) {
+        return NextResponse.json({ ok: false, error: fetchErr.message }, { status: 500 })
+      }
 
-    // 2) Process each campaign
-    for (const campaign of campaigns) {
-      summary.processed++
+      if (!campaigns || campaigns.length === 0) {
+        hasMore = false
+        break
+      }
 
-      try {
-        // a) Compute tickets_sold
-        const { data: sumData, error: sumErr } = await supabase
-          .from('entries')
-          .select('qty')
-          .eq('campaign_id', campaign.id)
+      summary.batches++
 
-        if (sumErr) {
-          summary.errors.push(`${campaign.id}: entries query failed - ${sumErr.message}`)
-          continue
-        }
+      // 2) Process each campaign in this batch
+      for (const campaign of campaigns) {
+        summary.processed++
 
-        const ticketsSold = (sumData ?? []).reduce((acc, row) => acc + (row.qty || 0), 0)
+        try {
+          // a) Compute tickets_sold
+          const { data: sumData, error: sumErr } = await supabase
+            .from('entries')
+            .select('qty')
+            .eq('campaign_id', campaign.id)
 
-        // b) Hard-cap: if max_tickets_total reached and not yet sold_out, mark sold_out
-        if (
-          campaign.max_tickets_total != null &&
-          ticketsSold >= campaign.max_tickets_total &&
-          campaign.status !== 'sold_out'
-        ) {
-          await supabase
-            .from('campaigns')
-            .update({ status: 'sold_out' })
-            .eq('id', campaign.id)
-          campaign.status = 'sold_out'
-        }
-
-        // c) Eligibility: only draw if sold_out or past end_at
-        const isPastEnd = new Date(campaign.end_at) <= new Date()
-        const isEligibleToDraw = campaign.status === 'sold_out' || isPastEnd
-
-        if (!isEligibleToDraw) {
-          continue
-        }
-
-        // d) If zero sales, extend by 7 days
-        if (ticketsSold === 0) {
-          const currentEnd = new Date(campaign.end_at)
-          const newEnd = new Date(currentEnd.getTime() + 7 * 24 * 60 * 60 * 1000)
-
-          const { error: extErr } = await supabase
-            .from('campaigns')
-            .update({ end_at: newEnd.toISOString() })
-            .eq('id', campaign.id)
-
-          if (extErr) {
-            summary.errors.push(`${campaign.id}: extend failed - ${extErr.message}`)
-          } else {
-            summary.extended++
+          if (sumErr) {
+            summary.errors.push(`${campaign.id}: entries query failed - ${sumErr.message}`)
+            continue
           }
-          continue
-        }
 
-        // e) Idempotency: check if winner already exists for this campaign
-        const { data: existingWinner } = await supabase
-          .from('winner_records')
-          .select('id')
-          .eq('giveaway_id', campaign.id)
-          .limit(1)
-          .maybeSingle()
+          const ticketsSold = (sumData ?? []).reduce((acc, row) => acc + (row.qty || 0), 0)
 
-        if (existingWinner) {
-          // Winner already drawn, just ensure campaign is ended
-          await supabase
+          // b) Hard-cap: if max_tickets_total reached and not yet sold_out, mark sold_out
+          if (
+            campaign.max_tickets_total != null &&
+            ticketsSold >= campaign.max_tickets_total &&
+            campaign.status !== 'sold_out'
+          ) {
+            await supabase
+              .from('campaigns')
+              .update({ status: 'sold_out' })
+              .eq('id', campaign.id)
+            campaign.status = 'sold_out'
+          }
+
+          // c) Eligibility: only draw if sold_out or past end_at
+          const isPastEnd = new Date(campaign.end_at) <= new Date()
+          const isEligibleToDraw = campaign.status === 'sold_out' || isPastEnd
+
+          if (!isEligibleToDraw) {
+            continue
+          }
+
+          // d) If zero sales, extend by 7 days
+          if (ticketsSold === 0) {
+            const currentEnd = new Date(campaign.end_at)
+            const newEnd = new Date(currentEnd.getTime() + 7 * 24 * 60 * 60 * 1000)
+
+            const { error: extErr } = await supabase
+              .from('campaigns')
+              .update({ end_at: newEnd.toISOString() })
+              .eq('id', campaign.id)
+
+            if (extErr) {
+              summary.errors.push(`${campaign.id}: extend failed - ${extErr.message}`)
+            } else {
+              summary.extended++
+            }
+            continue
+          }
+
+          // e) Idempotency: check if winner already exists for this campaign
+          const { data: existingWinner } = await supabase
+            .from('winner_records')
+            .select('id')
+            .eq('giveaway_id', campaign.id)
+            .limit(1)
+            .maybeSingle()
+
+          if (existingWinner) {
+            // Winner already drawn, just ensure campaign is ended
+            await supabase
+              .from('campaigns')
+              .update({ status: 'ended' })
+              .eq('id', campaign.id)
+            summary.ended++
+            continue
+          }
+
+          // f) Pick winner weighted by qty
+          const { data: entries, error: entriesErr } = await supabase
+            .from('entries')
+            .select('user_id, qty')
+            .eq('campaign_id', campaign.id)
+            .order('created_at', { ascending: true })
+
+          if (entriesErr || !entries || entries.length === 0) {
+            summary.errors.push(`${campaign.id}: entries fetch failed - ${entriesErr?.message || 'no entries'}`)
+            continue
+          }
+
+          // Random integer r in [1..ticketsSold]
+          const r = Math.floor(Math.random() * ticketsSold) + 1
+          let cumulative = 0
+          let winnerUserId: string | null = null
+
+          for (const entry of entries) {
+            cumulative += entry.qty || 0
+            if (r <= cumulative) {
+              winnerUserId = entry.user_id
+              break
+            }
+          }
+
+          if (!winnerUserId) {
+            summary.errors.push(`${campaign.id}: could not pick winner (r=${r}, total=${ticketsSold})`)
+            continue
+          }
+
+          // g) Insert winner
+          const { error: winErr } = await supabase
+            .from('winner_records')
+            .insert({
+              giveaway_id: campaign.id,
+              user_id: winnerUserId,
+              placed: 1,
+              prize_title: campaign.main_prize_title || campaign.title || 'Prize',
+              announced_at: new Date().toISOString(),
+            })
+
+          if (winErr) {
+            summary.errors.push(`${campaign.id}: winner insert failed - ${winErr.message}`)
+            continue
+          }
+
+          // h) Set campaign to ended
+          const { error: endErr } = await supabase
             .from('campaigns')
             .update({ status: 'ended' })
             .eq('id', campaign.id)
-          summary.ended++
-          continue
-        }
 
-        // f) Pick winner weighted by qty
-        const { data: entries, error: entriesErr } = await supabase
-          .from('entries')
-          .select('user_id, qty')
-          .eq('campaign_id', campaign.id)
-          .order('created_at', { ascending: true })
-
-        if (entriesErr || !entries || entries.length === 0) {
-          summary.errors.push(`${campaign.id}: entries fetch failed - ${entriesErr?.message || 'no entries'}`)
-          continue
-        }
-
-        // Random integer r in [1..ticketsSold]
-        const r = Math.floor(Math.random() * ticketsSold) + 1
-        let cumulative = 0
-        let winnerUserId: string | null = null
-
-        for (const entry of entries) {
-          cumulative += entry.qty || 0
-          if (r <= cumulative) {
-            winnerUserId = entry.user_id
-            break
+          if (endErr) {
+            summary.errors.push(`${campaign.id}: status update failed - ${endErr.message}`)
           }
+
+          summary.ended++
+
+          // i) Trigger snapshot refreshes (non-blocking, collect errors)
+          try {
+            const baseUrl = request.nextUrl.origin
+            await fetch(`${baseUrl}/api/jobs/refresh-winner-snapshots?token=${expectedToken}`)
+          } catch (e: any) {
+            summary.errors.push(`${campaign.id}: winner snapshot refresh failed - ${e?.message}`)
+          }
+
+          try {
+            const baseUrl = request.nextUrl.origin
+            await fetch(`${baseUrl}/api/jobs/run?token=${expectedToken}`)
+          } catch (e: any) {
+            summary.errors.push(`${campaign.id}: giveaway snapshot refresh failed - ${e?.message}`)
+          }
+
+        } catch (err: any) {
+          summary.errors.push(`${campaign.id}: unexpected - ${err?.message}`)
         }
+      }
 
-        if (!winnerUserId) {
-          summary.errors.push(`${campaign.id}: could not pick winner (r=${r}, total=${ticketsSold})`)
-          continue
-        }
+      // Move to next batch
+      offset += BATCH_SIZE
 
-        // g) Insert winner
-        const { error: winErr } = await supabase
-          .from('winner_records')
-          .insert({
-            giveaway_id: campaign.id,
-            user_id: winnerUserId,
-            placed: 1,
-            prize_title: campaign.main_prize_title || campaign.title || 'Prize',
-            announced_at: new Date().toISOString(),
-          })
-
-        if (winErr) {
-          summary.errors.push(`${campaign.id}: winner insert failed - ${winErr.message}`)
-          continue
-        }
-
-        // h) Set campaign to ended
-        const { error: endErr } = await supabase
-          .from('campaigns')
-          .update({ status: 'ended' })
-          .eq('id', campaign.id)
-
-        if (endErr) {
-          summary.errors.push(`${campaign.id}: status update failed - ${endErr.message}`)
-        }
-
-        summary.ended++
-
-        // i) Trigger snapshot refreshes (non-blocking, collect errors)
-        try {
-          const baseUrl = request.nextUrl.origin
-          await fetch(`${baseUrl}/api/jobs/refresh-winner-snapshots?token=${expectedToken}`)
-        } catch (e: any) {
-          summary.errors.push(`${campaign.id}: winner snapshot refresh failed - ${e?.message}`)
-        }
-
-        try {
-          const baseUrl = request.nextUrl.origin
-          await fetch(`${baseUrl}/api/jobs/run?token=${expectedToken}`)
-        } catch (e: any) {
-          summary.errors.push(`${campaign.id}: giveaway snapshot refresh failed - ${e?.message}`)
-        }
-
-      } catch (err: any) {
-        summary.errors.push(`${campaign.id}: unexpected - ${err?.message}`)
+      // If we got fewer than BATCH_SIZE, we've reached the end
+      if (campaigns.length < BATCH_SIZE) {
+        hasMore = false
       }
     }
 
