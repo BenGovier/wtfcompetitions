@@ -47,11 +47,29 @@ export default async function GiveawaysPage() {
         }
       }
 
+      // Batch query live cap values from campaigns
+      let capMap: Record<string, number> = {}
+      if (campaignIds.length > 0) {
+        const { data: campaigns } = await supabase
+          .from('campaigns')
+          .select('id, max_tickets_total')
+          .in('id', campaignIds)
+
+        if (campaigns) {
+          capMap = Object.fromEntries(
+            campaigns
+              .filter((c: { id: string; max_tickets_total: number | null }) => c.max_tickets_total != null)
+              .map((c: { id: string; max_tickets_total: number }) => [c.id, c.max_tickets_total])
+          )
+        }
+      }
+
       giveaways = data.map((row) => {
         const p = row.payload as Record<string, any>
         const campaignId = p.id as string | undefined
         const liveNextTicket = campaignId ? counterMap[campaignId] : undefined
         const ticketsSold = Math.max(0, (liveNextTicket ?? 1) - 1)
+        const liveCapTotal = campaignId ? capMap[campaignId] : undefined
 
         return {
           slug: p.slug || 'unknown',
@@ -66,7 +84,7 @@ export default async function GiveawaysPage() {
           rulesText: 'See full terms and conditions for complete rules.',
           ticketsSold,
           nextTicket: liveNextTicket ?? 1,
-          hardCapTotalTickets: Number(p.hard_cap_total_tickets ?? p.max_tickets_total ?? 0),
+          hardCapTotalTickets: liveCapTotal ?? Number(p.hard_cap_total_tickets ?? p.max_tickets_total ?? 0),
         }
       })
       giveaways = giveaways.filter(g => g.endsAt.getTime() > Date.now() && g.status === "live")
