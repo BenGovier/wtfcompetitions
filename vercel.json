@@ -1,8 +1,10 @@
 {
   "crons": [
-    {
-      "path": "/api/jobs/run",
-      "schedule": "* * * * *"
-    }
+{
+  "crons": [
+    { "path": "/api/jobs/run", "schedule": "* * * * *" },
+    { "path": "/api/jobs/run-draws", "schedule": "*/5 * * * *" }
+  ]
+}
   ]
 }
