@@ -130,6 +130,14 @@ export function GiveawayCard({ giveaway, mode = "live" }: GiveawayCardProps) {
               Draw Closed
             </Button>
           )
+        ) : hasCapInfo && remaining === 0 ? (
+          <Button
+            size="lg"
+            className="w-full rounded-xl font-semibold"
+            disabled
+          >
+            Sold Out
+          </Button>
         ) : giveaway.status !== "live" ? (
           <Button
             size="lg"
