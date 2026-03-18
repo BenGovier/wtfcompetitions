@@ -46,11 +46,15 @@ export async function GET(request: NextRequest) {
     while (loopCount < MAX_LOOPS) {
       loopCount++
 
-      // 1) Fetch FIRST batch of eligible campaigns (no offset - always from start)
+      // 1) Fetch FIRST batch of ONLY eligible campaigns:
+      //    - status = 'sold_out' (always eligible)
+      //    - OR end_at <= now (past due)
+      const nowIso = new Date().toISOString()
       const { data: campaigns, error: fetchErr } = await supabase
         .from('campaigns')
         .select('id, title, slug, status, end_at, main_prize_title, max_tickets_total')
-        .in('status', ['live', 'sold_out'])
+        .or(`status.eq.sold_out,end_at.lte.${nowIso}`)
+        .not('status', 'eq', 'ended')
         .order('end_at', { ascending: true })
         .limit(BATCH_SIZE)
 
