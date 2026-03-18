@@ -486,7 +486,7 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
           disabled={isProcessing || qty < 1 || remaining === 0}
           onClick={handleEnter}
         >
-          {isProcessing ? "Starting checkout..." : "Secure My Entries"}
+          {isProcessing ? "Starting checkout..." : "Enter Now"}
         </Button>
 
         <p className="flex items-center justify-center gap-1.5 text-center text-xs text-purple-200">
@@ -509,7 +509,7 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
               disabled={isProcessing || qty < 1}
               onClick={handleEnter}
             >
-              {isProcessing ? "Checking out..." : "Secure My Entries"}
+              {isProcessing ? "Checking out..." : "Enter Now"}
             </Button>
           </div>
         </div>
