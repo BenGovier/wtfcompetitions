@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { confirmPaymentAndAward } from '@/lib/payments/confirmPaymentAndAward'
 import type { AwardPayload } from '@/lib/payments/confirmPaymentAndAward'
 
@@ -7,6 +8,13 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 const NO_STORE = { headers: { 'Cache-Control': 'no-store' } }
+
+function getServiceSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) throw new Error('Missing SUPABASE env vars for service role client')
+  return createServiceClient(url, key, { auth: { persistSession: false } })
+}
 
 export async function POST(request: Request) {
   // 1) Auth
@@ -53,6 +61,79 @@ export async function POST(request: Request) {
       userId: user.id,
       provider,
     })
+
+    // === INSTANT MAIN DRAW TRIGGER (best-effort, non-blocking) ===
+    // Trigger the existing draw route immediately if sold out OR end time passed
+    try {
+      const svc = getServiceSupabase()
+
+      // Get campaign_id from checkout_intent
+      const { data: intent } = await svc
+        .from('checkout_intents')
+        .select('campaign_id')
+        .eq('ref', ref)
+        .single()
+
+      if (intent?.campaign_id) {
+        // Get campaign details
+        const { data: campaign } = await svc
+          .from('campaigns')
+          .select('id, end_at, max_tickets_total, status')
+          .eq('id', intent.campaign_id)
+          .single()
+
+        if (campaign && campaign.status !== 'ended') {
+          // Compute tickets sold
+          const { data: sumData } = await svc
+            .from('entries')
+            .select('qty')
+            .eq('campaign_id', campaign.id)
+
+          const ticketsSold = (sumData ?? []).reduce((acc, row) => acc + (row.qty || 0), 0)
+
+          // Check trigger conditions: sold out OR end time passed
+          const isSoldOut = campaign.max_tickets_total != null && ticketsSold >= campaign.max_tickets_total
+          const isPastEnd = new Date(campaign.end_at) <= new Date()
+
+          if (isSoldOut || isPastEnd) {
+            console.log('[checkout/confirm] triggering immediate draw:', {
+              campaignId: campaign.id,
+              isSoldOut,
+              isPastEnd,
+              ticketsSold,
+              maxTickets: campaign.max_tickets_total,
+            })
+
+            // Trigger draw route with Bearer auth (awaited for reliability)
+            const cronSecret = process.env.CRON_SECRET
+            if (cronSecret) {
+              const baseUrl = process.env.VERCEL_URL
+                ? `https://${process.env.VERCEL_URL}`
+                : process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+
+              const drawRes = await fetch(`${baseUrl}/api/jobs/run-draws`, {
+                method: 'GET',
+                headers: { Authorization: `Bearer ${cronSecret}` },
+              })
+
+              if (!drawRes.ok) {
+                const resText = await drawRes.text().catch(() => '(unable to read body)')
+                console.error('[checkout/confirm] draw trigger returned non-ok:', {
+                  status: drawRes.status,
+                  body: resText,
+                })
+              } else {
+                console.log('[checkout/confirm] draw trigger succeeded:', drawRes.status)
+              }
+            }
+          }
+        }
+      }
+    } catch (drawTriggerErr: any) {
+      // Log but do NOT fail the checkout
+      console.error('[checkout/confirm] instant draw trigger error (non-fatal):', drawTriggerErr?.message)
+    }
+    // === END INSTANT MAIN DRAW TRIGGER ===
 
     return NextResponse.json({ ok: true, award }, NO_STORE)
   } catch (err: any) {
