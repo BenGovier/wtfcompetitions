@@ -13,7 +13,7 @@ export function SignOutButton() {
     const supabase = createClient()
     await supabase.auth.signOut()
     console.log('[signout] complete')
-    window.location.href = '/auth/login?redirect=/admin'
+    window.location.href = '/auth/login'
   }
 
   return (
