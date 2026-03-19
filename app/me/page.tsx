@@ -1,4 +1,3 @@
-import { SectionHeader } from "@/components/section-header"
 import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
 import { AccountTabs } from "./account-tabs"
@@ -66,10 +65,13 @@ export default async function AccountPage() {
   }
 
   return (
-    <div className="container px-4 py-8">
-      <SectionHeader title="My Account" subtitle="Manage your entries and profile" />
+    <div className="min-h-screen bg-gradient-to-b from-[#1a002b] via-[#2d0050] to-[#0a0014]">
+      <div className="container px-4 py-8">
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold tracking-tight text-white md:text-3xl">My Account</h1>
+          <p className="mt-1 text-white/70">Manage your entries and profile</p>
+        </div>
 
-      <div className="mt-8">
         <AccountTabs
           email={user.email || ''}
           entries={entries}
