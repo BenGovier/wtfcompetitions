@@ -96,7 +96,10 @@ export default async function GiveawaysPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#1a002b] via-[#2d0050] to-[#0a0014]">
       <div className="container px-4 py-8">
-        <SectionHeader title="All Giveaways" subtitle="Browse all active giveaways and enter to win" />
+        <div>
+          <h2 className="text-balance text-2xl font-bold tracking-tight text-white md:text-3xl">All Giveaways</h2>
+          <p className="mt-1 text-pretty bg-gradient-to-r from-[#FFD700] to-[#FFA500] bg-clip-text text-transparent">Browse all active giveaways and enter to win</p>
+        </div>
 
         {/* Content */}
         <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
