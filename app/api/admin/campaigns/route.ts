@@ -47,7 +47,7 @@ async function refreshSnapshotsNow(campaignId: string) {
 
   const { data: c, error: fetchError } = await svc
     .from('campaigns')
-    .select('id, slug, title, summary, description, status, start_at, end_at, main_prize_title, main_prize_description, hero_image_url, ticket_price_pence, max_tickets_total, max_tickets_per_user')
+    .select('id, slug, title, summary, description, status, start_at, end_at, main_prize_title, main_prize_description, hero_image_url, ticket_price_pence, max_tickets_total, max_tickets_per_user, bundles')
     .eq('id', campaignId)
     .single()
 
@@ -115,7 +115,7 @@ async function refreshSnapshotsNow(campaignId: string) {
     ends_at: c.end_at,
     currency: 'GBP',
     base_ticket_price_pence: c.ticket_price_pence,
-    bundles: null,
+    bundles: c.bundles ?? null,
     hard_cap_total_tickets: c.max_tickets_total,
     instant_wins: instantWins,
   }
