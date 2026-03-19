@@ -160,11 +160,8 @@ export async function POST(request: Request) {
             : process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
 
           const refreshRes = await fetch(
-            `${baseUrl}/api/jobs/refresh-giveaway-snapshots?campaignId=${campaignId}`,
-            {
-              method: 'GET',
-              headers: { Authorization: `Bearer ${cronSecret}` },
-            }
+            `${baseUrl}/api/jobs/refresh-giveaway-snapshots?campaignId=${campaignId}&token=${cronSecret}`,
+            { method: 'GET' }
           )
 
           if (!refreshRes.ok) {
