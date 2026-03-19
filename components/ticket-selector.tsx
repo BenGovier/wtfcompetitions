@@ -387,47 +387,69 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
 
       {/* ---- Bundle tiles (only when bundles exist) ---- */}
       {hasBundles && (
-        <div className="space-y-2.5">
+        <div className="space-y-3">
           <h3 className="text-sm font-semibold text-purple-200">Choose your play</h3>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="flex flex-col gap-2.5">
             {normBundles.map((bundle, i) => {
               const isActive = selectedBundle?.quantity === bundle.quantity && selectedBundle?.price_pence === bundle.price_pence
+              const fullPricePence = bundle.quantity * basePricePence
               const savingsPercent = bundle.quantity > 1
-                ? Math.round((1 - (bundle.price_pence / (bundle.quantity * basePricePence))) * 100)
+                ? Math.round((1 - (bundle.price_pence / fullPricePence)) * 100)
                 : 0
               const iconDef = bundleIcons[i % bundleIcons.length]
               const Icon = iconDef.icon
-              const isMostPopular = i === 1 && normBundles.length >= 2
+              const isPopular = bundle.label?.toLowerCase().includes('popular') || (i === 1 && normBundles.length >= 2)
 
               return (
                 <button
                   key={`${bundle.quantity}-${bundle.price_pence}`}
                   onClick={() => handleSelectBundle(bundle)}
                   className={cn(
-                    "relative flex flex-col items-center gap-1 rounded-xl border-2 px-2 py-3 transition-all duration-200 active:scale-95",
+                    "relative flex items-center justify-between gap-3 rounded-xl border-2 px-4 py-3 transition-all duration-200 active:scale-[0.98]",
                     isActive
-                      ? "border-pink-400 bg-pink-500/15 shadow-[0_0_20px_rgba(236,72,153,0.3)]"
+                      ? "scale-[1.02] border-yellow-400 bg-yellow-500/10 shadow-[0_0_30px_rgba(255,215,0,0.25)]"
                       : "border-purple-500/25 bg-white/[0.04] hover:border-purple-400/50 hover:bg-white/[0.07]",
-                    isMostPopular && !isActive && "border-amber-500/40"
+                    isPopular && !isActive && "border-amber-500/40"
                   )}
                 >
-                  {isMostPopular && (
-                    <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-gradient-to-r from-[#F7A600] to-[#FFD46A] px-2 py-0.5 text-[10px] font-bold text-black shadow">
-                      Most Popular
+                  {/* Left side: Icon + Quantity + Label */}
+                  <div className="flex items-center gap-3">
+                    <div className={cn(
+                      "flex h-10 w-10 items-center justify-center rounded-lg",
+                      isActive ? "bg-yellow-500/20" : "bg-white/5"
+                    )}>
+                      <Icon className={cn("h-5 w-5", isActive ? "text-yellow-400" : iconDef.color)} aria-hidden="true" />
                     </div>
-                  )}
+                    <div className="flex flex-col items-start gap-0.5">
+                      <span className="text-base font-bold text-white">{bundle.quantity} Tickets</span>
+                      {isPopular && (
+                        <span className="text-[11px] font-semibold bg-gradient-to-r from-yellow-400 to-yellow-600 text-black px-2 py-0.5 rounded-full">
+                          Most Popular
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Right side: Price block */}
+                  <div className="flex flex-col items-end gap-0.5">
+                    {savingsPercent > 0 && (
+                      <span className="inline-flex items-center rounded-full bg-emerald-500/15 border border-emerald-400/30 px-2 py-0.5 text-xs font-bold text-emerald-300">
+                        Save {savingsPercent}%
+                      </span>
+                    )}
+                    <div className="flex items-baseline gap-1.5">
+                      {savingsPercent > 0 && (
+                        <span className="text-xs text-white/40 line-through">{formatGBP(fullPricePence / 100)}</span>
+                      )}
+                      <span className="text-lg font-bold text-white">{formatGBP(bundle.price_pence / 100)}</span>
+                    </div>
+                  </div>
+
+                  {/* Selected indicator */}
                   {isActive && (
-                    <div className="absolute -top-2.5 right-1 whitespace-nowrap rounded-full bg-pink-500 px-2 py-0.5 text-[10px] font-bold text-white shadow">
+                    <div className="absolute -top-2 right-3 whitespace-nowrap rounded-full bg-yellow-500 px-2 py-0.5 text-[10px] font-bold text-black shadow">
                       Selected
                     </div>
-                  )}
-                  <Icon className={cn("h-5 w-5", iconDef.color)} aria-hidden="true" />
-                  <span className="text-xs font-semibold text-white">{bundle.label || `${bundle.quantity} entries`}</span>
-                  <span className="bg-gradient-to-b from-[#FFD46A] to-[#F7A600] bg-clip-text text-lg font-bold text-transparent">{bundle.quantity}</span>
-                  <span className="text-[10px] text-purple-300">{bundle.quantity === 1 ? "entry" : "entries"}</span>
-                  <span className="text-[11px] font-medium text-purple-200">{formatGBP(bundle.price_pence / 100)}</span>
-                  {savingsPercent > 0 && (
-                    <span className="text-[10px] font-semibold text-green-400">Save {savingsPercent}%</span>
                   )}
                 </button>
               )
