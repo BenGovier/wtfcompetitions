@@ -94,20 +94,22 @@ export default async function GiveawaysPage() {
   }
 
   return (
-    <div className="container px-4 py-8">
-      <SectionHeader title="All Giveaways" subtitle="Browse all active giveaways and enter to win" />
+    <div className="min-h-screen bg-gradient-to-b from-[#1a002b] via-[#2d0050] to-[#0a0014]">
+      <div className="container px-4 py-8">
+        <SectionHeader title="All Giveaways" subtitle="Browse all active giveaways and enter to win" />
 
-      {/* Content */}
-      <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {giveaways.length > 0 ? (
-          giveaways.map((giveaway) => (
-            <GiveawayCard key={giveaway.slug} giveaway={giveaway} />
-          ))
-        ) : (
-          <div className="col-span-full py-12 text-center text-muted-foreground">
-            No live giveaways yet. Check back soon.
-          </div>
-        )}
+        {/* Content */}
+        <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {giveaways.length > 0 ? (
+            giveaways.map((giveaway) => (
+              <GiveawayCard key={giveaway.slug} giveaway={giveaway} />
+            ))
+          ) : (
+            <div className="col-span-full py-12 text-center text-muted-foreground">
+              No live giveaways yet. Check back soon.
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
