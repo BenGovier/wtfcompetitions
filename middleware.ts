@@ -39,6 +39,13 @@ function isMaintenanceAllowed(pathname: string): boolean {
 /* ------------------------------------------------------------------ */
 export async function middleware(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl
+
+  /* ---- Bypass for Vercel cron and /api/jobs/* routes ---- */
+  const userAgent = request.headers.get('user-agent') ?? ''
+  if (pathname.startsWith('/api/jobs/') || userAgent.includes('vercel-cron')) {
+    return NextResponse.next()
+  }
+
   const maintenanceMode = process.env.MAINTENANCE_MODE === 'true'
 
   /* ---- Maintenance-mode gate ---- */
