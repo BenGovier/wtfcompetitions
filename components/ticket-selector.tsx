@@ -93,6 +93,16 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
     return () => observer.disconnect()
   }, [])
 
+  // Auto-select default bundle (highest quantity) when bundles are available
+  useEffect(() => {
+    if (hasBundles && selectedBundle === null && normBundles.length > 0) {
+      // Select the bundle with the highest quantity
+      const defaultBundle = normBundles.reduce((max, b) => b.quantity > max.quantity ? b : max, normBundles[0])
+      setSelectedBundle(defaultBundle)
+      setQty(defaultBundle.quantity)
+    }
+  }, [hasBundles, normBundles.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
   /* ---- Live time gating ---- */
   const endsAtMs = endsAt ? new Date(endsAt).getTime() : null
   const startsAtMs = startsAt ? new Date(startsAt).getTime() : null
