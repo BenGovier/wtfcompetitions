@@ -137,6 +137,49 @@ export async function POST(request: Request) {
     }
     // === END INSTANT MAIN DRAW TRIGGER ===
 
+    // === SNAPSHOT REFRESH (best-effort, non-blocking) ===
+    // Refresh giveaway snapshot so instant win status updates from Available to Won
+    try {
+      const svc = getServiceSupabase()
+
+      // Get campaign_id from checkout_intent if not already fetched above
+      let campaignId: string | null = null
+      const { data: intentForRefresh } = await svc
+        .from('checkout_intents')
+        .select('campaign_id')
+        .eq('ref', ref)
+        .single()
+
+      campaignId = intentForRefresh?.campaign_id ?? null
+
+      if (campaignId) {
+        const cronSecret = process.env.CRON_SECRET
+        if (cronSecret) {
+          const baseUrl = process.env.VERCEL_URL
+            ? `https://${process.env.VERCEL_URL}`
+            : process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+
+          const refreshRes = await fetch(
+            `${baseUrl}/api/jobs/refresh-giveaway-snapshots?campaignId=${campaignId}`,
+            {
+              method: 'GET',
+              headers: { Authorization: `Bearer ${cronSecret}` },
+            }
+          )
+
+          if (!refreshRes.ok) {
+            console.error('[checkout/confirm] snapshot refresh returned non-ok:', refreshRes.status)
+          } else {
+            console.log('[checkout/confirm] snapshot refresh succeeded for campaign:', campaignId)
+          }
+        }
+      }
+    } catch (refreshErr: any) {
+      // Log but do NOT fail the checkout
+      console.error('[checkout/confirm] snapshot refresh error (non-fatal):', refreshErr?.message)
+    }
+    // === END SNAPSHOT REFRESH ===
+
     return NextResponse.json({ ok: true, award }, NO_STORE)
   } catch (err: any) {
     const message = err?.message || ''
