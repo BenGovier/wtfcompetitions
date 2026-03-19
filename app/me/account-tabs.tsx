@@ -50,10 +50,10 @@ function TicketDisplay({ start, end }: { start?: number | null; end?: number | n
 export function AccountTabs({ email, entries, entriesError, allocationMap, campaignMap }: AccountTabsProps) {
   return (
     <Tabs defaultValue="tickets" className="w-full">
-      <TabsList className="w-full">
-        <TabsTrigger value="tickets">My Tickets</TabsTrigger>
-        <TabsTrigger value="profile">Profile</TabsTrigger>
-        <TabsTrigger value="settings">Settings</TabsTrigger>
+      <TabsList className="flex w-full gap-2 overflow-x-auto rounded-xl bg-white/5 p-1 backdrop-blur-md border border-white/10">
+        <TabsTrigger value="tickets" className="flex-1 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium text-white/70 transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-yellow-400 data-[state=active]:to-yellow-600 data-[state=active]:text-black data-[state=active]:shadow-md">My Tickets</TabsTrigger>
+        <TabsTrigger value="profile" className="flex-1 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium text-white/70 transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-yellow-400 data-[state=active]:to-yellow-600 data-[state=active]:text-black data-[state=active]:shadow-md">Profile</TabsTrigger>
+        <TabsTrigger value="settings" className="flex-1 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium text-white/70 transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-yellow-400 data-[state=active]:to-yellow-600 data-[state=active]:text-black data-[state=active]:shadow-md">Settings</TabsTrigger>
       </TabsList>
 
       {/* My Tickets */}
