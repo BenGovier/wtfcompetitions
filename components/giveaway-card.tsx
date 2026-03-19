@@ -1,7 +1,4 @@
 import type { GiveawayPublic } from "@/lib/types"
-import { Card, CardContent, CardFooter } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Clock } from "lucide-react"
 import Link from "next/link"
 
 interface GiveawayCardProps {
@@ -36,29 +33,29 @@ export function GiveawayCard({ giveaway, mode = "live" }: GiveawayCardProps) {
   const hasCapInfo = cap > 0
   const soldPct = hasCapInfo ? Math.min(100, (sold / cap) * 100) : 0
   const remaining = hasCapInfo ? Math.max(0, cap - sold) : null
+  const isSoldOut = hasCapInfo && remaining === 0
 
   return (
-    <Card className="group flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#1f0033]/80 backdrop-blur-md shadow-[0_0_30px_rgba(255,215,0,0.08)] transition-all duration-300 ease-out hover:-translate-y-1 hover:scale-[1.02] hover:shadow-xl">
+    <div className="bg-gradient-to-b from-[#1a002b] to-[#0a0014] border border-white/10 rounded-xl overflow-hidden shadow-[0_0_40px_rgba(255,215,0,0.08)] transition-all duration-300 hover:scale-[1.02] flex flex-col h-full">
+      {/* Image Section */}
       <Link href={`/giveaways/${giveaway.slug}`} className="block">
-        <div className="relative aspect-[3/2] overflow-hidden bg-muted">
+        <div className="relative aspect-[3/2] overflow-hidden">
           <img
             src={giveaway.imageUrl || "/placeholder.svg"}
             alt={giveaway.prizeTitle}
-            className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
+            className="h-full w-full object-cover"
             crossOrigin="anonymous"
           />
-          {/* Bottom gradient for text readability */}
-          <div
-            className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/30 to-transparent"
-            aria-hidden="true"
-          />
+          {/* Overlay gradient */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+          
           {/* Status badge */}
           {effectiveStatus === "ended" ? (
-            <div className="absolute right-3 top-3 rounded-full bg-destructive/90 px-3 py-1 text-xs font-semibold text-white shadow backdrop-blur-sm">
+            <div className="absolute right-3 top-3 rounded-full bg-red-600/90 px-3 py-1 text-xs font-semibold text-white shadow backdrop-blur-sm">
               Ended
             </div>
           ) : giveaway.status === "paused" ? (
-            <div className="absolute right-3 top-3 rounded-full bg-card/90 px-3 py-1 text-xs font-semibold text-muted-foreground shadow backdrop-blur-sm">
+            <div className="absolute right-3 top-3 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold text-white/70 shadow backdrop-blur-sm">
               Paused
             </div>
           ) : giveaway.status === "live" ? (
@@ -73,89 +70,77 @@ export function GiveawayCard({ giveaway, mode = "live" }: GiveawayCardProps) {
         </div>
       </Link>
 
-      <CardContent className="flex flex-1 flex-col gap-2 p-4">
-        <h3 className="text-balance text-lg font-semibold leading-snug tracking-tight text-foreground">
+      {/* Content Section */}
+      <div className="p-4 space-y-3 flex-1 flex flex-col">
+        <h3 className="text-white text-lg font-semibold">
           {giveaway.title}
         </h3>
-        <p className="text-sm leading-relaxed text-muted-foreground">{giveaway.prizeTitle}</p>
+        
+        <p className="text-white/60 text-sm">
+          {timeLabel}
+        </p>
 
-        <div className="mt-auto flex items-center justify-between pt-2 text-sm text-muted-foreground">
-          <div className="flex items-center gap-1.5">
-            <Clock className="h-4 w-4" aria-hidden="true" />
-            <span className={isEnded ? "font-medium text-destructive" : ""}>{timeLabel}</span>
-          </div>
-        </div>
-
-        {/* Progress bar - only show when cap is set */}
+        {/* Progress Bar */}
         {hasCapInfo && (
-          <div className="mt-2 space-y-1">
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-xs text-white/60">
               <span className="font-medium tabular-nums">{sold.toLocaleString()} sold</span>
               <span className="tabular-nums">{remaining?.toLocaleString()} left</span>
             </div>
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+            <div className="h-2 w-full bg-white/10 rounded-full overflow-hidden">
               <div
-                className="h-full rounded-full bg-primary transition-all duration-500 ease-out"
+                className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full transition-all duration-500 ease-out"
                 style={{ width: `${soldPct}%` }}
               />
             </div>
           </div>
         )}
-      </CardContent>
 
-      <CardFooter className="flex flex-col gap-3 border-t border-border/50 bg-muted/20 p-4">
-        <div className="flex w-full items-center justify-between">
-          <div>
-            <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Entry from</div>
-            <div className="text-2xl font-bold tracking-tight text-primary">{formatPriceGBP(giveaway.ticketPrice)}</div>
-          </div>
-        </div>
+        {/* Price + CTA Section */}
+        <div className="pt-2 space-y-2 mt-auto">
+          <div className="text-sm text-white/60">Entry from</div>
+          <div className="text-xl font-bold text-white">{formatPriceGBP(giveaway.ticketPrice)}</div>
 
-        {effectiveStatus === "ended" ? (
-          mode === "past" ? (
-            <Button
-              asChild
-              size="lg"
-              variant="outline"
-              className="w-full rounded-xl font-semibold transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md"
-            >
-              <Link href={`/giveaways/${giveaway.slug}`}>View Results</Link>
-            </Button>
-          ) : (
-            <Button
-              size="lg"
-              className="w-full rounded-xl font-semibold"
+          {effectiveStatus === "ended" ? (
+            mode === "past" ? (
+              <Link
+                href={`/giveaways/${giveaway.slug}`}
+                className="block w-full bg-white/10 text-white/70 font-semibold py-3 rounded-lg text-center hover:bg-white/20 transition-all"
+              >
+                View Results
+              </Link>
+            ) : (
+              <button
+                disabled
+                className="w-full bg-white/10 text-white/40 py-3 rounded-lg cursor-not-allowed font-semibold"
+              >
+                Draw Closed
+              </button>
+            )
+          ) : isSoldOut ? (
+            <button
               disabled
+              className="w-full bg-white/10 text-white/40 py-3 rounded-lg cursor-not-allowed font-semibold"
             >
-              Draw Closed
-            </Button>
-          )
-        ) : hasCapInfo && remaining === 0 ? (
-          <Button
-            size="lg"
-            className="w-full rounded-xl font-semibold"
-            disabled
-          >
-            Sold Out
-          </Button>
-        ) : giveaway.status !== "live" ? (
-          <Button
-            size="lg"
-            className="w-full rounded-xl font-semibold"
-            disabled
-          >
-            Paused
-          </Button>
-        ) : (
-          <Button
-            asChild
-            size="lg"
-            className="w-full rounded-xl bg-primary font-semibold text-primary-foreground shadow-md transition-all duration-300 hover:-translate-y-0.5 hover:bg-[#5B21B6] hover:shadow-lg active:translate-y-0 active:shadow-sm"
-          >
-            <Link href={`/giveaways/${giveaway.slug}`}>Enter Now</Link>
-          </Button>
-        )}
-      </CardFooter>
-    </Card>
+              Sold Out
+            </button>
+          ) : giveaway.status !== "live" ? (
+            <button
+              disabled
+              className="w-full bg-white/10 text-white/40 py-3 rounded-lg cursor-not-allowed font-semibold"
+            >
+              Paused
+            </button>
+          ) : (
+            <Link
+              href={`/giveaways/${giveaway.slug}`}
+              className="block w-full bg-gradient-to-r from-yellow-400 to-yellow-600 text-black font-semibold py-3 rounded-lg shadow-lg hover:scale-[1.02] transition-all text-center"
+            >
+              Enter Now
+            </Link>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
