@@ -670,6 +670,95 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
         </CardContent>
       </Card>
 
+      {/* Bundle Offers Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Bundle Offers</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-xs text-muted-foreground">
+            Optional discounted ticket bundles shown on the raffle page.
+          </p>
+
+          {(formData.bundles ?? []).length > 0 && (
+            <div className="space-y-3">
+              {(formData.bundles ?? []).map((bundle, index) => (
+                <div key={index} className="flex flex-wrap items-end gap-3 rounded-md border p-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Quantity</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      className="w-24"
+                      value={bundle.quantity}
+                      onChange={(e) => {
+                        const newBundles = [...(formData.bundles ?? [])]
+                        newBundles[index] = { ...newBundles[index], quantity: Number(e.target.value) }
+                        setFormData((prev) => ({ ...prev, bundles: newBundles }))
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Price (pence)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      className="w-28"
+                      value={bundle.price_pence}
+                      onChange={(e) => {
+                        const newBundles = [...(formData.bundles ?? [])]
+                        newBundles[index] = { ...newBundles[index], price_pence: Number(e.target.value) }
+                        setFormData((prev) => ({ ...prev, bundles: newBundles }))
+                      }}
+                    />
+                  </div>
+                  <div className="flex-1 min-w-[120px] space-y-1">
+                    <Label className="text-xs">Label (optional)</Label>
+                    <Input
+                      value={bundle.label ?? ''}
+                      placeholder="e.g. Best Value"
+                      onChange={(e) => {
+                        const newBundles = [...(formData.bundles ?? [])]
+                        newBundles[index] = { ...newBundles[index], label: e.target.value || undefined }
+                        setFormData((prev) => ({ ...prev, bundles: newBundles }))
+                      }}
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => {
+                      const newBundles = (formData.bundles ?? []).filter((_, i) => i !== index)
+                      setFormData((prev) => ({ ...prev, bundles: newBundles.length > 0 ? newBundles : null }))
+                    }}
+                    title="Remove bundle"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const newBundle = { quantity: 1, price_pence: 0, label: '' }
+              setFormData((prev) => ({
+                ...prev,
+                bundles: [...(prev.bundles ?? []), newBundle],
+              }))
+            }}
+          >
+            <Plus className="mr-1 h-4 w-4" />
+            Add Bundle
+          </Button>
+        </CardContent>
+      </Card>
+
       {/* Instant Wins Section */}
       <Card>
         <CardHeader>
