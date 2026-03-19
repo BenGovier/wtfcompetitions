@@ -15,4 +15,5 @@ export interface Campaign {
   ticketPricePence: number
   maxTicketsTotal: number | null
   maxTicketsPerUser: number | null
+  bundles?: { quantity: number; price_pence: number; label?: string }[] | null
 }
