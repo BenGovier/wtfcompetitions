@@ -83,9 +83,17 @@ export function GiveawayCard({ giveaway, mode = "live" }: GiveawayCardProps) {
         {/* Progress Bar */}
         {hasCapInfo && (
           <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-xs text-white/60">
-              <span className="font-medium tabular-nums">{sold.toLocaleString()} sold</span>
-              <span className="tabular-nums">{remaining?.toLocaleString()} left</span>
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-medium tabular-nums text-white/60">{Math.round(soldPct)}% sold</span>
+              {soldPct >= 90 ? (
+                <span className="text-[11px] px-2 py-1 rounded-full bg-yellow-500/20 text-yellow-300 border border-yellow-400/20">
+                  Almost Gone
+                </span>
+              ) : soldPct >= 70 ? (
+                <span className="text-[11px] px-2 py-1 rounded-full bg-pink-500/15 text-pink-200 border border-pink-400/20">
+                  Selling Fast
+                </span>
+              ) : null}
             </div>
             <div className="h-2 w-full bg-white/10 rounded-full overflow-hidden">
               <div
