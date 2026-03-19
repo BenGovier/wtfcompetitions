@@ -85,7 +85,11 @@ export function GiveawayCard({ giveaway, mode = "live" }: GiveawayCardProps) {
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-xs">
               <span className="font-medium tabular-nums text-white/60">{Math.round(soldPct)}% sold</span>
-              {soldPct >= 90 ? (
+              {isSoldOut ? null : soldPct < 5 ? (
+                <span className="text-[11px] px-2 py-1 rounded-full bg-white/10 text-white/80 border border-white/15">
+                  Just Launched
+                </span>
+              ) : soldPct >= 90 ? (
                 <span className="text-[11px] px-2 py-1 rounded-full bg-yellow-500/20 text-yellow-300 border border-yellow-400/20">
                   Almost Gone
                 </span>
