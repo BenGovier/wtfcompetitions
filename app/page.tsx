@@ -166,20 +166,24 @@ export default async function HomePage() {
         </div>
       </section>
 
-    <div className="container px-4 py-8 md:py-16">
+    <div className="min-h-screen bg-gradient-to-b from-[#1a002b] via-[#2d0050] to-[#0a0014]">
+      <div className="container px-4 py-8 md:py-16">
       {/* Featured Giveaways */}
       <section className="mb-16">
-        <SectionHeader
-          title="Featured Giveaways"
-          subtitle="Enter now for your chance to win"
-          action={
-            <Button variant="ghost" asChild>
+        <div>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-balance text-2xl font-bold tracking-tight text-white md:text-3xl">Featured Giveaways</h2>
+              <p className="mt-1 text-pretty bg-gradient-to-r from-[#FFD700] to-[#FFA500] bg-clip-text text-transparent">Enter now for your chance to win</p>
+            </div>
+            <Button variant="ghost" className="text-white/80 hover:text-white hover:bg-white/10" asChild>
               <Link href="/giveaways">
                 View All <ArrowRight className="ml-2 h-4 w-4" />
               </Link>
             </Button>
-          }
-        />
+          </div>
+        </div>
+
         <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {giveaways.length > 0 ? (
             giveaways.map((giveaway) => (
@@ -195,28 +199,31 @@ export default async function HomePage() {
 
       {/* Recent Winners */}
       <section>
-        <SectionHeader
-          title="Recent Winners"
-          subtitle="Real people winning real prizes"
-          action={
-            <Button variant="ghost" asChild>
+        <div>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-balance text-2xl font-bold tracking-tight text-white md:text-3xl">Recent Winners</h2>
+              <p className="mt-1 text-pretty bg-gradient-to-r from-[#FFD700] to-[#FFA500] bg-clip-text text-transparent">Real people winning real prizes</p>
+            </div>
+            <Button variant="ghost" className="text-white/80 hover:text-white hover:bg-white/10" asChild>
               <Link href="/winners">
                 View All <ArrowRight className="ml-2 h-4 w-4" />
               </Link>
             </Button>
-          }
-        />
+          </div>
+        </div>
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {recentWinners.map((winner, i) => (
             <WinnerCard key={i} winner={winner} />
           ))}
         </div>
         <div className="mt-8 text-center">
-          <Button size="lg" variant="outline" className="rounded-xl font-semibold transition-all duration-300 hover:-translate-y-0.5" asChild>
+          <Button size="lg" variant="outline" className="rounded-xl border-white/20 bg-white/5 text-white font-semibold transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/10 hover:border-white/30" asChild>
             <Link href="/winners">View all winners</Link>
           </Button>
         </div>
       </section>
+      </div>
     </div>
     </>
   )
