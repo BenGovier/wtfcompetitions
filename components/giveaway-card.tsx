@@ -38,7 +38,7 @@ export function GiveawayCard({ giveaway, mode = "live" }: GiveawayCardProps) {
   const remaining = hasCapInfo ? Math.max(0, cap - sold) : null
 
   return (
-    <Card className="group flex h-full flex-col overflow-hidden rounded-2xl border border-border/80 bg-card shadow-sm transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-xl">
+    <Card className="group flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#1f0033]/80 backdrop-blur-md shadow-[0_0_30px_rgba(255,215,0,0.08)] transition-all duration-300 ease-out hover:-translate-y-1 hover:scale-[1.02] hover:shadow-xl">
       <Link href={`/giveaways/${giveaway.slug}`} className="block">
         <div className="relative aspect-[3/2] overflow-hidden bg-muted">
           <img
