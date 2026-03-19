@@ -140,15 +140,27 @@ export async function POST(request: NextRequest) {
         .single()
 
       if (campaign && campaign.status !== 'ended') {
-        // Get live ticket count from counter
-        const { data: counter } = await supabase
-          .from('giveaway_ticket_counters')
-          .select('next_ticket')
-          .eq('giveaway_id', campaign.id)
-          .maybeSingle()
-
-        const sold = Math.max(0, (counter?.next_ticket ?? 1) - 1)
         const cap = campaign.max_tickets_total ?? 0
+
+        // Retry loop to handle race condition where counter may not be visible yet
+        let sold = 0
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const { data: counter } = await supabase
+            .from('giveaway_ticket_counters')
+            .select('next_ticket')
+            .eq('giveaway_id', campaign.id)
+            .maybeSingle()
+
+          sold = Math.max(0, (counter?.next_ticket ?? 1) - 1)
+
+          // Break early if sold-out detected
+          if (cap > 0 && sold >= cap) break
+
+          // Wait 150ms before retry (skip wait on last attempt)
+          if (attempt < 2) {
+            await new Promise((r) => setTimeout(r, 150))
+          }
+        }
 
         // Check trigger conditions: sold out OR end time passed
         const isSoldOut = cap > 0 && sold >= cap
