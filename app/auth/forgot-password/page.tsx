@@ -28,7 +28,7 @@ export default function ForgotPasswordPage() {
 
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: 'https://www.wtf-giveaways.co.uk/auth/reset-password',
+        redirectTo: 'https://wtf-giveaways.co.uk/auth/reset-password',
       })
       if (error) throw error
       setSent(true)
