@@ -1,122 +1,29 @@
+// TEMP EMERGENCY HOTFIX - Remove all blocking DB calls to make homepage load instantly
+// This file was modified to bypass Supabase during high traffic/outage
+// Revert by restoring git history when DB is stable
+
 import { Button } from "@/components/ui/button"
 import { TrustBadges } from "@/components/trust-badges"
-import { GiveawayCard } from "@/components/giveaway-card"
 import { WinnerCard } from "@/components/winner-card"
-import { SectionHeader } from "@/components/section-header"
 import { mockWinners } from "@/lib/mock-data"
-import { createClient } from "@/lib/supabase/server"
 import Link from "next/link"
 import Image from "next/image"
 import { ArrowRight } from "lucide-react"
-import type { GiveawayPublic, WinnerSnapshot } from "@/lib/types"
 
-export default async function HomePage() {
-  const supabase = await createClient()
+// TEMP: Hardcoded fallback data - no network calls
+const emergencyFeaturedGiveaway = {
+  title: 'Live Giveaway',
+  subtitle: 'Our giveaway platform is experiencing extremely high traffic.',
+  status: 'Live now',
+  ctaHref: '/giveaways',
+  ctaLabel: 'View Giveaways',
+}
 
-  let giveaways: GiveawayPublic[] = []
-  try {
-    const { data, error } = await supabase
-      .from('giveaway_snapshots')
-      .select('payload')
-      .eq('kind', 'list')
-      .order('generated_at', { ascending: false })
+// TEMP: Use mock winners only - no DB fetch
+const recentWinners = mockWinners
 
-    if (!error && data && data.length > 0) {
-      // Extract campaign IDs from snapshot payloads
-      const campaignIds = data
-        .map((row) => (row.payload as Record<string, any>).id)
-        .filter((id): id is string => typeof id === 'string')
-
-      // Batch query live ticket counters
-      let counterMap: Record<string, number> = {}
-      if (campaignIds.length > 0) {
-        const { data: counters } = await supabase
-          .from('giveaway_ticket_counters')
-          .select('giveaway_id, next_ticket')
-          .in('giveaway_id', campaignIds)
-
-        if (counters) {
-          counterMap = Object.fromEntries(
-            counters.map((c: { giveaway_id: string; next_ticket: number }) => [c.giveaway_id, c.next_ticket])
-          )
-        }
-      }
-
-      // Batch query live cap values from campaigns
-      let capMap: Record<string, number> = {}
-      if (campaignIds.length > 0) {
-        const { data: campaigns } = await supabase
-          .from('campaigns')
-          .select('id, max_tickets_total')
-          .in('id', campaignIds)
-
-        if (campaigns) {
-          capMap = Object.fromEntries(
-            campaigns
-              .filter((c: { id: string; max_tickets_total: number | null }) => c.max_tickets_total != null)
-              .map((c: { id: string; max_tickets_total: number }) => [c.id, c.max_tickets_total])
-          )
-        }
-      }
-
-      giveaways = data.map((row) => {
-        const p = row.payload as Record<string, any>
-        const campaignId = p.id as string | undefined
-        const liveNextTicket = campaignId ? counterMap[campaignId] : undefined
-        const ticketsSold = Math.max(0, (liveNextTicket ?? 1) - 1)
-        const liveCapTotal = campaignId ? capMap[campaignId] : undefined
-
-        return {
-          slug: p.slug || 'unknown',
-          title: p.title || 'Untitled',
-          prizeTitle: p.prize_title || p.title || 'Prize',
-          imageUrl: p.hero_image_url || '/placeholder.svg',
-          ticketPrice: (p.base_ticket_price_pence ?? 0) / 100,
-          endsAt: new Date(p.ends_at),
-          status: p.status,
-          prizeValue: p.prize_value_text || undefined,
-          bundles: p.bundles || undefined,
-          rulesText: 'See full terms and conditions for complete rules.',
-          ticketsSold,
-          nextTicket: liveNextTicket ?? 1,
-          hardCapTotalTickets: liveCapTotal ?? Number(p.hard_cap_total_tickets ?? p.max_tickets_total ?? 0),
-        }
-      })
-      giveaways = giveaways
-        .filter(g => g.endsAt.getTime() > Date.now() && g.status === "live")
-        .slice(0, 3)
-    }
-  } catch (err) {
-    console.error('[homepage] Failed to fetch snapshots:', err)
-  }
-
-  // Fetch recent winners from live view
-  let recentWinners: WinnerSnapshot[] = []
-  try {
-    const { data: winData, error: winErr } = await supabase
-      .from('winners_feed')
-      .select('*')
-      .order('happened_at', { ascending: false })
-      .limit(9)
-
-    if (!winErr && winData && winData.length > 0) {
-      recentWinners = winData.map((row: any) => ({
-        name: row.display_name || 'Winner',
-        avatarUrl: undefined,
-        prizeTitle: row.prize_title || 'Prize',
-        giveawayTitle: row.campaign_title || '',
-        giveawaySlug: row.campaign_slug || undefined,
-        announcedAt: row.happened_at || new Date().toISOString(),
-        kind: (row.kind === 'main' ? 'main' : 'instant') as 'main' | 'instant',
-      }))
-    }
-  } catch (err) {
-    console.error('[homepage] Failed to fetch winners_feed:', err)
-  }
-
-  if (recentWinners.length === 0) {
-    recentWinners = mockWinners
-  }
+export default function HomePage() {
+  // TEMP: Removed async and all Supabase calls for emergency performance
 
   return (
     <>
@@ -130,7 +37,6 @@ export default async function HomePage() {
             className="object-cover"
             fill
             priority
-
             sizes="100vw"
           />
         </div>
@@ -142,7 +48,6 @@ export default async function HomePage() {
             className="object-cover"
             fill
             priority
-
             sizes="100vw"
           />
         </div>
@@ -169,7 +74,7 @@ export default async function HomePage() {
 
     <div className="min-h-screen bg-gradient-to-b from-[#1a002b] via-[#2d0050] to-[#0a0014]">
       <div className="container px-4 py-8 md:py-16">
-      {/* Featured Giveaways */}
+      {/* Featured Giveaways - TEMP: Static fallback card */}
       <section className="mb-16">
         <div>
           <div className="flex items-center justify-between">
@@ -185,20 +90,24 @@ export default async function HomePage() {
           </div>
         </div>
 
-        <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {giveaways.length > 0 ? (
-            giveaways.map((giveaway) => (
-              <GiveawayCard key={giveaway.slug} giveaway={giveaway} />
-            ))
-          ) : (
-            <div className="col-span-full py-12 text-center text-muted-foreground">
-              No live giveaways yet. Check back soon.
+        {/* TEMP: Single static featured giveaway card instead of dynamic DB cards */}
+        <div className="mt-6">
+          <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm p-6 md:p-8">
+            <div className="flex flex-col items-center text-center gap-4">
+              <span className="inline-flex items-center rounded-full bg-green-500/20 px-3 py-1 text-sm font-medium text-green-400">
+                {emergencyFeaturedGiveaway.status}
+              </span>
+              <h3 className="text-2xl font-bold text-white md:text-3xl">{emergencyFeaturedGiveaway.title}</h3>
+              <p className="text-white/70 max-w-md">{emergencyFeaturedGiveaway.subtitle}</p>
+              <Button size="lg" className="mt-4 rounded-xl bg-gradient-to-r from-[#FFD700] to-[#FFA500] text-black font-semibold shadow-md transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg" asChild>
+                <Link href={emergencyFeaturedGiveaway.ctaHref}>{emergencyFeaturedGiveaway.ctaLabel}</Link>
+              </Button>
             </div>
-          )}
+          </div>
         </div>
       </section>
 
-      {/* Recent Winners */}
+      {/* Recent Winners - TEMP: Using mock data only */}
       <section>
         <div>
           <div className="flex items-center justify-between">
