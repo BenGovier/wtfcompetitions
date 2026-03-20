@@ -8,16 +8,16 @@ import { Clock, Ticket } from "lucide-react"
 const emergencyGiveaways = [
   {
     id: 'emergency-1',
-    title: 'Live Giveaways Available',
-    subtitle: 'High traffic right now — our giveaways remain available. Tap to view and enter.',
-    href: '/giveaways',
+    title: 'Super Holiday',
+    subtitle: 'Enter now for your chance to win our live Super Holiday giveaway.',
+    href: '/giveaways/superholiday',
     status: 'Live now',
   },
   {
     id: 'emergency-2',
     title: 'More Prizes Coming Soon',
     subtitle: 'We are experiencing very high demand. Thank you for your patience.',
-    href: '/giveaways',
+    href: '/giveaways/superholiday',
     status: 'Available',
   },
 ]

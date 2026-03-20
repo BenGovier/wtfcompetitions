@@ -12,11 +12,11 @@ import { ArrowRight } from "lucide-react"
 
 // TEMP: Hardcoded fallback data - no network calls
 const emergencyFeaturedGiveaway = {
-  title: 'Live Giveaway',
-  subtitle: 'Our giveaway platform is experiencing extremely high traffic.',
+  title: 'Super Holiday',
+  subtitle: 'Enter now for your chance to win our live Super Holiday giveaway.',
   status: 'Live now',
-  ctaHref: '/giveaways',
-  ctaLabel: 'View Giveaways',
+  ctaHref: '/giveaways/superholiday',
+  ctaLabel: 'Enter Now',
 }
 
 // TEMP: Use mock winners only - no DB fetch
