@@ -171,7 +171,7 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
                   )}
                 </div>
                 <h1 className="text-balance text-4xl font-extrabold leading-tight tracking-tight drop-shadow-[0_0_15px_rgba(255,0,200,0.4)] md:text-5xl">{title}</h1>
-                <p className="mt-2 text-pretty text-lg text-purple-300">
+                <p className="mt-2 whitespace-pre-line text-pretty text-lg text-purple-300">
                   {description ?? prizeTitle}
                 </p>
                 {prizeValueText && (
