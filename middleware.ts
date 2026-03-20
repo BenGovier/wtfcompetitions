@@ -35,6 +35,22 @@ function isMaintenanceAllowed(pathname: string): boolean {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Session bypass for hot public routes                               */
+/* ------------------------------------------------------------------ */
+function shouldBypassSession(pathname: string): boolean {
+  return (
+    pathname === '/' ||
+    pathname.startsWith('/giveaways') ||
+    pathname.startsWith('/winners') ||
+    pathname.startsWith('/about') ||
+    pathname.startsWith('/legal') ||
+    pathname.startsWith('/api/checkout/create') ||
+    pathname.startsWith('/api/checkout/confirm') ||
+    pathname.startsWith('/api/admin/live-feed')
+  )
+}
+
+/* ------------------------------------------------------------------ */
 /*  Middleware                                                         */
 /* ------------------------------------------------------------------ */
 export async function middleware(request: NextRequest) {
@@ -88,6 +104,13 @@ export async function middleware(request: NextRequest) {
     const callbackUrl = new URL('/auth/callback', request.url)
     callbackUrl.search = request.nextUrl.search
     return NextResponse.redirect(callbackUrl)
+  }
+
+  // Bypass expensive session refresh on hot public/API routes
+  if (shouldBypassSession(pathname)) {
+    const response = NextResponse.next()
+    response.headers.set('x-next-pathname', pathname)
+    return response
   }
 
   const response = await updateSession(request)
