@@ -20,7 +20,6 @@ export default async function HomePage() {
       .select('payload')
       .eq('kind', 'list')
       .order('generated_at', { ascending: false })
-      .limit(3)
 
     if (!error && data && data.length > 0) {
       // Extract campaign IDs from snapshot payloads
@@ -83,7 +82,9 @@ export default async function HomePage() {
           hardCapTotalTickets: liveCapTotal ?? Number(p.hard_cap_total_tickets ?? p.max_tickets_total ?? 0),
         }
       })
-      giveaways = giveaways.filter(g => g.endsAt.getTime() > Date.now() && g.status === "live")
+      giveaways = giveaways
+        .filter(g => g.endsAt.getTime() > Date.now() && g.status === "live")
+        .slice(0, 3)
     }
   } catch (err) {
     console.error('[homepage] Failed to fetch snapshots:', err)
