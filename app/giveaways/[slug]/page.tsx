@@ -14,7 +14,6 @@ import { Shield, Award, ChevronRight } from "lucide-react"
 import { ScrollToTopOnMount } from "@/components/scroll-to-top-on-mount"
 
 export const revalidate = 60
-export const dynamic = 'force-dynamic'
 
 interface GiveawayPageProps {
   params: Promise<{
@@ -97,18 +96,12 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
     notFound()
   }
 
-  // Query live ticket counter directly using campaignId
+  // Derive soldCount from snapshot payload only (no live DB query)
   const capTotal: number | null = p.hard_cap_total_tickets ?? null
-  let soldCount = 0
-  {
-    const { data: counter } = await supabase
-      .from('giveaway_ticket_counters')
-      .select('next_ticket')
-      .eq('giveaway_id', campaignId)
-      .limit(1)
-      .maybeSingle()
-    soldCount = Math.max(0, (counter?.next_ticket ?? 1) - 1)
-  }
+  const soldCount =
+    p.tickets_sold != null && !Number.isNaN(Number(p.tickets_sold))
+      ? Number(p.tickets_sold)
+      : 0
 
   const instantWins = Array.isArray(p.instant_wins) ? p.instant_wins : []
   const bundles = p.bundles || undefined

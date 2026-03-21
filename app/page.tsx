@@ -4,8 +4,6 @@
 
 import { Button } from "@/components/ui/button"
 import { TrustBadges } from "@/components/trust-badges"
-import { WinnerCard } from "@/components/winner-card"
-import { mockWinners } from "@/lib/mock-data"
 import Link from "next/link"
 import Image from "next/image"
 import { ArrowRight } from "lucide-react"
@@ -18,9 +16,6 @@ const emergencyFeaturedGiveaway = {
   ctaHref: '/giveaways/superholiday',
   ctaLabel: 'Enter Now',
 }
-
-// TEMP: Use mock winners only - no DB fetch
-const recentWinners = mockWinners
 
 export default function HomePage() {
   // TEMP: Removed async and all Supabase calls for emergency performance
@@ -104,33 +99,6 @@ export default function HomePage() {
               </Button>
             </div>
           </div>
-        </div>
-      </section>
-
-      {/* Recent Winners - TEMP: Using mock data only */}
-      <section>
-        <div>
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-balance text-2xl font-bold tracking-tight text-white md:text-3xl">Recent Winners</h2>
-              <p className="mt-1 text-pretty bg-gradient-to-r from-[#FFD700] to-[#FFA500] bg-clip-text text-transparent">Real people winning real prizes</p>
-            </div>
-            <Button variant="ghost" className="text-white/80 hover:text-white hover:bg-white/10" asChild>
-              <Link href="/winners">
-                View All <ArrowRight className="ml-2 h-4 w-4" />
-              </Link>
-            </Button>
-          </div>
-        </div>
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {recentWinners.map((winner, i) => (
-            <WinnerCard key={i} winner={winner} />
-          ))}
-        </div>
-        <div className="mt-8 text-center">
-          <Button size="lg" variant="outline" className="rounded-xl border-white/20 bg-white/5 text-white font-semibold transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/10 hover:border-white/30" asChild>
-            <Link href="/winners">View all winners</Link>
-          </Button>
         </div>
       </section>
       </div>
