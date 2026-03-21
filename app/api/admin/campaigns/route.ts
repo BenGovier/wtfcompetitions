@@ -69,6 +69,15 @@ async function refreshSnapshotsNow(campaignId: string) {
 
   const wonSet = new Set((awards ?? []).map((a: any) => a.prize_id))
 
+  // Fetch ticket counter for this campaign
+  const { data: counter } = await svc
+    .from('giveaway_ticket_counters')
+    .select('next_ticket')
+    .eq('giveaway_id', c.id)
+    .maybeSingle()
+
+  const ticketsSold = Math.max((counter?.next_ticket ?? 1) - 1, 0)
+
   const instantWins = (prizes ?? []).map((p: any) => ({
     id: p.id,
     title: p.prize_title,
@@ -98,6 +107,7 @@ async function refreshSnapshotsNow(campaignId: string) {
     ends_at: c.end_at,
     base_ticket_price_pence: c.ticket_price_pence,
     status: c.status,
+    tickets_sold: ticketsSold,
   }
 
   const detailPayload = {
@@ -118,6 +128,7 @@ async function refreshSnapshotsNow(campaignId: string) {
     base_ticket_price_pence: c.ticket_price_pence,
     bundles: c.bundles ?? null,
     hard_cap_total_tickets: c.max_tickets_total,
+    tickets_sold: ticketsSold,
     instant_wins: instantWins,
   }
 
