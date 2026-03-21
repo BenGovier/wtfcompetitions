@@ -62,120 +62,92 @@ export async function POST(request: Request) {
       provider,
     })
 
-    // === INSTANT MAIN DRAW TRIGGER (best-effort, non-blocking) ===
-    // Trigger the existing draw route immediately if sold out OR end time passed
-    try {
-      const svc = getServiceSupabase()
-
-      // Get campaign_id from checkout_intent
-      const { data: intent } = await svc
-        .from('checkout_intents')
-        .select('campaign_id')
-        .eq('ref', ref)
-        .single()
-
-      if (intent?.campaign_id) {
-        // Get campaign details
-        const { data: campaign } = await svc
-          .from('campaigns')
-          .select('id, end_at, max_tickets_total, status')
-          .eq('id', intent.campaign_id)
-          .single()
-
-        if (campaign && campaign.status !== 'ended') {
-          // Get live ticket count from counter (more reliable than entries aggregation)
-          const { data: counter } = await svc
-            .from('giveaway_ticket_counters')
-            .select('next_ticket')
-            .eq('giveaway_id', campaign.id)
-            .maybeSingle()
-
-          const sold = Math.max(0, (counter?.next_ticket ?? 1) - 1)
-          const cap = campaign.max_tickets_total ?? 0
-
-          // Check trigger conditions: sold out OR end time passed
-          const isSoldOut = cap > 0 && sold >= cap
-          const isPastEnd = new Date(campaign.end_at) <= new Date()
-
-          if (isSoldOut || isPastEnd) {
-            console.log('[checkout/confirm] triggering immediate draw:', {
-              campaignId: campaign.id,
-              isSoldOut,
-              isPastEnd,
-              sold,
-              cap,
-            })
-
-            // Trigger draw route with Bearer auth (awaited for reliability)
-            const cronSecret = process.env.CRON_SECRET
-            if (cronSecret) {
-              const baseUrl = process.env.VERCEL_URL
-                ? `https://${process.env.VERCEL_URL}`
-                : process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
-
-              const drawRes = await fetch(`${baseUrl}/api/jobs/run-draws`, {
-                method: 'GET',
-                headers: { Authorization: `Bearer ${cronSecret}` },
-              })
-
-              if (!drawRes.ok) {
-                const resText = await drawRes.text().catch(() => '(unable to read body)')
-                console.error('[checkout/confirm] draw trigger returned non-ok:', {
-                  status: drawRes.status,
-                  body: resText,
-                })
-              } else {
-                console.log('[checkout/confirm] draw trigger succeeded:', drawRes.status)
-              }
-            }
-          }
-        }
-      }
-    } catch (drawTriggerErr: any) {
-      // Log but do NOT fail the checkout
-      console.error('[checkout/confirm] instant draw trigger error (non-fatal):', drawTriggerErr?.message)
-    }
-    // === END INSTANT MAIN DRAW TRIGGER ===
-
-    // === SNAPSHOT REFRESH (best-effort, non-blocking) ===
-    // Refresh giveaway snapshot so instant win status updates from Available to Won
-    try {
-      const svc = getServiceSupabase()
-
-      // Get campaign_id from checkout_intent if not already fetched above
-      let campaignId: string | null = null
-      const { data: intentForRefresh } = await svc
-        .from('checkout_intents')
-        .select('campaign_id')
-        .eq('ref', ref)
-        .single()
-
-      campaignId = intentForRefresh?.campaign_id ?? null
-
-      if (campaignId) {
-        const cronSecret = process.env.CRON_SECRET
-        if (cronSecret) {
+    // === DETACHED BACKGROUND TASKS ===
+    // Fully isolated from request lifecycle - cannot cause 500s or slow responses
+    queueMicrotask(() => {
+      void (async () => {
+        try {
+          const svc = getServiceSupabase()
+          const cronSecret = process.env.CRON_SECRET
           const baseUrl = process.env.VERCEL_URL
             ? `https://${process.env.VERCEL_URL}`
             : process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
 
-          const refreshRes = await fetch(
-            `${baseUrl}/api/jobs/refresh-giveaway-snapshots?campaignId=${campaignId}&token=${cronSecret}`,
-            { method: 'GET' }
-          )
+          // Get campaign_id from checkout_intent
+          const { data: intent } = await svc
+            .from('checkout_intents')
+            .select('campaign_id')
+            .eq('ref', ref)
+            .single()
 
-          if (!refreshRes.ok) {
-            console.error('[checkout/confirm] snapshot refresh returned non-ok:', refreshRes.status)
-          } else {
-            console.log('[checkout/confirm] snapshot refresh succeeded for campaign:', campaignId)
+          if (!intent?.campaign_id || !cronSecret) return
+
+          const campaignId = intent.campaign_id
+
+          // --- DRAW TRIGGER ---
+          try {
+            const { data: campaign } = await svc
+              .from('campaigns')
+              .select('id, end_at, max_tickets_total, status')
+              .eq('id', campaignId)
+              .single()
+
+            if (campaign && campaign.status !== 'ended') {
+              const { data: counter } = await svc
+                .from('giveaway_ticket_counters')
+                .select('next_ticket')
+                .eq('giveaway_id', campaign.id)
+                .maybeSingle()
+
+              const sold = Math.max(0, (counter?.next_ticket ?? 1) - 1)
+              const cap = campaign.max_tickets_total ?? 0
+              const isSoldOut = cap > 0 && sold >= cap
+              const isPastEnd = new Date(campaign.end_at) <= new Date()
+
+              if (isSoldOut || isPastEnd) {
+                console.log('[checkout/confirm] triggering immediate draw:', {
+                  campaignId: campaign.id,
+                  isSoldOut,
+                  isPastEnd,
+                  sold,
+                  cap,
+                })
+
+                const drawRes = await fetch(`${baseUrl}/api/jobs/run-draws`, {
+                  method: 'GET',
+                  headers: { Authorization: `Bearer ${cronSecret}` },
+                })
+                if (!drawRes.ok) {
+                  console.error('[checkout/confirm] draw trigger returned non-ok:', drawRes.status)
+                } else {
+                  console.log('[checkout/confirm] draw trigger succeeded:', drawRes.status)
+                }
+              }
+            }
+          } catch (drawErr: any) {
+            console.error('[checkout/confirm] draw trigger error (non-fatal):', drawErr?.message)
           }
+
+          // --- SNAPSHOT REFRESH ---
+          try {
+            const refreshRes = await fetch(
+              `${baseUrl}/api/jobs/refresh-giveaway-snapshots?campaignId=${campaignId}&token=${cronSecret}`,
+              { method: 'GET' }
+            )
+            if (!refreshRes.ok) {
+              console.error('[checkout/confirm] snapshot refresh returned non-ok:', refreshRes.status)
+            } else {
+              console.log('[checkout/confirm] snapshot refresh succeeded for campaign:', campaignId)
+            }
+          } catch (refreshErr: any) {
+            console.error('[checkout/confirm] snapshot refresh error (non-fatal):', refreshErr?.message)
+          }
+        } catch (bgErr: any) {
+          console.error('[checkout/confirm] background task error (non-fatal):', bgErr?.message)
         }
-      }
-    } catch (refreshErr: any) {
-      // Log but do NOT fail the checkout
-      console.error('[checkout/confirm] snapshot refresh error (non-fatal):', refreshErr?.message)
-    }
-    // === END SNAPSHOT REFRESH ===
+      })()
+    })
+    // === END DETACHED BACKGROUND TASKS ===
 
     return NextResponse.json({ ok: true, award }, NO_STORE)
   } catch (err: any) {
