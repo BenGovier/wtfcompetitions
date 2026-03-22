@@ -71,6 +71,9 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
   const [qtyBump, setQtyBump] = useState(false)
   const [mounted, setMounted] = useState(false)
 
+  // Live sold count from API polling
+  const [liveSoldCount, setLiveSoldCount] = useState<number | null>(null)
+
   // Sticky CTA visibility
   const qtyRef = useRef<HTMLDivElement>(null)
   const [showStickyCta, setShowStickyCta] = useState(false)
@@ -81,6 +84,32 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
   }, [])
 
   useEffect(() => { setMounted(true) }, [])
+
+  // Poll live sold count every 15 seconds
+  useEffect(() => {
+    if (!campaignId) return
+
+    const fetchLiveCount = async () => {
+      try {
+        const res = await fetch(`/api/giveaways/${campaignId}/live-count`)
+        if (res.ok) {
+          const json = await res.json()
+          if (json.ok && typeof json.soldCount === 'number') {
+            setLiveSoldCount(json.soldCount)
+          }
+        }
+      } catch {
+        // Silently keep last known count
+      }
+    }
+
+    // Initial fetch
+    fetchLiveCount()
+
+    // Poll every 15 seconds
+    const interval = setInterval(fetchLiveCount, 15000)
+    return () => clearInterval(interval)
+  }, [campaignId])
 
   // IntersectionObserver for sticky CTA
   useEffect(() => {
@@ -157,8 +186,8 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
     )
   }
 
-  // Prefer live counter, fall back to snapshot-derived props
-  const displaySold = soldCount ?? ticketsSold ?? 0
+  // Prefer live polled count, fall back to snapshot-derived props
+  const displaySold = liveSoldCount ?? soldCount ?? ticketsSold ?? 0
   const displayCap = (hardCapTotalTickets && hardCapTotalTickets > 0) ? hardCapTotalTickets : capTotal
   const hasCapInfo = typeof displaySold === 'number' && typeof displayCap === 'number' && displayCap > 0
   const remaining = hasCapInfo ? Math.max(0, displayCap - displaySold) : null
