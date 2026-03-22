@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServiceSupabase } from '@/lib/supabase/service'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
 
 const NO_STORE = { headers: { 'Cache-Control': 'no-store' } }
+
+function getServiceSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!
+  return createServiceClient(url, key, { auth: { persistSession: false } })
+}
 
 export async function GET(
   _request: NextRequest,
