@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { randomUUID } from 'crypto'
 
 export const dynamic = 'force-dynamic'
@@ -126,7 +127,15 @@ export async function POST(request: Request) {
   const providerSessionId = randomUUID()
 
   // 4) Insert checkout_intent
-  const { error: insertErr } = await supabase
+  const insertClient =
+    !user && allowStagingCheckoutBypass
+      ? createAdminClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.SUPABASE_SERVICE_ROLE_KEY!
+        )
+      : supabase
+
+  const { error: insertErr } = await insertClient
     .from('checkout_intents')
     .insert({
       ref,
