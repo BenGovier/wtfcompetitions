@@ -84,10 +84,10 @@ export async function GET() {
   // Resolve mobile and real_name from profiles_private
   const { data: privateProfiles } = await svc
     .from('profiles_private')
-    .select('user_id, mobile, real_name, email')
+    .select('user_id, mobile, real_name')
     .in('user_id', userIds)
 
-  const privateMap = new Map((privateProfiles ?? []).map((p) => [p.user_id, { mobile: p.mobile, real_name: p.real_name, email: p.email }]))
+  const privateMap = new Map((privateProfiles ?? []).map((p) => [p.user_id, { mobile: p.mobile, real_name: p.real_name }]))
 
   // Resolve prize titles
   const prizeIds = [...new Set(awards.map((a) => a.prize_id).filter(Boolean))]
@@ -107,11 +107,10 @@ export async function GET() {
       const publicProfile = entry.user_id ? profileMap.get(entry.user_id) : null
       const privateProfile = entry.user_id ? privateMap.get(entry.user_id) : null
 
-      // Priority: display_name > profiles_private.real_name > email > 'User'
+      // Priority: display_name > profiles_private.real_name > 'User'
       const userDisplay =
         publicProfile?.display_name ||
         privateProfile?.real_name ||
-        privateProfile?.email ||
         'User'
 
       return {
@@ -121,7 +120,7 @@ export async function GET() {
         instant_win_title: prizeMap.get(award.prize_id) ?? null,
         ticket_number: entry.id,
         user_display: userDisplay,
-        email: privateProfile?.email ?? null,
+        email: null,
         mobile: privateProfile?.mobile ?? null,
       }
     })
