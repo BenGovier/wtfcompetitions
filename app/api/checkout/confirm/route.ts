@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 const NO_STORE = { headers: { 'Cache-Control': 'no-store' } }
+const STAGING_BYPASS_USER_ID = '00000000-0000-0000-0000-000000000000'
 
 function getServiceSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -23,10 +24,22 @@ export async function POST(request: Request) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  console.log('[checkout/confirm] caller user:', user?.id ?? null)
+  const allowStagingCheckoutBypass =
+    process.env.VERCEL_ENV === 'preview' &&
+    process.env.ALLOW_STAGING_CHECKOUT_BYPASS === 'true'
 
-  if (!user) {
+  const resolvedUser = user ?? (allowStagingCheckoutBypass ? { id: STAGING_BYPASS_USER_ID } : null)
+
+  console.log('[checkout/confirm] caller user:', resolvedUser?.id ?? null)
+
+  if (!resolvedUser) {
     return NextResponse.json({ ok: false, error: 'Not authenticated' }, { status: 401, ...NO_STORE })
+  }
+
+  if (!user && allowStagingCheckoutBypass) {
+    console.warn('[checkout/confirm] using staging auth bypass', {
+      bypassUserId: STAGING_BYPASS_USER_ID,
+    })
   }
 
   // 2) Parse body
@@ -52,13 +65,14 @@ export async function POST(request: Request) {
   console.log('[checkout/confirm] confirm attempt:', {
     ref,
     provider,
-    callerUserId: user?.id ?? null,
+    callerUserId: resolvedUser.id,
+    bypassedAuth: !user && allowStagingCheckoutBypass,
   })
 
   try {
     const award: AwardPayload = await confirmPaymentAndAward({
       ref,
-      userId: user.id,
+      userId: resolvedUser.id,
       provider,
     })
 
@@ -165,7 +179,8 @@ export async function POST(request: Request) {
       message,
       ref,
       provider,
-      callerUserId: user?.id ?? null,
+      callerUserId: resolvedUser.id,
+      bypassedAuth: !user && allowStagingCheckoutBypass,
     })
     return NextResponse.json({ ok: false, error: 'Internal server error' }, { status: 500, ...NO_STORE })
   }
