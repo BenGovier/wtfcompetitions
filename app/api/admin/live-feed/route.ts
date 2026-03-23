@@ -76,10 +76,18 @@ export async function GET() {
   const userIds = [...new Set((entries ?? []).map((e) => e.user_id).filter(Boolean))]
   const { data: profiles } = await svc
     .from('profiles_public_snapshot')
-    .select('user_id, real_name')
+    .select('user_id, display_name')
     .in('user_id', userIds)
 
-  const profileMap = new Map((profiles ?? []).map((p) => [p.user_id, p.real_name]))
+  const profileMap = new Map((profiles ?? []).map((p) => [p.user_id, { display_name: p.display_name }]))
+
+  // Resolve mobile and real_name from profiles_private
+  const { data: privateProfiles } = await svc
+    .from('profiles_private')
+    .select('user_id, mobile, real_name')
+    .in('user_id', userIds)
+
+  const privateMap = new Map((privateProfiles ?? []).map((p) => [p.user_id, { mobile: p.mobile, real_name: p.real_name }]))
 
   // Resolve prize titles
   const prizeIds = [...new Set(awards.map((a) => a.prize_id).filter(Boolean))]
@@ -96,21 +104,24 @@ export async function GET() {
       const entry = entryMap.get(award.checkout_intent_id)
       if (!entry) return null
 
-      let userDisplay = 'User'
-      if (entry.user_id) {
-        const realName = profileMap.get(entry.user_id)
-        userDisplay = realName || 'User'
-      }
+      const publicProfile = entry.user_id ? profileMap.get(entry.user_id) : null
+      const privateProfile = entry.user_id ? privateMap.get(entry.user_id) : null
+
+      // Priority: display_name > profiles_private.real_name > 'User'
+      const userDisplay =
+        publicProfile?.display_name ||
+        privateProfile?.real_name ||
+        'User'
 
       return {
         id: entry.id,
-        qty: entry.qty,
         created_at: entry.created_at,
         campaign_title: campaignMap.get(entry.campaign_id) ?? 'Unknown Campaign',
-        user_display: userDisplay,
-        won_instant_win: true,
         instant_win_title: prizeMap.get(award.prize_id) ?? null,
-        awarded_at: award.awarded_at,
+        ticket_number: entry.id,
+        user_display: userDisplay,
+        email: null,
+        mobile: privateProfile?.mobile ?? null,
       }
     })
     .filter(Boolean)
