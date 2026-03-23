@@ -40,13 +40,17 @@ export default function SignUpPage() {
 
       if (signUpError) throw signUpError
 
-      // Save mobile to profiles_private if provided
+      // Save mobile to profiles_private if provided (update only, not upsert)
       if (mobile.trim() && data.user?.id) {
         try {
-          await supabase.from('profiles_private').upsert(
-            { user_id: data.user.id, mobile: mobile.trim() },
-            { onConflict: 'user_id' }
-          )
+          const { error: mobileError } = await supabase
+            .from('profiles_private')
+            .update({ mobile: mobile.trim() })
+            .eq('user_id', data.user.id)
+
+          if (mobileError) {
+            console.error('Failed to save mobile number:', mobileError)
+          }
         } catch (mobileErr) {
           console.error('Failed to save mobile number:', mobileErr)
           // Do not fail sign-up if mobile save fails
