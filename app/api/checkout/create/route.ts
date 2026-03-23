@@ -16,7 +16,7 @@ export async function POST(request: Request) {
   } = await supabase.auth.getUser()
 
   const allowStagingCheckoutBypass =
-    process.env.NODE_ENV !== 'production' &&
+    process.env.VERCEL_ENV === 'preview' &&
     process.env.ALLOW_STAGING_CHECKOUT_BYPASS === 'true'
 
   const resolvedUser = user ?? (allowStagingCheckoutBypass ? { id: STAGING_BYPASS_USER_ID } : null)
