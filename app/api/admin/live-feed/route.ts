@@ -76,10 +76,10 @@ export async function GET() {
   const userIds = [...new Set((entries ?? []).map((e) => e.user_id).filter(Boolean))]
   const { data: profiles } = await svc
     .from('profiles_public_snapshot')
-    .select('user_id, real_name, display_name')
+    .select('user_id, display_name')
     .in('user_id', userIds)
 
-  const profileMap = new Map((profiles ?? []).map((p) => [p.user_id, { real_name: p.real_name, display_name: p.display_name }]))
+  const profileMap = new Map((profiles ?? []).map((p) => [p.user_id, { display_name: p.display_name }]))
 
   // Resolve mobile and real_name from profiles_private
   const { data: privateProfiles } = await svc
