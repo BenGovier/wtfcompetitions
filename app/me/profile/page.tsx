@@ -1,7 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
+import { createClient } from "@/lib/supabase/client"
 import { SectionHeader } from "@/components/section-header"
 import { AvatarPicker } from "@/components/avatar-picker"
 import { VisibilityToggleCard } from "@/components/visibility-toggle-card"
@@ -22,6 +23,7 @@ const mockProfile: Profile = {
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState<Profile>(mockProfile)
+  const [mobile, setMobile] = useState('')
   const [saveState, setSaveState] = useState<{
     loading: boolean
     success: boolean
@@ -31,21 +33,62 @@ export default function ProfilePage() {
     success: false,
   })
 
+  // Load mobile from profiles_private on mount
+  useEffect(() => {
+    const loadMobile = async () => {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data } = await supabase
+        .from('profiles_private')
+        .select('mobile')
+        .eq('user_id', user.id)
+        .single()
+
+      if (data?.mobile) {
+        setMobile(data.mobile)
+      }
+    }
+    loadMobile()
+  }, [])
+
   const handleSave = async () => {
     setSaveState({ loading: true, success: false })
 
-    // Simulate save delay
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+    try {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user) {
+        setSaveState({ loading: false, success: false, error: 'Not authenticated' })
+        return
+      }
 
-    // Mock success
-    setSaveState({ loading: false, success: true })
+      // Save mobile to profiles_private
+      const { error: mobileError } = await supabase
+        .from('profiles_private')
+        .upsert(
+          { user_id: user.id, mobile: mobile.trim() || null },
+          { onConflict: 'user_id' }
+        )
 
-    // Reset success state after 3 seconds
-    setTimeout(() => {
-      setSaveState((prev) => ({ ...prev, success: false }))
-    }, 3000)
+      if (mobileError) {
+        console.error('Failed to save mobile:', mobileError)
+        setSaveState({ loading: false, success: false, error: 'Failed to save mobile number' })
+        return
+      }
 
-    // TODO: Replace with real API call
+      setSaveState({ loading: false, success: true })
+
+      // Reset success state after 3 seconds
+      setTimeout(() => {
+        setSaveState((prev) => ({ ...prev, success: false }))
+      }, 3000)
+    } catch (err) {
+      console.error('Save error:', err)
+      setSaveState({ loading: false, success: false, error: 'An error occurred while saving' })
+    }
   }
 
   const hasName = profile.name.trim().length > 0
@@ -105,6 +148,19 @@ export default function ProfilePage() {
               aria-readonly="true"
             />
             <p className="text-xs text-muted-foreground">Your email address cannot be changed here.</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="mobile">Mobile number (optional)</Label>
+            <Input
+              id="mobile"
+              type="tel"
+              value={mobile}
+              onChange={(e) => setMobile(e.target.value)}
+              placeholder="+44 7700 900000"
+              className="max-w-md"
+            />
+            <p className="text-xs text-muted-foreground">Used to contact you if you win. Never shared publicly.</p>
           </div>
 
           <div className="space-y-2">

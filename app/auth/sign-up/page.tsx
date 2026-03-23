@@ -18,6 +18,7 @@ export default function SignUpPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
+  const [mobile, setMobile] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [confirmMessage, setConfirmMessage] = useState(false)
@@ -38,6 +39,19 @@ export default function SignUpPage() {
       })
 
       if (signUpError) throw signUpError
+
+      // Save mobile to profiles_private if provided
+      if (mobile.trim() && data.user?.id) {
+        try {
+          await supabase.from('profiles_private').upsert(
+            { user_id: data.user.id, mobile: mobile.trim() },
+            { onConflict: 'user_id' }
+          )
+        } catch (mobileErr) {
+          console.error('Failed to save mobile number:', mobileErr)
+          // Do not fail sign-up if mobile save fails
+        }
+      }
 
       // If Supabase email confirmation is enabled, user/session will be null
       if (!data.session && !data.user?.confirmed_at) {
@@ -98,6 +112,16 @@ export default function SignUpPage() {
                     placeholder="Your name"
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="mobile">Mobile number (optional)</Label>
+                  <Input
+                    id="mobile"
+                    type="tel"
+                    placeholder="+44 7700 900000"
+                    value={mobile}
+                    onChange={(e) => setMobile(e.target.value)}
                   />
                 </div>
                 <div className="grid gap-2">
