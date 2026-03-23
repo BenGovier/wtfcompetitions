@@ -81,22 +81,6 @@ export async function GET() {
 
   const profileMap = new Map((profiles ?? []).map((p) => [p.user_id, p.real_name]))
 
-  // Resolve auth user data (display_name + email) for all users
-  const authUserMap = new Map<string, { displayName: string | null; email: string | null }>()
-
-  for (const uid of userIds) {
-    try {
-      const { data: authUser } = await svc.auth.admin.getUserById(uid)
-      if (authUser?.user) {
-        const displayName = authUser.user.user_metadata?.display_name ?? null
-        const email = authUser.user.email ?? null
-        authUserMap.set(uid, { displayName, email })
-      }
-    } catch {
-      // Ignore errors, fallback handled later
-    }
-  }
-
   // Resolve prize titles
   const prizeIds = [...new Set(awards.map((a) => a.prize_id).filter(Boolean))]
   const { data: prizes } = await svc
@@ -112,12 +96,10 @@ export async function GET() {
       const entry = entryMap.get(award.checkout_intent_id)
       if (!entry) return null
 
-      // Resolve user display: auth display_name > real_name > email > "User"
       let userDisplay = 'User'
       if (entry.user_id) {
-        const authData = authUserMap.get(entry.user_id)
         const realName = profileMap.get(entry.user_id)
-        userDisplay = authData?.displayName || realName || authData?.email || 'User'
+        userDisplay = realName || 'User'
       }
 
       return {
