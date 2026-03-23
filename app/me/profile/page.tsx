@@ -65,17 +65,21 @@ export default function ProfilePage() {
         return
       }
 
-      // Save mobile to profiles_private
-      const { error: mobileError } = await supabase
+      // Save mobile to profiles_private (update only, no insert)
+      const { data: updateData, error: mobileError } = await supabase
         .from('profiles_private')
-        .upsert(
-          { user_id: user.id, mobile: mobile.trim() || null },
-          { onConflict: 'user_id' }
-        )
+        .update({ mobile: mobile.trim() || null })
+        .eq('user_id', user.id)
+        .select()
 
       if (mobileError) {
         console.error('Failed to save mobile:', mobileError)
         setSaveState({ loading: false, success: false, error: 'Failed to save mobile number' })
+        return
+      }
+
+      if (!updateData || updateData.length === 0) {
+        setSaveState({ loading: false, success: false, error: 'Unable to save mobile number' })
         return
       }
 
