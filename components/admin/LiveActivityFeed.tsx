@@ -60,7 +60,7 @@ export function LiveActivityFeed() {
 
     fetchFeed()
 
-    const interval = setInterval(fetchFeed, 3000)
+    const interval = setInterval(fetchFeed, 5000)
 
     return () => {
       mounted = false
