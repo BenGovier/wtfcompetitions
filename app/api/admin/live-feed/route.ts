@@ -129,5 +129,9 @@ export async function GET() {
     }
   })
 
-  return NextResponse.json({ ok: true, items })
+  return NextResponse.json({ ok: true, items }, {
+    headers: {
+      'Cache-Control': 'public, max-age=5, s-maxage=5',
+    },
+  })
 }
