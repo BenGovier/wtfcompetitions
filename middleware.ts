@@ -40,10 +40,14 @@ function isMaintenanceAllowed(pathname: string): boolean {
 function shouldBypassSession(pathname: string): boolean {
   return (
     pathname === '/' ||
+    pathname === '/pre-register' ||
     pathname.startsWith('/giveaways') ||
     pathname.startsWith('/winners') ||
     pathname.startsWith('/about') ||
     pathname.startsWith('/legal') ||
+    pathname.startsWith('/auth/login') ||
+    pathname.startsWith('/auth/sign-up') ||
+    pathname.startsWith('/auth/forgot-password') ||
     pathname.startsWith('/api/checkout/create') ||
     pathname.startsWith('/api/checkout/confirm') ||
     pathname.startsWith('/api/admin/live-feed')
