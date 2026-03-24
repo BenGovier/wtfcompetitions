@@ -36,6 +36,7 @@ export function WinnersFilters({ onSearchChange, onTimeFilterChange, onTypeFilte
           >
             All Winners
           </Button>
+          {/* Main Winners button - TEMPORARILY DISABLED
           <Button
             variant={typeFilter === "main" ? "default" : "outline"}
             size="sm"
@@ -43,6 +44,7 @@ export function WinnersFilters({ onSearchChange, onTimeFilterChange, onTypeFilte
           >
             Main Winners
           </Button>
+          */}
           <Button
             variant={typeFilter === "instant" ? "default" : "outline"}
             size="sm"

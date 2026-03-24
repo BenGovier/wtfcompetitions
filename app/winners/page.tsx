@@ -23,6 +23,8 @@ export default async function WinnersPage() {
     const { data, error } = await supabase
       .from("winners_feed")
       .select("*")
+      .eq("kind", "instant")
+      .gte("happened_at", "2026-03-20T00:00:00+00:00")
       .order("happened_at", { ascending: false })
       .limit(200)
 
