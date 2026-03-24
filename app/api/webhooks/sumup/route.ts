@@ -244,7 +244,7 @@ export async function POST(request: NextRequest) {
           <!-- Logo -->
           <tr>
             <td align="center" style="padding: 32px 32px 24px 32px;">
-              <img src="https://www.wtf-giveaways.co.uk/images/wtf-logo.jpg" alt="WTF Giveaways" width="140" style="display: block; border: 0; border-radius: 8px;">
+              <img src="https://doapgvzlafwqtebezlqz.supabase.co/storage/v1/object/public/logo/wtf-logo.jpg" alt="WTF Giveaways" width="140" style="display: block; border: 0; border-radius: 8px;">
             </td>
           </tr>
           <!-- Heading -->
