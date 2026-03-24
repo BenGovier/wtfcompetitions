@@ -72,8 +72,16 @@ export async function GET() {
 
   const campaignMap = new Map((campaigns ?? []).map((c) => [c.id, c.title]))
 
-  // Resolve mobile and real_name from profiles_private
+  // Resolve display_name from profiles_public_snapshot
   const userIds = [...new Set((entries ?? []).map((e) => e.user_id).filter(Boolean))]
+  const { data: profiles } = await svc
+    .from('profiles_public_snapshot')
+    .select('user_id, display_name')
+    .in('user_id', userIds)
+
+  const profileMap = new Map((profiles ?? []).map((p) => [p.user_id, p.display_name]))
+
+  // Resolve mobile and real_name from profiles_private
   const { data: privateProfiles } = await svc
     .from('profiles_private')
     .select('user_id, mobile, real_name')
@@ -96,12 +104,8 @@ export async function GET() {
       const entry = entryMap.get(award.checkout_intent_id)
       if (!entry) return null
 
+      const nickname = entry.user_id ? profileMap.get(entry.user_id) : null
       const privateProfile = entry.user_id ? privateMap.get(entry.user_id) : null
-
-      const userDisplay =
-        privateProfile?.real_name ||
-        privateProfile?.mobile ||
-        'User'
 
       return {
         id: entry.id,
@@ -109,8 +113,8 @@ export async function GET() {
         campaign_title: campaignMap.get(entry.campaign_id) ?? 'Unknown Campaign',
         instant_win_title: prizeMap.get(award.prize_id) ?? null,
         ticket_number: entry.id,
-        user_display: userDisplay,
-        email: null,
+        nickname: nickname ?? null,
+        real_name: privateProfile?.real_name ?? null,
         mobile: privateProfile?.mobile ?? null,
       }
     })
