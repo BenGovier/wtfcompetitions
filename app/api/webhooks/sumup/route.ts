@@ -268,6 +268,7 @@ export async function POST(request: NextRequest) {
           .from('checkout_intents')
           .update({ confirmation_email_sent_at: null })
           .eq('id', intent.id)
+          .eq('confirmation_email_sent_at', claimedAt)
         console.log('[webhooks/sumup][email] rolled back claim for retry:', intent.ref)
       }
     }
