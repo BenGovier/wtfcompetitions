@@ -15,6 +15,38 @@ function getServiceSupabase() {
 const PAID_STATUSES = new Set(['paid', 'successful', 'completed'])
 const FAILED_STATUSES = new Set(['failed', 'cancelled', 'expired'])
 
+async function sendResendEmail(args: {
+  apiKey: string
+  from: string
+  to: string
+  subject: string
+  text: string
+  html: string
+}) {
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${args.apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: args.from,
+      to: [args.to],
+      subject: args.subject,
+      text: args.text,
+      html: args.html,
+    }),
+  })
+
+  if (!res.ok) {
+    const errorBody = await res.text().catch(() => '(unable to read body)')
+    console.error('[webhooks/sumup][email] Resend API error:', { status: res.status, body: errorBody })
+    throw new Error(`Resend API returned ${res.status}`)
+  }
+
+  return res.json()
+}
+
 export async function POST(request: NextRequest) {
   // 1) Auth via query param (SumUp cannot send custom headers)
   const expected = process.env.WEBHOOK_SECRET
@@ -77,7 +109,7 @@ export async function POST(request: NextRequest) {
   // 5) Lookup intent by provider_session_id
   const { data: intent, error: lookupErr } = await supabase
     .from('checkout_intents')
-    .select('ref, user_id, state, campaign_id')
+    .select('id, ref, user_id, state, campaign_id, qty, confirmation_email_sent_at')
     .eq('provider', 'sumup')
     .eq('provider_session_id', checkoutId)
     .limit(1)
@@ -126,6 +158,100 @@ export async function POST(request: NextRequest) {
   }
 
   console.log('[webhooks/sumup] confirmed:', intent.ref)
+
+  // === POST-PURCHASE CONFIRMATION EMAIL (best-effort, non-blocking) ===
+  try {
+    if (intent.confirmation_email_sent_at) {
+      console.log('[webhooks/sumup][email] already sent for:', intent.ref)
+    } else {
+      // a) Fetch purchaser email from auth
+      const { data: authUserData, error: authUserError } = await supabase.auth.admin.getUserById(intent.user_id)
+      const purchaserEmail = authUserData?.user?.email ?? null
+
+      if (authUserError) {
+        console.error('[webhooks/sumup][email] auth lookup error:', authUserError.message)
+      }
+
+      if (!purchaserEmail) {
+        console.log('[webhooks/sumup][email] no email found for user:', intent.user_id)
+      } else {
+        // b) Fetch campaign title
+        const { data: emailCampaign } = await supabase
+          .from('campaigns')
+          .select('title')
+          .eq('id', intent.campaign_id)
+          .single()
+
+        const campaignTitle = emailCampaign?.title ?? 'WTF Giveaway'
+
+        // c) Fetch entry by checkout_intent_id
+        const { data: entry } = await supabase
+          .from('entries')
+          .select('id')
+          .eq('checkout_intent_id', intent.id)
+          .single()
+
+        let ticketLabel = ''
+        if (entry) {
+          // d) Fetch ticket allocation
+          const { data: allocation } = await supabase
+            .from('ticket_allocations')
+            .select('start_ticket, end_ticket')
+            .eq('entry_id', entry.id)
+            .single()
+
+          if (allocation) {
+            if (allocation.start_ticket === allocation.end_ticket) {
+              ticketLabel = `Ticket number: ${allocation.start_ticket}`
+            } else {
+              ticketLabel = `Ticket numbers: ${allocation.start_ticket}-${allocation.end_ticket}`
+            }
+          }
+        }
+
+        // e) Build email content
+        const qty = intent.qty ?? 1
+        const subject = 'Your WTF Giveaways tickets are confirmed'
+        const text = `Thank you for your purchase!\n\nCampaign: ${campaignTitle}\nQuantity: ${qty} ticket${qty > 1 ? 's' : ''}\n${ticketLabel}\n\nGood luck!`
+        const html = `
+          <p>Thank you for your purchase!</p>
+          <p><strong>Campaign:</strong> ${campaignTitle}</p>
+          <p><strong>Quantity:</strong> ${qty} ticket${qty > 1 ? 's' : ''}</p>
+          ${ticketLabel ? `<p><strong>${ticketLabel}</strong></p>` : ''}
+          <p>Good luck!</p>
+        `.trim()
+
+        const resendApiKey = process.env.RESEND_API_KEY
+        const resendFrom = process.env.RESEND_FROM
+
+        if (!resendApiKey || !resendFrom) {
+          console.warn('[webhooks/sumup][email] RESEND_API_KEY or RESEND_FROM not configured')
+        } else {
+          // f) Send email
+          await sendResendEmail({
+            apiKey: resendApiKey,
+            from: resendFrom,
+            to: purchaserEmail,
+            subject,
+            text,
+            html,
+          })
+
+          console.log('[webhooks/sumup][email] sent to:', purchaserEmail)
+
+          // g) Mark email as sent
+          await supabase
+            .from('checkout_intents')
+            .update({ confirmation_email_sent_at: new Date().toISOString() })
+            .eq('id', intent.id)
+        }
+      }
+    }
+  } catch (emailErr: any) {
+    // Log but do NOT fail the webhook response
+    console.error('[webhooks/sumup][email] error (non-fatal):', emailErr?.message)
+  }
+  // === END POST-PURCHASE CONFIRMATION EMAIL ===
 
   // === INSTANT MAIN DRAW TRIGGER (best-effort, non-blocking) ===
   // Trigger the existing draw route immediately if sold out OR end time passed
