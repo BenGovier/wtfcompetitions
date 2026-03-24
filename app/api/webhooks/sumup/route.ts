@@ -188,7 +188,7 @@ export async function POST(request: NextRequest) {
 
         if (!purchaserEmail) {
           console.log('[webhooks/sumup][email] no email found for user:', intent.user_id)
-          sendSucceeded = true // No email to send, but not a failure
+          // sendSucceeded stays false - rollback claim so retry can attempt if email is added later
         } else {
           // b) Fetch campaign title
           const { data: emailCampaign } = await supabase
@@ -241,7 +241,7 @@ export async function POST(request: NextRequest) {
 
           if (!resendApiKey || !resendFrom) {
             console.warn('[webhooks/sumup][email] RESEND_API_KEY or RESEND_FROM not configured')
-            sendSucceeded = true // Config issue, not a send failure
+            // sendSucceeded stays false - rollback claim so retry can attempt when config is fixed
           } else {
             // f) Send email
             await sendResendEmail({
