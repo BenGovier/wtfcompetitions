@@ -229,11 +229,95 @@ export async function POST(request: NextRequest) {
           const subject = 'Your WTF Giveaways tickets are confirmed'
           const text = `Thank you for your purchase!\n\nCampaign: ${campaignTitle}\nQuantity: ${qty} ticket${qty > 1 ? 's' : ''}\n${ticketLabel}\n\nGood luck!`
           const html = `
-            <p>Thank you for your purchase!</p>
-            <p><strong>Campaign:</strong> ${campaignTitle}</p>
-            <p><strong>Quantity:</strong> ${qty} ticket${qty > 1 ? 's' : ''}</p>
-            ${ticketLabel ? `<p><strong>${ticketLabel}</strong></p>` : ''}
-            <p>Good luck!</p>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Your Tickets Are Confirmed</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #FDF2F8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #FDF2F8;">
+    <tr>
+      <td align="center" style="padding: 40px 20px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width: 520px; background-color: #FFFFFF; border-radius: 16px; box-shadow: 0 4px 24px rgba(236, 72, 153, 0.12);">
+          <!-- Logo -->
+          <tr>
+            <td align="center" style="padding: 32px 32px 24px 32px;">
+              <img src="https://www.wtf-giveaways.co.uk/images/wtf-logo.jpg" alt="WTF Giveaways" width="140" style="display: block; border: 0; border-radius: 8px;">
+            </td>
+          </tr>
+          <!-- Heading -->
+          <tr>
+            <td align="center" style="padding: 0 32px 24px 32px;">
+              <h1 style="margin: 0; font-size: 24px; font-weight: 700; color: #1F2937; line-height: 1.3;">Your Tickets Are Confirmed!</h1>
+              <p style="margin: 12px 0 0 0; font-size: 15px; color: #6B7280; line-height: 1.5;">Thank you for your purchase</p>
+            </td>
+          </tr>
+          <!-- Purchase Details -->
+          <tr>
+            <td style="padding: 0 32px 24px 32px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #F9FAFB; border-radius: 12px;">
+                <tr>
+                  <td style="padding: 20px;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="padding-bottom: 12px; border-bottom: 1px solid #E5E7EB;">
+                          <p style="margin: 0 0 4px 0; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #9CA3AF;">Campaign</p>
+                          <p style="margin: 0; font-size: 16px; font-weight: 600; color: #1F2937;">${campaignTitle}</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 12px 0; border-bottom: 1px solid #E5E7EB;">
+                          <p style="margin: 0 0 4px 0; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #9CA3AF;">Quantity</p>
+                          <p style="margin: 0; font-size: 16px; font-weight: 600; color: #1F2937;">${qty} ticket${qty > 1 ? 's' : ''}</p>
+                        </td>
+                      </tr>
+                      ${ticketLabel ? `
+                      <tr>
+                        <td style="padding-top: 12px;">
+                          <p style="margin: 0 0 4px 0; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #9CA3AF;">Your Ticket${qty > 1 ? 's' : ''}</p>
+                          <p style="margin: 0; font-size: 20px; font-weight: 700; color: #EC4899; letter-spacing: 0.5px;">${ticketLabel.replace('Ticket number: ', '').replace('Ticket numbers: ', '')}</p>
+                        </td>
+                      </tr>
+                      ` : ''}
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <!-- Instant Win Reminder -->
+          <tr>
+            <td style="padding: 0 32px 24px 32px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background: linear-gradient(135deg, #EC4899 0%, #F472B6 100%); border-radius: 12px;">
+                <tr>
+                  <td style="padding: 20px; text-align: center;">
+                    <p style="margin: 0; font-size: 15px; font-weight: 600; color: #FFFFFF; line-height: 1.5;">Won an instant win? Make sure you are on LIVE so pop your balloon!</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <!-- Good Luck -->
+          <tr>
+            <td align="center" style="padding: 0 32px 32px 32px;">
+              <p style="margin: 0; font-size: 18px; font-weight: 600; color: #1F2937;">Good luck!</p>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 24px 32px; background-color: #F9FAFB; border-radius: 0 0 16px 16px; border-top: 1px solid #E5E7EB;">
+              <p style="margin: 0 0 8px 0; font-size: 13px; color: #6B7280; text-align: center; line-height: 1.5;">Want help? Email <a href="mailto:ben@wtf-giveaways.co.uk" style="color: #EC4899; text-decoration: none; font-weight: 500;">ben@wtf-giveaways.co.uk</a></p>
+              <p style="margin: 0; font-size: 12px; color: #9CA3AF; text-align: center;">WTF Giveaways</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
           `.trim()
 
           const resendApiKey = process.env.RESEND_API_KEY
