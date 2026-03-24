@@ -42,7 +42,7 @@ function formatTimeAgo(dateString: string): string {
 export function WinnersPageClient({ winners }: WinnersPageClientProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [timeFilter, setTimeFilter] = useState<"all" | "week" | "month">("all")
-  const [typeFilter, setTypeFilter] = useState<"all" | "main" | "instant">("all")
+  const [typeFilter, setTypeFilter] = useState<"all" | "main" | "instant">("instant")
 
   // Find the latest main winner for the spotlight
   const latestMainWinner = useMemo(() => {
@@ -85,37 +85,31 @@ export function WinnersPageClient({ winners }: WinnersPageClientProps) {
 
   return (
     <>
-      {/* Latest Main Winner Spotlight */}
+      {/* Latest Main Winner Spotlight - TEMPORARILY DISABLED
       {latestMainWinner && (
         <div className="mb-8">
           <Card className="relative overflow-hidden border-2 border-amber-400/60 bg-gradient-to-r from-amber-50 via-background to-amber-50/50 dark:from-amber-950/30 dark:via-background dark:to-amber-950/20">
-            {/* Decorative elements */}
             <div className="absolute -left-10 -top-10 h-40 w-40 rounded-full bg-amber-400/10 blur-2xl" />
             <div className="absolute -bottom-10 -right-10 h-40 w-40 rounded-full bg-amber-400/10 blur-2xl" />
 
             <CardContent className="relative p-6 md:p-8">
               <div className="flex flex-col items-center text-center md:flex-row md:items-start md:text-left md:gap-6">
-                {/* Trophy badge */}
                 <div className="mb-4 flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-amber-500 shadow-lg md:mb-0">
                   <Trophy className="h-10 w-10 text-white" aria-hidden="true" />
                 </div>
 
                 <div className="flex-1">
-                  {/* Label */}
                   <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-amber-700 dark:bg-amber-900/50 dark:text-amber-400">
                     <Sparkles className="h-3 w-3" aria-hidden="true" />
                     Latest Main Winner
                   </div>
 
-                  {/* Winner name */}
                   <h2 className="text-2xl font-bold text-foreground md:text-3xl">{latestMainWinner.name}</h2>
 
-                  {/* Prize */}
                   <p className="mt-1 text-lg font-semibold text-amber-600 dark:text-amber-400">
                     {latestMainWinner.prizeTitle}
                   </p>
 
-                  {/* Meta */}
                   <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-sm text-muted-foreground md:justify-start">
                     <span>{latestMainWinner.giveawayTitle}</span>
                     <span className="text-amber-600 dark:text-amber-400">
@@ -138,6 +132,7 @@ export function WinnersPageClient({ winners }: WinnersPageClientProps) {
           </Card>
         </div>
       )}
+      */}
 
       {/* Filters */}
       <div className="mb-6">
