@@ -6,7 +6,9 @@ interface FeedItem {
   id: string
   created_at: string
   campaign_title: string
-  user_display: string | null
+  nickname: string | null
+  real_name: string | null
+  mobile: string | null
   instant_win_title: string | null
 }
 
@@ -112,7 +114,12 @@ export function LiveActivityFeed() {
               {formatExactTime(item.created_at)} · {formatRelativeTime(item.created_at)}
             </p>
             <p className="text-sm">
-              <span className="font-medium">{item.user_display ?? 'User'}</span> — {item.campaign_title}
+              <span className="font-medium">
+                {item.nickname || item.real_name || item.mobile || 'User'}
+              </span>
+              {item.real_name && item.nickname && item.real_name !== item.nickname ? ` (${item.real_name})` : ''}
+              {item.mobile ? ` — ${item.mobile}` : ''}
+              {' — '}{item.campaign_title}
             </p>
             <div className="text-sm">
               <span className="text-amber-600 dark:text-amber-400">
