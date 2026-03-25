@@ -15,11 +15,11 @@ export function SiteFooter() {
             <div className="lg:col-span-1">
               <Link href="/" className="inline-block">
                 <Image
-                  src="/images/wtf-logo.jpg"
+                  src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/wtf%20giveaways-44sBKQ2LLlITcFCzv4O7eNndkytyDq.png"
                   alt="WTF Giveaways"
-                  width={120}
-                  height={120}
-                  className="rounded-lg"
+                  width={140}
+                  height={140}
+                  className="rounded-full"
                 />
               </Link>
             </div>
