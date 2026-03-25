@@ -65,9 +65,9 @@ export async function GET(request: NextRequest) {
 
   // 5b) Fetch ticket counter
   const { data: counterRow } = await supabase
-    .from('giveaway_ticket_counters')
+    .from('campaign_ticket_counters')
     .select('next_ticket')
-    .eq('giveaway_id', campaign.id)
+    .eq('campaign_id', campaign.id)
     .maybeSingle()
 
   const nextTicket = counterRow?.next_ticket ?? 1
