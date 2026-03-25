@@ -80,6 +80,15 @@ export function SiteFooter() {
             <div>
               <h3 className="mb-4 text-xs font-semibold uppercase tracking-wider text-amber-400">Follow Us</h3>
               <p className="text-sm leading-relaxed text-white/80">Stay updated with our latest giveaways and winners.</p>
+              
+              <h3 className="mb-4 mt-6 text-xs font-semibold uppercase tracking-wider text-amber-400">Payment Types</h3>
+              <Image
+                src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Untitled%20design%20%2817%29-IXinmpe821p938Q4FG0Seo5w1jjgBO.png"
+                alt="We accept Mastercard, Visa, Apple Pay, and Google Pay"
+                width={200}
+                height={40}
+                className="opacity-90"
+              />
             </div>
           </div>
 
