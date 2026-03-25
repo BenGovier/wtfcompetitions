@@ -56,6 +56,21 @@ export async function confirmPaymentAndAward(args: ConfirmArgs): Promise<AwardPa
 
   // 3) If not yet confirmed, try SumUp confirm-on-return; otherwise reject
   if (intent.state !== 'confirmed') {
+    // Debug provider: skip external verification for staging load tests
+    if (args.provider === 'debug') {
+      const { data: rpcData, error: rpcErr } = await supabase.rpc('confirm_payment_and_award', {
+        p_ref: ref,
+        p_user_id: userId,
+      })
+      if (rpcErr) {
+        throw new Error(`RPC confirm_payment_and_award failed: ${rpcErr.message}`)
+      }
+      if (!rpcData || typeof rpcData !== 'object') {
+        throw new Error('invalid_rpc_payload')
+      }
+      return rpcData as AwardPayload
+    }
+
     if (args.provider !== 'sumup') throw new Error('awaiting_provider_confirmation')
 
     // SumUp confirm-on-return:

@@ -4,13 +4,12 @@ import { useEffect, useState } from "react"
 
 interface FeedItem {
   id: string
-  qty: number
   created_at: string
   campaign_title: string
-  user_display: string | null
-  won_instant_win: boolean
+  nickname: string | null
+  real_name: string | null
+  mobile: string | null
   instant_win_title: string | null
-  awarded_at: string | null
 }
 
 function formatRelativeTime(dateString: string): string {
@@ -63,7 +62,7 @@ export function LiveActivityFeed() {
 
     fetchFeed()
 
-    const interval = setInterval(fetchFeed, 3000)
+    const interval = setInterval(fetchFeed, 5000)
 
     return () => {
       mounted = false
@@ -108,29 +107,25 @@ export function LiveActivityFeed() {
       {items.map((item) => (
         <div key={item.id} className="flex items-start gap-3">
           <span className="text-base" aria-hidden="true">
-            {item.won_instant_win ? "🎉" : "🎟"}
+            🎉
           </span>
           <div className="flex-1 space-y-1">
             <p className="text-xs text-muted-foreground">
               {formatExactTime(item.created_at)} · {formatRelativeTime(item.created_at)}
             </p>
             <p className="text-sm">
-              <span className="font-medium">{item.user_display}</span> entered {item.qty} {item.qty === 1 ? "ticket" : "tickets"} — {item.campaign_title}
+              <span className="font-medium">
+                {item.nickname || item.real_name || item.mobile || 'User'}
+              </span>
+              {item.real_name && item.nickname && item.real_name !== item.nickname ? ` (${item.real_name})` : ''}
+              {item.mobile ? ` — ${item.mobile}` : ''}
+              {' — '}{item.campaign_title}
             </p>
-            {item.won_instant_win ? (
-              <div className="text-sm">
-                <span className="text-amber-600 dark:text-amber-400">
-                  Instant win: {item.instant_win_title}
-                </span>
-                {item.awarded_at && (
-                  <span className="text-xs text-muted-foreground ml-2">
-                    at {formatExactTime(item.awarded_at)}
-                  </span>
-                )}
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">No instant win</p>
-            )}
+            <div className="text-sm">
+              <span className="text-amber-600 dark:text-amber-400">
+                {item.instant_win_title ?? 'Instant win'}
+              </span>
+            </div>
           </div>
         </div>
       ))}

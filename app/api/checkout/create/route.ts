@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { randomUUID } from 'crypto'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 const NO_STORE = { headers: { 'Cache-Control': 'no-store' } }
+const STAGING_BYPASS_USER_ID = '00000000-0000-0000-0000-000000000000'
 
 export async function POST(request: Request) {
   // 1) Auth
@@ -14,8 +16,20 @@ export async function POST(request: Request) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  if (!user) {
+  const allowStagingCheckoutBypass =
+    process.env.VERCEL_ENV === 'preview' &&
+    process.env.ALLOW_STAGING_CHECKOUT_BYPASS === 'true'
+
+  const resolvedUser = user ?? (allowStagingCheckoutBypass ? { id: STAGING_BYPASS_USER_ID } : null)
+
+  if (!resolvedUser) {
     return NextResponse.json({ ok: false, error: 'Not authenticated' }, { status: 401, ...NO_STORE })
+  }
+
+  if (!user && allowStagingCheckoutBypass) {
+    console.warn('[checkout/create] using staging auth bypass', {
+      bypassUserId: STAGING_BYPASS_USER_ID,
+    })
   }
 
   // 2) Parse body
@@ -56,7 +70,7 @@ export async function POST(request: Request) {
     const { data: confirmedRows } = await supabase
       .from('checkout_intents')
       .select('qty')
-      .eq('user_id', user.id)
+      .eq('user_id', resolvedUser.id)
       .eq('campaign_id', campaignId)
       .not('confirmed_at', 'is', null)
 
@@ -113,12 +127,20 @@ export async function POST(request: Request) {
   const providerSessionId = randomUUID()
 
   // 4) Insert checkout_intent
-  const { error: insertErr } = await supabase
+  const insertClient =
+    !user && allowStagingCheckoutBypass
+      ? createAdminClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.SUPABASE_SERVICE_ROLE_KEY!
+        )
+      : supabase
+
+  const { error: insertErr } = await insertClient
     .from('checkout_intents')
     .insert({
       ref,
       idempotency_key: randomUUID(),
-      user_id: user.id,
+      user_id: resolvedUser.id,
       campaign_id: campaignId,
       giveaway_id: giveawayId,
       qty,
@@ -134,7 +156,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: 'Failed to create checkout intent' }, { status: 500, ...NO_STORE })
   }
 
-  console.log('[checkout/create] created intent', { ref, campaignId, giveawayId, qty })
+  console.log('[checkout/create] created intent', {
+    ref,
+    campaignId,
+    giveawayId,
+    qty,
+    userId: resolvedUser.id,
+    bypassedAuth: !user && allowStagingCheckoutBypass,
+  })
 
   return NextResponse.json({ ok: true, ref, providerSessionId }, NO_STORE)
 }
