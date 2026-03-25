@@ -31,7 +31,7 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
     .select('payload')
     .in('kind', ['detail', 'list'])
     .order('generated_at', { ascending: false })
-    .limit(20)
+    .limit(10)
 
   if (error) {
     console.error('[giveaways/[slug]] snapshot fetch failed', {
