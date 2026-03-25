@@ -120,24 +120,17 @@ export async function GET(request: NextRequest) {
     next_ticket: nextTicket,
   }
 
-  // 7) Delete existing snapshots for this campaign
-  await supabase
-    .from('giveaway_snapshots')
-    .delete()
-    .eq('giveaway_id', campaign.id)
-    .in('kind', ['list', 'detail'])
-
-  // 8) Insert new snapshots
+  // 7) Upsert snapshots (atomic - no delete required)
   const generatedAt = new Date().toISOString()
 
   const { error: listErr } = await supabase
     .from('giveaway_snapshots')
-    .insert({
+    .upsert({
       giveaway_id: campaign.id,
       kind: 'list',
       generated_at: generatedAt,
       payload: listPayload,
-    })
+    }, { onConflict: 'giveaway_id,kind' })
 
   if (listErr) {
     console.error('[refresh-giveaway-snapshots] list insert failed', listErr)
@@ -146,12 +139,12 @@ export async function GET(request: NextRequest) {
 
   const { error: detailErr } = await supabase
     .from('giveaway_snapshots')
-    .insert({
+    .upsert({
       giveaway_id: campaign.id,
       kind: 'detail',
       generated_at: generatedAt,
       payload: detailPayload,
-    })
+    }, { onConflict: 'giveaway_id,kind' })
 
   if (detailErr) {
     console.error('[refresh-giveaway-snapshots] detail insert failed', detailErr)

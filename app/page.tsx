@@ -1,14 +1,11 @@
-// TEMP EMERGENCY HOTFIX - Remove all blocking DB calls to make homepage load instantly
-// This file was modified to bypass Supabase during high traffic/outage
-// Revert by restoring git history when DB is stable
-
 import { Button } from "@/components/ui/button"
 import { TrustBadges } from "@/components/trust-badges"
 import Link from "next/link"
 import Image from "next/image"
 import { ArrowRight } from "lucide-react"
+import { createClient } from "@/lib/supabase/server"
 
-// TEMP: Hardcoded fallback data - no network calls
+// Emergency fallback data - used if snapshot query fails
 const emergencyFeaturedGiveaway = {
   title: 'Super Holiday',
   subtitle: 'Enter now for your chance to win our live Super Holiday giveaway.',
@@ -17,8 +14,18 @@ const emergencyFeaturedGiveaway = {
   ctaLabel: 'Enter Now',
 }
 
-export default function HomePage() {
-  // TEMP: Removed async and all Supabase calls for emergency performance
+export default async function HomePage() {
+  // Fetch giveaway snapshots from Supabase
+  const supabase = await createClient()
+
+  const { data } = await supabase
+    .from('giveaway_snapshots')
+    .select('payload')
+    .eq('kind', 'list')
+    .order('generated_at', { ascending: false })
+    .limit(6)
+
+  const giveaways = (data ?? []).map((x: any) => x.payload)
 
   return (
     <>
@@ -69,7 +76,7 @@ export default function HomePage() {
 
     <div className="min-h-screen bg-gradient-to-b from-[#1a002b] via-[#2d0050] to-[#0a0014]">
       <div className="container px-4 py-8 md:py-16">
-      {/* Featured Giveaways - TEMP: Static fallback card */}
+      {/* Featured Giveaways */}
       <section className="mb-16">
         <div>
           <div className="flex items-center justify-between">
@@ -85,20 +92,41 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* TEMP: Single static featured giveaway card instead of dynamic DB cards */}
-        <div className="mt-6">
-          <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm p-6 md:p-8">
-            <div className="flex flex-col items-center text-center gap-4">
-              <span className="inline-flex items-center rounded-full bg-green-500/20 px-3 py-1 text-sm font-medium text-green-400">
-                {emergencyFeaturedGiveaway.status}
-              </span>
-              <h3 className="text-2xl font-bold text-white md:text-3xl">{emergencyFeaturedGiveaway.title}</h3>
-              <p className="text-white/70 max-w-md">{emergencyFeaturedGiveaway.subtitle}</p>
-              <Button size="lg" className="mt-4 rounded-xl bg-gradient-to-r from-[#FFD700] to-[#FFA500] text-black font-semibold shadow-md transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg" asChild>
-                <Link href={emergencyFeaturedGiveaway.ctaHref}>{emergencyFeaturedGiveaway.ctaLabel}</Link>
-              </Button>
+        {/* Giveaway cards */}
+        <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {giveaways.length > 0 ? (
+            giveaways.map((giveaway: any) => (
+              <div
+                key={giveaway.slug}
+                className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm p-6"
+              >
+                <div className="flex flex-col items-center text-center gap-4">
+                  <span className="inline-flex items-center rounded-full bg-green-500/20 px-3 py-1 text-sm font-medium text-green-400">
+                    {giveaway.status === 'live' ? 'Live now' : giveaway.status}
+                  </span>
+                  <h3 className="text-xl font-bold text-white">{giveaway.title}</h3>
+                  <p className="text-white/70 text-sm">{giveaway.prize_title}</p>
+                  <Button size="sm" className="mt-2 rounded-xl bg-gradient-to-r from-[#FFD700] to-[#FFA500] text-black font-semibold shadow-md transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg" asChild>
+                    <Link href={`/giveaways/${giveaway.slug}`}>Enter Now</Link>
+                  </Button>
+                </div>
+              </div>
+            ))
+          ) : (
+            // Emergency fallback - single static card
+            <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm p-6 md:p-8 sm:col-span-2 lg:col-span-3">
+              <div className="flex flex-col items-center text-center gap-4">
+                <span className="inline-flex items-center rounded-full bg-green-500/20 px-3 py-1 text-sm font-medium text-green-400">
+                  {emergencyFeaturedGiveaway.status}
+                </span>
+                <h3 className="text-2xl font-bold text-white md:text-3xl">{emergencyFeaturedGiveaway.title}</h3>
+                <p className="text-white/70 max-w-md">{emergencyFeaturedGiveaway.subtitle}</p>
+                <Button size="lg" className="mt-4 rounded-xl bg-gradient-to-r from-[#FFD700] to-[#FFA500] text-black font-semibold shadow-md transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg" asChild>
+                  <Link href={emergencyFeaturedGiveaway.ctaHref}>{emergencyFeaturedGiveaway.ctaLabel}</Link>
+                </Button>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </section>
       </div>
