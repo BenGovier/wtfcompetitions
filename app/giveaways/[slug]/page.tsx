@@ -25,51 +25,27 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
   const { slug } = await params
   const supabase = createPublicClient()
 
-  // 1) Try detail snapshot
-  const { data: detailData, error: detailErr } = await supabase
+  // Single indexed query - no JSONB scan
+  const { data, error } = await supabase
     .from('giveaway_snapshots')
     .select('payload')
-    .eq('kind', 'detail')
-    .contains('payload', { slug })
+    .in('kind', ['detail', 'list'])
     .order('generated_at', { ascending: false })
-    .limit(1)
+    .limit(20)
 
-  if (detailErr) {
-    console.error('[giveaways/[slug]] detail fetch failed', {
+  if (error) {
+    console.error('[giveaways/[slug]] snapshot fetch failed', {
       slug,
-      message: detailErr.message,
-      code: (detailErr as any).code,
+      message: error.message,
+      code: (error as any).code,
     })
   }
 
-  const detailRow = detailData?.[0] ?? null
-
-  // 2) Fallback to list snapshot if no detail
-  let listRow: typeof detailRow = null
-  if (!detailRow) {
-    const { data: listData, error: listErr } = await supabase
-      .from('giveaway_snapshots')
-      .select('payload')
-      .eq('kind', 'list')
-      .contains('payload', { slug })
-      .order('generated_at', { ascending: false })
-      .limit(1)
-
-    if (listErr) {
-      console.error('[giveaways/[slug]] list fetch failed', {
-        slug,
-        message: listErr.message,
-        code: (listErr as any).code,
-      })
-    }
-
-    listRow = listData?.[0] ?? null
-  }
-
-  const row = detailRow || listRow
+  // In-memory filter to find matching slug (detail preferred over list due to order)
+  const row = data?.find((x) => x.payload?.slug === slug) ?? null
 
   if (!row) {
-    console.error('[giveaways/[slug]] snapshot missing', { slug, detailFound: !!detailRow, listFound: !!listRow })
+    console.error('[giveaways/[slug]] snapshot missing', { slug })
     notFound()
   }
 
