@@ -25,7 +25,9 @@ export default async function HomePage() {
     .order('generated_at', { ascending: false })
     .limit(6)
 
-  const giveaways = (data ?? []).map((x: any) => x.payload)
+  const giveaways = (data ?? [])
+    .map((x: any) => x.payload)
+    .filter((g: any) => g?.status === 'live')
 
   return (
     <>
