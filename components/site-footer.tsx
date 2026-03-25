@@ -69,6 +69,11 @@ export function SiteFooter() {
                     Website Terms of Use
                   </Link>
                 </li>
+                <li>
+                  <Link href="/legal/cookies" className="text-white/80 transition-colors hover:text-amber-400">
+                    Cookie Policy
+                  </Link>
+                </li>
               </ul>
             </div>
 
