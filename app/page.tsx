@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button"
 import { TrustBadges } from "@/components/trust-badges"
 import Link from "next/link"
 import Image from "next/image"
-import { ArrowRight, Clock, Ticket } from "lucide-react"
+import { ArrowRight, Clock } from "lucide-react"
 import { createClient } from "@/lib/supabase/server"
 
 // Helper to format countdown from ends_at
@@ -114,9 +114,6 @@ export default async function HomePage() {
           {giveaways.length > 0 ? (
             giveaways.map((giveaway: any) => {
               const timeLeft = formatTimeLeft(giveaway.ends_at)
-              const ticketsSold = giveaway.tickets_sold ?? 0
-              const maxTickets = giveaway.max_tickets ?? null
-              const percentSold = maxTickets && maxTickets > 0 ? Math.min(Math.round((ticketsSold / maxTickets) * 100), 100) : null
 
               return (
                 <Link
@@ -162,33 +159,8 @@ export default async function HomePage() {
                       <p className="mt-1 text-sm text-white/60 line-clamp-1">{giveaway.prize_title}</p>
                     )}
 
-                    {/* Stats row */}
+                    {/* Enter button */}
                     <div className="mt-auto pt-4">
-                      {/* Progress bar (only if max_tickets exists) */}
-                      {percentSold !== null && (
-                        <div className="mb-3">
-                          <div className="flex items-center justify-between text-xs text-white/60 mb-1">
-                            <span>{ticketsSold.toLocaleString()} sold</span>
-                            <span>{percentSold}%</span>
-                          </div>
-                          <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
-                            <div
-                              className="h-full rounded-full bg-gradient-to-r from-amber-400 to-amber-500 transition-all duration-500"
-                              style={{ width: `${percentSold}%` }}
-                            />
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Tickets sold (if no progress bar) */}
-                      {percentSold === null && ticketsSold > 0 && (
-                        <div className="mb-3 flex items-center gap-1.5 text-sm text-white/60">
-                          <Ticket className="h-4 w-4" />
-                          <span>{ticketsSold.toLocaleString()} tickets sold</span>
-                        </div>
-                      )}
-
-                      {/* Enter button */}
                       <div className="rounded-xl bg-gradient-to-r from-[#FFD700] to-[#FFA500] p-[1px]">
                         <div className="flex items-center justify-center rounded-xl bg-gradient-to-r from-[#FFD700] to-[#FFA500] px-4 py-2.5 text-sm font-bold text-black transition-all group-hover:shadow-lg">
                           Enter Now
