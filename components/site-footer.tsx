@@ -45,6 +45,11 @@ export function SiteFooter() {
                   Privacy Policy
                 </Link>
               </li>
+              <li>
+                <Link href="/legal/website-terms-of-use" className="transition-colors hover:text-foreground">
+                  Website Terms of Use
+                </Link>
+              </li>
             </ul>
           </div>
 
