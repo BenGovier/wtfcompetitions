@@ -83,11 +83,10 @@ export function SiteFooter() {
               
               <h3 className="mb-4 mt-6 text-xs font-semibold uppercase tracking-wider text-amber-400">Payment Types</h3>
               <Image
-                src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Untitled%20design%20%2817%29-IXinmpe821p938Q4FG0Seo5w1jjgBO.png"
+                src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Untitled%20design%20%2818%29-8FEYI4LGhbATnHZxSbQGUzlEQ01oWe.png"
                 alt="We accept Mastercard, Visa, Apple Pay, and Google Pay"
                 width={200}
                 height={40}
-                className="opacity-90"
               />
             </div>
           </div>
