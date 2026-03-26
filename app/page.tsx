@@ -2,22 +2,20 @@ import { Button } from "@/components/ui/button"
 import { TrustBadges } from "@/components/trust-badges"
 import Link from "next/link"
 import Image from "next/image"
-import { ArrowRight, Clock } from "lucide-react"
+import { ArrowRight } from "lucide-react"
 import { createClient } from "@/lib/supabase/server"
 
-// Helper to format countdown from ends_at
-function formatTimeLeft(endsAt: string | null | undefined): string | null {
+// Helper to parse countdown parts from ends_at
+function getCountdownParts(endsAt: string | null | undefined): { days: number; hours: number; minutes: number } | null {
   if (!endsAt) return null
   const now = new Date()
   const end = new Date(endsAt)
   const diff = end.getTime() - now.getTime()
-  if (diff <= 0) return 'Ended'
+  if (diff <= 0 || !Number.isFinite(diff)) return null
   const days = Math.floor(diff / (1000 * 60 * 60 * 24))
   const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
-  if (days > 0) return `${days}d ${hours}h left`
   const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
-  if (hours > 0) return `${hours}h ${minutes}m left`
-  return `${minutes}m left`
+  return { days, hours, minutes }
 }
 
 // Emergency fallback data - used if snapshot query fails
@@ -113,7 +111,7 @@ export default async function HomePage() {
         <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {giveaways.length > 0 ? (
             giveaways.map((giveaway: any) => {
-              const timeLeft = formatTimeLeft(giveaway.ends_at)
+              const countdown = getCountdownParts(giveaway.ends_at)
               const sold = Number(giveaway.tickets_sold ?? 0)
               const cap = Number(giveaway.hard_cap_total_tickets ?? 0)
               const percentSold = cap > 0 ? Math.min(100, Math.floor((sold / cap) * 100)) : null
@@ -146,11 +144,26 @@ export default async function HomePage() {
 
                   {/* Content */}
                   <div className="flex flex-1 flex-col p-5">
-                    {/* Prominent countdown timer */}
-                    {timeLeft && (
-                      <div className="mb-3 flex items-center gap-2 rounded-lg bg-gradient-to-r from-amber-500/20 to-orange-500/20 px-3 py-2 border border-amber-500/30">
-                        <Clock className="h-4 w-4 text-amber-400" />
-                        <span className="text-sm font-bold text-amber-400">{timeLeft}</span>
+                    {/* Premium gold boxed countdown timer */}
+                    {countdown && (
+                      <div className="mb-4 rounded-xl bg-[#1a0a2e] p-3 border border-purple-500/30 shadow-lg shadow-purple-500/10">
+                        <p className="text-center text-[10px] font-bold uppercase tracking-widest text-amber-400/80 mb-2">Draw Ends In</p>
+                        <div className="flex items-center justify-center gap-2">
+                          <div className="flex flex-col items-center rounded-lg bg-purple-900/50 px-3 py-1.5 border border-purple-500/20">
+                            <span className="text-lg font-extrabold text-amber-400">{countdown.days}</span>
+                            <span className="text-[9px] font-medium uppercase tracking-wide text-white/50">Days</span>
+                          </div>
+                          <span className="text-amber-400/60 font-bold">:</span>
+                          <div className="flex flex-col items-center rounded-lg bg-purple-900/50 px-3 py-1.5 border border-purple-500/20">
+                            <span className="text-lg font-extrabold text-amber-400">{countdown.hours}</span>
+                            <span className="text-[9px] font-medium uppercase tracking-wide text-white/50">Hrs</span>
+                          </div>
+                          <span className="text-amber-400/60 font-bold">:</span>
+                          <div className="flex flex-col items-center rounded-lg bg-purple-900/50 px-3 py-1.5 border border-purple-500/20">
+                            <span className="text-lg font-extrabold text-amber-400">{countdown.minutes}</span>
+                            <span className="text-[9px] font-medium uppercase tracking-wide text-white/50">Min</span>
+                          </div>
+                        </div>
                       </div>
                     )}
 
