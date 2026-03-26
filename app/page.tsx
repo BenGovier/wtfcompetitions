@@ -114,6 +114,9 @@ export default async function HomePage() {
           {giveaways.length > 0 ? (
             giveaways.map((giveaway: any) => {
               const timeLeft = formatTimeLeft(giveaway.ends_at)
+              const sold = Number(giveaway.tickets_sold ?? 0)
+              const cap = Number(giveaway.hard_cap_total_tickets ?? 0)
+              const percentSold = cap > 0 ? Math.min(100, Math.floor((sold / cap) * 100)) : null
 
               return (
                 <Link
@@ -138,25 +141,40 @@ export default async function HomePage() {
                           Live
                         </span>
                       </div>
-                      {/* Time left badge */}
-                      {timeLeft && (
-                        <div className="absolute right-3 top-3">
-                          <span className="inline-flex items-center gap-1 rounded-full bg-black/70 px-2.5 py-1 text-xs font-medium text-white backdrop-blur-sm">
-                            <Clock className="h-3 w-3" />
-                            {timeLeft}
-                          </span>
-                        </div>
-                      )}
                     </div>
                   )}
 
                   {/* Content */}
                   <div className="flex flex-1 flex-col p-5">
+                    {/* Prominent countdown timer */}
+                    {timeLeft && (
+                      <div className="mb-3 flex items-center gap-2 rounded-lg bg-gradient-to-r from-amber-500/20 to-orange-500/20 px-3 py-2 border border-amber-500/30">
+                        <Clock className="h-4 w-4 text-amber-400" />
+                        <span className="text-sm font-bold text-amber-400">{timeLeft}</span>
+                      </div>
+                    )}
+
                     <h3 className="text-lg font-bold text-white line-clamp-2 group-hover:text-amber-400 transition-colors">
                       {giveaway.title}
                     </h3>
                     {giveaway.prize_title && (
                       <p className="mt-1 text-sm text-white/60 line-clamp-1">{giveaway.prize_title}</p>
+                    )}
+
+                    {/* Progress bar with scarcity */}
+                    {percentSold !== null && (
+                      <div className="mt-4">
+                        <div className="flex items-center justify-between text-xs mb-1.5">
+                          <span className="font-semibold text-white/80">{sold.toLocaleString()} / {cap.toLocaleString()} sold</span>
+                          <span className="font-bold text-amber-400">{percentSold}%</span>
+                        </div>
+                        <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/10">
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-500 transition-all duration-500"
+                            style={{ width: `${percentSold}%` }}
+                          />
+                        </div>
+                      </div>
                     )}
 
                     {/* Enter button */}
