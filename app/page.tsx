@@ -146,11 +146,16 @@ export default async function HomePage() {
 
                   {/* Content */}
                   <div className="flex flex-1 flex-col p-5">
-                    {/* Prominent countdown timer */}
+                    {/* Urgent boxed countdown timer */}
                     {timeLeft && (
-                      <div className="mb-3 flex items-center gap-2 rounded-lg bg-gradient-to-r from-amber-500/20 to-orange-500/20 px-3 py-2 border border-amber-500/30">
-                        <Clock className="h-4 w-4 text-amber-400" />
-                        <span className="text-sm font-bold text-amber-400">{timeLeft}</span>
+                      <div className="mb-4 rounded-xl bg-gradient-to-br from-red-900/40 via-orange-900/30 to-amber-900/40 p-3 border border-red-500/40 shadow-lg shadow-red-500/10">
+                        <div className="flex items-center justify-center gap-2 mb-1.5">
+                          <Clock className="h-4 w-4 text-red-400 animate-pulse" />
+                          <span className="text-xs font-bold uppercase tracking-wider text-red-400">Ending Soon</span>
+                        </div>
+                        <div className="text-center">
+                          <span className="text-xl font-extrabold text-white tracking-wide">{timeLeft}</span>
+                        </div>
                       </div>
                     )}
 
