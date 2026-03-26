@@ -5,8 +5,8 @@ import Image from "next/image"
 import { ArrowRight } from "lucide-react"
 import { createClient } from "@/lib/supabase/server"
 
-// Helper to parse countdown parts from ends_at
-function getCountdownParts(endsAt: string | null | undefined): { days: number; hours: number; minutes: number } | null {
+// Helper to format compact time left string
+function formatTimeLeft(endsAt: string | null | undefined): string | null {
   if (!endsAt) return null
   const now = new Date()
   const end = new Date(endsAt)
@@ -15,7 +15,9 @@ function getCountdownParts(endsAt: string | null | undefined): { days: number; h
   const days = Math.floor(diff / (1000 * 60 * 60 * 24))
   const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
   const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
-  return { days, hours, minutes }
+  if (days > 0) return `${days}d ${hours}h left`
+  if (hours > 0) return `${hours}h ${minutes}m left`
+  return `${minutes}m left`
 }
 
 // Emergency fallback data - used if snapshot query fails
@@ -111,9 +113,10 @@ export default async function HomePage() {
         <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {giveaways.length > 0 ? (
             giveaways.map((giveaway: any) => {
-              const countdown = getCountdownParts(giveaway.ends_at)
+              const timeLeft = formatTimeLeft(giveaway.ends_at)
               const sold = Number(giveaway.tickets_sold ?? 0)
               const cap = Number(giveaway.hard_cap_total_tickets ?? 0)
+              const remaining = Math.max(cap - sold, 0)
               const percentSold = cap > 0 ? Math.min(100, Math.floor((sold / cap) * 100)) : null
 
               return (
@@ -139,34 +142,19 @@ export default async function HomePage() {
                           Live
                         </span>
                       </div>
+                      {/* Compact time left badge */}
+                      {timeLeft && (
+                        <div className="absolute right-3 top-3">
+                          <span className="rounded-full bg-black/70 px-2.5 py-1 text-xs font-semibold text-amber-400 backdrop-blur-sm">
+                            {timeLeft}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )}
 
                   {/* Content */}
-                  <div className="flex flex-1 flex-col p-5">
-                    {/* Premium gold boxed countdown timer */}
-                    {countdown && (
-                      <div className="mb-4 rounded-xl bg-[#1a0a2e] p-3 border border-purple-500/30 shadow-lg shadow-purple-500/10">
-                        <p className="text-center text-[10px] font-bold uppercase tracking-widest text-amber-400/80 mb-2">Draw Ends In</p>
-                        <div className="flex items-center justify-center gap-2">
-                          <div className="flex flex-col items-center rounded-lg bg-purple-900/50 px-3 py-1.5 border border-purple-500/20">
-                            <span className="text-lg font-extrabold text-amber-400">{countdown.days}</span>
-                            <span className="text-[9px] font-medium uppercase tracking-wide text-white/50">Days</span>
-                          </div>
-                          <span className="text-amber-400/60 font-bold">:</span>
-                          <div className="flex flex-col items-center rounded-lg bg-purple-900/50 px-3 py-1.5 border border-purple-500/20">
-                            <span className="text-lg font-extrabold text-amber-400">{countdown.hours}</span>
-                            <span className="text-[9px] font-medium uppercase tracking-wide text-white/50">Hrs</span>
-                          </div>
-                          <span className="text-amber-400/60 font-bold">:</span>
-                          <div className="flex flex-col items-center rounded-lg bg-purple-900/50 px-3 py-1.5 border border-purple-500/20">
-                            <span className="text-lg font-extrabold text-amber-400">{countdown.minutes}</span>
-                            <span className="text-[9px] font-medium uppercase tracking-wide text-white/50">Min</span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
+                  <div className="flex flex-1 flex-col p-4">
                     <h3 className="text-lg font-bold text-white line-clamp-2 group-hover:text-amber-400 transition-colors">
                       {giveaway.title}
                     </h3>
@@ -174,16 +162,16 @@ export default async function HomePage() {
                       <p className="mt-1 text-sm text-white/60 line-clamp-1">{giveaway.prize_title}</p>
                     )}
 
-                    {/* Progress bar with scarcity */}
-                    {percentSold !== null && (
-                      <div className="mt-4">
+                    {/* Urgency strip - raffle page style */}
+                    {cap > 0 && (
+                      <div className="mt-3">
                         <div className="flex items-center justify-between text-xs mb-1.5">
-                          <span className="font-semibold text-white/80">{sold.toLocaleString()} / {cap.toLocaleString()} sold</span>
-                          <span className="font-bold text-amber-400">{percentSold}%</span>
+                          <span className="font-semibold text-green-400">{sold.toLocaleString()} tickets secured</span>
+                          <span className="font-bold text-amber-400">Only {remaining.toLocaleString()} remaining</span>
                         </div>
-                        <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/10">
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
                           <div
-                            className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-500 transition-all duration-500"
+                            className="h-full rounded-full bg-gradient-to-r from-green-500 to-amber-500 transition-all duration-500"
                             style={{ width: `${percentSold}%` }}
                           />
                         </div>
@@ -191,12 +179,10 @@ export default async function HomePage() {
                     )}
 
                     {/* Enter button */}
-                    <div className="mt-auto pt-4">
-                      <div className="rounded-xl bg-gradient-to-r from-[#FFD700] to-[#FFA500] p-[1px]">
-                        <div className="flex items-center justify-center rounded-xl bg-gradient-to-r from-[#FFD700] to-[#FFA500] px-4 py-2.5 text-sm font-bold text-black transition-all group-hover:shadow-lg">
-                          Enter Now
-                          <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
-                        </div>
+                    <div className="mt-auto pt-3">
+                      <div className="flex items-center justify-center rounded-xl bg-gradient-to-r from-[#FFD700] to-[#FFA500] px-4 py-2.5 text-sm font-bold text-black transition-all group-hover:shadow-lg">
+                        Enter Now
+                        <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
                       </div>
                     </div>
                   </div>
