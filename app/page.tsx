@@ -2,20 +2,20 @@ import { Button } from "@/components/ui/button"
 import { TrustBadges } from "@/components/trust-badges"
 import Link from "next/link"
 import Image from "next/image"
-import { ArrowRight } from "lucide-react"
+import { ArrowRight, Clock } from "lucide-react"
 import { createClient } from "@/lib/supabase/server"
 
-// Helper to format compact time left string
+// Helper to format countdown from ends_at
 function formatTimeLeft(endsAt: string | null | undefined): string | null {
   if (!endsAt) return null
   const now = new Date()
   const end = new Date(endsAt)
   const diff = end.getTime() - now.getTime()
-  if (diff <= 0 || !Number.isFinite(diff)) return null
+  if (diff <= 0) return 'Ended'
   const days = Math.floor(diff / (1000 * 60 * 60 * 24))
   const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
-  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
   if (days > 0) return `${days}d ${hours}h left`
+  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
   if (hours > 0) return `${hours}h ${minutes}m left`
   return `${minutes}m left`
 }
@@ -114,10 +114,6 @@ export default async function HomePage() {
           {giveaways.length > 0 ? (
             giveaways.map((giveaway: any) => {
               const timeLeft = formatTimeLeft(giveaway.ends_at)
-              const sold = Number(giveaway.tickets_sold ?? 0)
-              const cap = Number(giveaway.hard_cap_total_tickets ?? 0)
-              const remaining = Math.max(cap - sold, 0)
-              const percentSold = cap > 0 ? Math.min(100, Math.floor((sold / cap) * 100)) : null
 
               return (
                 <Link
@@ -142,10 +138,11 @@ export default async function HomePage() {
                           Live
                         </span>
                       </div>
-                      {/* Compact time left badge */}
+                      {/* Time left badge */}
                       {timeLeft && (
                         <div className="absolute right-3 top-3">
-                          <span className="rounded-full bg-black/70 px-2.5 py-1 text-xs font-semibold text-amber-400 backdrop-blur-sm">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-black/70 px-2.5 py-1 text-xs font-medium text-white backdrop-blur-sm">
+                            <Clock className="h-3 w-3" />
                             {timeLeft}
                           </span>
                         </div>
@@ -154,7 +151,7 @@ export default async function HomePage() {
                   )}
 
                   {/* Content */}
-                  <div className="flex flex-1 flex-col p-4">
+                  <div className="flex flex-1 flex-col p-5">
                     <h3 className="text-lg font-bold text-white line-clamp-2 group-hover:text-amber-400 transition-colors">
                       {giveaway.title}
                     </h3>
@@ -162,27 +159,13 @@ export default async function HomePage() {
                       <p className="mt-1 text-sm text-white/60 line-clamp-1">{giveaway.prize_title}</p>
                     )}
 
-                    {/* Urgency strip - raffle page style */}
-                    {cap > 0 && (
-                      <div className="mt-3">
-                        <div className="flex items-center justify-between text-xs mb-1.5">
-                          <span className="font-semibold text-green-400">{sold.toLocaleString()} tickets secured</span>
-                          <span className="font-bold text-amber-400">Only {remaining.toLocaleString()} remaining</span>
-                        </div>
-                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-                          <div
-                            className="h-full rounded-full bg-gradient-to-r from-green-500 to-amber-500 transition-all duration-500"
-                            style={{ width: `${percentSold}%` }}
-                          />
-                        </div>
-                      </div>
-                    )}
-
                     {/* Enter button */}
-                    <div className="mt-auto pt-3">
-                      <div className="flex items-center justify-center rounded-xl bg-gradient-to-r from-[#FFD700] to-[#FFA500] px-4 py-2.5 text-sm font-bold text-black transition-all group-hover:shadow-lg">
-                        Enter Now
-                        <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+                    <div className="mt-auto pt-4">
+                      <div className="rounded-xl bg-gradient-to-r from-[#FFD700] to-[#FFA500] p-[1px]">
+                        <div className="flex items-center justify-center rounded-xl bg-gradient-to-r from-[#FFD700] to-[#FFA500] px-4 py-2.5 text-sm font-bold text-black transition-all group-hover:shadow-lg">
+                          Enter Now
+                          <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+                        </div>
                       </div>
                     </div>
                   </div>

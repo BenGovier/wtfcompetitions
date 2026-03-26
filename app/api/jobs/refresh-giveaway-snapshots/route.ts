@@ -95,7 +95,6 @@ export async function GET(request: NextRequest) {
     tickets_sold: ticketsSold,
     next_ticket: nextTicket,
     bundles: campaign.bundles ?? null,
-    hard_cap_total_tickets: campaign.max_tickets_total,
   }
 
   const detailPayload = {
