@@ -42,7 +42,12 @@ export default async function GiveawaysPage() {
 
   const giveaways = (data ?? [])
     .map((x: any) => x.payload)
-    .filter((g: any) => g?.status === 'live')
+    .filter((g: any) => {
+      if (!g || g.status !== 'live' || !g.ends_at) return false
+      const endsAt = new Date(g.ends_at).getTime()
+      return Number.isFinite(endsAt) && endsAt > Date.now()
+    })
+    .sort((a: any, b: any) => new Date(a.ends_at).getTime() - new Date(b.ends_at).getTime())
 
   // Use emergency fallback only if no live giveaways from snapshots
   const displayGiveaways = giveaways.length > 0 ? giveaways : emergencyGiveaways
