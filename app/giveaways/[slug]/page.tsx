@@ -78,9 +78,6 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
     p.tickets_sold != null && !Number.isNaN(Number(p.tickets_sold))
       ? Number(p.tickets_sold)
       : 0
-  
-  // Calculate percentage for progress bar (percentage only, no counts)
-  const percentSold = capTotal && capTotal > 0 ? Math.min(100, Math.floor((soldCount / capTotal) * 100)) : null
 
   const instantWins = Array.isArray(p.instant_wins) ? p.instant_wins : []
   const bundles = p.bundles || undefined
@@ -150,21 +147,6 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
                   <div className="mt-3 flex items-baseline gap-2">
                     <span className="text-sm text-purple-200">Retail Value:</span>
                     <span className="text-2xl font-bold text-brand">{prizeValueText}</span>
-                  </div>
-                )}
-
-                {/* Progress bar - percentage only */}
-                {percentSold !== null && (
-                  <div className="mt-4 rounded-lg border border-purple-500/20 bg-white/5 p-3">
-                    <div className="flex items-center justify-between text-sm mb-2">
-                      <span className="font-semibold text-amber-400">{percentSold}% sold</span>
-                    </div>
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-500 transition-all duration-300"
-                        style={{ width: `${percentSold}%` }}
-                      />
-                    </div>
                   </div>
                 )}
               </div>
