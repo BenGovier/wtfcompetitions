@@ -63,14 +63,30 @@ export async function GET(request: NextRequest) {
 
   console.log('[refresh-giveaway-snapshots] campaignId=', campaign.id, 'slug=', campaign.slug, 'instant_wins=', Array.isArray(instantWins) ? instantWins.length : 'MISSING_KEY')
 
-  // 5b) Fetch ticket counter
-  const { data: counterRow } = await supabase
+  // 5b) Fetch ticket counter (try campaign_ticket_counters first, fallback to giveaway_ticket_counters)
+  let nextTicket = 1
+
+  const { data: campaignCounter } = await supabase
     .from('campaign_ticket_counters')
     .select('next_ticket')
     .eq('campaign_id', campaign.id)
     .maybeSingle()
 
-  const nextTicket = counterRow?.next_ticket ?? 1
+  if (campaignCounter?.next_ticket) {
+    nextTicket = campaignCounter.next_ticket
+  } else {
+    // Fallback to legacy giveaway_ticket_counters table
+    const { data: giveawayCounter } = await supabase
+      .from('giveaway_ticket_counters')
+      .select('next_ticket')
+      .eq('giveaway_id', campaign.id)
+      .maybeSingle()
+
+    if (giveawayCounter?.next_ticket) {
+      nextTicket = giveawayCounter.next_ticket
+    }
+  }
+
   const ticketsSold = Math.max(nextTicket - 1, 0)
 
   console.log(
