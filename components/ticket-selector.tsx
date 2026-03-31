@@ -194,9 +194,6 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
   const maxQty = remaining !== null ? Math.min(100, remaining) : 100
 
   const soldPct = hasCapInfo ? Math.min(100, (displaySold / displayCap!) * 100) : 0
-  const isNearingCapacity = hasCapInfo && remaining !== null && remaining <= displayCap! * 0.25 && remaining > displayCap! * 0.10
-  const isFinalTickets = hasCapInfo && remaining !== null && remaining <= displayCap! * 0.10
-  const isLowRemaining = remaining !== null && remaining <= 20 && remaining > 0
 
   /* ---- Correct total calculation ---- */
   const totalPence = selectedBundle ? selectedBundle.price_pence : qty * basePricePence
@@ -363,54 +360,31 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
         </>
       )}
 
-      {/* ---- Scarcity / Sold Messaging ---- */}
-      {hasCapInfo && remaining !== null && (
+      {/* ---- Progress Bar (percentage only) ---- */}
+      {hasCapInfo && (
         <div className="space-y-2">
-          <div className="flex items-baseline justify-between text-sm">
-            <span className="text-white/80">
-              <span className="font-semibold text-white">{displaySold}</span> tickets secured
-            </span>
-            {remaining > 0 && (
-              <span className={cn(
-                "font-medium transition-all duration-300",
-                isFinalTickets ? "text-red-400" : isNearingCapacity ? "text-amber-400" : "text-pink-300",
-                isLowRemaining && "animate-pulse"
-              )}>
-                Only <span className={cn("font-bold", isLowRemaining && "bg-gradient-to-r from-[#FFD46A] to-[#F7A600] bg-clip-text text-transparent drop-shadow-[0_0_8px_rgba(247,166,0,0.6)]")}>{remaining}</span> remaining
-              </span>
-            )}
+          <div className="flex items-center justify-between text-sm">
+            <span className="font-semibold text-amber-400">{Math.round(soldPct)}% sold</span>
             {remaining === 0 && (
               <span className="font-bold text-red-400">Sold out</span>
             )}
           </div>
           <div
-            className={cn(
-              "w-full overflow-hidden rounded-full transition-all duration-300",
-              isFinalTickets ? "h-3 shadow-[0_0_20px_rgba(255,0,80,0.7)]" : "h-2"
-            )}
+            className="h-2 w-full overflow-hidden rounded-full"
             style={{ backgroundColor: "rgba(255,255,255,0.1)" }}
             role="progressbar"
-            aria-valuenow={displaySold}
+            aria-valuenow={Math.round(soldPct)}
             aria-valuemin={0}
-            aria-valuemax={displayCap!}
-            aria-label={`${displaySold} of ${displayCap} tickets sold`}
+            aria-valuemax={100}
+            aria-label={`${Math.round(soldPct)}% sold`}
           >
             <div
-              className={cn(
-                "relative h-full overflow-hidden rounded-full transition-all duration-700 ease-out",
-                "bg-gradient-to-r from-purple-600 via-pink-500 to-red-500"
-              )}
+              className="relative h-full overflow-hidden rounded-full transition-all duration-700 ease-out bg-gradient-to-r from-amber-400 to-orange-500"
               style={{ width: mounted ? `${soldPct}%` : "0%" }}
             >
               <div className="absolute inset-0 animate-[shimmer_2s_ease-in-out_infinite] bg-gradient-to-r from-transparent via-white/20 to-transparent" style={{ backgroundSize: "200% 100%" }} />
             </div>
           </div>
-          {isFinalTickets && remaining > 0 && (
-            <p className="text-center text-xs font-semibold text-red-400">Final tickets available</p>
-          )}
-          {isNearingCapacity && !isFinalTickets && (
-            <p className="text-center text-xs font-semibold text-amber-400">Nearing capacity</p>
-          )}
         </div>
       )}
 
