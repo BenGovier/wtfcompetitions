@@ -1,6 +1,6 @@
 import Link from "next/link"
 import Image from "next/image"
-import { Clock, ArrowRight } from "lucide-react"
+import { ArrowRight, Clock } from "lucide-react"
 import { createClient } from "@/lib/supabase/server"
 
 // Helper to format countdown from ends_at
@@ -18,7 +18,7 @@ function formatTimeLeft(endsAt: string | null | undefined): string | null {
   return `${minutes}m left`
 }
 
-// Emergency fallback data - only shown if snapshot query returns no results
+// Emergency fallback data
 const emergencyGiveaways = [
   {
     slug: 'superholiday',
@@ -38,18 +38,12 @@ export default async function GiveawaysPage() {
     .select('payload')
     .eq('kind', 'list')
     .order('generated_at', { ascending: false })
-    .limit(12)
+    .limit(20)
 
   const giveaways = (data ?? [])
     .map((x: any) => x.payload)
-    .filter((g: any) => {
-      if (!g || g.status !== 'live' || !g.ends_at) return false
-      const endsAt = new Date(g.ends_at).getTime()
-      return Number.isFinite(endsAt) && endsAt > Date.now()
-    })
-    .sort((a: any, b: any) => new Date(a.ends_at).getTime() - new Date(b.ends_at).getTime())
+    .filter((g: any) => g?.status === 'live')
 
-  // Use emergency fallback only if no live giveaways from snapshots
   const displayGiveaways = giveaways.length > 0 ? giveaways : emergencyGiveaways
 
   return (
@@ -63,6 +57,9 @@ export default async function GiveawaysPage() {
         <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {displayGiveaways.map((giveaway: any) => {
             const timeLeft = formatTimeLeft(giveaway.ends_at)
+            const sold = Number(giveaway.tickets_sold ?? 0)
+            const cap = Number(giveaway.hard_cap_total_tickets ?? 0)
+            const percentSold = cap > 0 ? Math.min(100, Math.floor((sold / cap) * 100)) : null
 
             return (
               <Link
@@ -99,29 +96,28 @@ export default async function GiveawaysPage() {
                   </div>
                 )}
 
-                {/* Fallback: Show badge at top if no hero image */}
-                {!giveaway.hero_image_url && (
-                  <div className="flex items-center justify-between p-4 pb-0">
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500 px-3 py-1 text-xs font-bold uppercase tracking-wide text-white shadow-lg">
-                      <span className="h-2 w-2 animate-pulse rounded-full bg-white" />
-                      Live
-                    </span>
-                    {timeLeft && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-xs font-medium text-white">
-                        <Clock className="h-3 w-3" />
-                        {timeLeft}
-                      </span>
-                    )}
-                  </div>
-                )}
-
                 {/* Content */}
                 <div className="flex flex-1 flex-col p-5">
                   <h3 className="text-lg font-bold text-white line-clamp-2 group-hover:text-amber-400 transition-colors">
                     {giveaway.title}
                   </h3>
                   {giveaway.prize_title && (
-                    <p className="mt-1 text-sm text-white/60 line-clamp-2">{giveaway.prize_title}</p>
+                    <p className="mt-1 text-sm text-white/60 line-clamp-1">{giveaway.prize_title}</p>
+                  )}
+
+                  {/* Progress bar - percentage only */}
+                  {percentSold !== null && (
+                    <div className="mt-3">
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="font-medium text-amber-400">{percentSold}% sold</span>
+                      </div>
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-500 transition-all duration-300"
+                          style={{ width: `${percentSold}%` }}
+                        />
+                      </div>
+                    </div>
                   )}
 
                   {/* Enter button */}
