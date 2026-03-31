@@ -40,9 +40,21 @@ export default async function GiveawaysPage() {
     .order('generated_at', { ascending: false })
     .limit(20)
 
+  const now = Date.now()
   const giveaways = (data ?? [])
     .map((x: any) => x.payload)
-    .filter((g: any) => g?.status === 'live')
+    .filter((g: any) => {
+      // Exclude ended/sold_out/closed statuses
+      if (!g || g.status === 'ended' || g.status === 'sold_out' || g.status === 'closed') return false
+      // Only include live raffles
+      if (g.status !== 'live') return false
+      // Exclude if ends_at is in the past
+      if (g.ends_at) {
+        const endsAt = new Date(g.ends_at).getTime()
+        if (Number.isFinite(endsAt) && endsAt <= now) return false
+      }
+      return true
+    })
 
   const displayGiveaways = giveaways.length > 0 ? giveaways : emergencyGiveaways
 
