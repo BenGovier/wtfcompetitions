@@ -76,6 +76,32 @@ export async function POST(request: Request) {
       provider,
     })
 
+    // Lightweight lookup to get campaign_slug for "Buy More Tickets" button
+    // Uses service client to avoid auth issues, single indexed query
+    let campaignSlug: string | null = null
+    try {
+      const svc = getServiceSupabase()
+      const { data: intentData } = await svc
+        .from('checkout_intents')
+        .select('campaign_id')
+        .eq('ref', ref)
+        .single()
+
+      if (intentData?.campaign_id) {
+        const { data: campaignData } = await svc
+          .from('campaigns')
+          .select('slug')
+          .eq('id', intentData.campaign_id)
+          .single()
+
+        campaignSlug = campaignData?.slug ?? null
+      }
+    } catch {
+      // Non-fatal - button just won't render
+    }
+
+    const awardWithSlug = { ...award, campaign_slug: campaignSlug }
+
     // === DETACHED BACKGROUND TASKS ===
     // Fully isolated from request lifecycle - cannot cause 500s or slow responses
     queueMicrotask(() => {
@@ -163,7 +189,7 @@ export async function POST(request: Request) {
     })
     // === END DETACHED BACKGROUND TASKS ===
 
-    return NextResponse.json({ ok: true, award }, NO_STORE)
+    return NextResponse.json({ ok: true, award: awardWithSlug }, NO_STORE)
   } catch (err: any) {
     const message = err?.message || ''
 

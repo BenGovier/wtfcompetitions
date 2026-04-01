@@ -11,6 +11,7 @@ export type AwardPayload = {
   qty: number
   won: boolean
   prize: null | { title: string; value_text: string | null; image_url: string | null }
+  campaign_slug?: string | null
 }
 
 export type ConfirmArgs = {
