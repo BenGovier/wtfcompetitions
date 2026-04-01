@@ -22,6 +22,7 @@ type AwardPayload = {
   prize: Prize | null
   ticket_start?: number | null
   ticket_end?: number | null
+  campaign_slug?: string | null
 }
 
 function TicketNumbers({ award }: { award: AwardPayload }) {
@@ -614,6 +615,11 @@ function WonReveal({ award }: { award: AwardPayload }) {
             <Button asChild className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold shadow-lg shadow-amber-500/25 border-0">
               <Link href="/me">View My Entries</Link>
             </Button>
+            {award.campaign_slug && (
+              <Button asChild variant="outline" className="w-full border-amber-500/40 text-amber-200 hover:bg-amber-900/30 hover:text-amber-100">
+                <Link href={`/giveaways/${award.campaign_slug}`}>Buy More Tickets</Link>
+              </Button>
+            )}
             <Button asChild variant="outline" className="w-full border-purple-500/40 text-purple-200 hover:bg-purple-900/50 hover:text-white">
               <Link href="/giveaways">Enter More Giveaways</Link>
             </Button>
@@ -709,6 +715,11 @@ function NotWonReveal({ award }: { award: AwardPayload }) {
           <Button asChild className="w-full bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white font-semibold shadow-lg shadow-purple-500/25 border-0">
             <Link href="/me">View My Entries</Link>
           </Button>
+          {award.campaign_slug && (
+            <Button asChild variant="outline" className="w-full border-pink-500/40 text-pink-200 hover:bg-pink-900/30 hover:text-pink-100">
+              <Link href={`/giveaways/${award.campaign_slug}`}>Buy More Tickets</Link>
+            </Button>
+          )}
           <Button asChild variant="outline" className="w-full border-purple-500/40 text-purple-200 hover:bg-purple-900/50 hover:text-white">
             <Link href="/giveaways">Enter More Giveaways</Link>
           </Button>
