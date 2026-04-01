@@ -616,11 +616,11 @@ function WonReveal({ award }: { award: AwardPayload }) {
               <Link href="/me">View My Entries</Link>
             </Button>
             {award.campaign_slug && (
-              <Button asChild variant="outline" className="w-full border-amber-500/40 text-amber-200 hover:bg-amber-900/30 hover:text-amber-100">
+              <Button asChild className="w-full bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-700 hover:to-violet-700 text-white font-semibold shadow-lg shadow-purple-500/25 border-0">
                 <Link href={`/giveaways/${award.campaign_slug}`}>Buy More Tickets</Link>
               </Button>
             )}
-            <Button asChild variant="outline" className="w-full border-purple-500/40 text-purple-200 hover:bg-purple-900/50 hover:text-white">
+            <Button asChild className="w-full bg-white/10 hover:bg-white/20 text-white font-medium border border-white/20 hover:border-white/40">
               <Link href="/giveaways">Enter More Giveaways</Link>
             </Button>
           </div>
@@ -716,11 +716,11 @@ function NotWonReveal({ award }: { award: AwardPayload }) {
             <Link href="/me">View My Entries</Link>
           </Button>
           {award.campaign_slug && (
-            <Button asChild variant="outline" className="w-full border-pink-500/40 text-pink-200 hover:bg-pink-900/30 hover:text-pink-100">
+            <Button asChild className="w-full bg-gradient-to-r from-pink-600 to-fuchsia-600 hover:from-pink-700 hover:to-fuchsia-700 text-white font-semibold shadow-lg shadow-pink-500/25 border-0">
               <Link href={`/giveaways/${award.campaign_slug}`}>Buy More Tickets</Link>
             </Button>
           )}
-          <Button asChild variant="outline" className="w-full border-purple-500/40 text-purple-200 hover:bg-purple-900/50 hover:text-white">
+          <Button asChild className="w-full bg-white/10 hover:bg-white/20 text-white font-medium border border-white/20 hover:border-white/40">
             <Link href="/giveaways">Enter More Giveaways</Link>
           </Button>
         </div>
