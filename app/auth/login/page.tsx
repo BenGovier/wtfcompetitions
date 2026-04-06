@@ -5,15 +5,16 @@ import LoginClient from './LoginClient'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-export default function LoginPage({
+export default async function LoginPage({
   searchParams,
 }: {
-  searchParams?: { redirect?: string }
+  searchParams?: Promise<{ redirect?: string }>
 }) {
+  const params = await searchParams
   let redirectTo = '/me'
-  if (typeof searchParams?.redirect === 'string') {
+  if (typeof params?.redirect === 'string') {
     try {
-      const decoded = decodeURIComponent(searchParams.redirect)
+      const decoded = decodeURIComponent(params.redirect)
       if (decoded.startsWith('/')) {
         redirectTo = decoded
       }
