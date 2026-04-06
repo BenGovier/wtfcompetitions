@@ -11,6 +11,7 @@ const navItems = [
   { href: "/admin/campaigns", label: "Campaigns" },
   { href: "/admin/instant-wins", label: "Instant Wins" },
   { href: "/admin/entries", label: "Entries" },
+  { href: "/admin/reports", label: "Reports" },
   { href: "/admin/audit-logs", label: "Audit Logs" },
 ]
 
