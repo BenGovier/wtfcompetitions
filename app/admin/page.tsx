@@ -3,8 +3,9 @@ import { createClient } from "@supabase/supabase-js"
 
 // Server-side sales stats query using confirmed_at as reporting date
 // Fetches confirmed intents for current month, sums in JS for today/week/month
+// Separate lightweight query for all-time total (only total_pence, no date filter)
 // No polling, no client fetch, no subscriptions
-async function getSalesStats(): Promise<{ today: number | null; week: number | null; month: number | null }> {
+async function getSalesStats(): Promise<{ today: number | null; week: number | null; month: number | null; allTime: number | null }> {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -23,37 +24,56 @@ async function getSalesStats(): Promise<{ today: number | null; week: number | n
   // This month: 1st of current month (UTC)
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
 
-  // Single query fetching confirmed intents for this month (superset of week/today)
-  // Uses confirmed_at for reporting dates, not created_at
-  const { data: intents, error } = await supabase
-    .from('checkout_intents')
-    .select('total_pence, confirmed_at')
-    .eq('state', 'confirmed')
-    .gte('confirmed_at', monthStart.toISOString())
+  // Two parallel queries:
+  // 1. Month-bounded for today/week/month (needs confirmed_at for date filtering)
+  // 2. All-time total (only total_pence, no date filter - minimal data)
+  const [monthResult, allTimeResult] = await Promise.all([
+    supabase
+      .from('checkout_intents')
+      .select('total_pence, confirmed_at')
+      .eq('state', 'confirmed')
+      .gte('confirmed_at', monthStart.toISOString()),
+    supabase
+      .from('checkout_intents')
+      .select('total_pence')
+      .eq('state', 'confirmed'),
+  ])
 
-  if (error) {
-    console.error('[Admin Dashboard] Failed to fetch sales stats:', error.message)
-    return { today: null, week: null, month: null }
-  }
-
+  // Handle month query
   let todayPence = 0
   let weekPence = 0
   let monthPence = 0
 
-  for (const intent of intents ?? []) {
-    const pence = intent.total_pence ?? 0
-    const confirmedAt = intent.confirmed_at ? new Date(intent.confirmed_at) : null
-    if (!confirmedAt) continue
-    
-    monthPence += pence
-    if (confirmedAt >= weekStart) weekPence += pence
-    if (confirmedAt >= todayStart) todayPence += pence
+  if (monthResult.error) {
+    console.error('[Admin Dashboard] Failed to fetch month sales stats:', monthResult.error.message)
+  } else {
+    for (const intent of monthResult.data ?? []) {
+      const pence = intent.total_pence ?? 0
+      const confirmedAt = intent.confirmed_at ? new Date(intent.confirmed_at) : null
+      if (!confirmedAt) continue
+      
+      monthPence += pence
+      if (confirmedAt >= weekStart) weekPence += pence
+      if (confirmedAt >= todayStart) todayPence += pence
+    }
+  }
+
+  // Handle all-time query
+  let allTimePence: number | null = null
+  if (allTimeResult.error) {
+    console.error('[Admin Dashboard] Failed to fetch all-time sales:', allTimeResult.error.message)
+  } else {
+    allTimePence = 0
+    for (const intent of allTimeResult.data ?? []) {
+      allTimePence += intent.total_pence ?? 0
+    }
   }
 
   return {
-    today: todayPence / 100,
-    week: weekPence / 100,
-    month: monthPence / 100,
+    today: monthResult.error ? null : todayPence / 100,
+    week: monthResult.error ? null : weekPence / 100,
+    month: monthResult.error ? null : monthPence / 100,
+    allTime: allTimePence !== null ? allTimePence / 100 : null,
   }
 }
 
@@ -73,6 +93,7 @@ export default async function AdminDashboard() {
     { label: "Sales Today", value: formatGBP(sales.today) },
     { label: "Sales This Week", value: formatGBP(sales.week) },
     { label: "Sales This Month", value: formatGBP(sales.month) },
+    { label: "All Time Sales", value: formatGBP(sales.allTime) },
   ]
 
   return (
@@ -84,7 +105,7 @@ export default async function AdminDashboard() {
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {stats.map((stat) => (
           <Card key={stat.label}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
