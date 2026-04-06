@@ -1,9 +1,9 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { createClient } from "@supabase/supabase-js"
 
-// Lightweight server-side sales stats query
-// Uses indexed filters on checkout_intents (state, created_at)
-// No polling, no client fetch, no joins
+// Database-level aggregate queries - returns only 3 scalar values, no rows fetched
+// Each query uses indexed filters (state, created_at) and SUM computed by Postgres
+// No polling, no client fetch, no joins, no in-memory filtering
 async function getSalesStats() {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -23,27 +23,31 @@ async function getSalesStats() {
   // This month: 1st of current month (UTC)
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
 
-  // Single query fetching all confirmed intents for this month (superset of week/today)
-  // Then filter in memory - avoids 3 separate DB round trips
-  const { data: intents } = await supabase
-    .from('checkout_intents')
-    .select('total_pence, created_at')
-    .eq('state', 'confirmed')
-    .gte('created_at', monthStart.toISOString())
-    .order('created_at', { ascending: false })
+  // Three parallel aggregate queries - database computes SUM, returns single value each
+  const [todayRes, weekRes, monthRes] = await Promise.all([
+    supabase
+      .from('checkout_intents')
+      .select('total_pence.sum()')
+      .eq('state', 'confirmed')
+      .gte('created_at', todayStart.toISOString())
+      .single(),
+    supabase
+      .from('checkout_intents')
+      .select('total_pence.sum()')
+      .eq('state', 'confirmed')
+      .gte('created_at', weekStart.toISOString())
+      .single(),
+    supabase
+      .from('checkout_intents')
+      .select('total_pence.sum()')
+      .eq('state', 'confirmed')
+      .gte('created_at', monthStart.toISOString())
+      .single(),
+  ])
 
-  let todayPence = 0
-  let weekPence = 0
-  let monthPence = 0
-
-  for (const intent of intents ?? []) {
-    const pence = intent.total_pence ?? 0
-    const createdAt = new Date(intent.created_at)
-    
-    monthPence += pence
-    if (createdAt >= weekStart) weekPence += pence
-    if (createdAt >= todayStart) todayPence += pence
-  }
+  const todayPence = todayRes.data?.sum ?? 0
+  const weekPence = weekRes.data?.sum ?? 0
+  const monthPence = monthRes.data?.sum ?? 0
 
   return {
     today: todayPence / 100,
