@@ -83,7 +83,19 @@ async function getReportsData(): Promise<{ data: ReportRow[] | null; error: stri
       revenue_gbp: (revenueMap.get(c.id) ?? 0) / 100,
     }))
 
-    return { data: rows, error: null }
+    // Filter: only show campaigns with revenue > 0 (hides old test campaigns)
+    // Sort: live first, then by revenue descending
+    const filtered = rows
+      .filter((r) => r.revenue_pence > 0)
+      .sort((a, b) => {
+        // Live campaigns first
+        if (a.status === 'live' && b.status !== 'live') return -1
+        if (b.status === 'live' && a.status !== 'live') return 1
+        // Then by revenue descending
+        return b.revenue_pence - a.revenue_pence
+      })
+
+    return { data: filtered, error: null }
   } catch (err) {
     console.error('[Admin Reports] Unexpected error:', err)
     return { data: null, error: 'Failed to load report data' }
