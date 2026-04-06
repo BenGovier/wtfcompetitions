@@ -1,10 +1,10 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { createClient } from "@supabase/supabase-js"
 
-// Database-level aggregate queries - returns only 3 scalar values, no rows fetched
-// Each query uses indexed filters (state, created_at) and SUM computed by Postgres
-// No polling, no client fetch, no joins, no in-memory filtering
-async function getSalesStats() {
+// Server-side sales stats query using confirmed_at as reporting date
+// Fetches confirmed intents for current month, sums in JS for today/week/month
+// No polling, no client fetch, no subscriptions
+async function getSalesStats(): Promise<{ today: number | null; week: number | null; month: number | null }> {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -23,31 +23,32 @@ async function getSalesStats() {
   // This month: 1st of current month (UTC)
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
 
-  // Three parallel aggregate queries - database computes SUM, returns single value each
-  const [todayRes, weekRes, monthRes] = await Promise.all([
-    supabase
-      .from('checkout_intents')
-      .select('total_pence.sum()')
-      .eq('state', 'confirmed')
-      .gte('created_at', todayStart.toISOString())
-      .single(),
-    supabase
-      .from('checkout_intents')
-      .select('total_pence.sum()')
-      .eq('state', 'confirmed')
-      .gte('created_at', weekStart.toISOString())
-      .single(),
-    supabase
-      .from('checkout_intents')
-      .select('total_pence.sum()')
-      .eq('state', 'confirmed')
-      .gte('created_at', monthStart.toISOString())
-      .single(),
-  ])
+  // Single query fetching confirmed intents for this month (superset of week/today)
+  // Uses confirmed_at for reporting dates, not created_at
+  const { data: intents, error } = await supabase
+    .from('checkout_intents')
+    .select('total_pence, confirmed_at')
+    .eq('state', 'confirmed')
+    .gte('confirmed_at', monthStart.toISOString())
 
-  const todayPence = todayRes.data?.sum ?? 0
-  const weekPence = weekRes.data?.sum ?? 0
-  const monthPence = monthRes.data?.sum ?? 0
+  if (error) {
+    console.error('[Admin Dashboard] Failed to fetch sales stats:', error.message)
+    return { today: null, week: null, month: null }
+  }
+
+  let todayPence = 0
+  let weekPence = 0
+  let monthPence = 0
+
+  for (const intent of intents ?? []) {
+    const pence = intent.total_pence ?? 0
+    const confirmedAt = intent.confirmed_at ? new Date(intent.confirmed_at) : null
+    if (!confirmedAt) continue
+    
+    monthPence += pence
+    if (confirmedAt >= weekStart) weekPence += pence
+    if (confirmedAt >= todayStart) todayPence += pence
+  }
 
   return {
     today: todayPence / 100,
@@ -56,7 +57,8 @@ async function getSalesStats() {
   }
 }
 
-function formatGBP(amount: number): string {
+function formatGBP(amount: number | null): string {
+  if (amount === null) return '—'
   return new Intl.NumberFormat('en-GB', {
     style: 'currency',
     currency: 'GBP',
