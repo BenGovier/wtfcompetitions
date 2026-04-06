@@ -36,7 +36,8 @@ async function getSalesStats(): Promise<{ today: number | null; week: number | n
     supabase
       .from('checkout_intents')
       .select('total_pence')
-      .eq('state', 'confirmed'),
+      .eq('state', 'confirmed')
+      .limit(100000),
   ])
 
   // Handle month query
