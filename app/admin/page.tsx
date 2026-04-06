@@ -26,18 +26,14 @@ async function getSalesStats(): Promise<{ today: number | null; week: number | n
 
   // Two parallel queries:
   // 1. Month-bounded for today/week/month (needs confirmed_at for date filtering)
-  // 2. All-time total (only total_pence, no date filter - minimal data)
+  // 2. All-time total via RPC (single scalar, no row fetching)
   const [monthResult, allTimeResult] = await Promise.all([
     supabase
       .from('checkout_intents')
       .select('total_pence, confirmed_at')
       .eq('state', 'confirmed')
       .gte('confirmed_at', monthStart.toISOString()),
-    supabase
-      .from('checkout_intents')
-      .select('total_pence')
-      .eq('state', 'confirmed')
-      .limit(100000),
+    supabase.rpc('get_all_time_sales_pence'),
   ])
 
   // Handle month query
@@ -59,15 +55,12 @@ async function getSalesStats(): Promise<{ today: number | null; week: number | n
     }
   }
 
-  // Handle all-time query
+  // Handle all-time RPC result (returns bigint as number)
   let allTimePence: number | null = null
   if (allTimeResult.error) {
     console.error('[Admin Dashboard] Failed to fetch all-time sales:', allTimeResult.error.message)
   } else {
-    allTimePence = 0
-    for (const intent of allTimeResult.data ?? []) {
-      allTimePence += intent.total_pence ?? 0
-    }
+    allTimePence = allTimeResult.data ?? 0
   }
 
   return {
