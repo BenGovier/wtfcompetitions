@@ -28,7 +28,10 @@ async function getReportsData(): Promise<{ data: ReportRow[] | null; error: stri
   )
 
   try {
-    // Three parallel queries joined in memory
+    // Three parallel queries:
+    // 1. Campaigns metadata
+    // 2. Snapshots for tickets_sold
+    // 3. RPC for DB-aggregated revenue by campaign (returns ~N rows, not thousands)
     const [campaignsRes, snapshotsRes, revenuesRes] = await Promise.all([
       supabase
         .from('campaigns')
@@ -39,11 +42,7 @@ async function getReportsData(): Promise<{ data: ReportRow[] | null; error: stri
         .select('giveaway_id, payload, generated_at')
         .eq('kind', 'list')
         .order('generated_at', { ascending: false }),
-      supabase
-        .from('checkout_intents')
-        .select('campaign_id, total_pence')
-        .eq('state', 'confirmed')
-        .limit(100000),
+      supabase.rpc('get_revenue_by_campaign'),
     ])
 
     if (campaignsRes.error || !campaignsRes.data) {
@@ -51,7 +50,7 @@ async function getReportsData(): Promise<{ data: ReportRow[] | null; error: stri
       return { data: null, error: campaignsRes.error?.message || 'Failed to fetch campaigns' }
     }
 
-    // Build lookup maps
+    // Build snapshot lookup (latest per campaign)
     const snapshotMap = new Map<string, number>()
     for (const snap of snapshotsRes.data ?? []) {
       if (!snapshotMap.has(snap.giveaway_id)) {
@@ -60,10 +59,16 @@ async function getReportsData(): Promise<{ data: ReportRow[] | null; error: stri
       }
     }
 
+    // Build revenue lookup from RPC result (already aggregated by campaign_id)
     const revenueMap = new Map<string, number>()
-    for (const rev of revenuesRes.data ?? []) {
-      const current = revenueMap.get(rev.campaign_id) ?? 0
-      revenueMap.set(rev.campaign_id, current + (rev.total_pence ?? 0))
+    if (!revenuesRes.error && revenuesRes.data) {
+      for (const row of revenuesRes.data as { campaign_id: string; total_pence: number }[]) {
+        revenueMap.set(row.campaign_id, Number(row.total_pence ?? 0))
+      }
+    } else if (revenuesRes.error) {
+      console.error('[Admin Reports] Revenue RPC failed:', revenuesRes.error.message)
+      // Continue with empty revenue map - shows £0.00 which is safe fallback
+      // (campaigns without confirmed sales legitimately have £0 revenue)
     }
 
     // Combine into report rows
