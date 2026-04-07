@@ -1,8 +1,17 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import { SignOutButton } from './sign-out-button'
+import { createClient } from '@/lib/supabase/client'
+
+interface UserPreferences {
+  instant_win_notifications: boolean
+  marketing_emails: boolean
+  partner_emails: boolean
+}
 
 type EntryRow = {
   id: string
@@ -46,6 +55,81 @@ function TicketDisplay({ start, end }: { start?: number | null; end?: number | n
 }
 
 export function AccountTabs({ email, entries, entriesError, allocationMap, campaignMap }: AccountTabsProps) {
+  const [prefs, setPrefs] = useState<UserPreferences | null>(null)
+  const [prefsLoading, setPrefsLoading] = useState(true)
+  const [prefsError, setPrefsError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    const loadPrefs = async () => {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        setPrefsLoading(false)
+        return
+      }
+
+      // Try to fetch existing preferences
+      const { data, error } = await supabase
+        .from('user_preferences')
+        .select('instant_win_notifications, marketing_emails, partner_emails')
+        .eq('user_id', user.id)
+        .single()
+
+      if (error && error.code === 'PGRST116') {
+        // No row exists - create one with defaults
+        const defaults: UserPreferences = {
+          instant_win_notifications: true,
+          marketing_emails: true,
+          partner_emails: false,
+        }
+        const { error: insertError } = await supabase
+          .from('user_preferences')
+          .insert({ user_id: user.id, ...defaults })
+
+        if (insertError) {
+          setPrefsError('Failed to initialize preferences')
+        } else {
+          setPrefs(defaults)
+        }
+      } else if (error) {
+        setPrefsError('Failed to load preferences')
+      } else {
+        setPrefs(data)
+      }
+      setPrefsLoading(false)
+    }
+    loadPrefs()
+  }, [])
+
+  const updatePref = async (key: keyof UserPreferences, value: boolean) => {
+    if (!prefs) return
+    const oldPrefs = { ...prefs }
+    setPrefs({ ...prefs, [key]: value })
+    setSaving(true)
+    setPrefsError(null)
+
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      setPrefs(oldPrefs)
+      setPrefsError('Not authenticated')
+      setSaving(false)
+      return
+    }
+
+    const { error } = await supabase
+      .from('user_preferences')
+      .update({ [key]: value, updated_at: new Date().toISOString() })
+      .eq('user_id', user.id)
+
+    if (error) {
+      setPrefs(oldPrefs)
+      setPrefsError('Failed to save preference')
+    }
+    setSaving(false)
+  }
+
   return (
     <Tabs defaultValue="tickets" className="w-full">
       <TabsList className="flex w-full gap-2 overflow-x-auto rounded-xl bg-white/5 p-1 backdrop-blur-md border border-white/10">
@@ -148,26 +232,62 @@ export function AccountTabs({ email, entries, entriesError, allocationMap, campa
             <p className="text-sm text-white/70">Manage your preferences</p>
           </div>
           
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-white">Email Notifications</p>
-                <p className="text-sm text-white/60">Receive updates about your entries</p>
+          {prefsLoading ? (
+            <p className="text-sm text-white/60">Loading preferences...</p>
+          ) : prefsError && !prefs ? (
+            <p className="text-sm text-red-400">{prefsError}</p>
+          ) : prefs ? (
+            <div className="space-y-4">
+              {prefsError && (
+                <p className="text-sm text-red-400">{prefsError}</p>
+              )}
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-white">Instant Win Notifications</p>
+                  <p className="text-sm text-white/60">Receive emails when you win instant prizes</p>
+                </div>
+                <Switch
+                  checked={prefs.instant_win_notifications}
+                  onCheckedChange={(v) => updatePref('instant_win_notifications', v)}
+                  disabled={saving}
+                  className="data-[state=checked]:bg-yellow-500"
+                />
               </div>
-              <Button variant="outline" size="sm" disabled className="border-white/20 bg-white/5 text-white/50">
-                Toggle
-              </Button>
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-white">Marketing Emails</p>
-                <p className="text-sm text-white/60">Get notified about new giveaways</p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-white">Marketing Emails</p>
+                  <p className="text-sm text-white/60">Get notified about new giveaways and promotions</p>
+                </div>
+                <Switch
+                  checked={prefs.marketing_emails}
+                  onCheckedChange={(v) => updatePref('marketing_emails', v)}
+                  disabled={saving}
+                  className="data-[state=checked]:bg-yellow-500"
+                />
               </div>
-              <Button variant="outline" size="sm" disabled className="border-white/20 bg-white/5 text-white/50">
-                Toggle
-              </Button>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-white">Partner Emails</p>
+                  <p className="text-sm text-white/60">Receive offers from our trusted partners</p>
+                </div>
+                <Switch
+                  checked={prefs.partner_emails}
+                  onCheckedChange={(v) => updatePref('partner_emails', v)}
+                  disabled={saving}
+                  className="data-[state=checked]:bg-yellow-500"
+                />
+              </div>
+
+              {/* Email Delivery Reminder */}
+              <div className="mt-6 rounded-xl border border-yellow-500/20 bg-yellow-500/5 p-4">
+                <p className="text-sm font-medium text-yellow-300">Email Delivery Reminder</p>
+                <p className="mt-1 text-sm text-white/70">
+                  If you do not receive our emails, please check your junk or spam folder and mark{' '}
+                  <span className="font-medium text-white">ben@wtf-giveaways.co.uk</span> as safe.
+                </p>
+              </div>
             </div>
-          </div>
+          ) : null}
         </div>
       </TabsContent>
     </Tabs>
