@@ -287,13 +287,43 @@ export async function POST(request: NextRequest) {
               </table>
             </td>
           </tr>
-          <!-- Instant Win Reminder -->
+          <!-- Cash Winners Reminder -->
           <tr>
             <td style="padding: 0 32px 24px 32px;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background: linear-gradient(135deg, #EC4899 0%, #F472B6 100%); border-radius: 12px;">
                 <tr>
-                  <td style="padding: 20px; text-align: center;">
-                    <p style="margin: 0; font-size: 15px; font-weight: 600; color: #FFFFFF; line-height: 1.5;">Won an instant win? Make sure you are on LIVE so pop your balloon!</p>
+                  <td style="padding: 20px;">
+                    <div style="text-align: center;">
+                      <p style="margin: 0 0 12px 0; font-size: 16px; font-weight: 700; color: #FFFFFF;">
+                        CASH WINNERS - ACTION REQUIRED
+                      </p>
+
+                      <p style="margin: 0 0 16px 0; font-size: 14px; color: #FFFFFF; line-height: 1.6;">
+                        For all cash payments, please email us the following:
+                      </p>
+
+                      <table role="presentation" align="center" cellpadding="0" cellspacing="0" style="margin: 0 auto 16px auto;">
+                        <tr>
+                          <td style="padding: 6px 0; font-size: 14px; color: #FFFFFF; font-weight: 600;">
+                            Full Name (as on bank)
+                          </td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 6px 0; font-size: 14px; color: #FFFFFF; font-weight: 600;">
+                            Sort Code
+                          </td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 6px 0; font-size: 14px; color: #FFFFFF; font-weight: 600;">
+                            Account Number
+                          </td>
+                        </tr>
+                      </table>
+
+                      <p style="margin: 0; font-size: 13px; color: #FDE68A; font-weight: 600;">
+                        We aim to pay within 48 hours
+                      </p>
+                    </div>
                   </td>
                 </tr>
               </table>
