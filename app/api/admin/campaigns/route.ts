@@ -89,14 +89,6 @@ async function refreshSnapshotsNow(campaignId: string) {
 
   const generatedAt = new Date().toISOString()
 
-  const { error: delErr } = await svc
-    .from('giveaway_snapshots')
-    .delete()
-    .eq('giveaway_id', c.id)
-    .in('kind', ['list', 'detail'])
-
-  if (delErr) throw new Error(`Failed to delete snapshots for ${c.id}: ${delErr.message}`)
-
   const listPayload = {
     id: c.id,
     slug: c.slug,
@@ -132,21 +124,18 @@ async function refreshSnapshotsNow(campaignId: string) {
     instant_wins: instantWins,
   }
 
-  const { error: ins1 } = await svc.from('giveaway_snapshots').insert({
-    giveaway_id: c.id,
-    kind: 'list',
-    generated_at: generatedAt,
-    payload: listPayload
-  })
-  if (ins1) throw new Error(`Failed to insert list snapshot for ${c.id}: ${ins1.message}`)
+  // Use UPSERT instead of DELETE+INSERT for atomic snapshot updates
+  const { error: upsert1 } = await svc.from('giveaway_snapshots').upsert(
+    { giveaway_id: c.id, kind: 'list', generated_at: generatedAt, payload: listPayload },
+    { onConflict: 'giveaway_id,kind' }
+  )
+  if (upsert1) throw new Error(`Failed to upsert list snapshot for ${c.id}: ${upsert1.message}`)
 
-  const { error: ins2 } = await svc.from('giveaway_snapshots').insert({
-    giveaway_id: c.id,
-    kind: 'detail',
-    generated_at: generatedAt,
-    payload: detailPayload
-  })
-  if (ins2) throw new Error(`Failed to insert detail snapshot for ${c.id}: ${ins2.message}`)
+  const { error: upsert2 } = await svc.from('giveaway_snapshots').upsert(
+    { giveaway_id: c.id, kind: 'detail', generated_at: generatedAt, payload: detailPayload },
+    { onConflict: 'giveaway_id,kind' }
+  )
+  if (upsert2) throw new Error(`Failed to upsert detail snapshot for ${c.id}: ${upsert2.message}`)
 }
 
 export async function POST(request: Request) {
