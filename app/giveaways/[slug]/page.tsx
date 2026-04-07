@@ -28,7 +28,7 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
   // Single indexed query - no JSONB scan
   const { data, error } = await supabase
     .from('giveaway_snapshots')
-    .select('payload')
+    .select('kind, payload')
     .in('kind', ['detail', 'list'])
     .order('generated_at', { ascending: false })
     .limit(10)
@@ -41,8 +41,12 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
     })
   }
 
-  // In-memory filter to find matching slug (detail preferred over list due to order)
-  const row = data?.find((x) => x.payload?.slug === slug) ?? null
+  // In-memory filter to find matching slug, explicitly prefer detail over list
+  const matchingRows = data?.filter((x) => x.payload?.slug === slug) ?? []
+  const row =
+    matchingRows.find((x) => x.kind === 'detail') ??
+    matchingRows[0] ??
+    null
 
   if (!row) {
     console.error('[giveaways/[slug]] snapshot missing', { slug })
