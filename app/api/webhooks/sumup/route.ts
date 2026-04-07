@@ -299,7 +299,11 @@ export async function POST(request: NextRequest) {
                       </p>
 
                       <p style="margin: 0 0 16px 0; font-size: 14px; color: #FFFFFF; line-height: 1.6;">
-                        For all cash payments, please email us the following:
+                        For all cash payments, please email us at 
+                        <a href="mailto:ben@wtf-giveaways.co.uk" style="color: #FFFFFF; font-weight: 700; text-decoration: underline;">
+                          ben@wtf-giveaways.co.uk
+                        </a>
+                        with the following:
                       </p>
 
                       <table role="presentation" align="center" cellpadding="0" cellspacing="0" style="margin: 0 auto 16px auto;">
