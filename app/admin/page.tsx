@@ -11,18 +11,67 @@ async function getSalesStats(): Promise<{ today: number | null; week: number | n
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
 
-  const now = new Date()
+  // Get current date/time in UK timezone (handles GMT/BST automatically)
+  const ukDateStr = new Date().toLocaleDateString('en-GB', { timeZone: 'Europe/London' })
+  const [dayStr, monthStr, yearStr] = ukDateStr.split('/')
+  const ukYear = parseInt(yearStr, 10)
+  const ukMonth = parseInt(monthStr, 10) - 1 // JS months are 0-indexed
+  const ukDay = parseInt(dayStr, 10)
   
-  // Today: start of current day (local time)
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  // Get UK day of week (0=Sunday)
+  const ukDayOfWeek = new Date(
+    new Date().toLocaleString('en-GB', { timeZone: 'Europe/London' })
+  ).getDay()
   
-  // This week: Monday of current week (local time)
-  const dayOfWeek = now.getDay()
-  const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1
-  const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - mondayOffset)
+  // Helper: create a Date representing UK midnight for a given UK date
+  // We create the date in UK timezone then convert to UTC for comparison
+  function ukMidnight(year: number, month: number, day: number): Date {
+    // Create ISO string for the UK date at midnight, then parse with UK offset
+    // UK is GMT (UTC+0) in winter, BST (UTC+1) in summer
+    // Using toLocaleString trick to get the correct UTC equivalent
+    const tempDate = new Date(Date.UTC(year, month, day, 12, 0, 0)) // noon UTC as safe starting point
+    const ukStr = tempDate.toLocaleString('en-GB', { timeZone: 'Europe/London' })
+    // Parse to get offset, but simpler: just create date and adjust
+    // Actually, cleanest approach: use Intl.DateTimeFormat to get timezone offset
+    const formatter = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Europe/London',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hour12: false
+    })
+    // For UK midnight, we need to find what UTC time equals midnight UK
+    // BST (Mar-Oct): UK midnight = 23:00 UTC previous day
+    // GMT (Nov-Feb): UK midnight = 00:00 UTC same day
+    // Create a date at midnight UK and check its UTC representation
+    const testDate = new Date(`${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00`)
+    const parts = formatter.formatToParts(testDate)
+    const ukHour = parseInt(parts.find(p => p.type === 'hour')?.value ?? '0', 10)
+    // If UK shows hour > 0 when we set 00:00 local, we need to adjust
+    // Actually let's use a simpler reliable method:
+    // Set time to noon UK, then subtract hours to get to midnight UK
+    const noonUK = new Date(Date.UTC(year, month, day, 12, 0, 0))
+    // Check what hour this is in UK
+    const ukNoonHour = parseInt(
+      new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', hour12: false })
+        .format(noonUK), 10
+    )
+    // Offset from UTC: if UK shows 13 when UTC is 12, offset is +1 (BST)
+    const ukOffset = ukNoonHour - 12 // hours ahead of UTC
+    // UK midnight in UTC = 00:00 UK = 00:00 - offset in UTC terms
+    // e.g., BST: 00:00 UK = 23:00 UTC previous day (offset +1, so subtract 1 hour from midnight)
+    return new Date(Date.UTC(year, month, day, 0 - ukOffset, 0, 0))
+  }
+
+  // Today: start of current UK day
+  const todayStart = ukMidnight(ukYear, ukMonth, ukDay)
   
-  // This month: 1st of current month (local time)
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  // This week: Monday of current UK week
+  const mondayOffset = ukDayOfWeek === 0 ? 6 : ukDayOfWeek - 1
+  const mondayDate = ukDay - mondayOffset
+  const weekStart = ukMidnight(ukYear, ukMonth, mondayDate)
+  
+  // This month: 1st of current UK month
+  const monthStart = ukMidnight(ukYear, ukMonth, 1)
 
   // Two parallel queries:
   // 1. Month-bounded for today/week/month (needs confirmed_at for date filtering)
