@@ -13,16 +13,16 @@ async function getSalesStats(): Promise<{ today: number | null; week: number | n
 
   const now = new Date()
   
-  // Today: start of current day (UTC)
-  const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+  // Today: start of current day (local time)
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   
-  // This week: Monday of current week (UTC)
-  const dayOfWeek = now.getUTCDay()
+  // This week: Monday of current week (local time)
+  const dayOfWeek = now.getDay()
   const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1
-  const weekStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - mondayOffset))
+  const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - mondayOffset)
   
-  // This month: 1st of current month (UTC)
-  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+  // This month: 1st of current month (local time)
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
 
   // Two parallel queries:
   // 1. Month-bounded for today/week/month (needs confirmed_at for date filtering)
