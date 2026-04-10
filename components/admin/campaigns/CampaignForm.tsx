@@ -20,6 +20,7 @@ import { createClient } from "@/lib/supabase/client"
 import type { Campaign } from "@/lib/types/campaign"
 import type { InstantWinPrizeRow } from "@/lib/types/instantWins"
 import { Trash2, Save, Upload, Plus, Wand2 } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
 
 interface CampaignFormProps {
   campaign: Campaign
@@ -28,6 +29,7 @@ interface CampaignFormProps {
 
 export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
   const router = useRouter()
+  const { toast } = useToast()
   const [formData, setFormData] = useState<Campaign>(campaign)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState(false)
@@ -59,7 +61,8 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
       prize.prize_title !== orig.prize_title ||
       prize.prize_value_text !== orig.prize_value_text ||
       prize.unlock_ratio !== orig.unlock_ratio ||
-      prize.image_url !== orig.image_url
+      prize.image_url !== orig.image_url ||
+      prize.quantity !== orig.quantity
     )
   }, [iwOriginal])
 
@@ -140,15 +143,19 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
   }
 
   async function handleSave() {
+    console.log('[instant-debug][client] handleSave triggered, campaignId=', campaignId)
     if (isUploading) {
+      console.log('[instant-debug][client] blocked: image still uploading')
       setSaveError('Image is still uploading — please wait')
       return
     }
     if (selectedFile && !formData.heroImageUrl) {
+      console.log('[instant-debug][client] blocked: selectedFile without heroImageUrl')
       setSaveError('Click Upload to attach the hero image')
       return
     }
     if (iwUploadingId) {
+      console.log('[instant-debug][client] blocked: instant win image uploading, id=', iwUploadingId)
       setSaveError('An instant win image is still uploading — please wait')
       return
     }
@@ -159,47 +166,72 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
     let instantWinsSaved = false
 
     try {
-      // 1. Save all dirty instant win prizes first
+      // 1. Save all dirty instant win prizes first (in parallel)
       const dirtyPrizes = getDirtyPrizes()
+      console.log('[instant-debug][client] dirtyPrizes count=', dirtyPrizes.length)
       if (dirtyPrizes.length > 0) {
+        console.log('[instant-debug][client] dirtyPrizes details=', dirtyPrizes.map(p => ({ id: p.id, title: p.prize_title, quantity: p.quantity })))
+        // Validate all prizes upfront before any network calls
         for (const prize of dirtyPrizes) {
           const ratio = Number(prize.unlock_ratio)
           if (isNaN(ratio) || ratio < 0 || ratio > 1) {
+            console.log('[instant-debug][client] validation failed for prize=', prize.id, 'ratio=', ratio)
             setSaveError(`Unlock ratio for "${prize.prize_title}" must be between 0 and 1`)
             setIsSaving(false)
             return
           }
-
-          const res = await fetch('/api/admin/instant-win-prizes', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              id: prize.id,
-              campaign_id: prize.campaign_id,
-              prize_title: prize.prize_title,
-              prize_value_text: prize.prize_value_text,
-              unlock_ratio: ratio,
-              image_url: prize.image_url,
-            }),
-          })
-          const json = await res.json()
-          if (!res.ok || !json.ok) {
-            setSaveError(`Failed to save instant win "${prize.prize_title}": ${json.error || 'Unknown error'}`)
-            setIsSaving(false)
-            return
-          }
         }
+
+        console.log('[instant-debug][client] starting parallel prize saves...')
+        // Save all prizes in parallel
+        const saveResults = await Promise.all(
+          dirtyPrizes.map(async (prize) => {
+            const ratio = Number(prize.unlock_ratio)
+            console.log('[instant-debug][client] sending PUT for prize=', prize.id)
+            const res = await fetch('/api/admin/instant-win-prizes', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                id: prize.id,
+                campaign_id: prize.campaign_id,
+                prize_title: prize.prize_title,
+                prize_value_text: prize.prize_value_text,
+                unlock_ratio: ratio,
+                image_url: prize.image_url,
+                quantity: prize.quantity,
+              }),
+            })
+            const json = await res.json()
+            console.log('[instant-debug][client] PUT result for prize=', prize.id, 'ok=', res.ok && json.ok, 'error=', json.error)
+            return { prize, ok: res.ok && json.ok, error: json.error }
+          })
+        )
+        console.log('[instant-debug][client] all prize saves complete, results count=', saveResults.length)
+
+        // Check for any failures
+        const failed = saveResults.filter((r) => !r.ok)
+        if (failed.length > 0) {
+          const firstFail = failed[0]
+          console.log('[instant-debug][client] prize save failures=', failed.map(f => ({ id: f.prize.id, error: f.error })))
+          setSaveError(`Failed to save instant win "${firstFail.prize.prize_title}": ${firstFail.error || 'Unknown error'}`)
+          setIsSaving(false)
+          return
+        }
+
         // Update originals after successful save
+        console.log('[instant-debug][client] updating iwOriginal for dirty prizes')
         setIwOriginal((prev) => {
           const updated = { ...prev }
           dirtyPrizes.forEach((p) => { updated[p.id] = { ...p } })
           return updated
         })
         instantWinsSaved = true
+        console.log('[instant-debug][client] instantWinsSaved=true')
       }
 
       // 2. Save campaign
       const method = isNew ? 'POST' : 'PUT'
+      console.log('[instant-debug][client] starting campaign save, method=', method, 'campaignId=', formData.id)
       const res = await fetch('/api/admin/campaigns', {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -207,9 +239,11 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
       })
 
       const json = await res.json()
+      console.log('[instant-debug][client] campaign save result, ok=', res.ok && json.ok, 'status=', res.status)
 
       if (!res.ok || !json.ok) {
         const baseError = json.error || `Request failed (${res.status})`
+        console.log('[instant-debug][client] campaign save failed, error=', baseError)
         if (instantWinsSaved) {
           setSaveError(`Instant win changes were saved, but campaign changes failed: ${baseError}`)
         } else {
@@ -227,11 +261,18 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
         }
       }
 
+      console.log('[instant-debug][client] save successful, about to navigate away')
+      toast({
+        title: "Saved successfully",
+        description: "Changes may take a few seconds to appear live.",
+      })
       router.push('/admin/campaigns')
       router.refresh()
     } catch (err: any) {
+      console.log('[instant-debug][client] handleSave caught error=', err?.message, err)
       setSaveError(err?.message || 'Save failed')
     } finally {
+      console.log('[instant-debug][client] handleSave finally, setting isSaving=false')
       setIsSaving(false)
     }
   }
@@ -249,6 +290,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
           campaign_id: campaignId,
           prize_title: 'New Prize',
           unlock_ratio: 0.5,
+          quantity: 1,
         }),
       })
       const json = await res.json()
@@ -272,17 +314,15 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
   async function handleGenerateLadder() {
     if (!campaignId || ladderCount < 1) return
     setIwError(null)
-    const items = []
-    for (let i = 0; i < ladderCount; i++) {
-      const ratio = ladderCount === 1
-        ? ladderStart
-        : ladderStart + (ladderEnd - ladderStart) * (i / (ladderCount - 1))
-      items.push({
+    // Create a single grouped prize row with quantity = ladderCount
+    const items = [
+      {
         campaign_id: campaignId,
-        prize_title: `Instant Win #${i + 1}`,
-        unlock_ratio: Math.round(ratio * 1000) / 1000,
-      })
-    }
+        prize_title: 'Balloon Pop',
+        unlock_ratio: ladderStart,
+        quantity: ladderCount,
+      },
+    ]
 
     try {
       const res = await fetch('/api/admin/instant-win-prizes', {
@@ -292,7 +332,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
       })
       const json = await res.json()
       if (!res.ok || !json.ok) {
-        setIwError(json.error || 'Failed to generate ladder')
+        setIwError(json.error || 'Failed to add prize')
         return
       }
       const newItems = json.items || []
@@ -304,7 +344,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
         return updated
       })
     } catch (err: any) {
-      setIwError(err?.message || 'Failed to generate ladder')
+      setIwError(err?.message || 'Failed to add prize')
     }
   }
 
@@ -334,6 +374,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
           prize_value_text: prize.prize_value_text,
           unlock_ratio: ratio,
           image_url: prize.image_url,
+          quantity: prize.quantity,
         }),
       })
       const json = await res.json()
@@ -766,8 +807,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-xs text-muted-foreground">
-            Unlock ratio = ticketsSold / maxTicketsTotal threshold. We cap ladder end at 0.95 so prizes
-            don&apos;t all release at the very end.
+            Unlock ratio = ticketsSold / maxTicketsTotal threshold when prize becomes available.
           </p>
           <p className="text-xs text-blue-600 dark:text-blue-400">
             The main &quot;Save Changes&quot; button will save any edited instant win rows automatically.
@@ -779,12 +819,12 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
             </p>
           ) : (
             <>
-              {/* Ladder Generator */}
+              {/* Quick Add Prize */}
               <div className="rounded-md border p-4 space-y-3">
-                <p className="text-sm font-medium">Generate Ladder</p>
+                <p className="text-sm font-medium">Quick Add Prize</p>
                 <div className="flex flex-wrap items-end gap-3">
                   <div className="space-y-1">
-                    <Label className="text-xs">Prizes (N)</Label>
+                    <Label className="text-xs">Quantity</Label>
                     <Input
                       type="number"
                       min={1}
@@ -795,7 +835,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Start Ratio</Label>
+                    <Label className="text-xs">Unlock Ratio</Label>
                     <Input
                       type="number"
                       step={0.01}
@@ -804,18 +844,6 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
                       className="w-24"
                       value={ladderStart}
                       onChange={(e) => setLadderStart(Number(e.target.value))}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">End Ratio</Label>
-                    <Input
-                      type="number"
-                      step={0.01}
-                      min={0}
-                      max={1}
-                      className="w-24"
-                      value={ladderEnd}
-                      onChange={(e) => setLadderEnd(Number(e.target.value))}
                     />
                   </div>
                   <Button type="button" variant="outline" size="sm" onClick={handleGenerateLadder}>
@@ -873,6 +901,17 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
                                   handlePrizeFieldChange(prize.id, 'prize_value_text', e.target.value || null)
                                 }
                                 placeholder="e.g. £50"
+                              />
+                            </div>
+                            <div className="w-20 space-y-1">
+                              <Label className="text-xs">Quantity</Label>
+                              <Input
+                                type="number"
+                                min={1}
+                                value={prize.quantity}
+                                onChange={(e) =>
+                                  handlePrizeFieldChange(prize.id, 'quantity', Math.max(1, Number(e.target.value)))
+                                }
                               />
                             </div>
                             <div className="w-28 space-y-1">
@@ -943,7 +982,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
 
               {!iwLoading && instantWins.length === 0 && (
                 <p className="text-sm text-muted-foreground italic">
-                  No instant wins yet. Add one or generate a ladder.
+                  No instant wins yet. Add one or use Quick Add.
                 </p>
               )}
             </>
