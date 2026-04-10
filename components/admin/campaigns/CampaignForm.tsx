@@ -141,15 +141,19 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
   }
 
   async function handleSave() {
+    console.log('[instant-debug][client] handleSave triggered, campaignId=', campaignId)
     if (isUploading) {
+      console.log('[instant-debug][client] blocked: image still uploading')
       setSaveError('Image is still uploading — please wait')
       return
     }
     if (selectedFile && !formData.heroImageUrl) {
+      console.log('[instant-debug][client] blocked: selectedFile without heroImageUrl')
       setSaveError('Click Upload to attach the hero image')
       return
     }
     if (iwUploadingId) {
+      console.log('[instant-debug][client] blocked: instant win image uploading, id=', iwUploadingId)
       setSaveError('An instant win image is still uploading — please wait')
       return
     }
@@ -162,21 +166,26 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
     try {
       // 1. Save all dirty instant win prizes first (in parallel)
       const dirtyPrizes = getDirtyPrizes()
+      console.log('[instant-debug][client] dirtyPrizes count=', dirtyPrizes.length)
       if (dirtyPrizes.length > 0) {
+        console.log('[instant-debug][client] dirtyPrizes details=', dirtyPrizes.map(p => ({ id: p.id, title: p.prize_title, quantity: p.quantity })))
         // Validate all prizes upfront before any network calls
         for (const prize of dirtyPrizes) {
           const ratio = Number(prize.unlock_ratio)
           if (isNaN(ratio) || ratio < 0 || ratio > 1) {
+            console.log('[instant-debug][client] validation failed for prize=', prize.id, 'ratio=', ratio)
             setSaveError(`Unlock ratio for "${prize.prize_title}" must be between 0 and 1`)
             setIsSaving(false)
             return
           }
         }
 
+        console.log('[instant-debug][client] starting parallel prize saves...')
         // Save all prizes in parallel
         const saveResults = await Promise.all(
           dirtyPrizes.map(async (prize) => {
             const ratio = Number(prize.unlock_ratio)
+            console.log('[instant-debug][client] sending PUT for prize=', prize.id)
             const res = await fetch('/api/admin/instant-win-prizes', {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
@@ -191,30 +200,36 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
               }),
             })
             const json = await res.json()
+            console.log('[instant-debug][client] PUT result for prize=', prize.id, 'ok=', res.ok && json.ok, 'error=', json.error)
             return { prize, ok: res.ok && json.ok, error: json.error }
           })
         )
+        console.log('[instant-debug][client] all prize saves complete, results count=', saveResults.length)
 
         // Check for any failures
         const failed = saveResults.filter((r) => !r.ok)
         if (failed.length > 0) {
           const firstFail = failed[0]
+          console.log('[instant-debug][client] prize save failures=', failed.map(f => ({ id: f.prize.id, error: f.error })))
           setSaveError(`Failed to save instant win "${firstFail.prize.prize_title}": ${firstFail.error || 'Unknown error'}`)
           setIsSaving(false)
           return
         }
 
         // Update originals after successful save
+        console.log('[instant-debug][client] updating iwOriginal for dirty prizes')
         setIwOriginal((prev) => {
           const updated = { ...prev }
           dirtyPrizes.forEach((p) => { updated[p.id] = { ...p } })
           return updated
         })
         instantWinsSaved = true
+        console.log('[instant-debug][client] instantWinsSaved=true')
       }
 
       // 2. Save campaign
       const method = isNew ? 'POST' : 'PUT'
+      console.log('[instant-debug][client] starting campaign save, method=', method, 'campaignId=', formData.id)
       const res = await fetch('/api/admin/campaigns', {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -222,9 +237,11 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
       })
 
       const json = await res.json()
+      console.log('[instant-debug][client] campaign save result, ok=', res.ok && json.ok, 'status=', res.status)
 
       if (!res.ok || !json.ok) {
         const baseError = json.error || `Request failed (${res.status})`
+        console.log('[instant-debug][client] campaign save failed, error=', baseError)
         if (instantWinsSaved) {
           setSaveError(`Instant win changes were saved, but campaign changes failed: ${baseError}`)
         } else {
@@ -242,11 +259,14 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
         }
       }
 
+      console.log('[instant-debug][client] save successful, about to navigate away')
       router.push('/admin/campaigns')
       router.refresh()
     } catch (err: any) {
+      console.log('[instant-debug][client] handleSave caught error=', err?.message, err)
       setSaveError(err?.message || 'Save failed')
     } finally {
+      console.log('[instant-debug][client] handleSave finally, setting isSaving=false')
       setIsSaving(false)
     }
   }
