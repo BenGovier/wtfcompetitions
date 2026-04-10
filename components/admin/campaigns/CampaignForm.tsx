@@ -160,9 +160,10 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
     let instantWinsSaved = false
 
     try {
-      // 1. Save all dirty instant win prizes first
+      // 1. Save all dirty instant win prizes first (in parallel)
       const dirtyPrizes = getDirtyPrizes()
       if (dirtyPrizes.length > 0) {
+        // Validate all prizes upfront before any network calls
         for (const prize of dirtyPrizes) {
           const ratio = Number(prize.unlock_ratio)
           if (isNaN(ratio) || ratio < 0 || ratio > 1) {
@@ -170,27 +171,39 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
             setIsSaving(false)
             return
           }
-
-          const res = await fetch('/api/admin/instant-win-prizes', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              id: prize.id,
-              campaign_id: prize.campaign_id,
-              prize_title: prize.prize_title,
-              prize_value_text: prize.prize_value_text,
-              unlock_ratio: ratio,
-              image_url: prize.image_url,
-              quantity: prize.quantity,
-            }),
-          })
-          const json = await res.json()
-          if (!res.ok || !json.ok) {
-            setSaveError(`Failed to save instant win "${prize.prize_title}": ${json.error || 'Unknown error'}`)
-            setIsSaving(false)
-            return
-          }
         }
+
+        // Save all prizes in parallel
+        const saveResults = await Promise.all(
+          dirtyPrizes.map(async (prize) => {
+            const ratio = Number(prize.unlock_ratio)
+            const res = await fetch('/api/admin/instant-win-prizes', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                id: prize.id,
+                campaign_id: prize.campaign_id,
+                prize_title: prize.prize_title,
+                prize_value_text: prize.prize_value_text,
+                unlock_ratio: ratio,
+                image_url: prize.image_url,
+                quantity: prize.quantity,
+              }),
+            })
+            const json = await res.json()
+            return { prize, ok: res.ok && json.ok, error: json.error }
+          })
+        )
+
+        // Check for any failures
+        const failed = saveResults.filter((r) => !r.ok)
+        if (failed.length > 0) {
+          const firstFail = failed[0]
+          setSaveError(`Failed to save instant win "${firstFail.prize.prize_title}": ${firstFail.error || 'Unknown error'}`)
+          setIsSaving(false)
+          return
+        }
+
         // Update originals after successful save
         setIwOriginal((prev) => {
           const updated = { ...prev }
