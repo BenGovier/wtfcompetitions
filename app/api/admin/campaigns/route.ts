@@ -162,7 +162,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: error.message, details: error }, { status: 500 })
   }
 
-  try { await refreshSnapshotsNow(data.id) } catch (e) { console.error('[snapshots] refresh failed', e) }
+  refreshSnapshotsNow(data.id).catch((e) => console.error('[snapshots] refresh failed', e))
 
   return NextResponse.json({ ok: true, id: data.id })
 }
@@ -194,7 +194,7 @@ export async function PUT(request: Request) {
     return NextResponse.json({ ok: false, error: error.message, details: error }, { status: 500 })
   }
 
-  try { await refreshSnapshotsNow(body.id) } catch (e) { console.error('[snapshots] refresh failed', e) }
+  refreshSnapshotsNow(body.id).catch((e) => console.error('[snapshots] refresh failed', e))
 
   return NextResponse.json({ ok: true, id: body.id })
 }
