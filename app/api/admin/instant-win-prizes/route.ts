@@ -35,17 +35,23 @@ export async function GET(request: Request) {
   const svc = getServiceSupabase()
   const { data, error } = await svc
     .from('instant_win_prizes')
-    .select('id, campaign_id, prize_title, prize_value_text, unlock_ratio, image_url, created_at')
+    .select('id, campaign_id, prize_title, prize_value_text, unlock_ratio, image_url, quantity, created_at')
     .eq('campaign_id', campaignId)
     .order('unlock_ratio', { ascending: true })
     .order('created_at', { ascending: true })
+
+  // Default quantity to 1 if null/undefined for backwards compatibility
+  const items = (data ?? []).map((row: any) => ({
+    ...row,
+    quantity: row.quantity ?? 1,
+  }))
 
   if (error) {
     console.error('[instant-win-prizes] GET error:', error)
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
   }
 
-  return NextResponse.json({ ok: true, items: data })
+  return NextResponse.json({ ok: true, items })
 }
 
 export async function POST(request: Request) {
@@ -68,13 +74,14 @@ export async function POST(request: Request) {
     prize_value_text: item.prize_value_text ?? null,
     unlock_ratio: item.unlock_ratio,
     image_url: item.image_url ?? null,
+    quantity: item.quantity ?? 1,
   }))
 
   const svc = getServiceSupabase()
   const { data, error } = await svc
     .from('instant_win_prizes')
     .insert(rows)
-    .select('id, campaign_id, prize_title, prize_value_text, unlock_ratio, image_url, created_at')
+    .select('id, campaign_id, prize_title, prize_value_text, unlock_ratio, image_url, quantity, created_at')
 
   if (error) {
     console.error('[instant-win-prizes] POST error:', error)
@@ -105,6 +112,7 @@ export async function PUT(request: Request) {
   if (body.prize_value_text !== undefined) update.prize_value_text = body.prize_value_text
   if (body.unlock_ratio !== undefined) update.unlock_ratio = body.unlock_ratio
   if (body.image_url !== undefined) update.image_url = body.image_url
+  if (body.quantity !== undefined) update.quantity = body.quantity
 
   const svc = getServiceSupabase()
   const { error } = await svc

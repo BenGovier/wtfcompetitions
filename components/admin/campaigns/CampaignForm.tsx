@@ -59,7 +59,8 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
       prize.prize_title !== orig.prize_title ||
       prize.prize_value_text !== orig.prize_value_text ||
       prize.unlock_ratio !== orig.unlock_ratio ||
-      prize.image_url !== orig.image_url
+      prize.image_url !== orig.image_url ||
+      prize.quantity !== orig.quantity
     )
   }, [iwOriginal])
 
@@ -180,6 +181,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
               prize_value_text: prize.prize_value_text,
               unlock_ratio: ratio,
               image_url: prize.image_url,
+              quantity: prize.quantity,
             }),
           })
           const json = await res.json()
@@ -249,6 +251,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
           campaign_id: campaignId,
           prize_title: 'New Prize',
           unlock_ratio: 0.5,
+          quantity: 1,
         }),
       })
       const json = await res.json()
@@ -281,6 +284,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
         campaign_id: campaignId,
         prize_title: `Instant Win #${i + 1}`,
         unlock_ratio: Math.round(ratio * 1000) / 1000,
+        quantity: 1,
       })
     }
 
@@ -334,6 +338,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
           prize_value_text: prize.prize_value_text,
           unlock_ratio: ratio,
           image_url: prize.image_url,
+          quantity: prize.quantity,
         }),
       })
       const json = await res.json()
@@ -873,6 +878,17 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
                                   handlePrizeFieldChange(prize.id, 'prize_value_text', e.target.value || null)
                                 }
                                 placeholder="e.g. £50"
+                              />
+                            </div>
+                            <div className="w-20 space-y-1">
+                              <Label className="text-xs">Quantity</Label>
+                              <Input
+                                type="number"
+                                min={1}
+                                value={prize.quantity}
+                                onChange={(e) =>
+                                  handlePrizeFieldChange(prize.id, 'quantity', Math.max(1, Number(e.target.value)))
+                                }
                               />
                             </div>
                             <div className="w-28 space-y-1">
