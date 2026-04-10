@@ -275,18 +275,15 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
   async function handleGenerateLadder() {
     if (!campaignId || ladderCount < 1) return
     setIwError(null)
-    const items = []
-    for (let i = 0; i < ladderCount; i++) {
-      const ratio = ladderCount === 1
-        ? ladderStart
-        : ladderStart + (ladderEnd - ladderStart) * (i / (ladderCount - 1))
-      items.push({
+    // Create a single grouped prize row with quantity = ladderCount
+    const items = [
+      {
         campaign_id: campaignId,
-        prize_title: `Instant Win #${i + 1}`,
-        unlock_ratio: Math.round(ratio * 1000) / 1000,
-        quantity: 1,
-      })
-    }
+        prize_title: 'Balloon Pop',
+        unlock_ratio: ladderStart,
+        quantity: ladderCount,
+      },
+    ]
 
     try {
       const res = await fetch('/api/admin/instant-win-prizes', {
