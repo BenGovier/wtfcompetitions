@@ -44,6 +44,7 @@ export type InstantWinPrizeRow = {
   prize_value_text: string | null
   unlock_ratio: number
   image_url: string | null
+  quantity: number
   created_at: string
 }
 
