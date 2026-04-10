@@ -34,7 +34,7 @@ export function WinnersPageClient({ winners, liveGiveaway }: WinnersPageClientPr
 
       {/* Winners Feed - extra bottom padding for sticky CTA + mobile nav */}
       <div className="pb-40 md:pb-12">
-        <WinnersGrid winners={winners} />
+        <WinnersGrid winners={winners} liveGiveaway={liveGiveaway} />
       </div>
 
       {/* Transparency Section */}
