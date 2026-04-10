@@ -293,7 +293,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
       })
       const json = await res.json()
       if (!res.ok || !json.ok) {
-        setIwError(json.error || 'Failed to generate ladder')
+        setIwError(json.error || 'Failed to add prize')
         return
       }
       const newItems = json.items || []
@@ -305,7 +305,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
         return updated
       })
     } catch (err: any) {
-      setIwError(err?.message || 'Failed to generate ladder')
+      setIwError(err?.message || 'Failed to add prize')
     }
   }
 
@@ -768,8 +768,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-xs text-muted-foreground">
-            Unlock ratio = ticketsSold / maxTicketsTotal threshold. We cap ladder end at 0.95 so prizes
-            don&apos;t all release at the very end.
+            Unlock ratio = ticketsSold / maxTicketsTotal threshold when prize becomes available.
           </p>
           <p className="text-xs text-blue-600 dark:text-blue-400">
             The main &quot;Save Changes&quot; button will save any edited instant win rows automatically.
@@ -781,12 +780,12 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
             </p>
           ) : (
             <>
-              {/* Ladder Generator */}
+              {/* Quick Add Prize */}
               <div className="rounded-md border p-4 space-y-3">
-                <p className="text-sm font-medium">Generate Ladder</p>
+                <p className="text-sm font-medium">Quick Add Prize</p>
                 <div className="flex flex-wrap items-end gap-3">
                   <div className="space-y-1">
-                    <Label className="text-xs">Prizes (N)</Label>
+                    <Label className="text-xs">Quantity</Label>
                     <Input
                       type="number"
                       min={1}
@@ -797,7 +796,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Start Ratio</Label>
+                    <Label className="text-xs">Unlock Ratio</Label>
                     <Input
                       type="number"
                       step={0.01}
@@ -806,18 +805,6 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
                       className="w-24"
                       value={ladderStart}
                       onChange={(e) => setLadderStart(Number(e.target.value))}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">End Ratio</Label>
-                    <Input
-                      type="number"
-                      step={0.01}
-                      min={0}
-                      max={1}
-                      className="w-24"
-                      value={ladderEnd}
-                      onChange={(e) => setLadderEnd(Number(e.target.value))}
                     />
                   </div>
                   <Button type="button" variant="outline" size="sm" onClick={handleGenerateLadder}>
@@ -956,7 +943,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
 
               {!iwLoading && instantWins.length === 0 && (
                 <p className="text-sm text-muted-foreground italic">
-                  No instant wins yet. Add one or generate a ladder.
+                  No instant wins yet. Add one or use Quick Add.
                 </p>
               )}
             </>
