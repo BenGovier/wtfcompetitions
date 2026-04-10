@@ -43,27 +43,14 @@ export default function SignUpPage() {
         email,
         password,
         options: {
-          data: { display_name: displayName || undefined },
+          data: {
+            display_name: displayName || undefined,
+            mobile: mobile.trim(),
+          },
         },
       })
 
       if (signUpError) throw signUpError
-
-      // Save mobile to profiles_private (upsert to handle new users)
-      if (data.user?.id) {
-        const { error: mobileUpsertError } = await supabase
-          .from('profiles_private')
-          .upsert(
-            { user_id: data.user.id, mobile: mobile.trim() },
-            { onConflict: 'user_id' }
-          )
-
-        if (mobileUpsertError) {
-          // Surface error to user - do not silently ignore
-          setError('Account created but failed to save mobile number. Please update it in your profile.')
-          console.error('Failed to save mobile number:', mobileUpsertError)
-        }
-      }
 
       // If Supabase email confirmation is enabled, user/session will be null
       if (!data.session && !data.user?.confirmed_at) {
