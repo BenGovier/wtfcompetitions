@@ -1,197 +1,100 @@
 "use client"
 
-import { useState, useMemo } from "react"
 import Link from "next/link"
 import type { WinnerSnapshot } from "@/lib/types"
-import { WinnersFilters } from "@/components/winners-filters"
 import { WinnersGrid } from "@/components/winners-grid"
-import { SectionHeader } from "@/components/section-header"
-import { Card, CardContent } from "@/components/ui/card"
-import { ShieldCheck, ExternalLink, Trophy, Sparkles } from "lucide-react"
+import { ShieldCheck, ExternalLink, Ticket, Zap } from "lucide-react"
+
+interface LiveGiveaway {
+  slug: string
+  title: string
+  heroImageUrl: string | null
+  ticketPricePence: number
+  endsAt: string
+}
 
 interface WinnersPageClientProps {
   winners: WinnerSnapshot[]
+  liveGiveaway?: LiveGiveaway | null
 }
 
-function formatTimeAgo(dateString: string): string {
-  const now = Date.now()
-  const then = new Date(dateString).getTime()
-  const diffSeconds = Math.floor((now - then) / 1000)
-
-  if (diffSeconds < 60) return "just now"
-  if (diffSeconds < 3600) {
-    const mins = Math.floor(diffSeconds / 60)
-    return `${mins} ${mins === 1 ? "minute" : "minutes"} ago`
-  }
-  if (diffSeconds < 86400) {
-    const hours = Math.floor(diffSeconds / 3600)
-    return `${hours} ${hours === 1 ? "hour" : "hours"} ago`
-  }
-  if (diffSeconds < 604800) {
-    const days = Math.floor(diffSeconds / 86400)
-    return `${days} ${days === 1 ? "day" : "days"} ago`
-  }
-  if (diffSeconds < 2592000) {
-    const weeks = Math.floor(diffSeconds / 604800)
-    return `${weeks} ${weeks === 1 ? "week" : "weeks"} ago`
-  }
-  const months = Math.floor(diffSeconds / 2592000)
-  return `${months} ${months === 1 ? "month" : "months"} ago`
-}
-
-export function WinnersPageClient({ winners }: WinnersPageClientProps) {
-  const [searchQuery, setSearchQuery] = useState("")
-  const [timeFilter, setTimeFilter] = useState<"all" | "week" | "month">("all")
-  const [typeFilter, setTypeFilter] = useState<"all" | "main" | "instant">("instant")
-
-  // Find the latest main winner for the spotlight
-  const latestMainWinner = useMemo(() => {
-    return winners.find((w) => w.kind === "main") || null
-  }, [winners])
-
-  const filteredWinners = useMemo(() => {
-    let filtered = [...winners]
-
-    // Time filter
-    const now = Date.now()
-    if (timeFilter === "week") {
-      const weekAgo = now - 7 * 24 * 60 * 60 * 1000
-      filtered = filtered.filter((w) => Date.parse(w.announcedAt) >= weekAgo)
-    } else if (timeFilter === "month") {
-      const monthAgo = now - 30 * 24 * 60 * 60 * 1000
-      filtered = filtered.filter((w) => Date.parse(w.announcedAt) >= monthAgo)
-    }
-
-    // Search filter
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase()
-      filtered = filtered.filter(
-        (w) =>
-          w.name.toLowerCase().includes(query) ||
-          w.prizeTitle.toLowerCase().includes(query) ||
-          w.giveawayTitle.toLowerCase().includes(query),
-      )
-    }
-
-    // Type filter
-    if (typeFilter === "main") {
-      filtered = filtered.filter((w) => w.kind === "main")
-    } else if (typeFilter === "instant") {
-      filtered = filtered.filter((w) => w.kind === "instant")
-    }
-
-    return filtered
-  }, [winners, searchQuery, timeFilter, typeFilter])
-
+export function WinnersPageClient({ winners, liveGiveaway }: WinnersPageClientProps) {
   return (
     <>
-      {/* Latest Main Winner Spotlight - TEMPORARILY DISABLED
-      {latestMainWinner && (
-        <div className="mb-8">
-          <Card className="relative overflow-hidden border-2 border-amber-400/60 bg-gradient-to-r from-amber-50 via-background to-amber-50/50 dark:from-amber-950/30 dark:via-background dark:to-amber-950/20">
-            <div className="absolute -left-10 -top-10 h-40 w-40 rounded-full bg-amber-400/10 blur-2xl" />
-            <div className="absolute -bottom-10 -right-10 h-40 w-40 rounded-full bg-amber-400/10 blur-2xl" />
-
-            <CardContent className="relative p-6 md:p-8">
-              <div className="flex flex-col items-center text-center md:flex-row md:items-start md:text-left md:gap-6">
-                <div className="mb-4 flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-amber-500 shadow-lg md:mb-0">
-                  <Trophy className="h-10 w-10 text-white" aria-hidden="true" />
-                </div>
-
-                <div className="flex-1">
-                  <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-amber-700 dark:bg-amber-900/50 dark:text-amber-400">
-                    <Sparkles className="h-3 w-3" aria-hidden="true" />
-                    Latest Main Winner
-                  </div>
-
-                  <h2 className="text-2xl font-bold text-foreground md:text-3xl">{latestMainWinner.name}</h2>
-
-                  <p className="mt-1 text-lg font-semibold text-amber-600 dark:text-amber-400">
-                    {latestMainWinner.prizeTitle}
-                  </p>
-
-                  <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-sm text-muted-foreground md:justify-start">
-                    <span>{latestMainWinner.giveawayTitle}</span>
-                    <span className="text-amber-600 dark:text-amber-400">
-                      {formatTimeAgo(latestMainWinner.announcedAt)}
-                    </span>
-                  </div>
-
-                  {latestMainWinner.giveawaySlug && (
-                    <a
-                      href={`/giveaways/${latestMainWinner.giveawaySlug}`}
-                      className="mt-4 inline-flex items-center gap-1 rounded text-sm font-semibold text-amber-600 transition-colors hover:text-amber-700 hover:underline focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 dark:text-amber-400 dark:hover:text-amber-300"
-                    >
-                      View giveaway
-                      <ExternalLink className="h-3 w-3" aria-hidden="true" />
-                    </a>
-                  )}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+      {/* Premium Hero Banner */}
+      <div className="relative mb-6 overflow-hidden rounded-xl border border-yellow-500/20 bg-gradient-to-br from-[#2a0845] via-[#1f0033] to-[#0f0018] p-4 shadow-[0_0_40px_rgba(139,92,246,0.15)] md:p-5">
+        {/* Glow accents */}
+        <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-yellow-500/10 blur-3xl" />
+        <div className="absolute -bottom-8 -left-8 h-24 w-24 rounded-full bg-purple-500/20 blur-2xl" />
+        
+        <div className="relative">
+          {/* Eyebrow */}
+          <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-yellow-500/30 bg-yellow-500/10 px-2.5 py-1">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-green-400" />
+            </span>
+            <span className="text-xs font-bold uppercase tracking-wider text-yellow-400">Live Win Feed</span>
+          </div>
+          
+          {/* Headline */}
+          <h1 className="text-xl font-extrabold leading-tight text-white md:text-2xl">
+            Thousands of prizes already won
+          </h1>
+          
+          {/* Subcopy */}
+          <p className="mt-1.5 text-sm text-white/70 md:text-base">
+            See the latest instant wins and jump into the live raffles before the next prize drops.
+          </p>
+          
+          {/* CTA */}
+          <Link
+            href="/giveaways"
+            className="mt-3 inline-flex items-center gap-2 rounded-lg border border-yellow-500/40 bg-gradient-to-r from-yellow-500 to-amber-500 px-4 py-2 text-sm font-bold text-black shadow-[0_0_16px_rgba(250,204,21,0.3)] transition-all duration-200 hover:scale-[1.03] hover:shadow-[0_0_24px_rgba(250,204,21,0.5)] active:scale-[0.98]"
+          >
+            <Zap className="h-4 w-4" aria-hidden="true" />
+            Enter Live Raffles
+          </Link>
         </div>
-      )}
-      */}
-
-      {/* Filters */}
-      <div className="mb-6">
-        <WinnersFilters
-          searchQuery={searchQuery}
-          timeFilter={timeFilter}
-          typeFilter={typeFilter}
-          onSearchChange={setSearchQuery}
-          onTimeFilterChange={setTimeFilter}
-          onTypeFilterChange={setTypeFilter}
-        />
       </div>
 
-      {/* Winners Grid */}
-      <div className="mb-12">
-        <SectionHeader
-          title={`${filteredWinners.length} ${filteredWinners.length === 1 ? "Winner" : "Winners"}`}
-          subtitle="Verified main prize winners and instant win winners from recent giveaways"
-          className="mb-6"
-        />
-        {filteredWinners.length === 0 && searchQuery ? (
-          <div className="rounded-lg border border-dashed p-12 text-center">
-            <p className="text-muted-foreground">
-              No winners found for <span className="font-semibold">&quot;{searchQuery}&quot;</span>. Try a different
-              search term.
-            </p>
-          </div>
-        ) : (
-          <WinnersGrid winners={filteredWinners} />
-        )}
+      {/* Winners Feed - extra bottom padding for sticky CTA + mobile nav */}
+      <div className="pb-40 md:pb-12">
+        <WinnersGrid winners={winners} liveGiveaway={liveGiveaway} />
       </div>
 
       {/* Transparency Section */}
-      <div className="rounded-lg border bg-card p-6 md:p-8">
+      <div className="mb-40 md:mb-12 rounded-xl border border-white/10 bg-[#1a0a2e]/80 p-5 md:p-6">
         <div className="flex items-start gap-4">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
-            <ShieldCheck className="h-5 w-5 text-primary" aria-hidden="true" />
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-500/20">
+            <ShieldCheck className="h-5 w-5 text-purple-400" aria-hidden="true" />
           </div>
           <div className="flex-1">
-            <h2 className="text-balance text-xl font-semibold md:text-2xl">How Winners Are Chosen</h2>
-            <p className="mt-2 text-pretty text-muted-foreground">
+            <h2 className="text-lg font-semibold text-white">How Winners Are Chosen</h2>
+            <p className="mt-2 text-sm text-white/60">
               All winners are selected through a fair random drawing system. Each entry has an equal chance of winning.
-              Winners are verified and announced publicly within 48 hours of each draw closing.{" "}
-              {/* Updated profile photo policy to match opt-out language */}A profile photo or avatar and real name are
-              used for public winner announcements (users can opt out in account settings).
-            </p>
-            <p className="mt-3 text-pretty text-sm text-muted-foreground">
-              For select Variant E giveaways, winners may be drawn live on TikTok. When this occurs, a link to the
-              recorded livestream will be included in the announcement.
+              Winners are verified and announced publicly within 48 hours of each draw closing.
             </p>
             <Link
               href="/faq"
-              className="mt-4 inline-flex items-center gap-1 rounded text-sm text-primary hover:underline focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+              className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-purple-400 hover:text-purple-300 hover:underline"
             >
               Learn more in our FAQ
               <ExternalLink className="h-3 w-3" aria-hidden="true" />
             </Link>
           </div>
         </div>
+      </div>
+
+      {/* Sticky Mobile CTA - positioned above mobile nav (which is ~56px) */}
+      <div className="fixed inset-x-0 bottom-14 z-40 border-t border-yellow-500/20 bg-[#1a0a2e]/95 p-3 shadow-[0_-4px_20px_rgba(0,0,0,0.5)] backdrop-blur-md md:bottom-0 md:border-white/10 md:bg-[#1f0033]/95 md:p-4">
+        <Link
+          href="/giveaways"
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-yellow-500/30 bg-gradient-to-r from-yellow-500 to-amber-500 px-6 py-3 text-base font-bold text-black shadow-[0_0_20px_rgba(250,204,21,0.3)] transition-all duration-200 hover:scale-[1.02] hover:shadow-[0_0_30px_rgba(250,204,21,0.5)] active:scale-[0.98]"
+        >
+          <Ticket className="h-5 w-5" aria-hidden="true" />
+          Enter Live Raffles
+        </Link>
       </div>
     </>
   )
