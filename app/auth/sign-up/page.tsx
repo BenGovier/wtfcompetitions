@@ -20,14 +20,23 @@ export default function SignUpPage() {
   const [displayName, setDisplayName] = useState('')
   const [mobile, setMobile] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [mobileError, setMobileError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [confirmMessage, setConfirmMessage] = useState(false)
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
+    setMobileError(null)
+    setError(null)
+
+    // Validate mobile is provided
+    if (!mobile.trim()) {
+      setMobileError('Mobile number is required')
+      return
+    }
+
     const supabase = createClient()
     setIsLoading(true)
-    setError(null)
 
     try {
       const { data, error: signUpError } = await supabase.auth.signUp({
@@ -40,20 +49,19 @@ export default function SignUpPage() {
 
       if (signUpError) throw signUpError
 
-      // Save mobile to profiles_private if provided (update only, not upsert)
-      if (mobile.trim() && data.user?.id) {
-        try {
-          const { error: mobileError } = await supabase
-            .from('profiles_private')
-            .update({ mobile: mobile.trim() })
-            .eq('user_id', data.user.id)
+      // Save mobile to profiles_private (upsert to handle new users)
+      if (data.user?.id) {
+        const { error: mobileUpsertError } = await supabase
+          .from('profiles_private')
+          .upsert(
+            { user_id: data.user.id, mobile: mobile.trim() },
+            { onConflict: 'user_id' }
+          )
 
-          if (mobileError) {
-            console.error('Failed to save mobile number:', mobileError)
-          }
-        } catch (mobileErr) {
-          console.error('Failed to save mobile number:', mobileErr)
-          // Do not fail sign-up if mobile save fails
+        if (mobileUpsertError) {
+          // Surface error to user - do not silently ignore
+          setError('Account created but failed to save mobile number. Please update it in your profile.')
+          console.error('Failed to save mobile number:', mobileUpsertError)
         }
       }
 
@@ -119,14 +127,19 @@ export default function SignUpPage() {
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="mobile">Mobile number (optional)</Label>
+                  <Label htmlFor="mobile">Mobile number</Label>
                   <Input
                     id="mobile"
                     type="tel"
                     placeholder="+44 7700 900000"
+                    required
                     value={mobile}
-                    onChange={(e) => setMobile(e.target.value)}
+                    onChange={(e) => {
+                      setMobile(e.target.value)
+                      if (mobileError) setMobileError(null)
+                    }}
                   />
+                  {mobileError && <p className="text-sm text-destructive">{mobileError}</p>}
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="email">Email</Label>
