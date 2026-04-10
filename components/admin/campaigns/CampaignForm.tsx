@@ -20,6 +20,7 @@ import { createClient } from "@/lib/supabase/client"
 import type { Campaign } from "@/lib/types/campaign"
 import type { InstantWinPrizeRow } from "@/lib/types/instantWins"
 import { Trash2, Save, Upload, Plus, Wand2 } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
 
 interface CampaignFormProps {
   campaign: Campaign
@@ -28,6 +29,7 @@ interface CampaignFormProps {
 
 export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
   const router = useRouter()
+  const { toast } = useToast()
   const [formData, setFormData] = useState<Campaign>(campaign)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState(false)
@@ -260,6 +262,10 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
       }
 
       console.log('[instant-debug][client] save successful, about to navigate away')
+      toast({
+        title: "Saved successfully",
+        description: "Changes may take a few seconds to appear live.",
+      })
       router.push('/admin/campaigns')
       router.refresh()
     } catch (err: any) {
