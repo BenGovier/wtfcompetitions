@@ -92,18 +92,26 @@ export async function POST(request: Request) {
 }
 
 export async function PUT(request: Request) {
+  console.log('[instant-debug][prize-api] PUT hit')
   const supabase = await createClient()
   const { user, error: authError } = await authorize(supabase)
-  if (!user) return NextResponse.json({ ok: false, error: authError }, { status: authError === 'Not authenticated' ? 401 : 403 })
+  if (!user) {
+    console.log('[instant-debug][prize-api] PUT auth failed:', authError)
+    return NextResponse.json({ ok: false, error: authError }, { status: authError === 'Not authenticated' ? 401 : 403 })
+  }
 
   let body: Record<string, any>
   try {
     body = await request.json()
   } catch {
+    console.log('[instant-debug][prize-api] PUT invalid JSON body')
     return NextResponse.json({ ok: false, error: 'Invalid JSON body' }, { status: 400 })
   }
 
+  console.log('[instant-debug][prize-api] PUT payload: id=', body.id, 'campaign_id=', body.campaign_id, 'prize_title=', body.prize_title, 'quantity=', body.quantity)
+
   if (!body.id || !body.campaign_id) {
+    console.log('[instant-debug][prize-api] PUT missing id or campaign_id')
     return NextResponse.json({ ok: false, error: 'Missing id or campaign_id' }, { status: 400 })
   }
 
@@ -114,6 +122,8 @@ export async function PUT(request: Request) {
   if (body.image_url !== undefined) update.image_url = body.image_url
   if (body.quantity !== undefined) update.quantity = body.quantity
 
+  console.log('[instant-debug][prize-api] PUT update object:', JSON.stringify(update))
+
   const svc = getServiceSupabase()
   const { error } = await svc
     .from('instant_win_prizes')
@@ -122,10 +132,11 @@ export async function PUT(request: Request) {
     .eq('campaign_id', body.campaign_id)
 
   if (error) {
-    console.error('[instant-win-prizes] PUT error:', error)
+    console.error('[instant-debug][prize-api] PUT DB error:', error)
     return NextResponse.json({ ok: false, error: error.message, details: error }, { status: 500 })
   }
 
+  console.log('[instant-debug][prize-api] PUT success, returning ok=true for id=', body.id)
   return NextResponse.json({ ok: true })
 }
 
