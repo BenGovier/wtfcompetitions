@@ -32,7 +32,7 @@ function formatPrize(prizeTitle: string): string {
   if (prizeTitle.includes("£")) {
     return prizeTitle
   }
-  return "a prize"
+  return "Balloon Pop 🎈"
 }
 
 function isCashPrize(prizeTitle: string): boolean {
@@ -71,10 +71,7 @@ export function WinnerCard({ winner, isHot = false }: WinnerCardProps) {
 
       {/* Text content */}
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm">
-          <span className="font-bold text-white">{winner.name}</span>
-          <span className="font-medium text-white/50"> just won</span>
-        </p>
+        <p className="truncate text-sm font-bold text-white">{winner.name}</p>
         <p
           className={cn(
             "truncate text-sm font-semibold",
