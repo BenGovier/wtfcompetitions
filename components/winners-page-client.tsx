@@ -5,11 +5,20 @@ import type { WinnerSnapshot } from "@/lib/types"
 import { WinnersGrid } from "@/components/winners-grid"
 import { ShieldCheck, ExternalLink, Ticket, Flame } from "lucide-react"
 
-interface WinnersPageClientProps {
-  winners: WinnerSnapshot[]
+interface LiveGiveaway {
+  slug: string
+  title: string
+  heroImageUrl: string | null
+  ticketPricePence: number
+  endsAt: string
 }
 
-export function WinnersPageClient({ winners }: WinnersPageClientProps) {
+interface WinnersPageClientProps {
+  winners: WinnerSnapshot[]
+  liveGiveaway?: LiveGiveaway | null
+}
+
+export function WinnersPageClient({ winners, liveGiveaway }: WinnersPageClientProps) {
   return (
     <>
       {/* Premium Header */}
