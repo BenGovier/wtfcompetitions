@@ -6,7 +6,6 @@
  * - Neutrals: current muted-foreground / background tokens
  */
 
-import { WinnersHeroBanner } from "@/components/winner-spotlight"
 import { WinnersPageClient } from "@/components/winners-page-client"
 import { mockWinners } from "@/lib/mock-data"
 import { createClient } from "@/lib/supabase/server"
@@ -76,13 +75,8 @@ export default async function WinnersPage() {
   }
 
   return (
-    <div className="container px-4 py-8 md:py-12">
-      {/* Hero banner -- no user data */}
-      <div className="mb-8 md:mb-12">
-        <WinnersHeroBanner />
-      </div>
-
-      {/* Client component handles filtering + grid */}
+    <div className="container px-4 py-6 md:py-10">
+      {/* Client component handles hero + grid */}
       <WinnersPageClient winners={winners} liveGiveaway={liveGiveaway} />
     </div>
   )

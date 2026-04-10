@@ -51,22 +51,22 @@ export function WinnersGrid({ winners, liveGiveaway }: WinnersGridProps) {
           >
             <div className="flex items-stretch">
               {/* Thumbnail */}
-              <div className="relative h-24 w-24 shrink-0 overflow-hidden bg-[#1a0a2e]">
+              <div className="relative h-20 w-20 shrink-0 overflow-hidden bg-[#1a0a2e]">
                 {liveGiveaway.heroImageUrl ? (
                   <Image
                     src={liveGiveaway.heroImageUrl}
                     alt={liveGiveaway.title}
                     fill
                     className="object-cover transition-transform duration-300 group-hover:scale-105"
-                    sizes="96px"
+                    sizes="80px"
                   />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-purple-600/30 to-pink-600/30">
-                    <Gift className="h-8 w-8 text-yellow-400/60" aria-hidden="true" />
+                    <Gift className="h-7 w-7 text-yellow-400/60" aria-hidden="true" />
                   </div>
                 )}
                 {/* Live badge overlay */}
-                <div className="absolute left-1.5 top-1.5 flex items-center gap-1 rounded bg-black/70 px-1.5 py-0.5 backdrop-blur-sm">
+                <div className="absolute left-1 top-1 flex items-center gap-1 rounded bg-black/70 px-1.5 py-0.5 backdrop-blur-sm">
                   <span className="relative flex h-1.5 w-1.5">
                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
                     <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-400" />
@@ -75,27 +75,25 @@ export function WinnersGrid({ winners, liveGiveaway }: WinnersGridProps) {
                 </div>
               </div>
               
-              {/* Content */}
-              <div className="flex min-w-0 flex-1 flex-col justify-center gap-1 px-3 py-2">
+              {/* Content - left side */}
+              <div className="flex min-w-0 flex-1 flex-col justify-center px-3 py-2">
                 <p className="truncate text-sm font-bold text-white group-hover:text-yellow-400 transition-colors">
                   {liveGiveaway.title}
                 </p>
                 {priceDisplay && (
                   <p className="text-xs font-medium text-white/60">{priceDisplay}</p>
                 )}
-                <span className="inline-flex w-fit items-center gap-1 rounded bg-yellow-500/20 px-2 py-0.5 text-xs font-bold text-yellow-400">
-                  <Ticket className="h-3 w-3" aria-hidden="true" />
-                  Enter Now
-                </span>
               </div>
               
-              {/* Arrow */}
-              <div className="flex shrink-0 items-center pr-3">
-                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-yellow-500/20 text-yellow-400 transition-transform duration-200 group-hover:translate-x-0.5">
-                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              {/* CTA button - right-aligned with subtle pulse glow */}
+              <div className="flex shrink-0 items-center gap-2 pr-3">
+                <span className="relative inline-flex items-center gap-1.5 rounded-lg border border-yellow-500/50 bg-gradient-to-r from-yellow-500 to-amber-500 px-3 py-1.5 text-xs font-bold text-black shadow-[0_0_12px_rgba(250,204,21,0.4)] transition-all duration-200 group-hover:scale-105 group-hover:shadow-[0_0_20px_rgba(250,204,21,0.6)] active:scale-95">
+                  <Ticket className="h-3.5 w-3.5" aria-hidden="true" />
+                  Enter
+                  <svg className="h-3 w-3 transition-transform duration-200 group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                   </svg>
-                </div>
+                </span>
               </div>
             </div>
           </Link>
