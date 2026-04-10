@@ -1,6 +1,7 @@
 import Link from "next/link"
 import type { WinnerSnapshot } from "@/lib/types"
 import { WinnerCard } from "@/components/winner-card"
+import Image from "next/image"
 import { Sparkles, Ticket, Gift } from "lucide-react"
 
 interface LiveGiveaway {
@@ -37,45 +38,64 @@ export function WinnersGrid({ winners, liveGiveaway }: WinnersGridProps) {
 
     // Insert momentum CTA after every 8 items
     if ((i + 1) % 8 === 0 && i < winners.length - 1) {
-      // If liveGiveaway exists, show specific raffle promo; otherwise generic CTA
+      // If liveGiveaway exists, show embedded giveaway promo card; otherwise generic CTA
       if (liveGiveaway) {
         const priceDisplay = liveGiveaway.ticketPricePence
-          ? `From ${(liveGiveaway.ticketPricePence / 100).toFixed(2).replace(/\.00$/, "")}`
+          ? `From £${(liveGiveaway.ticketPricePence / 100).toFixed(2).replace(/\.00$/, "")}`
           : null
         items.push(
           <Link
             key={`cta-${i}`}
             href={`/giveaways/${liveGiveaway.slug}`}
-            className="group relative block overflow-hidden rounded-xl border border-yellow-500/30 bg-gradient-to-r from-[#2a0845] via-[#1f0033] to-[#2a0845] p-4 shadow-[0_0_30px_rgba(255,215,0,0.1)] transition-all duration-200 hover:border-yellow-500/50 hover:shadow-[0_0_40px_rgba(255,215,0,0.15)]"
+            className="group relative block overflow-hidden rounded-xl border border-yellow-500/30 bg-gradient-to-br from-[#2a0845] via-[#1f0033] to-[#0f0018] shadow-[0_0_30px_rgba(255,215,0,0.1)] transition-all duration-200 hover:border-yellow-500/50 hover:shadow-[0_0_40px_rgba(255,215,0,0.2)]"
           >
-            {/* Gold glow accents */}
-            <div className="absolute -left-10 -top-10 h-24 w-24 rounded-full bg-yellow-500/10 blur-2xl" />
-            <div className="absolute -bottom-10 -right-10 h-24 w-24 rounded-full bg-yellow-500/10 blur-2xl" />
-            
-            <div className="relative flex items-center gap-4">
-              {/* Icon */}
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-yellow-500 to-amber-500 shadow-lg">
-                <Gift className="h-6 w-6 text-black" aria-hidden="true" />
+            <div className="flex items-stretch">
+              {/* Thumbnail */}
+              <div className="relative h-24 w-24 shrink-0 overflow-hidden bg-[#1a0a2e]">
+                {liveGiveaway.heroImageUrl ? (
+                  <Image
+                    src={liveGiveaway.heroImageUrl}
+                    alt={liveGiveaway.title}
+                    fill
+                    className="object-cover transition-transform duration-300 group-hover:scale-105"
+                    sizes="96px"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-purple-600/30 to-pink-600/30">
+                    <Gift className="h-8 w-8 text-yellow-400/60" aria-hidden="true" />
+                  </div>
+                )}
+                {/* Live badge overlay */}
+                <div className="absolute left-1.5 top-1.5 flex items-center gap-1 rounded bg-black/70 px-1.5 py-0.5 backdrop-blur-sm">
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-400" />
+                  </span>
+                  <span className="text-[10px] font-bold uppercase text-white">Live</span>
+                </div>
               </div>
               
-              {/* Text */}
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-semibold uppercase tracking-wider text-yellow-400">
-                  Live Now
-                </p>
-                <p className="truncate text-sm font-bold text-white">
+              {/* Content */}
+              <div className="flex min-w-0 flex-1 flex-col justify-center gap-1 px-3 py-2">
+                <p className="truncate text-sm font-bold text-white group-hover:text-yellow-400 transition-colors">
                   {liveGiveaway.title}
                 </p>
                 {priceDisplay && (
-                  <p className="text-xs text-white/60">{priceDisplay}</p>
+                  <p className="text-xs font-medium text-white/60">{priceDisplay}</p>
                 )}
+                <span className="inline-flex w-fit items-center gap-1 rounded bg-yellow-500/20 px-2 py-0.5 text-xs font-bold text-yellow-400">
+                  <Ticket className="h-3 w-3" aria-hidden="true" />
+                  Enter Now
+                </span>
               </div>
               
               {/* Arrow */}
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-yellow-500/20 text-yellow-400 transition-transform duration-200 group-hover:translate-x-1">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                </svg>
+              <div className="flex shrink-0 items-center pr-3">
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-yellow-500/20 text-yellow-400 transition-transform duration-200 group-hover:translate-x-0.5">
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                </div>
               </div>
             </div>
           </Link>

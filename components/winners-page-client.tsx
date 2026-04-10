@@ -3,7 +3,7 @@
 import Link from "next/link"
 import type { WinnerSnapshot } from "@/lib/types"
 import { WinnersGrid } from "@/components/winners-grid"
-import { ShieldCheck, ExternalLink, Ticket, Flame } from "lucide-react"
+import { ShieldCheck, ExternalLink, Ticket, Zap } from "lucide-react"
 
 interface LiveGiveaway {
   slug: string
@@ -21,15 +21,41 @@ interface WinnersPageClientProps {
 export function WinnersPageClient({ winners, liveGiveaway }: WinnersPageClientProps) {
   return (
     <>
-      {/* Premium Header */}
-      <div className="mb-6">
-        <div className="flex items-center gap-2">
-          <Flame className="h-6 w-6 text-yellow-400" aria-hidden="true" />
-          <h1 className="text-2xl font-bold text-white md:text-3xl">Live Wins</h1>
+      {/* Premium Hero Banner */}
+      <div className="relative mb-6 overflow-hidden rounded-xl border border-yellow-500/20 bg-gradient-to-br from-[#2a0845] via-[#1f0033] to-[#0f0018] p-4 shadow-[0_0_40px_rgba(139,92,246,0.15)] md:p-5">
+        {/* Glow accents */}
+        <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-yellow-500/10 blur-3xl" />
+        <div className="absolute -bottom-8 -left-8 h-24 w-24 rounded-full bg-purple-500/20 blur-2xl" />
+        
+        <div className="relative">
+          {/* Eyebrow */}
+          <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-yellow-500/30 bg-yellow-500/10 px-2.5 py-1">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-green-400" />
+            </span>
+            <span className="text-xs font-bold uppercase tracking-wider text-yellow-400">Live Win Feed</span>
+          </div>
+          
+          {/* Headline */}
+          <h1 className="text-xl font-extrabold leading-tight text-white md:text-2xl">
+            Thousands of prizes already won
+          </h1>
+          
+          {/* Subcopy */}
+          <p className="mt-1.5 text-sm text-white/70 md:text-base">
+            See the latest instant wins and jump into the live raffles before the next prize drops.
+          </p>
+          
+          {/* CTA */}
+          <Link
+            href="/giveaways"
+            className="mt-3 inline-flex items-center gap-2 rounded-lg border border-yellow-500/40 bg-gradient-to-r from-yellow-500 to-amber-500 px-4 py-2 text-sm font-bold text-black shadow-[0_0_16px_rgba(250,204,21,0.3)] transition-all duration-200 hover:scale-[1.03] hover:shadow-[0_0_24px_rgba(250,204,21,0.5)] active:scale-[0.98]"
+          >
+            <Zap className="h-4 w-4" aria-hidden="true" />
+            Enter Live Raffles
+          </Link>
         </div>
-        <p className="mt-1 text-sm font-medium text-white/60">
-          Thousands of prizes already won — don&apos;t miss out
-        </p>
       </div>
 
       {/* Winners Feed - extra bottom padding for sticky CTA + mobile nav */}
