@@ -568,7 +568,7 @@ function WonReveal({ award, prizes }: { award: AwardPayload; prizes: Prize[] }) 
         {/* Title */}
         <div className="title-slide text-center">
           <p className="shimmer-text text-sm font-bold uppercase tracking-[0.2em] mb-1">
-            {prizes.length > 1 ? 'Instant Wins!' : 'Instant Win!'}
+            {prizes.length > 1 ? `${prizes.length} Instant Wins!` : 'Instant Win!'}
           </p>
           <h1 className="text-2xl font-bold text-white text-balance">
             {prize.title}
