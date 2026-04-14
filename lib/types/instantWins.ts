@@ -45,6 +45,7 @@ export type InstantWinPrizeRow = {
   unlock_ratio: number
   image_url: string | null
   quantity: number
+  is_high_value: boolean
   created_at: string
 }
 
