@@ -561,13 +561,18 @@ function WonReveal({ award, prizes }: { award: AwardPayload; prizes: Prize[] }) 
       {/* Content */}
       <div className="relative z-10 flex flex-col items-center gap-4 w-full">
         {/* Win badge */}
-        <div className="icon-pop glow-badge flex size-24 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 via-yellow-500 to-orange-500">
+        <div className="icon-pop glow-badge relative flex size-24 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 via-yellow-500 to-orange-500">
           <PartyPopper className="size-12 text-white drop-shadow-lg" />
+          {prizes.length > 1 && (
+            <span className="absolute -right-1 -top-1 flex size-8 items-center justify-center rounded-full bg-white text-sm font-bold text-amber-600 shadow-lg ring-2 ring-amber-400">
+              x{prizes.length}
+            </span>
+          )}
         </div>
 
         {/* Title */}
         <div className="title-slide text-center">
-          <p className="shimmer-text text-sm font-bold uppercase tracking-[0.2em] mb-1">
+          <p className={`shimmer-text font-bold uppercase tracking-[0.2em] mb-1 ${prizes.length > 1 ? 'text-xl' : 'text-sm'}`}>
             {prizes.length > 1 ? `${prizes.length} Instant Wins!` : 'Instant Win!'}
           </p>
           <h1 className="text-2xl font-bold text-white text-balance">
