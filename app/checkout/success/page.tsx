@@ -639,7 +639,9 @@ function WonReveal({ award, prizes }: { award: AwardPayload; prizes: Prize[] }) 
         {/* Actions */}
         <div className="actions-slide flex flex-col gap-3 w-full">
           <p className="text-xs text-purple-300/60 text-center">
-            {"You've also been entered into the main draw. We'll be in touch about your prize."}
+            {prizes.length > 1
+              ? "You've also been entered into the main draw. We'll be in touch about your prizes."
+              : "You've also been entered into the main draw. We'll be in touch about your prize."}
           </p>
           <div className="flex flex-col gap-2">
             <Button asChild className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold shadow-lg shadow-amber-500/25 border-0">
