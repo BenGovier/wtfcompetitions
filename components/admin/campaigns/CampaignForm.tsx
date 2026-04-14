@@ -20,7 +20,7 @@ import {
 import { createClient } from "@/lib/supabase/client"
 import type { Campaign } from "@/lib/types/campaign"
 import type { InstantWinPrizeRow } from "@/lib/types/instantWins"
-import { Trash2, Save, Upload, Plus, Wand2 } from "lucide-react"
+import { Trash2, Save, Upload, Plus, Wand2, Lock } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 
 interface CampaignFormProps {
@@ -53,6 +53,10 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
   const [ladderEnd, setLadderEnd] = useState(0.95)
 
   const campaignId = formData.id || campaign.id
+
+  // Slot lock state - once tickets are sold, structural changes are blocked
+  const ticketsSold = campaign.ticketsSold ?? 0
+  const slotsLocked = ticketsSold > 0
 
   // Helper to check if a prize row is dirty (changed from original)
   const isPrizeDirty = useCallback((prize: InstantWinPrizeRow): boolean => {
@@ -817,6 +821,15 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
             The main &quot;Save Changes&quot; button will save any edited instant win rows automatically.
           </p>
 
+          {slotsLocked && (
+            <div className="rounded-md border border-amber-400 bg-amber-50 dark:bg-amber-950/30 p-3 flex items-start gap-2">
+              <Lock className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+              <p className="text-sm text-amber-800 dark:text-amber-200">
+                <strong>Structure locked:</strong> {ticketsSold} ticket(s) sold. You can edit prize titles, values, and images, but adding, deleting, or changing quantity/high-value settings requires manual database changes.
+              </p>
+            </div>
+          )}
+
           {!campaignId ? (
             <p className="text-sm text-muted-foreground italic">
               Save campaign first to add instant wins.
@@ -850,7 +863,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
                       onChange={(e) => setLadderStart(Number(e.target.value))}
                     />
                   </div>
-                  <Button type="button" variant="outline" size="sm" onClick={handleGenerateLadder}>
+                  <Button type="button" variant="outline" size="sm" onClick={handleGenerateLadder} disabled={slotsLocked}>
                     <Wand2 className="mr-1 h-4 w-4" />
                     Generate
                   </Button>
@@ -858,7 +871,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
               </div>
 
               {/* Add single */}
-              <Button type="button" variant="outline" size="sm" onClick={handleAddPrize}>
+              <Button type="button" variant="outline" size="sm" onClick={handleAddPrize} disabled={slotsLocked}>
                 <Plus className="mr-1 h-4 w-4" />
                 Add Instant Win
               </Button>
@@ -916,6 +929,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
                                 onChange={(e) =>
                                   handlePrizeFieldChange(prize.id, 'quantity', Math.max(1, Number(e.target.value)))
                                 }
+                                disabled={slotsLocked}
                               />
                             </div>
                             <div className="w-28 space-y-1">
@@ -938,8 +952,9 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
                                 onCheckedChange={(checked) =>
                                   handlePrizeFieldChange(prize.id, 'is_high_value', checked === true)
                                 }
+                                disabled={slotsLocked}
                               />
-                              <Label htmlFor={`high-value-${prize.id}`} className="text-xs font-medium cursor-pointer">
+                              <Label htmlFor={`high-value-${prize.id}`} className={`text-xs font-medium ${slotsLocked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
                                 High Value
                               </Label>
                             </div>
@@ -985,6 +1000,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
                               size="icon"
                               onClick={() => handleDeletePrize(prize.id)}
                               title="Delete prize"
+                              disabled={slotsLocked}
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>

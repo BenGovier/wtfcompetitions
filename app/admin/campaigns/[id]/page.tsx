@@ -71,6 +71,15 @@ export default async function CampaignFormPage({
     )
   }
 
+  // Fetch ticket counter to determine if slots are locked
+  const { data: counter } = await supabase
+    .from('giveaway_ticket_counters')
+    .select('next_ticket')
+    .eq('giveaway_id', id)
+    .maybeSingle()
+
+  const ticketsSold = Math.max((counter?.next_ticket ?? 1) - 1, 0)
+
   const campaign: Campaign = {
     id: String(r.id),
     status: r.status ?? 'draft',
@@ -86,6 +95,7 @@ export default async function CampaignFormPage({
     ticketPricePence: r.ticket_price_pence ?? 0,
     maxTicketsTotal: r.max_tickets_total ?? null,
     maxTicketsPerUser: r.max_tickets_per_user ?? null,
+    ticketsSold,
     bundles: r.bundles ?? null,
   }
 
