@@ -602,7 +602,7 @@ function WonReveal({ award, prizes }: { award: AwardPayload; prizes: Prize[] }) 
                     <img src={p.image_url} alt={p.title} className="h-10 w-10 rounded-lg object-cover" />
                   )}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-white truncate">{p.title}</p>
+                    <p className="text-sm font-semibold text-white">{p.title}</p>
                     {p.value_text && <p className="text-xs text-purple-200/70">{p.value_text}</p>}
                   </div>
                 </div>
