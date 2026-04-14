@@ -35,15 +35,16 @@ export async function GET(request: Request) {
   const svc = getServiceSupabase()
   const { data, error } = await svc
     .from('instant_win_prizes')
-    .select('id, campaign_id, prize_title, prize_value_text, unlock_ratio, image_url, quantity, created_at')
+    .select('id, campaign_id, prize_title, prize_value_text, unlock_ratio, image_url, quantity, is_high_value, created_at')
     .eq('campaign_id', campaignId)
     .order('unlock_ratio', { ascending: true })
     .order('created_at', { ascending: true })
 
-  // Default quantity to 1 if null/undefined for backwards compatibility
+  // Default quantity to 1 and is_high_value to false if null/undefined for backwards compatibility
   const items = (data ?? []).map((row: any) => ({
     ...row,
     quantity: row.quantity ?? 1,
+    is_high_value: row.is_high_value ?? false,
   }))
 
   if (error) {
@@ -75,13 +76,14 @@ export async function POST(request: Request) {
     unlock_ratio: item.unlock_ratio,
     image_url: item.image_url ?? null,
     quantity: item.quantity ?? 1,
+    is_high_value: item.is_high_value ?? false,
   }))
 
   const svc = getServiceSupabase()
   const { data, error } = await svc
     .from('instant_win_prizes')
     .insert(rows)
-    .select('id, campaign_id, prize_title, prize_value_text, unlock_ratio, image_url, quantity, created_at')
+    .select('id, campaign_id, prize_title, prize_value_text, unlock_ratio, image_url, quantity, is_high_value, created_at')
 
   if (error) {
     console.error('[instant-win-prizes] POST error:', error)
@@ -121,6 +123,7 @@ export async function PUT(request: Request) {
   if (body.unlock_ratio !== undefined) update.unlock_ratio = body.unlock_ratio
   if (body.image_url !== undefined) update.image_url = body.image_url
   if (body.quantity !== undefined) update.quantity = body.quantity
+  if (body.is_high_value !== undefined) update.is_high_value = body.is_high_value
 
   console.log('[instant-debug][prize-api] PUT update object:', JSON.stringify(update))
 

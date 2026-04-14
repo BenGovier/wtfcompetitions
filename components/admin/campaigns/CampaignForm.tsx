@@ -7,6 +7,7 @@ import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -62,7 +63,8 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
       prize.prize_value_text !== orig.prize_value_text ||
       prize.unlock_ratio !== orig.unlock_ratio ||
       prize.image_url !== orig.image_url ||
-      prize.quantity !== orig.quantity
+      prize.quantity !== orig.quantity ||
+      prize.is_high_value !== orig.is_high_value
     )
   }, [iwOriginal])
 
@@ -199,6 +201,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
                 unlock_ratio: ratio,
                 image_url: prize.image_url,
                 quantity: prize.quantity,
+                is_high_value: prize.is_high_value,
               }),
             })
             const json = await res.json()
@@ -375,6 +378,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
           unlock_ratio: ratio,
           image_url: prize.image_url,
           quantity: prize.quantity,
+          is_high_value: prize.is_high_value,
         }),
       })
       const json = await res.json()
@@ -926,6 +930,18 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
                                   handlePrizeFieldChange(prize.id, 'unlock_ratio', Number(e.target.value))
                                 }
                               />
+                            </div>
+                            <div className="flex items-center gap-2 pt-5">
+                              <Checkbox
+                                id={`high-value-${prize.id}`}
+                                checked={prize.is_high_value}
+                                onCheckedChange={(checked) =>
+                                  handlePrizeFieldChange(prize.id, 'is_high_value', checked === true)
+                                }
+                              />
+                              <Label htmlFor={`high-value-${prize.id}`} className="text-xs font-medium cursor-pointer">
+                                High Value
+                              </Label>
                             </div>
                           </div>
 
