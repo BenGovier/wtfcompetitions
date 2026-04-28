@@ -8,7 +8,7 @@ const MAINTENANCE_ALLOWED_PATHS = new Set([
   '/pre-register',
   '/api/pre-register',
   '/terms',
-  '/legal/privacy',
+  '/privacy',
 ])
 
 const MAINTENANCE_ALLOWED_PREFIXES = ['/_next/']
@@ -46,6 +46,7 @@ function shouldBypassSession(pathname: string): boolean {
     pathname.startsWith('/about') ||
     pathname.startsWith('/legal') ||
     pathname.startsWith('/terms') ||
+    pathname.startsWith('/privacy') ||
     pathname.startsWith('/auth/login') ||
     pathname.startsWith('/auth/sign-up') ||
     pathname.startsWith('/auth/forgot-password') ||
@@ -106,6 +107,13 @@ export async function middleware(request: NextRequest) {
   if (pathname === '/legal/terms') {
     const redirectUrl = request.nextUrl.clone()
     redirectUrl.pathname = '/terms'
+    return NextResponse.redirect(redirectUrl, 301)
+  }
+
+  /* ---- Redirect /legal/privacy to /privacy ---- */
+  if (pathname === '/legal/privacy') {
+    const redirectUrl = request.nextUrl.clone()
+    redirectUrl.pathname = '/privacy'
     return NextResponse.redirect(redirectUrl, 301)
   }
 

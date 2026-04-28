@@ -176,7 +176,7 @@ export function PreRegisterForm() {
               Terms & Conditions
             </Link>
             {' and '}
-            <Link href="/legal/privacy" className="text-pink-100 underline underline-offset-2 hover:text-white">
+            <Link href="/privacy" className="text-pink-100 underline underline-offset-2 hover:text-white">
               Privacy Policy
             </Link>
             {' and I consent to marketing.'}

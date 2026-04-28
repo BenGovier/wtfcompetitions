@@ -60,7 +60,7 @@ export function SiteFooter() {
                   </Link>
                 </li>
                 <li>
-                  <Link href="/legal/privacy" className="text-white/80 transition-colors hover:text-amber-400">
+                  <Link href="/privacy" className="text-white/80 transition-colors hover:text-amber-400">
                     Privacy Policy
                   </Link>
                 </li>
