@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Minus, Plus, Clock, CalendarClock, Lock, Flame, Zap, Crown } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { FreeEntryInfo } from "@/components/free-entry-info"
 
 function formatGBP(amount: number | null | undefined) {
   const n = Number(amount)
@@ -528,6 +529,10 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
           <Lock className="h-3 w-3" aria-hidden="true" />
           Instant confirmation &bull; Secure checkout
         </p>
+
+        <div className="text-center">
+          <FreeEntryInfo />
+        </div>
       </div>
 
       {/* ---- Sticky bottom CTA (mobile only, after scrolling past qty) ---- */}
