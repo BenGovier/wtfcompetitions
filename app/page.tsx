@@ -1,5 +1,4 @@
 import { Button } from "@/components/ui/button"
-import { TrustBadges } from "@/components/trust-badges"
 import Link from "next/link"
 import Image from "next/image"
 import { ArrowRight, Clock } from "lucide-react"
@@ -46,49 +45,19 @@ export default async function HomePage() {
 
   return (
     <>
-      {/* Hero Section - Full screen, full width */}
-      <section className="relative w-full h-screen overflow-hidden">
-        {/* Mobile hero image */}
-        <div className="absolute inset-0 z-0 md:hidden">
+      {/* Hero Section - Full width banner */}
+      <section className="relative w-full">
+        <Link href="/giveaways" className="block w-full">
           <Image
-            src="/images/pre-register-hero-mobile.png"
-            alt="WTF Giveaways"
-            className="object-cover"
-            fill
+            src="/images/hero-banner.png"
+            alt="Win Cash Daily - Play Now for Instant Wins"
+            width={1792}
+            height={1024}
+            className="w-full h-auto"
             priority
             sizes="100vw"
           />
-        </div>
-        {/* Desktop hero image */}
-        <div className="absolute inset-0 z-0 hidden md:block">
-          <Image
-            src="/images/pre-register-hero-desktop.png"
-            alt="WTF Giveaways"
-            className="object-cover"
-            fill
-            priority
-            sizes="100vw"
-          />
-        </div>
-        {/* Dark overlay for text readability */}
-        <div className="absolute inset-0 z-[1] bg-black/50" aria-hidden="true" />
-        <div className="relative z-10 flex flex-col items-center justify-center text-center h-full px-6">
-          <h1 className="text-balance text-4xl font-extrabold tracking-tight text-white md:text-5xl lg:text-6xl">Win Amazing Prizes</h1>
-          <p className="mx-auto mt-4 max-w-2xl text-pretty text-lg leading-relaxed text-white/80 md:text-xl">
-            {"Enter the best giveaways and join everyone who\u2019s winning real cash prizes!"}
-          </p>
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
-            <Button size="lg" className="rounded-xl bg-primary text-base font-semibold text-primary-foreground shadow-md transition-all duration-300 hover:-translate-y-0.5 hover:bg-[#5B21B6] hover:shadow-lg" asChild>
-              <Link href="/giveaways">Browse Giveaways</Link>
-            </Button>
-            <Button size="lg" variant="outline" className="rounded-xl border-white/30 bg-white text-base font-semibold text-[#6D28D9] transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/90" asChild>
-              <Link href="/winners">See Winners</Link>
-            </Button>
-          </div>
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-6 py-4 [&_span]:text-white [&_svg]:text-white">
-            <TrustBadges />
-          </div>
-        </div>
+        </Link>
       </section>
 
     <div className="min-h-screen bg-gradient-to-b from-[#1a002b] via-[#2d0050] to-[#0a0014]">
