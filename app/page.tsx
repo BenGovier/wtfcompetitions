@@ -73,7 +73,7 @@ export default async function HomePage() {
         {/* Dark overlay for text readability */}
         <div className="absolute inset-0 z-[1] bg-black/50" aria-hidden="true" />
         <div className="relative z-10 flex flex-col items-center justify-center text-center h-full px-6">
-          <h1 className="text-balance text-4xl font-extrabold tracking-tight text-white md:text-5xl lg:text-6xl">Win Amazing Prizes</h1>
+          <h1 className="text-balance text-4xl font-extrabold tracking-tight text-white md:text-5xl lg:text-6xl">Win £1000&apos;s</h1>
           <p className="mx-auto mt-4 max-w-2xl text-pretty text-lg leading-relaxed text-white/80 md:text-xl">
             {"Enter the best giveaways and join everyone who\u2019s winning real cash prizes!"}
           </p>
