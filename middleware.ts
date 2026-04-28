@@ -7,7 +7,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 const MAINTENANCE_ALLOWED_PATHS = new Set([
   '/pre-register',
   '/api/pre-register',
-  '/legal/terms',
+  '/terms',
   '/legal/privacy',
 ])
 
@@ -45,6 +45,7 @@ function shouldBypassSession(pathname: string): boolean {
     pathname.startsWith('/winners') ||
     pathname.startsWith('/about') ||
     pathname.startsWith('/legal') ||
+    pathname.startsWith('/terms') ||
     pathname.startsWith('/auth/login') ||
     pathname.startsWith('/auth/sign-up') ||
     pathname.startsWith('/auth/forgot-password') ||
@@ -99,6 +100,13 @@ export async function middleware(request: NextRequest) {
       redirectUrl.search = ''
       return NextResponse.redirect(redirectUrl, 307)
     }
+  }
+
+  /* ---- Redirect /legal/terms to /terms ---- */
+  if (pathname === '/legal/terms') {
+    const redirectUrl = request.nextUrl.clone()
+    redirectUrl.pathname = '/terms'
+    return NextResponse.redirect(redirectUrl, 301)
   }
 
   /* ---- Existing behaviour (unchanged) ---- */

@@ -73,7 +73,7 @@ export function FreeEntryInfo() {
             Postal entries must be received before the competition closes. One entry per
             postcard. For full details, please{" "}
             <Link
-              href="/legal/terms"
+              href="/terms"
               className="text-amber-400 underline underline-offset-2 hover:text-amber-300"
             >
               view full terms

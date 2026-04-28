@@ -172,7 +172,7 @@ export function PreRegisterForm() {
           />
           <span className="text-[11px] leading-relaxed text-pink-200/70">
             {'I agree to the '}
-            <Link href="/legal/terms" className="text-pink-100 underline underline-offset-2 hover:text-white">
+            <Link href="/terms" className="text-pink-100 underline underline-offset-2 hover:text-white">
               Terms & Conditions
             </Link>
             {' and '}
