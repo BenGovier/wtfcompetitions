@@ -472,6 +472,26 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
               </SelectContent>
             </Select>
           </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="presentation_type">Presentation Type</Label>
+            <Select
+              value={formData.presentation_type ?? ""}
+              onValueChange={(value) => handleChange("presentation_type", value || null)}
+            >
+              <SelectTrigger id="presentation_type">
+                <SelectValue placeholder="None" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">None</SelectItem>
+                <SelectItem value="balloon_pop">Live Balloon Pop</SelectItem>
+                <SelectItem value="instant_cash">Instant Cash Wins</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Optional presentation style for the giveaway card
+            </p>
+          </div>
         </CardContent>
       </Card>
 
