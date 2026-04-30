@@ -131,6 +131,24 @@ export default async function HomePage() {
                       <p className="mt-1 text-sm text-white/60 line-clamp-1">{giveaway.prize_title}</p>
                     )}
 
+                    {/* Presentation type badge */}
+                    {giveaway.presentation_type === 'balloon_pop' && (
+                      <div className="mt-2">
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-pink-500/20 px-3 py-1 text-xs font-semibold text-pink-300 border border-pink-400/30">
+                          🎈 TikTok & Facebook LIVE Balloon Pop
+                        </span>
+                        <p className="mt-1 text-[10px] text-pink-300/70">Watch live • Pop balloons • Win cash</p>
+                      </div>
+                    )}
+                    {giveaway.presentation_type === 'instant_cash' && (
+                      <div className="mt-2">
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-300 border border-emerald-400/30">
+                          ⚡ WIN NOW Instant Cash
+                        </span>
+                        <p className="mt-1 text-[10px] text-emerald-300/70">Buy tickets • Reveal instantly</p>
+                      </div>
+                    )}
+
                     {/* Progress bar - percentage only */}
                     {percentSold !== null && (
                       <div className="mt-3">
