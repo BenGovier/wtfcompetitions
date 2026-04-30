@@ -16,7 +16,7 @@ export function RulesAccordion({ rulesText }: RulesAccordionProps) {
               <p className="text-xs">
                 <strong>Important:</strong> By entering this giveaway, you agree to our Terms of Service and Privacy
                 Policy. See our{" "}
-                <a href="/legal/terms" className="underline hover:text-foreground">
+                <a href="/terms" className="underline hover:text-foreground">
                   full terms
                 </a>{" "}
                 for complete details.

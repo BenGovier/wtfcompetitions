@@ -210,7 +210,7 @@ export default function ProfilePage() {
             update your visibility preferences at any time.
           </p>
           <p className="mt-4 text-sm">
-            <Link href="/legal/privacy" className="text-primary hover:underline">
+            <Link href="/privacy" className="text-primary hover:underline">
               Read our Privacy Policy
             </Link>
           </p>
