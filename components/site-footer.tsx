@@ -55,12 +55,12 @@ export function SiteFooter() {
               <h3 className="mb-4 text-xs font-semibold uppercase tracking-wider text-amber-400">Legal</h3>
               <ul className="space-y-3 text-sm">
                 <li>
-                  <Link href="/legal/terms" className="text-white/80 transition-colors hover:text-amber-400">
+                  <Link href="/terms" className="text-white/80 transition-colors hover:text-amber-400">
                     Terms of Service
                   </Link>
                 </li>
                 <li>
-                  <Link href="/legal/privacy" className="text-white/80 transition-colors hover:text-amber-400">
+                  <Link href="/privacy" className="text-white/80 transition-colors hover:text-amber-400">
                     Privacy Policy
                   </Link>
                 </li>
