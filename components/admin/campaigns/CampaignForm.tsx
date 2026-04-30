@@ -521,14 +521,14 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
           <div className="space-y-2">
             <Label htmlFor="presentation_type">Presentation Type</Label>
             <Select
-              value={formData.presentation_type ?? ""}
-              onValueChange={(value) => handleChange("presentation_type", value || null)}
+              value={formData.presentation_type ?? "none"}
+              onValueChange={(value) => handleChange("presentation_type", value === "none" ? null : value)}
             >
               <SelectTrigger id="presentation_type">
                 <SelectValue placeholder="None" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">None</SelectItem>
+                <SelectItem value="none">None</SelectItem>
                 <SelectItem value="balloon_pop">Live Balloon Pop</SelectItem>
                 <SelectItem value="instant_cash">Instant Cash Wins</SelectItem>
               </SelectContent>
