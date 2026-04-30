@@ -131,27 +131,27 @@ export default async function HomePage() {
                       <p className="mt-1 text-sm text-white/60 line-clamp-1">{giveaway.prize_title}</p>
                     )}
 
-                    {/* Presentation type - prominent treatment */}
+                    {/* Presentation type - high contrast treatment */}
                     {giveaway.presentation_type === 'balloon_pop' && (
-                      <div className="mt-3 rounded-xl bg-gradient-to-r from-pink-500/20 to-fuchsia-500/20 border border-pink-400/30 p-3">
-                        <div className="text-base font-black uppercase tracking-wide text-pink-300">
-                          TIKTOK & FACEBOOK LIVE
+                      <div className="mt-4 rounded-xl bg-gradient-to-r from-pink-600/40 to-fuchsia-600/40 border-2 border-pink-400/50 p-4 shadow-lg shadow-pink-500/20">
+                        <div className="text-sm font-black uppercase tracking-wider text-pink-200">
+                          🎈 TIKTOK LIVE + FACEBOOK LIVE
                         </div>
-                        <div className="text-lg font-bold text-white">
-                          Balloon Pop Event
+                        <div className="text-xl font-black uppercase tracking-wide text-white mt-1">
+                          BALLOON POP EVENT
                         </div>
-                        <p className="mt-1 text-xs text-pink-300/80">Watch live - Pop balloons - Win cash</p>
+                        <p className="mt-2 text-xs font-medium text-pink-200/90">Watch live • Pop balloons • Win cash</p>
                       </div>
                     )}
                     {giveaway.presentation_type === 'instant_cash' && (
-                      <div className="mt-3 rounded-xl bg-gradient-to-r from-emerald-500/20 to-teal-500/20 border border-emerald-400/30 p-3">
-                        <div className="text-base font-black uppercase tracking-wide text-emerald-300">
-                          WIN NOW
+                      <div className="mt-4 rounded-xl bg-gradient-to-r from-emerald-600/40 to-teal-600/40 border-2 border-emerald-400/50 p-4 shadow-lg shadow-emerald-500/20">
+                        <div className="text-sm font-black uppercase tracking-wider text-emerald-200">
+                          ⚡ WIN NOW
                         </div>
-                        <div className="text-lg font-bold text-white">
-                          Instant Cash Wins
+                        <div className="text-xl font-black uppercase tracking-wide text-white mt-1">
+                          INSTANT CASH WINS
                         </div>
-                        <p className="mt-1 text-xs text-emerald-300/80">Buy tickets - Reveal instantly</p>
+                        <p className="mt-2 text-xs font-medium text-emerald-200/90">Buy tickets • Reveal instantly</p>
                       </div>
                     )}
 
@@ -167,6 +167,15 @@ export default async function HomePage() {
                             style={{ width: `${percentSold}%` }}
                           />
                         </div>
+                      </div>
+                    )}
+
+                    {/* Ticket price */}
+                    {giveaway.base_ticket_price_pence != null && (
+                      <div className="mt-4 text-center">
+                        <span className="text-lg font-bold text-amber-400">
+                          From £{(giveaway.base_ticket_price_pence / 100).toFixed(2)} per ticket
+                        </span>
                       </div>
                     )}
 
