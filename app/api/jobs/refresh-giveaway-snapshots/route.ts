@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
   // 4) Fetch campaign
   const { data: campaign, error: campaignErr } = await supabase
     .from('campaigns')
-    .select('id, slug, title, summary, description, status, start_at, end_at, main_prize_title, main_prize_description, hero_image_url, ticket_price_pence, max_tickets_total, max_tickets_per_user, bundles')
+    .select('id, slug, title, summary, description, status, start_at, end_at, main_prize_title, main_prize_description, hero_image_url, ticket_price_pence, max_tickets_total, max_tickets_per_user, bundles, presentation_type')
     .eq('id', campaignId)
     .single()
 
@@ -124,6 +124,7 @@ export async function GET(request: NextRequest) {
     next_ticket: nextTicket,
     bundles: campaign.bundles ?? null,
     hard_cap_total_tickets: campaign.max_tickets_total,
+    presentation_type: campaign.presentation_type ?? null,
   }
 
   const detailPayload = {
