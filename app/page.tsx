@@ -131,21 +131,27 @@ export default async function HomePage() {
                       <p className="mt-1 text-sm text-white/60 line-clamp-1">{giveaway.prize_title}</p>
                     )}
 
-                    {/* Presentation type badge */}
+                    {/* Presentation type - prominent treatment */}
                     {giveaway.presentation_type === 'balloon_pop' && (
-                      <div className="mt-2">
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-pink-500/20 px-3 py-1 text-xs font-semibold text-pink-300 border border-pink-400/30">
-                          🎈 TikTok & Facebook LIVE Balloon Pop
-                        </span>
-                        <p className="mt-1 text-[10px] text-pink-300/70">Watch live • Pop balloons • Win cash</p>
+                      <div className="mt-3 rounded-xl bg-gradient-to-r from-pink-500/20 to-fuchsia-500/20 border border-pink-400/30 p-3">
+                        <div className="text-base font-black uppercase tracking-wide text-pink-300">
+                          TIKTOK & FACEBOOK LIVE
+                        </div>
+                        <div className="text-lg font-bold text-white">
+                          Balloon Pop Event
+                        </div>
+                        <p className="mt-1 text-xs text-pink-300/80">Watch live - Pop balloons - Win cash</p>
                       </div>
                     )}
                     {giveaway.presentation_type === 'instant_cash' && (
-                      <div className="mt-2">
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-300 border border-emerald-400/30">
-                          ⚡ WIN NOW Instant Cash
-                        </span>
-                        <p className="mt-1 text-[10px] text-emerald-300/70">Buy tickets • Reveal instantly</p>
+                      <div className="mt-3 rounded-xl bg-gradient-to-r from-emerald-500/20 to-teal-500/20 border border-emerald-400/30 p-3">
+                        <div className="text-base font-black uppercase tracking-wide text-emerald-300">
+                          WIN NOW
+                        </div>
+                        <div className="text-lg font-bold text-white">
+                          Instant Cash Wins
+                        </div>
+                        <p className="mt-1 text-xs text-emerald-300/80">Buy tickets - Reveal instantly</p>
                       </div>
                     )}
 
