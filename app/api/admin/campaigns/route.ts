@@ -163,24 +163,32 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: error.message, details: error }, { status: 500 })
   }
 
-  try { await refreshSnapshotsNow(data.id) } catch (e) { console.error('[snapshots] refresh failed', e) }
+  refreshSnapshotsNow(data.id).catch((e) => console.error('[snapshots] refresh failed', e))
 
   return NextResponse.json({ ok: true, id: data.id })
 }
 
 export async function PUT(request: Request) {
+  console.log('[instant-debug][campaign-api] PUT hit')
   const supabase = await createClient()
   const { user, error: authError } = await authorize(supabase)
-  if (!user) return NextResponse.json({ ok: false, error: authError }, { status: authError === 'Not authenticated' ? 401 : 403 })
+  if (!user) {
+    console.log('[instant-debug][campaign-api] PUT auth failed:', authError)
+    return NextResponse.json({ ok: false, error: authError }, { status: authError === 'Not authenticated' ? 401 : 403 })
+  }
 
   let body: Record<string, any>
   try {
     body = await request.json()
   } catch {
+    console.log('[instant-debug][campaign-api] PUT invalid JSON body')
     return NextResponse.json({ ok: false, error: 'Invalid JSON body' }, { status: 400 })
   }
 
+  console.log('[instant-debug][campaign-api] PUT payload: id=', body.id, 'title=', body.title, 'status=', body.status)
+
   if (!body.id) {
+    console.log('[instant-debug][campaign-api] PUT missing campaign id')
     return NextResponse.json({ ok: false, error: 'Missing campaign id' }, { status: 400 })
   }
 
@@ -192,10 +200,14 @@ export async function PUT(request: Request) {
     .eq('id', body.id)
 
   if (error) {
+    console.log('[instant-debug][campaign-api] PUT DB error:', error)
     return NextResponse.json({ ok: false, error: error.message, details: error }, { status: 500 })
   }
 
-  try { await refreshSnapshotsNow(body.id) } catch (e) { console.error('[snapshots] refresh failed', e) }
+  console.log('[instant-debug][campaign-api] PUT DB update success for id=', body.id)
+  console.log('[instant-debug][campaign-api] starting snapshot refresh (fire-and-forget)')
+  refreshSnapshotsNow(body.id).catch((e) => console.error('[snapshots] refresh failed', e))
 
+  console.log('[instant-debug][campaign-api] PUT returning ok=true for id=', body.id)
   return NextResponse.json({ ok: true, id: body.id })
 }

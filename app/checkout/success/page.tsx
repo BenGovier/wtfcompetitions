@@ -20,6 +20,8 @@ type AwardPayload = {
   qty: number
   won: boolean
   prize: Prize | null
+  /** Future: array of all prizes won in this checkout */
+  prizes?: Prize[]
   ticket_start?: number | null
   ticket_end?: number | null
   campaign_slug?: string | null
@@ -260,8 +262,10 @@ function ConfirmedState({ award }: { award: AwardPayload }) {
   }, [])
 
   if (phase === 'revealed') {
-    if (award.won && award.prize) {
-      return <WonReveal award={award} />
+    // Derive prizes array for backward compatibility: use prizes[] if available, else wrap single prize
+    const prizes = award.prizes ?? (award.prize ? [award.prize] : [])
+    if (award.won && prizes.length > 0) {
+      return <WonReveal award={award} prizes={prizes} />
     }
     return <NotWonReveal award={award} />
   }
@@ -464,8 +468,10 @@ function SlotMachineReveal({
   )
 }
 
-function WonReveal({ award }: { award: AwardPayload }) {
-  const prize = award.prize!
+function WonReveal({ award, prizes }: { award: AwardPayload; prizes: Prize[] }) {
+  // For now, render first prize prominently (backward compatible with single-prize flow)
+  // Future: can iterate over all prizes when multiple are common
+  const prize = prizes[0]
   
   return (
     <div className="relative flex flex-col items-center gap-5 w-full -mx-4 -mt-4 -mb-4 px-4 py-6 overflow-hidden">
@@ -555,14 +561,19 @@ function WonReveal({ award }: { award: AwardPayload }) {
       {/* Content */}
       <div className="relative z-10 flex flex-col items-center gap-4 w-full">
         {/* Win badge */}
-        <div className="icon-pop glow-badge flex size-24 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 via-yellow-500 to-orange-500">
+        <div className="icon-pop glow-badge relative flex size-24 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 via-yellow-500 to-orange-500">
           <PartyPopper className="size-12 text-white drop-shadow-lg" />
+          {prizes.length > 1 && (
+            <span className="absolute -right-1 -top-1 flex size-8 items-center justify-center rounded-full bg-white text-sm font-bold text-amber-600 shadow-lg ring-2 ring-amber-400">
+              x{prizes.length}
+            </span>
+          )}
         </div>
 
         {/* Title */}
         <div className="title-slide text-center">
-          <p className="shimmer-text text-sm font-bold uppercase tracking-[0.2em] mb-1">
-            Instant Win!
+          <p className={`shimmer-text font-bold uppercase tracking-[0.2em] mb-1 ${prizes.length > 1 ? 'text-xl' : 'text-sm'}`}>
+            {prizes.length > 1 ? `${prizes.length} Instant Wins!` : 'Instant Win!'}
           </p>
           <h1 className="text-2xl font-bold text-white text-balance">
             {prize.title}
@@ -583,9 +594,33 @@ function WonReveal({ award }: { award: AwardPayload }) {
           </div>
         )}
 
+        {/* Additional prizes (if multiple won) */}
+        {prizes.length > 1 && (
+          <div className="details-slide w-full space-y-2">
+            <p className="text-xs font-medium uppercase tracking-wider text-amber-400/80 text-center">
+              + {prizes.length - 1} more {prizes.length === 2 ? 'prize' : 'prizes'}
+            </p>
+            <div className="space-y-2">
+              {prizes.slice(1).map((p, i) => (
+                <div key={i} className="flex items-center gap-3 rounded-xl border border-amber-400/30 bg-purple-900/40 px-3 py-2">
+                  {p.image_url && (
+                    <img src={p.image_url} alt={p.title} className="h-10 w-10 rounded-lg object-cover" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-white">{p.title}</p>
+                    {p.value_text && <p className="text-xs text-purple-200/70">{p.value_text}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Congratulations text */}
         <p className="details-slide text-sm text-purple-200/80 text-center leading-relaxed">
-          Congratulations — your prize has been locked in.
+          {prizes.length > 1 
+            ? 'Congratulations — your prizes have been locked in.'
+            : 'Congratulations — your prize has been locked in.'}
         </p>
 
         {/* Ticket numbers */}
@@ -609,7 +644,9 @@ function WonReveal({ award }: { award: AwardPayload }) {
         {/* Actions */}
         <div className="actions-slide flex flex-col gap-3 w-full">
           <p className="text-xs text-purple-300/60 text-center">
-            {"You've also been entered into the main draw. We'll be in touch about your prize."}
+            {prizes.length > 1
+              ? "You've also been entered into the main draw. We'll be in touch about your prizes."
+              : "You've also been entered into the main draw. We'll be in touch about your prize."}
           </p>
           <div className="flex flex-col gap-2">
             <Button asChild className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold shadow-lg shadow-amber-500/25 border-0">
