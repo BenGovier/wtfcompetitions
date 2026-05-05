@@ -49,7 +49,7 @@ async function refreshSnapshotsNow(campaignId: string) {
 
   const { data: c, error: fetchError } = await svc
     .from('campaigns')
-    .select('id, slug, title, summary, description, status, start_at, end_at, main_prize_title, main_prize_description, hero_image_url, ticket_price_pence, max_tickets_total, max_tickets_per_user, bundles')
+    .select('id, slug, title, summary, description, status, start_at, end_at, main_prize_title, main_prize_description, hero_image_url, ticket_price_pence, max_tickets_total, max_tickets_per_user, bundles, presentation_type')
     .eq('id', campaignId)
     .single()
 
@@ -101,6 +101,7 @@ async function refreshSnapshotsNow(campaignId: string) {
     base_ticket_price_pence: c.ticket_price_pence,
     status: c.status,
     tickets_sold: ticketsSold,
+    presentation_type: c.presentation_type ?? null,
   }
 
   const detailPayload = {
@@ -123,6 +124,7 @@ async function refreshSnapshotsNow(campaignId: string) {
     hard_cap_total_tickets: c.max_tickets_total,
     tickets_sold: ticketsSold,
     instant_wins: instantWins,
+    presentation_type: c.presentation_type ?? null,
   }
 
   // Use UPSERT instead of DELETE+INSERT for atomic snapshot updates
