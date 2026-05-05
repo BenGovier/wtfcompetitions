@@ -12,10 +12,15 @@ function formatTimeLeft(endsAt: string | null | undefined): string | null {
   if (diff <= 0) return 'Ended'
   const days = Math.floor(diff / (1000 * 60 * 60 * 24))
   const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+  // 24 hours or more: show days and hours
   if (days > 0) return `${days}d ${hours}h left`
+  // Under 24 hours: show hours, minutes, seconds with padding
   const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
-  if (hours > 0) return `${hours}h ${minutes}m left`
-  return `${minutes}m left`
+  const seconds = Math.floor((diff % (1000 * 60)) / 1000)
+  const hh = String(hours).padStart(2, '0')
+  const mm = String(minutes).padStart(2, '0')
+  const ss = String(seconds).padStart(2, '0')
+  return `${hh}h ${mm}m ${ss}s`
 }
 
 // Emergency fallback data
@@ -77,7 +82,7 @@ export default async function GiveawaysPage() {
               <Link
                 key={giveaway.slug}
                 href={`/giveaways/${giveaway.slug}`}
-                className="group relative flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm transition-all duration-300 hover:border-amber-400/50 hover:shadow-lg hover:shadow-amber-500/10 hover:-translate-y-1"
+                className="group relative flex flex-col overflow-visible rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm transition-all duration-300 hover:border-amber-400/50 hover:shadow-lg hover:shadow-amber-500/10 hover:-translate-y-1"
               >
                 {/* Hero image */}
                 {giveaway.hero_image_url && (
@@ -89,9 +94,9 @@ export default async function GiveawaysPage() {
                       className="object-cover transition-transform duration-300 group-hover:scale-105"
                       sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                     />
-                    {/* Countdown - casino capsule */}
+                    {/* Countdown - jackpot tab overlapping top edge */}
                     {timeLeft && (
-                      <div className="absolute left-1/2 -translate-x-1/2 top-3">
+                      <div className="absolute left-1/2 -translate-x-1/2 -top-3 z-20">
                         <span className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-red-700 to-red-900 px-4 py-1.5 text-sm font-bold text-white shadow-lg border border-[#FFD700]/50 shadow-red-900/50">
                           <Clock className="h-4 w-4" />
                           {timeLeft}
