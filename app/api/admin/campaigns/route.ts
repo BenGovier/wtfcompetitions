@@ -19,6 +19,8 @@ function toDbRow(body: Record<string, any>) {
     max_tickets_per_user: body.maxTicketsPerUser ?? null,
     bundles: body.bundles ?? null,
     presentation_type: body.presentation_type ?? body.presentationType ?? null,
+    is_free_entry: body.is_free_entry ?? body.isFreeEntry ?? false,
+    free_entry_limit_per_user: body.free_entry_limit_per_user ?? body.freeEntryLimitPerUser ?? 1,
   }
 }
 
