@@ -61,7 +61,7 @@ async function refreshSnapshotsNow(campaignId: string) {
   // Fetch instant win prizes + awards for this campaign
   const { data: prizes } = await svc
     .from('instant_win_prizes')
-    .select('id, prize_title, image_url, created_at')
+    .select('id, prize_title, image_url, quantity, created_at')
     .eq('campaign_id', c.id)
     .order('created_at', { ascending: true })
 
@@ -70,7 +70,11 @@ async function refreshSnapshotsNow(campaignId: string) {
     .select('prize_id')
     .eq('campaign_id', c.id)
 
-  const wonSet = new Set((awards ?? []).map((a: any) => a.prize_id))
+  // Count awards per prize_id
+  const awardCountByPrize: Record<string, number> = {}
+  for (const a of awards ?? []) {
+    awardCountByPrize[a.prize_id] = (awardCountByPrize[a.prize_id] ?? 0) + 1
+  }
 
   // Fetch ticket counter for this campaign
   const { data: counter } = await svc
@@ -81,12 +85,20 @@ async function refreshSnapshotsNow(campaignId: string) {
 
   const ticketsSold = Math.max((counter?.next_ticket ?? 1) - 1, 0)
 
-  const instantWins = (prizes ?? []).map((p: any) => ({
-    id: p.id,
-    title: p.prize_title,
-    image_url: p.image_url ?? null,
-    is_won: wonSet.has(p.id),
-  }))
+  const instantWins = (prizes ?? []).map((p: any) => {
+    const quantity = p.quantity ?? 1
+    const awardedCount = awardCountByPrize[p.id] ?? 0
+    const remainingCount = Math.max(quantity - awardedCount, 0)
+    return {
+      id: p.id,
+      title: p.prize_title,
+      image_url: p.image_url ?? null,
+      quantity,
+      awarded_count: awardedCount,
+      remaining_count: remainingCount,
+      is_won: remainingCount === 0,
+    }
+  })
 
   console.log('[admin/campaigns/refreshSnapshotsNow] campaignId=', c.id, 'slug=', c.slug, 'instant_wins=', instantWins.length)
 
