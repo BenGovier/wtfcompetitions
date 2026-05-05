@@ -254,24 +254,35 @@ async function processRefreshSnapshots(
     // Fetch instant win prizes for this campaign
     const { data: prizes } = await supabase
       .from('instant_win_prizes')
-      .select('id, prize_title, image_url, created_at')
+      .select('id, prize_title, image_url, quantity, created_at')
       .eq('campaign_id', campaign.id)
       .order('created_at', { ascending: true })
 
-    // Fetch which prizes have been won
+    // Fetch awards and count per prize_id for grouped quantity tracking
     const { data: awards } = await supabase
       .from('instant_win_awards')
       .select('prize_id')
       .eq('campaign_id', campaign.id)
 
-    const wonSet = new Set((awards ?? []).map((a: any) => a.prize_id))
+    const awardCountByPrize: Record<string, number> = {}
+    for (const a of awards ?? []) {
+      awardCountByPrize[a.prize_id] = (awardCountByPrize[a.prize_id] || 0) + 1
+    }
 
-    const instantWins = (prizes ?? []).map((p: any) => ({
-      id: p.id,
-      title: p.prize_title,
-      image_url: p.image_url ?? null,
-      is_won: wonSet.has(p.id),
-    }))
+    const instantWins = (prizes ?? []).map((p: any) => {
+      const quantity = p.quantity ?? 1
+      const awardedCount = awardCountByPrize[p.id] ?? 0
+      const remainingCount = Math.max(quantity - awardedCount, 0)
+      return {
+        id: p.id,
+        title: p.prize_title,
+        image_url: p.image_url ?? null,
+        quantity,
+        awarded_count: awardedCount,
+        remaining_count: remainingCount,
+        is_won: remainingCount === 0,
+      }
+    })
 
     console.log('[snapshots] instant_wins_count', campaign.id, instantWins.length)
 

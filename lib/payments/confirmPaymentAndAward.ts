@@ -10,7 +10,12 @@ export type AwardPayload = {
   checkout_ref: string
   qty: number
   won: boolean
+  /** @deprecated Use `prizes` array instead. Kept for backward compatibility. */
   prize: null | { title: string; value_text: string | null; image_url: string | null }
+  /** Future: array of all prizes won in this checkout */
+  prizes?: Array<{ title: string; value_text: string | null; image_url: string | null }>
+  /** Future: count of prizes won */
+  prize_count?: number
   campaign_slug?: string | null
 }
 

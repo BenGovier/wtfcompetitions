@@ -49,7 +49,7 @@ async function refreshSnapshotsNow(campaignId: string) {
 
   const { data: c, error: fetchError } = await svc
     .from('campaigns')
-    .select('id, slug, title, summary, description, status, start_at, end_at, main_prize_title, main_prize_description, hero_image_url, ticket_price_pence, max_tickets_total, max_tickets_per_user, bundles')
+    .select('id, slug, title, summary, description, status, start_at, end_at, main_prize_title, main_prize_description, hero_image_url, ticket_price_pence, max_tickets_total, max_tickets_per_user, bundles, presentation_type')
     .eq('id', campaignId)
     .single()
 
@@ -101,6 +101,7 @@ async function refreshSnapshotsNow(campaignId: string) {
     base_ticket_price_pence: c.ticket_price_pence,
     status: c.status,
     tickets_sold: ticketsSold,
+    presentation_type: c.presentation_type ?? null,
   }
 
   const detailPayload = {
@@ -123,6 +124,7 @@ async function refreshSnapshotsNow(campaignId: string) {
     hard_cap_total_tickets: c.max_tickets_total,
     tickets_sold: ticketsSold,
     instant_wins: instantWins,
+    presentation_type: c.presentation_type ?? null,
   }
 
   // Use UPSERT instead of DELETE+INSERT for atomic snapshot updates
@@ -163,24 +165,32 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: error.message, details: error }, { status: 500 })
   }
 
-  try { await refreshSnapshotsNow(data.id) } catch (e) { console.error('[snapshots] refresh failed', e) }
+  refreshSnapshotsNow(data.id).catch((e) => console.error('[snapshots] refresh failed', e))
 
   return NextResponse.json({ ok: true, id: data.id })
 }
 
 export async function PUT(request: Request) {
+  console.log('[instant-debug][campaign-api] PUT hit')
   const supabase = await createClient()
   const { user, error: authError } = await authorize(supabase)
-  if (!user) return NextResponse.json({ ok: false, error: authError }, { status: authError === 'Not authenticated' ? 401 : 403 })
+  if (!user) {
+    console.log('[instant-debug][campaign-api] PUT auth failed:', authError)
+    return NextResponse.json({ ok: false, error: authError }, { status: authError === 'Not authenticated' ? 401 : 403 })
+  }
 
   let body: Record<string, any>
   try {
     body = await request.json()
   } catch {
+    console.log('[instant-debug][campaign-api] PUT invalid JSON body')
     return NextResponse.json({ ok: false, error: 'Invalid JSON body' }, { status: 400 })
   }
 
+  console.log('[instant-debug][campaign-api] PUT payload: id=', body.id, 'title=', body.title, 'status=', body.status)
+
   if (!body.id) {
+    console.log('[instant-debug][campaign-api] PUT missing campaign id')
     return NextResponse.json({ ok: false, error: 'Missing campaign id' }, { status: 400 })
   }
 
@@ -192,10 +202,14 @@ export async function PUT(request: Request) {
     .eq('id', body.id)
 
   if (error) {
+    console.log('[instant-debug][campaign-api] PUT DB error:', error)
     return NextResponse.json({ ok: false, error: error.message, details: error }, { status: 500 })
   }
 
-  try { await refreshSnapshotsNow(body.id) } catch (e) { console.error('[snapshots] refresh failed', e) }
+  console.log('[instant-debug][campaign-api] PUT DB update success for id=', body.id)
+  console.log('[instant-debug][campaign-api] starting snapshot refresh (fire-and-forget)')
+  refreshSnapshotsNow(body.id).catch((e) => console.error('[snapshots] refresh failed', e))
 
+  console.log('[instant-debug][campaign-api] PUT returning ok=true for id=', body.id)
   return NextResponse.json({ ok: true, id: body.id })
 }

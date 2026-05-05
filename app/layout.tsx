@@ -1,5 +1,6 @@
 import type React from "react"
 import type { Metadata } from "next"
+import Script from "next/script"
 import { Geist, Geist_Mono } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { headers } from "next/headers"
@@ -81,6 +82,18 @@ export default async function RootLayout({
         {!isBarePage && <SiteFooter />}
         {!isBarePage && <MobileNav />}
         <Analytics />
+        <Script
+          src="https://www.googletagmanager.com/gtag/js?id=G-X74JFX5GVM"
+          strategy="afterInteractive"
+        />
+        <Script id="google-analytics" strategy="afterInteractive">
+          {`
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', 'G-X74JFX5GVM');
+          `}
+        </Script>
       </body>
     </html>
   )

@@ -36,17 +36,24 @@ export async function SiteHeader() {
 
         <div className="flex items-center gap-3">
           {user ? (
-            <Button variant="ghost" size="sm" asChild className="hidden sm:inline-flex hover:bg-accent">
-              <Link href="/me">My Account</Link>
-            </Button>
+            <>
+              <Button variant="ghost" size="sm" asChild className="hidden sm:inline-flex hover:bg-accent">
+                <Link href="/me">My Account</Link>
+              </Button>
+              <Button size="sm" asChild className="bg-primary text-primary-foreground shadow-sm hover:bg-[#5B21B6]">
+                <Link href="/giveaways">Browse</Link>
+              </Button>
+            </>
           ) : (
-            <Button variant="ghost" size="sm" asChild className="hidden sm:inline-flex hover:bg-accent">
-              <Link href="/auth/login">Sign up / in</Link>
-            </Button>
+            <>
+              <Button variant="outline" size="sm" asChild className="hidden sm:inline-flex border-white/20 bg-black/50 text-white hover:bg-black/70">
+                <Link href="/auth/login">Log in</Link>
+              </Button>
+              <Button size="sm" asChild className="bg-red-600 text-white shadow-sm hover:bg-red-700">
+                <Link href="/auth/sign-up">Create account</Link>
+              </Button>
+            </>
           )}
-          <Button size="sm" asChild className="bg-primary text-primary-foreground shadow-sm hover:bg-[#5B21B6]">
-            <Link href="/giveaways">Browse</Link>
-          </Button>
         </div>
       </div>
     </header>
