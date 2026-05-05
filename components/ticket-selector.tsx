@@ -37,6 +37,8 @@ interface TicketSelectorProps {
   endsAt?: string | null
   ticketsSold?: number | null
   hardCapTotalTickets?: number | null
+  isFreeEntry?: boolean
+  freeEntryLimitPerUser?: number
 }
 
 /**
@@ -58,7 +60,7 @@ function normaliseBundles(raw: any[] | undefined | null, basePricePence: number)
   }).sort((a, b) => a.quantity - b.quantity)
 }
 
-export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, soldCount, capTotal, startsAt, endsAt, ticketsSold, hardCapTotalTickets }: TicketSelectorProps) {
+export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, soldCount, capTotal, startsAt, endsAt, ticketsSold, hardCapTotalTickets, isFreeEntry, freeEntryLimitPerUser }: TicketSelectorProps) {
   const basePricePence = Math.round(basePrice * 100)
   const normBundles = normaliseBundles(rawBundles, basePricePence)
   const hasBundles = normBundles.length > 0
