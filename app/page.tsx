@@ -103,18 +103,11 @@ export default async function HomePage() {
                         className="object-cover transition-transform duration-300 group-hover:scale-105"
                         sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                       />
-                      {/* Live badge overlay */}
-                      <div className="absolute left-3 top-3">
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500 px-3 py-1 text-xs font-bold uppercase tracking-wide text-white shadow-lg">
-                          <span className="h-2 w-2 animate-pulse rounded-full bg-white" />
-                          Live
-                        </span>
-                      </div>
-                      {/* Time left badge */}
+                      {/* Countdown - casino capsule */}
                       {timeLeft && (
-                        <div className="absolute right-3 top-3">
-                          <span className="inline-flex items-center gap-1 rounded-full bg-black/70 px-2.5 py-1 text-xs font-medium text-white backdrop-blur-sm">
-                            <Clock className="h-3 w-3" />
+                        <div className="absolute left-1/2 -translate-x-1/2 top-3">
+                          <span className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-red-700 to-red-900 px-4 py-1.5 text-sm font-bold text-white shadow-lg border border-[#FFD700]/50 shadow-red-900/50">
+                            <Clock className="h-4 w-4" />
                             {timeLeft}
                           </span>
                         </div>
