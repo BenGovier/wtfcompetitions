@@ -131,31 +131,27 @@ export default async function HomePage() {
                       <p className="mt-1 text-sm text-white/60 line-clamp-1">{giveaway.prize_title}</p>
                     )}
 
-                    {/* Presentation type - compact casino ribbon */}
+                    {/* Presentation type - compact casino strip */}
                     {giveaway.presentation_type === 'balloon_pop' && (
-                      <div className="mt-3 flex items-center gap-3 rounded-lg bg-gradient-to-r from-[#1a0025] to-[#2a0040] border-l-4 border-[#FFD700] px-3 py-2 shadow-[0_0_12px_rgba(236,72,153,0.3)]">
-                        <div className="flex-1 min-w-0">
-                          <div className="text-[10px] font-bold uppercase tracking-wider text-pink-400">
-                            {"🎈 LIVE SOCIAL GAME"}
-                          </div>
-                          <div className="text-sm font-bold text-white truncate">
-                            TikTok + Facebook Balloon Pop
-                          </div>
-                          <div className="text-[10px] text-pink-300/70">Watch live • Pop balloons • Win cash</div>
+                      <div className="mt-3 rounded-lg bg-gradient-to-r from-[#1a0025] to-[#2a0040] border-l-4 border-[#FFD700] px-3 py-2 shadow-[0_0_12px_rgba(236,72,153,0.3)]">
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-pink-400">
+                          {"🎈 LIVE BALLOON POP"}
                         </div>
+                        <div className="text-sm font-bold text-white">
+                          ON TIKTOK + FACEBOOK
+                        </div>
+                        <div className="text-[10px] text-pink-300/70">Watch live • Pop balloons • Win cash</div>
                       </div>
                     )}
                     {giveaway.presentation_type === 'instant_cash' && (
-                      <div className="mt-3 flex items-center gap-3 rounded-lg bg-gradient-to-r from-[#1a1500] to-[#2a2000] border-l-4 border-[#FFD700] px-3 py-2 shadow-[0_0_12px_rgba(251,191,36,0.3)]">
-                        <div className="flex-1 min-w-0">
-                          <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400">
-                            {"⚡ WIN NOW"}
-                          </div>
-                          <div className="text-sm font-bold text-white truncate">
-                            Instant Cash Wins
-                          </div>
-                          <div className="text-[10px] text-amber-300/70">Buy tickets • Reveal instantly</div>
+                      <div className="mt-3 rounded-lg bg-gradient-to-r from-[#1a1500] to-[#2a2000] border-l-4 border-[#FFD700] px-3 py-2 shadow-[0_0_12px_rgba(251,191,36,0.3)]">
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400">
+                          {"⚡ INSTANT WIN"}
                         </div>
+                        <div className="text-sm font-bold text-white">
+                          WIN CASH NOW
+                        </div>
+                        <div className="text-[10px] text-amber-300/70">Buy tickets • Reveal instantly</div>
                       </div>
                     )}
 
@@ -174,11 +170,11 @@ export default async function HomePage() {
                       </div>
                     )}
 
-                    {/* Ticket price - casino chip style */}
+                    {/* Ticket price - casino chip badge */}
                     {giveaway.base_ticket_price_pence != null && (
                       <div className="mt-3">
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#FFD700] to-[#FFA500] px-3 py-1 text-xs font-bold text-black shadow-md">
-                          From £{(giveaway.base_ticket_price_pence / 100).toFixed(2)} per ticket
+                        <span className="inline-flex items-center rounded-full bg-gradient-to-r from-[#FFD700] to-[#FFA500] px-3 py-1 text-xs font-bold text-black shadow-md">
+                          £{(giveaway.base_ticket_price_pence / 100).toFixed(2)} per ticket
                         </span>
                       </div>
                     )}
