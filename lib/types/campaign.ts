@@ -16,4 +16,5 @@ export interface Campaign {
   maxTicketsTotal: number | null
   maxTicketsPerUser: number | null
   bundles?: { quantity: number; price_pence: number; label?: string }[] | null
+  presentation_type?: 'balloon_pop' | 'instant_cash' | null
 }

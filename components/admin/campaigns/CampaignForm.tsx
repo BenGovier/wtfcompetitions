@@ -31,7 +31,10 @@ interface CampaignFormProps {
 export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
   const router = useRouter()
   const { toast } = useToast()
-  const [formData, setFormData] = useState<Campaign>(campaign)
+  const [formData, setFormData] = useState<Campaign>({
+    ...campaign,
+    presentation_type: campaign.presentation_type ?? 'instant_cash',
+  })
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
