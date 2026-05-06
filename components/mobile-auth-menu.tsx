@@ -20,7 +20,7 @@ export function MobileAuthMenu() {
         <Button
           variant="ghost"
           size="sm"
-          className="sm:hidden p-2 text-white hover:bg-white/10"
+          className="sm:hidden p-2 text-slate-900 hover:bg-slate-100"
           aria-label="Open menu"
         >
           <Menu className="h-5 w-5" />
