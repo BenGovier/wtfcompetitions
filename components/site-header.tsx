@@ -2,6 +2,7 @@ import Link from "next/link"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { createClient } from "@/lib/supabase/server"
+import { MobileAuthMenu } from "@/components/mobile-auth-menu"
 
 export async function SiteHeader() {
   const supabase = await createClient()
@@ -35,10 +36,14 @@ export async function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-3">
-          {/* Mobile-only Account button */}
-          <Button variant="outline" size="sm" asChild className="sm:hidden border-white/20 bg-black/50 text-white hover:bg-black/70 text-xs px-3">
-            <Link href="/me">Account</Link>
-          </Button>
+          {/* Mobile-only: burger menu for signed-out, Account button for signed-in */}
+          {user ? (
+            <Button variant="outline" size="sm" asChild className="sm:hidden border-white/20 bg-black/50 text-white hover:bg-black/70 text-xs px-3">
+              <Link href="/me">Account</Link>
+            </Button>
+          ) : (
+            <MobileAuthMenu />
+          )}
 
           {/* Desktop buttons */}
           {user ? (
