@@ -37,6 +37,8 @@ interface TicketSelectorProps {
   endsAt?: string | null
   ticketsSold?: number | null
   hardCapTotalTickets?: number | null
+  isFreeEntry?: boolean
+  freeEntryLimitPerUser?: number
 }
 
 /**
@@ -58,7 +60,7 @@ function normaliseBundles(raw: any[] | undefined | null, basePricePence: number)
   }).sort((a, b) => a.quantity - b.quantity)
 }
 
-export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, soldCount, capTotal, startsAt, endsAt, ticketsSold, hardCapTotalTickets }: TicketSelectorProps) {
+export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, soldCount, capTotal, startsAt, endsAt, ticketsSold, hardCapTotalTickets, isFreeEntry, freeEntryLimitPerUser }: TicketSelectorProps) {
   const basePricePence = Math.round(basePrice * 100)
   const normBundles = normaliseBundles(rawBundles, basePricePence)
   const hasBundles = normBundles.length > 0
@@ -69,6 +71,7 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
   const [selectedBundle, setSelectedBundle] = useState<BundleOption | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [hasAcceptedTerms, setHasAcceptedTerms] = useState(false)
   const [qtyBump, setQtyBump] = useState(false)
   const [mounted, setMounted] = useState(false)
 
@@ -223,6 +226,10 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
   }
 
   const handleEnter = async () => {
+    if (!hasAcceptedTerms) {
+      setError("Please confirm you are 18+ and agree to the T&Cs before entering.")
+      return
+    }
     setIsProcessing(true)
     setError(null)
 
@@ -516,10 +523,29 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
 
         {error && <div className="rounded-md bg-red-500/20 p-3 text-sm text-red-300">{error}</div>}
 
+        <label className="flex items-start gap-3 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={hasAcceptedTerms}
+            onChange={(e) => setHasAcceptedTerms(e.target.checked)}
+            className="mt-0.5 h-5 w-5 shrink-0 rounded border-purple-500/50 bg-white/10 accent-amber-500 focus:ring-2 focus:ring-amber-400 focus:ring-offset-0"
+          />
+          <span className="text-sm text-purple-200">
+            I am 18+ years old and agree to the{" "}
+            <a
+              href="/terms"
+              className="text-amber-400 underline underline-offset-2 hover:text-amber-300"
+              onClick={(e) => e.stopPropagation()}
+            >
+              T&Cs
+            </a>
+          </span>
+        </label>
+
         <Button
           size="lg"
-          className="w-full rounded-xl bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] py-4 text-base font-bold text-black shadow-[0_10px_40px_rgba(255,180,0,0.4)] transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_15px_60px_rgba(255,180,0,0.6)] active:scale-[0.98]"
-          disabled={isProcessing || qty < 1 || remaining === 0}
+          className="w-full rounded-xl bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] py-4 text-base font-bold text-black shadow-[0_10px_40px_rgba(255,180,0,0.4)] transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_15px_60px_rgba(255,180,0,0.6)] active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
+          disabled={isProcessing || qty < 1 || remaining === 0 || !hasAcceptedTerms}
           onClick={handleEnter}
         >
           {isProcessing ? "Starting checkout..." : "Enter Now"}
@@ -545,11 +571,11 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
             </div>
             <Button
               size="lg"
-              className="flex-1 rounded-xl bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] py-3.5 text-sm font-bold text-black shadow-[0_8px_30px_rgba(255,180,0,0.4)] transition-all active:scale-[0.98]"
-              disabled={isProcessing || qty < 1}
+              className="flex-1 rounded-xl bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] py-3.5 text-sm font-bold text-black shadow-[0_8px_30px_rgba(255,180,0,0.4)] transition-all active:scale-[0.98] disabled:opacity-60"
+              disabled={isProcessing || qty < 1 || !hasAcceptedTerms}
               onClick={handleEnter}
             >
-              {isProcessing ? "Checking out..." : "Enter Now"}
+              {isProcessing ? "Checking out..." : hasAcceptedTerms ? "Enter Now" : "Accept T&Cs above"}
             </Button>
           </div>
         </div>

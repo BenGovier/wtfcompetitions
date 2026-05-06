@@ -34,6 +34,8 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
   const [formData, setFormData] = useState<Campaign>({
     ...campaign,
     presentation_type: campaign.presentation_type ?? 'instant_cash',
+    is_free_entry: campaign.is_free_entry ?? false,
+    free_entry_limit_per_user: campaign.free_entry_limit_per_user ?? 1,
   })
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState(false)
@@ -78,7 +80,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
 
   const handleChange = (
     field: keyof Campaign,
-    value: string | number | null
+    value: string | number | boolean | null
   ) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
   }
@@ -538,6 +540,39 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
             <p className="text-xs text-muted-foreground">
               Optional presentation style for the giveaway card
             </p>
+          </div>
+
+          <div className="space-y-4 pt-4 border-t">
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="is_free_entry"
+                checked={formData.is_free_entry ?? false}
+                onCheckedChange={(checked) => handleChange("is_free_entry", checked === true ? true : false)}
+              />
+              <Label htmlFor="is_free_entry" className="font-medium">
+                Free Entry Competition
+              </Label>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              When enabled, users can enter without payment (subject to limit below)
+            </p>
+
+            {formData.is_free_entry && (
+              <div className="space-y-2 pl-6">
+                <Label htmlFor="free_entry_limit_per_user">Free Entry Limit Per User</Label>
+                <Input
+                  id="free_entry_limit_per_user"
+                  type="number"
+                  min={1}
+                  value={formData.free_entry_limit_per_user ?? 1}
+                  onChange={(e) => handleChange("free_entry_limit_per_user", Math.max(1, parseInt(e.target.value) || 1))}
+                  className="w-32"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Maximum free entries each user can claim
+                </p>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

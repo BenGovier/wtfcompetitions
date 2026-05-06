@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
   // 4) Fetch campaign
   const { data: campaign, error: campaignErr } = await supabase
     .from('campaigns')
-    .select('id, slug, title, summary, description, status, start_at, end_at, main_prize_title, main_prize_description, hero_image_url, ticket_price_pence, max_tickets_total, max_tickets_per_user, bundles, presentation_type')
+    .select('id, slug, title, summary, description, status, start_at, end_at, main_prize_title, main_prize_description, hero_image_url, ticket_price_pence, max_tickets_total, max_tickets_per_user, bundles, presentation_type, is_free_entry, free_entry_limit_per_user')
     .eq('id', campaignId)
     .single()
 
@@ -125,6 +125,8 @@ export async function GET(request: NextRequest) {
     bundles: campaign.bundles ?? null,
     hard_cap_total_tickets: campaign.max_tickets_total,
     presentation_type: campaign.presentation_type ?? null,
+    is_free_entry: campaign.is_free_entry ?? false,
+    free_entry_limit_per_user: campaign.free_entry_limit_per_user ?? 1,
   }
 
   const detailPayload = {
@@ -148,6 +150,8 @@ export async function GET(request: NextRequest) {
     instant_wins: instantWins,
     tickets_sold: ticketsSold,
     next_ticket: nextTicket,
+    is_free_entry: campaign.is_free_entry ?? false,
+    free_entry_limit_per_user: campaign.free_entry_limit_per_user ?? 1,
   }
 
   // 7) Upsert snapshots (atomic - no delete required)
