@@ -17,7 +17,7 @@ export function FreeEntryInfo() {
       <DialogTrigger asChild>
         <button
           type="button"
-          className="mt-2 text-xs text-purple-300 underline underline-offset-2 transition-colors hover:text-purple-100"
+          className="mt-3 text-sm font-medium text-purple-200 underline underline-offset-2 transition-colors hover:text-purple-100"
         >
           Free postal entry available
         </button>
