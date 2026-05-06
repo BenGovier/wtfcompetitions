@@ -74,6 +74,11 @@ export function SiteFooter() {
                     Cookie Policy
                   </Link>
                 </li>
+                <li>
+                  <Link href="/acceptable" className="text-white/80 transition-colors hover:text-amber-400">
+                    Acceptable Use Policy
+                  </Link>
+                </li>
               </ul>
             </div>
 

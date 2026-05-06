@@ -61,7 +61,7 @@ export default function TermsPage() {
           <strong>3.7</strong> All entries must be submitted in the English language. Entries in languages other than English will automatically be disqualified and no refund will be given.
         </p>
         <p className="text-sm leading-relaxed text-muted-foreground mb-3">
-          <strong>3.8</strong> Unless you are using the free entry method, the Promoter will send confirmation that your entry has been received and confirm whether or not your answer to the Competition Question is correct.
+          <strong>3.8</strong> Unless you are using the free entry method, the Promoter will send confirmation that your entry has been received.
         </p>
         <p className="text-sm leading-relaxed text-muted-foreground mb-3">
           <strong>3.9</strong> The Promoter will not accept responsibility for competition entries that are not successfully completed, are lost or are delayed regardless of cause, including, for example, as a result of any equipment failure, technical malfunction, systems, satellite, network, server, computer hardware or software failure of any kind.
@@ -186,7 +186,7 @@ export default function TermsPage() {
           <strong>7.1</strong> The decision of the Promoter is final and no correspondence or discussion will be entered into.
         </p>
         <p className="text-sm leading-relaxed text-muted-foreground mb-3">
-          <strong>7.2</strong> The Promoter will contact the winner personally as soon as practicable after the Draw Date, using the telephone number or email address provided with the competition entry. If the winner cannot be contacted or is not available, or has not claimed the Prize within 14 days of the Draw Date, the Promoter reserves the right to offer the Prize to the next eligible Entrant selected from the correct entries that were received before the Closing Date.
+          <strong>7.2</strong> The Promoter will contact the winner personally as soon as practicable after the Draw Date, using the telephone number or email address provided with the competition entry. If the winner cannot be contacted or is not available, or has not claimed the Prize within 21 days of the Draw Date, the Promoter reserves the right to offer the Prize to the next eligible Entrant selected from the correct entries that were received before the Closing Date.
         </p>
         <p className="text-sm leading-relaxed text-muted-foreground mb-3">
           <strong>7.3</strong> The Promoter must either publish or make available information that indicates that a valid award took place. To comply with this obligation the Promoter will either publish the surname and county of major prize winners on the Website or send the surname and county of major prize winners to anyone who writes to the address set out in clause 1 (enclosing a self-addressed envelope) within one month after the Closing Date of the competition.
@@ -210,7 +210,7 @@ export default function TermsPage() {
           Notifications must include details of the competition you have entered, your old details and your new details. If your details change within 5 days of the Closing Date, the Promoter will use your old details if it needs to try to contact you.
         </p>
         <p className="text-sm leading-relaxed text-muted-foreground mb-3">
-          <strong>8.3</strong> Any Cash Prize will be transferred directly to the winner&apos;s nominated bank account. The winner must provide evidence that it is the sole or joint beneficiary of the bank account. Failure to do so within 14 days will result in disqualification from the competition and the winner forfeiting the prize. In such circumstances, the Promoter reserves the right to offer the prize to the next eligible Entrant selected from the correct entries that were received before the Closing Date.
+          <strong>8.3</strong> Any Cash Prize will be transferred directly to the winner&apos;s nominated bank account. The winner must provide evidence that it is the sole or joint beneficiary of the bank account. Failure to do so within 21 days will result in disqualification from the competition and the winner forfeiting the prize. In such circumstances, the Promoter reserves the right to offer the prize to the next eligible Entrant selected from the correct entries that were received before the Closing Date.
         </p>
         <p className="text-sm leading-relaxed text-muted-foreground">
           <strong>8.4</strong> The Promoter does not accept any responsibility and is not liable to pay any compensation if you are unable to or do not take up the prize.

@@ -31,52 +31,72 @@ export function FreeEntryInfo() {
             Free Postal Entry
           </DialogTitle>
           <DialogDescription className="text-center text-purple-200">
-            You can enter this competition by post without making a purchase.
+            You may enter the competition for free by complying with the following conditions.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 text-sm text-purple-100">
-          <div>
-            <h4 className="mb-2 font-semibold text-white">How to enter:</h4>
-            <p className="leading-relaxed">
-              Send an unenclosed postcard by ordinary first or second class post to:
-            </p>
-          </div>
+        <div className="max-h-[60vh] overflow-y-auto space-y-4 text-sm text-purple-100 pr-1">
+          <ol className="list-decimal list-outside space-y-3 pl-4">
+            <li className="leading-relaxed">
+              Send your entry by first or second class post to the Promoter at the following address:
+              <address className="not-italic rounded-lg border border-purple-500/20 bg-purple-900/30 p-3 mt-2 text-center leading-relaxed">
+                16 Green Drive
+                <br />
+                Thornton-Cleveleys
+                <br />
+                United Kingdom
+                <br />
+                FY5 1LQ
+              </address>
+            </li>
 
-          <address className="not-italic rounded-lg border border-purple-500/20 bg-purple-900/30 p-4 text-center leading-relaxed">
-            <span className="font-semibold text-amber-400">WTF Giveaways</span>
-            <br />
-            16 Green Drive
-            <br />
-            Thornton-Cleveleys
-            <br />
-            United Kingdom
-            <br />
-            FY5 1LQ
-          </address>
+            <li className="leading-relaxed">
+              Hand delivered entries will not be accepted and will not be entered into the random draw.
+            </li>
 
-          <div>
-            <h4 className="mb-2 font-semibold text-white">
-              Include the following details:
-            </h4>
-            <ul className="list-inside list-disc space-y-1 text-purple-200">
-              <li>Your full name</li>
-              <li>Postal address</li>
-              <li>Phone number</li>
-              <li>Email address</li>
-              <li>Date of birth</li>
-              <li>Competition name</li>
-            </ul>
-          </div>
+            <li className="leading-relaxed">
+              Include with your entry the following information. All details must match the details on your account:
+              <ul className="list-disc list-inside mt-2 space-y-1 text-purple-200">
+                <li>The name or details of the competition you wish to enter</li>
+                <li>Your full name</li>
+                <li>Your address</li>
+                <li>A contact telephone number and email address</li>
+                <li>Your answer to the Competition Question, if there is one</li>
+              </ul>
+            </li>
 
-          <p className="text-xs text-purple-300">
-            Postal entries must be received before the competition closes. One entry per
-            postcard. For full details, please{" "}
+            <li className="leading-relaxed">
+              Incomplete or illegible entries will be disqualified.
+            </li>
+
+            <li className="leading-relaxed">
+              You may make multiple free entries for any competition, up to any limit placed on entries by the Promoter, but each free entry must be submitted and posted to the Promoter separately. Bulk entries in one envelope will not be accepted as multiple entries and, if a bulk entry is received, it will be counted as one single entry.
+            </li>
+
+            <li className="leading-relaxed">
+              By entering the competition, you are confirming that you are eligible to enter and accept these terms and conditions.
+            </li>
+
+            <li className="leading-relaxed">
+              Your entry must be received by the Promoter prior to the Closing Date. Entries received after the Closing Date will not be entered into the random draw. Proof of posting does not guarantee that you will be entered into the random draw.
+            </li>
+
+            <li className="leading-relaxed">
+              The Promoter will not acknowledge receipt of your entry nor confirm if your answer to the Competition Question is correct.
+            </li>
+
+            <li className="leading-relaxed">
+              If the number of entries received reaches any cap or limit before your free entry is received, you will not be entered into the random draw.
+            </li>
+          </ol>
+
+          <p className="text-xs text-purple-300 pt-2 border-t border-purple-500/20">
+            Your entry is subject to our full terms and conditions.{" "}
             <Link
               href="/terms"
               className="text-amber-400 underline underline-offset-2 hover:text-amber-300"
             >
-              view full terms
+              Click here for details
             </Link>
             .
           </p>
