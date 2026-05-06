@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { CheckCircle } from 'lucide-react'
+import { CheckCircle, ShieldAlert } from 'lucide-react'
 
 interface FieldErrors {
   enquiry_type?: string
@@ -119,25 +119,25 @@ export function ContactForm() {
 
   if (success) {
     return (
-      <div className="flex flex-col items-center gap-4 py-8 text-center">
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-500/20">
-          <CheckCircle className="h-8 w-8 text-green-400" />
+      <div className="flex flex-col items-center gap-5 py-10 text-center">
+        <div className="flex h-20 w-20 items-center justify-center rounded-full bg-green-500/20">
+          <CheckCircle className="h-10 w-10 text-green-400" />
         </div>
-        <h3 className="text-xl font-bold text-white">Message sent</h3>
-        <p className="max-w-sm text-sm text-purple-200/80">
-          Thanks — we&apos;ve received your enquiry. If this is about a payout, we&apos;ll verify your details before sending any money.
+        <h3 className="text-2xl font-bold text-white">Message sent</h3>
+        <p className="max-w-md text-base text-purple-200/80">
+          Thanks — we&apos;ve received your enquiry. If this is about a payout, we&apos;ll verify your details and aim to process payment within 48 hours, often sooner.
         </p>
       </div>
     )
   }
 
   const inputBase =
-    'w-full rounded-xl border border-white/15 bg-white/[0.07] px-4 py-3 text-sm text-white placeholder-purple-300/50 outline-none transition-all duration-200 focus:border-[#FFD700]/60 focus:bg-white/[0.1] focus:ring-2 focus:ring-[#FFD700]/20'
-  const errorClass = 'mt-1 text-[11px] font-medium text-[#FFD700]'
-  const labelClass = 'block text-sm font-medium text-purple-100 mb-1.5'
+    'w-full rounded-xl border border-white/15 bg-white/[0.07] px-4 py-4 text-base text-white placeholder-purple-300/50 outline-none transition-all duration-200 focus:border-[#FFD700]/60 focus:bg-white/[0.1] focus:ring-2 focus:ring-[#FFD700]/20'
+  const errorClass = 'mt-1.5 text-xs font-medium text-[#FFD700]'
+  const labelClass = 'block text-base font-medium text-purple-100 mb-2'
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-6">
       {/* Honeypot - hidden from users */}
       <input
         type="text"
@@ -153,7 +153,7 @@ export function ContactForm() {
       {/* Enquiry Type */}
       <div>
         <label className={labelClass}>What do you need help with?</label>
-        <div className="grid gap-2">
+        <div className="grid gap-3">
           {ENQUIRY_TYPES.map((type) => (
             <button
               key={type.value}
@@ -174,10 +174,10 @@ export function ContactForm() {
                   }))
                 }
               }}
-              className={`w-full rounded-xl border px-4 py-3.5 text-left text-sm font-medium transition-all ${
+              className={`w-full rounded-xl border-2 px-5 py-4 text-left text-base font-semibold transition-all ${
                 form.enquiry_type === type.value
-                  ? 'border-[#FFD700]/60 bg-[#FFD700]/10 text-white'
-                  : 'border-white/15 bg-white/[0.05] text-purple-200 hover:bg-white/[0.08]'
+                  ? 'border-[#FFD700] bg-[#FFD700]/15 text-white shadow-[0_0_20px_rgba(255,215,0,0.15)]'
+                  : 'border-purple-500/30 bg-purple-900/20 text-purple-100 hover:border-purple-400/50 hover:bg-purple-900/30'
               }`}
             >
               {type.label}
@@ -247,18 +247,26 @@ export function ContactForm() {
 
       {/* Winner Payout Section - Only shown when enquiry_type is winner_payout */}
       {form.enquiry_type === 'winner_payout' && (
-        <div className="rounded-xl border border-purple-500/30 bg-purple-900/30 p-4 space-y-4">
+        <div className="rounded-2xl border-2 border-[#FFD700]/30 bg-[#FFD700]/5 p-5 space-y-5">
           <div>
-            <h3 className="text-base font-semibold text-white">Winner payout details</h3>
-            <p className="mt-1 text-xs text-purple-200/70">
-              Choose how you would like to be paid. These details are only used so we can pay verified winners. Never send card details, passwords, PINs, CVV numbers, or online banking login details.
+            <h3 className="text-lg font-bold text-white">Payout details</h3>
+            <p className="mt-2 text-sm text-purple-200/80">
+              Choose how you&apos;d like to be paid. We aim to process verified payouts within 48 hours, often sooner.
+            </p>
+          </div>
+
+          {/* Safety Warning inside payout panel */}
+          <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
+            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+            <p className="text-xs text-amber-200/90">
+              Never enter card details, passwords, PINs, CVV numbers, or online banking login details.
             </p>
           </div>
 
           {/* Payout Method Selection */}
           <div>
             <label className={labelClass}>Preferred payout method</label>
-            <div className="grid gap-2">
+            <div className="grid gap-3">
               {PAYOUT_METHODS.map((method) => (
                 <button
                   key={method.value}
@@ -276,10 +284,10 @@ export function ContactForm() {
                       payout_contact_detail: method.value === 'other' ? prev.payout_contact_detail : '',
                     }))
                   }}
-                  className={`w-full rounded-xl border px-4 py-3 text-left text-sm font-medium transition-all ${
+                  className={`w-full rounded-xl border-2 px-4 py-3.5 text-left text-base font-semibold transition-all ${
                     form.preferred_payout_method === method.value
-                      ? 'border-[#FFD700]/60 bg-[#FFD700]/10 text-white'
-                      : 'border-white/15 bg-white/[0.05] text-purple-200 hover:bg-white/[0.08]'
+                      ? 'border-[#FFD700] bg-[#FFD700]/15 text-white'
+                      : 'border-purple-500/30 bg-purple-900/20 text-purple-100 hover:border-purple-400/50'
                   }`}
                 >
                   {method.label}
@@ -291,7 +299,7 @@ export function ContactForm() {
 
           {/* Bank Transfer Fields */}
           {form.preferred_payout_method === 'bank_transfer' && (
-            <div className="space-y-3">
+            <div className="space-y-4">
               <div>
                 <label className={labelClass}>Account holder name *</label>
                 <input
@@ -371,18 +379,18 @@ export function ContactForm() {
           onChange={(e) => updateField('message', e.target.value)}
           maxLength={2000}
         />
-        <div className="mt-1 flex justify-between">
+        <div className="mt-1.5 flex justify-between">
           {errors.message ? (
             <p className={errorClass}>{errors.message}</p>
           ) : (
             <span />
           )}
-          <span className="text-[10px] text-purple-300/50">{form.message.length}/2000</span>
+          <span className="text-xs text-purple-300/50">{form.message.length}/2000</span>
         </div>
       </div>
 
       {serverError && (
-        <p className="rounded-xl bg-red-500/20 px-4 py-2 text-center text-xs text-red-200">
+        <p className="rounded-xl bg-red-500/20 px-4 py-3 text-center text-sm text-red-200">
           {serverError}
         </p>
       )}
@@ -390,7 +398,7 @@ export function ContactForm() {
       <button
         type="submit"
         disabled={submitting}
-        className="mt-1 w-full overflow-hidden rounded-xl bg-gradient-to-r from-[#FFD700] to-[#FFA500] px-6 py-4 text-sm font-bold uppercase tracking-wider text-[#1a0a2e] shadow-lg transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_0_30px_rgba(255,215,0,0.4)] active:scale-[0.98] disabled:opacity-50 disabled:hover:translate-y-0"
+        className="mt-2 w-full overflow-hidden rounded-xl bg-gradient-to-r from-[#FFD700] to-[#FFA500] px-6 py-5 text-base font-bold uppercase tracking-wider text-[#1a0a2e] shadow-lg transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_0_30px_rgba(255,215,0,0.4)] active:scale-[0.98] disabled:opacity-50 disabled:hover:translate-y-0"
       >
         {submitting ? 'Sending...' : 'Send Message'}
       </button>
