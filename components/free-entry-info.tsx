@@ -91,12 +91,12 @@ export function FreeEntryInfo() {
           </ol>
 
           <p className="text-xs text-purple-300 pt-2 border-t border-purple-500/20">
-            For full details, please{" "}
+            Your entry is subject to our full terms and conditions.{" "}
             <Link
               href="/terms"
               className="text-amber-400 underline underline-offset-2 hover:text-amber-300"
             >
-              view full terms
+              Click here for details
             </Link>
             .
           </p>
