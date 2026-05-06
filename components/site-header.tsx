@@ -33,6 +33,9 @@ export async function SiteHeader() {
           <Link href="/about" className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
             About
           </Link>
+          <Link href="/contact" className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+            Contact
+          </Link>
         </nav>
 
         <div className="flex items-center gap-3">
