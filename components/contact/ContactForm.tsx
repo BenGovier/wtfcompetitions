@@ -117,14 +117,44 @@ export function ContactForm() {
     setErrors((prev) => ({ ...prev, [field]: undefined }))
   }
 
+  function handleEnquiryTypeChange(value: string) {
+    updateField('enquiry_type', value)
+    // Reset payout fields when switching away from winner_payout
+    if (value !== 'winner_payout') {
+      setForm(prev => ({
+        ...prev,
+        enquiry_type: value,
+        preferred_payout_method: '',
+        payout_account_holder_name: '',
+        payout_sort_code: '',
+        payout_account_number: '',
+        payout_paypal_email: '',
+        payout_contact_detail: '',
+      }))
+    }
+  }
+
+  function handlePayoutMethodChange(value: string) {
+    setForm(prev => ({
+      ...prev,
+      preferred_payout_method: value,
+      payout_account_holder_name: value === 'bank_transfer' ? prev.payout_account_holder_name : '',
+      payout_sort_code: value === 'bank_transfer' ? prev.payout_sort_code : '',
+      payout_account_number: value === 'bank_transfer' ? prev.payout_account_number : '',
+      payout_paypal_email: value === 'paypal' ? prev.payout_paypal_email : '',
+      payout_contact_detail: value === 'other' ? prev.payout_contact_detail : '',
+    }))
+    setErrors(prev => ({ ...prev, preferred_payout_method: undefined }))
+  }
+
   if (success) {
     return (
-      <div className="flex flex-col items-center gap-5 py-10 text-center">
-        <div className="flex h-20 w-20 items-center justify-center rounded-full bg-green-500/20">
-          <CheckCircle className="h-10 w-10 text-green-400" />
+      <div className="flex flex-col items-center gap-4 py-8 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-500/20">
+          <CheckCircle className="h-8 w-8 text-green-400" />
         </div>
-        <h3 className="text-2xl font-bold text-white">Message sent</h3>
-        <p className="max-w-md text-base text-purple-200/80">
+        <h3 className="text-xl font-bold text-white">Message sent</h3>
+        <p className="max-w-sm text-sm text-purple-200/80">
           Thanks — we&apos;ve received your enquiry. If this is about a payout, we&apos;ll verify your details and aim to process payment within 48 hours, often sooner.
         </p>
       </div>
@@ -132,12 +162,14 @@ export function ContactForm() {
   }
 
   const inputBase =
-    'w-full rounded-xl border border-white/15 bg-white/[0.07] px-4 py-4 text-base text-white placeholder-purple-300/50 outline-none transition-all duration-200 focus:border-[#FFD700]/60 focus:bg-white/[0.1] focus:ring-2 focus:ring-[#FFD700]/20'
-  const errorClass = 'mt-1.5 text-xs font-medium text-[#FFD700]'
-  const labelClass = 'block text-base font-medium text-purple-100 mb-2'
+    'w-full rounded-lg border border-white/15 bg-white/[0.07] px-3 py-3 text-sm text-white placeholder-purple-300/50 outline-none transition-all duration-200 focus:border-[#FFD700]/60 focus:bg-white/[0.1] focus:ring-2 focus:ring-[#FFD700]/20'
+  const selectBase =
+    'w-full rounded-lg border border-white/15 bg-white/[0.07] px-3 py-3 text-sm text-white outline-none transition-all duration-200 focus:border-[#FFD700]/60 focus:bg-white/[0.1] focus:ring-2 focus:ring-[#FFD700]/20 appearance-none bg-[url("data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2024%2024%22%20stroke%3D%22%23a78bfa%22%3E%3Cpath%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%222%22%20d%3D%22M19%209l-7%207-7-7%22%2F%3E%3C%2Fsvg%3E")] bg-[length:1.25rem] bg-[right_0.5rem_center] bg-no-repeat pr-10'
+  const errorClass = 'mt-1 text-xs font-medium text-[#FFD700]'
+  const labelClass = 'block text-sm font-medium text-purple-100 mb-1.5'
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       {/* Honeypot - hidden from users */}
       <input
         type="text"
@@ -150,40 +182,21 @@ export function ContactForm() {
         aria-hidden="true"
       />
 
-      {/* Enquiry Type */}
+      {/* Enquiry Type - Dropdown */}
       <div>
-        <label className={labelClass}>What do you need help with?</label>
-        <div className="grid gap-3">
+        <label className={labelClass}>What do you need help with? *</label>
+        <select
+          value={form.enquiry_type}
+          onChange={(e) => handleEnquiryTypeChange(e.target.value)}
+          className={selectBase}
+        >
+          <option value="" disabled>Select an option</option>
           {ENQUIRY_TYPES.map((type) => (
-            <button
-              key={type.value}
-              type="button"
-              onClick={() => {
-                updateField('enquiry_type', type.value)
-                // Reset payout fields when switching away from winner_payout
-                if (type.value !== 'winner_payout') {
-                  setForm(prev => ({
-                    ...prev,
-                    enquiry_type: type.value,
-                    preferred_payout_method: '',
-                    payout_account_holder_name: '',
-                    payout_sort_code: '',
-                    payout_account_number: '',
-                    payout_paypal_email: '',
-                    payout_contact_detail: '',
-                  }))
-                }
-              }}
-              className={`w-full rounded-xl border-2 px-5 py-4 text-left text-base font-semibold transition-all ${
-                form.enquiry_type === type.value
-                  ? 'border-[#FFD700] bg-[#FFD700]/15 text-white shadow-[0_0_20px_rgba(255,215,0,0.15)]'
-                  : 'border-purple-500/30 bg-purple-900/20 text-purple-100 hover:border-purple-400/50 hover:bg-purple-900/30'
-              }`}
-            >
+            <option key={type.value} value={type.value}>
               {type.label}
-            </button>
+            </option>
           ))}
-        </div>
+        </select>
         {errors.enquiry_type && <p className={errorClass}>{errors.enquiry_type}</p>}
       </div>
 
@@ -247,59 +260,43 @@ export function ContactForm() {
 
       {/* Winner Payout Section - Only shown when enquiry_type is winner_payout */}
       {form.enquiry_type === 'winner_payout' && (
-        <div className="rounded-2xl border-2 border-[#FFD700]/30 bg-[#FFD700]/5 p-5 space-y-5">
+        <div className="rounded-lg border border-[#FFD700]/30 bg-[#FFD700]/5 p-4 space-y-4">
           <div>
-            <h3 className="text-lg font-bold text-white">Payout details</h3>
-            <p className="mt-2 text-sm text-purple-200/80">
-              Choose how you&apos;d like to be paid. We aim to process verified payouts within 48 hours, often sooner.
+            <h3 className="text-sm font-bold text-white">Payout details</h3>
+            <p className="mt-1 text-xs text-purple-200/80">
+              Choose how you&apos;d like to be paid. Verified payouts aimed for within 48 hours, often sooner.
             </p>
           </div>
 
           {/* Safety Warning inside payout panel */}
-          <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
-            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+          <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+            <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
             <p className="text-xs text-amber-200/90">
               Never enter card details, passwords, PINs, CVV numbers, or online banking login details.
             </p>
           </div>
 
-          {/* Payout Method Selection */}
+          {/* Payout Method - Dropdown */}
           <div>
-            <label className={labelClass}>Preferred payout method</label>
-            <div className="grid gap-3">
+            <label className={labelClass}>Preferred payout method *</label>
+            <select
+              value={form.preferred_payout_method}
+              onChange={(e) => handlePayoutMethodChange(e.target.value)}
+              className={selectBase}
+            >
+              <option value="" disabled>Select a method</option>
               {PAYOUT_METHODS.map((method) => (
-                <button
-                  key={method.value}
-                  type="button"
-                  onClick={() => {
-                    updateField('preferred_payout_method', method.value)
-                    // Clear other payout fields
-                    setForm(prev => ({
-                      ...prev,
-                      preferred_payout_method: method.value,
-                      payout_account_holder_name: method.value === 'bank_transfer' ? prev.payout_account_holder_name : '',
-                      payout_sort_code: method.value === 'bank_transfer' ? prev.payout_sort_code : '',
-                      payout_account_number: method.value === 'bank_transfer' ? prev.payout_account_number : '',
-                      payout_paypal_email: method.value === 'paypal' ? prev.payout_paypal_email : '',
-                      payout_contact_detail: method.value === 'other' ? prev.payout_contact_detail : '',
-                    }))
-                  }}
-                  className={`w-full rounded-xl border-2 px-4 py-3.5 text-left text-base font-semibold transition-all ${
-                    form.preferred_payout_method === method.value
-                      ? 'border-[#FFD700] bg-[#FFD700]/15 text-white'
-                      : 'border-purple-500/30 bg-purple-900/20 text-purple-100 hover:border-purple-400/50'
-                  }`}
-                >
+                <option key={method.value} value={method.value}>
                   {method.label}
-                </button>
+                </option>
               ))}
-            </div>
+            </select>
             {errors.preferred_payout_method && <p className={errorClass}>{errors.preferred_payout_method}</p>}
           </div>
 
           {/* Bank Transfer Fields */}
           {form.preferred_payout_method === 'bank_transfer' && (
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div>
                 <label className={labelClass}>Account holder name *</label>
                 <input
@@ -372,14 +369,14 @@ export function ContactForm() {
       <div>
         <label className={labelClass}>Message *</label>
         <textarea
-          placeholder="Please describe your enquiry in detail..."
-          rows={4}
+          placeholder="Please describe your enquiry..."
+          rows={3}
           className={`${inputBase} resize-none`}
           value={form.message}
           onChange={(e) => updateField('message', e.target.value)}
           maxLength={2000}
         />
-        <div className="mt-1.5 flex justify-between">
+        <div className="mt-1 flex justify-between">
           {errors.message ? (
             <p className={errorClass}>{errors.message}</p>
           ) : (
@@ -390,7 +387,7 @@ export function ContactForm() {
       </div>
 
       {serverError && (
-        <p className="rounded-xl bg-red-500/20 px-4 py-3 text-center text-sm text-red-200">
+        <p className="rounded-lg bg-red-500/20 px-3 py-2 text-center text-sm text-red-200">
           {serverError}
         </p>
       )}
@@ -398,7 +395,7 @@ export function ContactForm() {
       <button
         type="submit"
         disabled={submitting}
-        className="mt-2 w-full overflow-hidden rounded-xl bg-gradient-to-r from-[#FFD700] to-[#FFA500] px-6 py-5 text-base font-bold uppercase tracking-wider text-[#1a0a2e] shadow-lg transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_0_30px_rgba(255,215,0,0.4)] active:scale-[0.98] disabled:opacity-50 disabled:hover:translate-y-0"
+        className="mt-1 w-full rounded-lg bg-gradient-to-r from-[#FFD700] to-[#FFA500] px-4 py-3.5 text-sm font-bold uppercase tracking-wider text-[#1a0a2e] shadow-lg transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_0_20px_rgba(255,215,0,0.3)] active:scale-[0.98] disabled:opacity-50 disabled:hover:translate-y-0"
       >
         {submitting ? 'Sending...' : 'Send Message'}
       </button>
