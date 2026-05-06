@@ -190,9 +190,9 @@ export function ContactForm() {
           onChange={(e) => handleEnquiryTypeChange(e.target.value)}
           className={selectBase}
         >
-          <option value="" disabled>Select an option</option>
+          <option value="" disabled className="bg-white text-slate-900">Select an option</option>
           {ENQUIRY_TYPES.map((type) => (
-            <option key={type.value} value={type.value}>
+            <option key={type.value} value={type.value} className="bg-white text-slate-900">
               {type.label}
             </option>
           ))}
@@ -284,9 +284,9 @@ export function ContactForm() {
               onChange={(e) => handlePayoutMethodChange(e.target.value)}
               className={selectBase}
             >
-              <option value="" disabled>Select a method</option>
+              <option value="" disabled className="bg-white text-slate-900">Select a method</option>
               {PAYOUT_METHODS.map((method) => (
-                <option key={method.value} value={method.value}>
+                <option key={method.value} value={method.value} className="bg-white text-slate-900">
                   {method.label}
                 </option>
               ))}

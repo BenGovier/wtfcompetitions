@@ -67,6 +67,14 @@ export function MobileAuthMenu() {
               About
             </Link>
           </SheetClose>
+          <SheetClose asChild>
+            <Link
+              href="/contact"
+              className="flex items-center px-4 py-3 text-sm font-medium text-purple-100 hover:bg-purple-900/30 rounded-lg transition-colors"
+            >
+              Contact
+            </Link>
+          </SheetClose>
         </nav>
 
         <SheetFooter className="border-t border-purple-900/30 pt-4 flex-col gap-3">
