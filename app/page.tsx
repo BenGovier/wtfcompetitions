@@ -49,22 +49,6 @@ export default async function HomePage() {
     .filter((g: any) => g?.status === 'live')
 
   return (
-    <>
-      {/* Hero Section - Full width banner */}
-      <section className="relative w-full">
-        <Link href="/giveaways" className="block w-full">
-          <Image
-            src="/images/hero-banner.png"
-            alt="Win Cash Daily - Play Now for Instant Wins"
-            width={1792}
-            height={1024}
-            className="w-full h-auto"
-            priority
-            sizes="100vw"
-          />
-        </Link>
-      </section>
-
     <div className="min-h-screen bg-gradient-to-b from-[#1a002b] via-[#2d0050] to-[#0a0014]">
       <div className="container px-4 py-8 md:py-16">
       {/* Featured Giveaways */}
@@ -210,6 +194,5 @@ export default async function HomePage() {
       </section>
       </div>
     </div>
-    </>
   )
 }
