@@ -35,6 +35,12 @@ export async function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-3">
+          {/* Mobile-only Account button */}
+          <Button variant="outline" size="sm" asChild className="sm:hidden border-white/20 bg-black/50 text-white hover:bg-black/70 text-xs px-3">
+            <Link href="/me">Account</Link>
+          </Button>
+
+          {/* Desktop buttons */}
           {user ? (
             <>
               <Button variant="ghost" size="sm" asChild className="hidden sm:inline-flex hover:bg-accent">
