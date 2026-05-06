@@ -86,12 +86,12 @@ export default function PrivacyPage() {
         We may collect, use, store and transfer different kinds of personal data about you which we have grouped together as follows:
       </p>
       <ul className="list-disc list-inside text-sm leading-relaxed text-muted-foreground space-y-1 mb-3">
-        <li><strong>Identity Data</strong> includes first name, maiden name, last name, username or similar identifier, marital status, title, date of birth and gender.</li>
-        <li><strong>Contact Data</strong> includes billing address, delivery address, email address and telephone numbers.</li>
+        <li><strong>Identity Data</strong> includes first name, last name, username, marital status, and title.</li>
+        <li><strong>Contact Data</strong> includes delivery address, email address and telephone number.</li>
         <li><strong>Financial Data</strong> includes bank account and payment card details.</li>
         <li><strong>Transaction Data</strong> includes details about payments to and from you and other details of products and services you have purchased from us.</li>
         <li><strong>Technical Data</strong> includes internet protocol (IP) address, your login data, browser type and version, time zone setting and location, browser plug-in types and versions, operating system and platform, and other technology on the devices you use to access this website.</li>
-        <li><strong>Profile Data</strong> includes your username and password, purchases or orders made by you, your interests, preferences, feedback and survey responses.</li>
+        <li><strong>Profile Data</strong> includes your username and password, purchases or orders made by you, your interests, preferences.</li>
         <li><strong>Usage Data</strong> includes information about how you use our website, products and services.</li>
         <li><strong>Marketing and Communications Data</strong> includes your preferences in receiving marketing from us and our third parties and your communication preferences.</li>
       </ul>
@@ -131,7 +131,7 @@ export default function PrivacyPage() {
 
       <h3 className="text-lg font-medium mt-6 mb-2">Automated Technologies or Interactions</h3>
       <p className="text-sm leading-relaxed text-muted-foreground">
-        As you interact with our website, we will automatically collect Technical Data about your equipment, browsing actions and patterns. We collect this personal data by using cookies, server logs and other similar technologies. We may also receive Technical Data about you if you visit other websites employing our cookies.
+        As you interact with our website, we will automatically collect Technical Data about your equipment, browsing actions and patterns. We collect this personal data by using cookies, server logs and other similar technologies. We may also receive Technical Data about you if you visit other websites employing our cookies. Please see our cookie policy <a href="/cookies" className="text-pink-500 hover:underline">www.wtf-giveaways.co.uk/cookies</a> for further details.
       </p>
 
       <h3 className="text-lg font-medium mt-6 mb-2">Third Parties or Publicly Available Sources</h3>
@@ -139,9 +139,8 @@ export default function PrivacyPage() {
         We will receive personal data about you from various third parties and public sources as set out below:
       </p>
       <ul className="list-disc list-inside text-sm leading-relaxed text-muted-foreground space-y-1">
-        <li><strong>Technical Data</strong> from analytics providers (such as Google based outside the UK), advertising networks (such as Facebook based outside the UK), and search information providers (such as Bing).</li>
-        <li><strong>Contact, Financial and Transaction Data</strong> from providers of technical, payment and delivery services.</li>
-        <li><strong>Identity and Contact Data</strong> from publicly available sources such as Companies House and the Electoral Register based inside the UK.</li>
+        <li><strong>Technical Data</strong> from analytics providers (such as Google based outside the UK), advertising networks (such as Facebook based outside the UK), and search information providers (such as Bing based in the UK).</li>
+        <li><strong>Contact, Financial and Transaction Data</strong> from providers of technical, payment and delivery services such as Cashflows based inside the UK.</li>
       </ul>
 
       <div className="border-t my-6" />
@@ -252,7 +251,7 @@ export default function PrivacyPage() {
 
       <h3 className="text-lg font-medium mt-6 mb-2">Cookies</h3>
       <p className="text-sm leading-relaxed text-muted-foreground">
-        You can set your browser to refuse all or some browser cookies, or to alert you when websites set or access cookies. If you disable or refuse cookies, please note that some parts of this website may become inaccessible or not function properly.
+        You can set your browser to refuse all or some browser cookies, or to alert you when websites set or access cookies. If you disable or refuse cookies, please note that some parts of this website may become inaccessible or not function properly. For more information about the cookies we use, please see <a href="/cookies" className="text-pink-500 hover:underline">www.wtf-giveaways.co.uk/cookies</a>.
       </p>
 
       <h3 className="text-lg font-medium mt-6 mb-2">Change of Purpose</h3>
