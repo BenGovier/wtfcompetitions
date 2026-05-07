@@ -545,7 +545,7 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
         </label>
 
         {totalPence < 100 && (
-          <p className="text-xs text-amber-400 text-center">Minimum order is £1.00</p>
+          <p className="text-sm text-amber-400 text-center font-medium">Minimum order is £1.00</p>
         )}
 
         <Button
@@ -581,7 +581,7 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
               disabled={isProcessing || qty < 1 || !hasAcceptedTerms || totalPence < 100}
               onClick={handleEnter}
             >
-              {isProcessing ? "Checking out..." : hasAcceptedTerms ? "Enter Now" : "Accept T&Cs above"}
+              {isProcessing ? "Checking out..." : totalPence < 100 ? "Minimum order £1" : hasAcceptedTerms ? "Enter Now" : "Accept T&Cs above"}
             </Button>
           </div>
         </div>
