@@ -53,12 +53,12 @@ export default function LoginClient({ redirect }: { redirect: string }) {
 
   const description = redirect.startsWith('/admin')
     ? 'Sign in to continue to the admin area.'
-    : 'Sign in to your account.'
+    : 'Sign in to check your entries, tickets, and wins.'
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-2xl">Sign in</CardTitle>
+    <Card className="border-purple-500/20">
+      <CardHeader className="text-center">
+        <CardTitle className="text-2xl">Welcome Back</CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent>
@@ -86,17 +86,22 @@ export default function LoginClient({ redirect }: { redirect: string }) {
               />
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? 'Logging in...' : 'Login'}
+            <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700" disabled={isLoading}>
+              {isLoading ? 'Signing in...' : 'Sign In'}
             </Button>
-            <div className="flex flex-col gap-2 text-center text-sm">
-              <p className="text-muted-foreground">
-                {"Don't have an account? "}
-                <Link href="/auth/sign-up" className="underline underline-offset-4 hover:text-foreground">
-                  Create an account
-                </Link>
-              </p>
-              <Link href="/auth/forgot-password" className="text-muted-foreground underline underline-offset-4 hover:text-foreground">
+
+            <div className="flex flex-col gap-3 text-center">
+              <p className="text-sm text-muted-foreground">New here?</p>
+              <Link href="/auth/sign-up" className="block">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full border-purple-500 text-purple-600 hover:bg-purple-50 hover:text-purple-700"
+                >
+                  Create your free account
+                </Button>
+              </Link>
+              <Link href="/auth/forgot-password" className="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground">
                 Forgot password?
               </Link>
             </div>
