@@ -76,25 +76,25 @@ export default async function AccountPage() {
     // Get checkout_intent_ids for this user
     const { data: checkouts } = await supabase
       .from('checkout_intents')
-      .select('id, campaign_id')
+      .select('id')
       .eq('user_id', user.id)
 
     if (checkouts && checkouts.length > 0) {
       const checkoutIds = checkouts.map((c) => c.id)
-      const checkoutCampaignMap: Record<string, string> = {}
-      for (const c of checkouts) {
-        checkoutCampaignMap[c.id] = c.campaign_id
-      }
 
       // Get instant_win_awards for those checkout_intents
+      // Use campaign_id from instant_win_awards as the source of truth
       const { data: awards } = await supabase
         .from('instant_win_awards')
-        .select('checkout_intent_id, prize_id, awarded_at, instant_win_prizes(prize_title)')
+        .select('checkout_intent_id, campaign_id, prize_id, awarded_at, instant_win_prizes(prize_title)')
         .in('checkout_intent_id', checkoutIds)
+
+      console.log('[me-wins] awards =', JSON.stringify(awards))
 
       if (awards) {
         for (const a of awards) {
-          const campaignId = checkoutCampaignMap[a.checkout_intent_id]
+          // Use award.campaign_id directly, not from checkout_intents
+          const campaignId = (a as any).campaign_id
           if (campaignId) {
             if (!winsMap[campaignId]) {
               winsMap[campaignId] = []
@@ -107,6 +107,8 @@ export default async function AccountPage() {
           }
         }
       }
+
+      console.log('[me-wins] winsMap =', JSON.stringify(winsMap))
     }
   }
 
