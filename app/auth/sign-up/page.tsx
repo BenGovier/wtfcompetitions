@@ -18,6 +18,8 @@ export default function SignUpPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
   const [mobile, setMobile] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [mobileError, setMobileError] = useState<string | null>(null)
@@ -35,6 +37,15 @@ export default function SignUpPage() {
       return
     }
 
+    // Auto-fill display_name from first_name + last initial if blank
+    let finalDisplayName = displayName.trim()
+    if (!finalDisplayName && firstName.trim()) {
+      const lastInitial = lastName.trim().charAt(0).toUpperCase()
+      finalDisplayName = lastInitial
+        ? `${firstName.trim()} ${lastInitial}`
+        : firstName.trim()
+    }
+
     const supabase = createClient()
     setIsLoading(true)
 
@@ -44,7 +55,9 @@ export default function SignUpPage() {
         password,
         options: {
           data: {
-            display_name: displayName || undefined,
+            display_name: finalDisplayName || undefined,
+            first_name: firstName.trim() || undefined,
+            last_name: lastName.trim() || undefined,
             mobile: mobile.trim(),
           },
         },
@@ -104,14 +117,37 @@ export default function SignUpPage() {
             <form onSubmit={handleSignUp}>
               <div className="flex flex-col gap-6">
                 <div className="grid gap-2">
-                  <Label htmlFor="display-name">Display name (optional)</Label>
+                  <Label htmlFor="first-name">First name</Label>
+                  <Input
+                    id="first-name"
+                    type="text"
+                    placeholder="Ben"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="last-name">Last name</Label>
+                  <Input
+                    id="last-name"
+                    type="text"
+                    placeholder="Govier"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="display-name">Winner display name</Label>
                   <Input
                     id="display-name"
                     type="text"
-                    placeholder="Your name"
+                    placeholder="Ben G"
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
                   />
+                  <p className="text-xs text-muted-foreground">
+                    This is the name shown publicly if you win. Leave blank to auto-generate from your name.
+                  </p>
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="mobile">Mobile number</Label>
