@@ -204,7 +204,10 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
                 prize_title: prize.prize_title,
                 prize_value_text: prize.prize_value_text,
                 unlock_ratio: ratio,
-                image_url: prize.image_url,
+                image_url:
+                  prize.image_url ??
+                  iwOriginal[prize.id]?.image_url ??
+                  null,
                 quantity: prize.quantity,
                 is_high_value: prize.is_high_value,
               }),
