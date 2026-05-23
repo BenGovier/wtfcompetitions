@@ -59,3 +59,25 @@ export type InstantWinAttemptLog = {
   prizeName?: string
   tier?: InstantWinTier
 }
+
+// Admin payout tracking type - matches API response shape
+export type AdminInstantWinAward = {
+  award_id: string
+  awarded_at: string
+  campaign_id: string
+  giveaway_id: string | null
+  prize_id: string
+  prize_title: string
+  checkout_intent_id: string
+  checkout_ref: string
+  user_id: string | null
+  customer_name: string
+  customer_email: string
+  customer_mobile: string
+  start_ticket: number | null
+  end_ticket: number | null
+  payout_amount_pence: number | null
+  is_paid: boolean
+  paid_at: string | null
+  payout_notes: string | null
+}
