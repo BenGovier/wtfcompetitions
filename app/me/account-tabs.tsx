@@ -7,6 +7,8 @@ import { Switch } from '@/components/ui/switch'
 import { SignOutButton } from './sign-out-button'
 import { createClient } from '@/lib/supabase/client'
 
+import Image from 'next/image'
+
 interface UserPreferences {
   instant_win_notifications: boolean
   marketing_emails: boolean
@@ -21,7 +23,8 @@ type EntryRow = {
 }
 
 type AllocationInfo = { start_ticket: number; end_ticket: number }
-type CampaignInfo = { title: string; status: string }
+type CampaignInfo = { title: string; status: string; heroImageUrl: string | null; endAt: string | null }
+type WinInfo = { prizeTitle: string; awardedAt: string }
 
 interface AccountTabsProps {
   email: string
@@ -29,6 +32,7 @@ interface AccountTabsProps {
   entriesError: string | null
   allocationMap: Record<string, AllocationInfo>
   campaignMap: Record<string, CampaignInfo>
+  winsMap: Record<string, WinInfo[]>
 }
 
 function formatDateUK(dateStr: string) {
@@ -54,7 +58,7 @@ function TicketDisplay({ start, end }: { start?: number | null; end?: number | n
   )
 }
 
-export function AccountTabs({ email, entries, entriesError, allocationMap, campaignMap }: AccountTabsProps) {
+export function AccountTabs({ email, entries, entriesError, allocationMap, campaignMap, winsMap }: AccountTabsProps) {
   const [prefs, setPrefs] = useState<UserPreferences | null>(null)
   const [prefsLoading, setPrefsLoading] = useState(true)
   const [prefsError, setPrefsError] = useState<string | null>(null)
@@ -162,39 +166,72 @@ export function AccountTabs({ email, entries, entriesError, allocationMap, campa
               {entries.map((entry) => {
                 const campaign = campaignMap[entry.campaign_id]
                 const allocation = allocationMap[entry.id]
+                const wins = winsMap[entry.campaign_id] || []
                 const status = campaign?.status || 'unknown'
                 const isLive = status === 'live' || status === 'active'
 
                 return (
                   <div
                     key={entry.id}
-                    className="flex flex-col gap-3 rounded-xl border border-white/10 bg-white/5 p-4 transition-all duration-300 hover:bg-white/[0.07]"
+                    className="flex gap-3 rounded-xl border border-white/10 bg-white/5 p-3 transition-all duration-300 hover:bg-white/[0.07]"
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <h3 className="text-sm font-semibold text-white leading-tight">
-                        {campaign?.title || 'Giveaway'}
-                      </h3>
-                      <span
-                        className={
-                          isLive
-                            ? 'shrink-0 rounded-full border border-yellow-400/30 bg-yellow-400/10 px-2.5 py-1 text-xs font-medium text-yellow-300'
-                            : 'shrink-0 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-medium text-white/80'
-                        }
-                      >
-                        {isLive ? 'Live' : 'Ended'}
-                      </span>
+                    {/* Thumbnail */}
+                    <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-purple-500/20">
+                      {campaign?.heroImageUrl ? (
+                        <Image
+                          src={campaign.heroImageUrl}
+                          alt={campaign?.title || 'Giveaway'}
+                          fill
+                          sizes="64px"
+                          className="object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-2xl text-purple-400/60">
+                          🎁
+                        </div>
+                      )}
                     </div>
 
-                    <div className="text-sm">
-                      <TicketDisplay
-                        start={allocation?.start_ticket}
-                        end={allocation?.end_ticket}
-                      />
-                    </div>
+                    {/* Content */}
+                    <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                      {/* Title + Badge */}
+                      <div className="flex items-start justify-between gap-2">
+                        <h3 className="truncate text-sm font-semibold text-white leading-tight">
+                          {campaign?.title || 'Giveaway'}
+                        </h3>
+                        <span
+                          className={
+                            isLive
+                              ? 'shrink-0 rounded-full border border-green-400/30 bg-green-400/10 px-2 py-0.5 text-xs font-medium text-green-300'
+                              : 'shrink-0 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-xs font-medium text-white/60'
+                          }
+                        >
+                          {isLive ? 'LIVE' : 'ENDED'}
+                        </span>
+                      </div>
 
-                    <div className="flex items-center justify-between text-xs text-white/65">
-                      <span>{entry.qty === 1 ? '1 entry' : entry.qty + ' entries'}</span>
-                      <span>{formatDateUK(entry.created_at)}</span>
+                      {/* Tickets */}
+                      <div className="text-sm">
+                        <TicketDisplay
+                          start={allocation?.start_ticket}
+                          end={allocation?.end_ticket}
+                        />
+                      </div>
+
+                      {/* Date */}
+                      <p className="text-xs text-white/50">
+                        Bought {formatDateUK(entry.created_at)}
+                      </p>
+
+                      {/* Win status */}
+                      {wins.length > 0 ? (
+                        <div className="mt-1 flex items-center gap-1.5 rounded-md bg-yellow-500/15 px-2 py-1 text-xs font-medium text-yellow-300">
+                          <span>🎁</span>
+                          <span>Instant Winner: {wins.map((w) => w.prizeTitle).join(', ')}</span>
+                        </div>
+                      ) : (
+                        <p className="mt-1 text-xs text-white/40">No win yet</p>
+                      )}
                     </div>
                   </div>
                 )
