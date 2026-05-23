@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Search, ChevronLeft, ChevronRight, Check, X, Loader2 } from 'lucide-react'
+import { Search, ChevronLeft, ChevronRight, Check, X, Loader2, Save } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -38,7 +38,7 @@ function parsePounds(pounds: string): number | null {
   const cleaned = pounds.replace(/[£,\s]/g, '')
   if (cleaned === '') return null
   const num = parseFloat(cleaned)
-  if (isNaN(num)) return null
+  if (isNaN(num) || num < 0) return null
   return Math.round(num * 100)
 }
 
@@ -60,6 +60,8 @@ export default function InstantWinsPage() {
   // Editing state - keyed by award_id
   const [editingPayout, setEditingPayout] = useState<Record<string, string>>({})
   const [savingAward, setSavingAward] = useState<string | null>(null)
+  // Track inline errors for Mark Paid validation
+  const [markPaidErrors, setMarkPaidErrors] = useState<Record<string, string>>({})
 
   const fetchAwards = useCallback(async () => {
     setLoading(true)
@@ -85,12 +87,14 @@ export default function InstantWinsPage() {
         setAwards(json.awards)
         setHasNext(json.hasNext ?? false)
         setOutstandingAmountPence(json.outstandingAmountPence ?? 0)
-        // Initialize editing state
+        // Initialize editing state from server data
         const payoutState: Record<string, string> = {}
         for (const a of json.awards) {
           payoutState[a.award_id] = formatPence(a.payout_amount_pence)
         }
         setEditingPayout(payoutState)
+        // Clear any mark paid errors
+        setMarkPaidErrors({})
       }
     } catch (err: any) {
       setError(err.message || 'Network error')
@@ -118,8 +122,14 @@ export default function InstantWinsPage() {
     }
   }
 
-  const handleSavePayout = async (awardId: string, newPence: number | null) => {
+  // Save Amount: PATCHes only payout_amount_pence (and payout_notes if included)
+  const handleSaveAmount = async (awardId: string) => {
+    const inputValue = editingPayout[awardId] ?? ''
+    const newPence = parsePounds(inputValue)
+
     setSavingAward(awardId)
+    setMarkPaidErrors((prev) => ({ ...prev, [awardId]: '' }))
+
     try {
       const res = await fetch('/api/admin/instant-winners', {
         method: 'PATCH',
@@ -128,16 +138,10 @@ export default function InstantWinsPage() {
       })
       const json = await res.json()
       if (json.ok) {
-        // Update local state
-        setAwards((prev) =>
-          prev.map((a) =>
-            a.award_id === awardId ? { ...a, payout_amount_pence: newPence } : a
-          )
-        )
-        // Refresh outstanding amount
-        fetchAwards()
+        // Re-fetch to get updated outstanding total and fresh data
+        await fetchAwards()
       } else {
-        alert(json.error || 'Failed to save')
+        alert(json.error || 'Failed to save amount')
       }
     } catch (err: any) {
       alert(err.message || 'Network error')
@@ -146,33 +150,67 @@ export default function InstantWinsPage() {
     }
   }
 
-  const handleTogglePaid = async (award: AdminInstantWinAward) => {
-    const newIsPaid = !award.is_paid
+  // Mark Paid: PATCHes is_paid=true AND payout_amount_pence from current input
+  const handleMarkPaid = async (award: AdminInstantWinAward) => {
+    const inputValue = editingPayout[award.award_id] ?? ''
+    const payoutPence = parsePounds(inputValue)
+
+    // Validation: must have a valid payout amount > 0
+    if (payoutPence === null || payoutPence <= 0) {
+      setMarkPaidErrors((prev) => ({
+        ...prev,
+        [award.award_id]: 'Enter payout amount before marking paid.',
+      }))
+      return
+    }
+
     setSavingAward(award.award_id)
+    setMarkPaidErrors((prev) => ({ ...prev, [award.award_id]: '' }))
+
     try {
       const res = await fetch('/api/admin/instant-winners', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ award_id: award.award_id, is_paid: newIsPaid }),
+        body: JSON.stringify({
+          award_id: award.award_id,
+          is_paid: true,
+          payout_amount_pence: payoutPence,
+        }),
       })
       const json = await res.json()
       if (json.ok) {
-        // Update local state
-        setAwards((prev) =>
-          prev.map((a) =>
-            a.award_id === award.award_id
-              ? {
-                  ...a,
-                  is_paid: newIsPaid,
-                  paid_at: newIsPaid ? new Date().toISOString() : null,
-                }
-              : a
-          )
-        )
-        // Refresh outstanding amount
-        fetchAwards()
+        // Re-fetch to get updated outstanding total and fresh data
+        await fetchAwards()
       } else {
-        alert(json.error || 'Failed to update')
+        alert(json.error || 'Failed to mark paid')
+      }
+    } catch (err: any) {
+      alert(err.message || 'Network error')
+    } finally {
+      setSavingAward(null)
+    }
+  }
+
+  // Unpay: PATCHes only is_paid=false (preserves payout_amount_pence)
+  const handleUnpay = async (award: AdminInstantWinAward) => {
+    setSavingAward(award.award_id)
+    setMarkPaidErrors((prev) => ({ ...prev, [award.award_id]: '' }))
+
+    try {
+      const res = await fetch('/api/admin/instant-winners', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          award_id: award.award_id,
+          is_paid: false,
+        }),
+      })
+      const json = await res.json()
+      if (json.ok) {
+        // Re-fetch to get updated outstanding total and fresh data
+        await fetchAwards()
+      } else {
+        alert(json.error || 'Failed to unpay')
       }
     } catch (err: any) {
       alert(err.message || 'Network error')
@@ -206,7 +244,7 @@ export default function InstantWinsPage() {
             £{formatPence(outstandingAmountPence)}
           </div>
           <p className="text-xs text-muted-foreground mt-1">
-            Only awards with an entered payout amount count towards this total.
+            Sum of unpaid awards with a saved payout amount.
           </p>
         </CardContent>
       </Card>
@@ -310,9 +348,22 @@ export default function InstantWinsPage() {
                 ) : (
                   awards.map((award) => {
                     const isSaving = savingAward === award.award_id
-                    const payoutValue = editingPayout[award.award_id] ?? ''
-                    const currentPence = parsePounds(payoutValue)
-                    const hasChanged = currentPence !== award.payout_amount_pence
+                    const inputValue = editingPayout[award.award_id] ?? ''
+                    const inputPence = parsePounds(inputValue)
+                    // Check if the input differs from the saved DB value
+                    const hasUnsavedChanges = inputPence !== award.payout_amount_pence
+                    const markPaidError = markPaidErrors[award.award_id] || ''
+
+                    // Determine payout status message
+                    let payoutStatusMsg = ''
+                    let payoutStatusColor = ''
+                    if (award.is_paid && award.payout_amount_pence === null) {
+                      payoutStatusMsg = 'Paid but amount missing'
+                      payoutStatusColor = 'text-red-600'
+                    } else if (!award.is_paid && award.payout_amount_pence === null) {
+                      payoutStatusMsg = 'Needs amount'
+                      payoutStatusColor = 'text-amber-600'
+                    }
 
                     return (
                       <TableRow key={award.award_id} className={award.is_paid ? 'bg-muted/30' : ''}>
@@ -346,35 +397,41 @@ export default function InstantWinsPage() {
                           <div className="flex items-center gap-1">
                             <Input
                               type="text"
-                              value={payoutValue}
-                              onChange={(e) =>
+                              value={inputValue}
+                              onChange={(e) => {
                                 setEditingPayout((prev) => ({
                                   ...prev,
                                   [award.award_id]: e.target.value,
                                 }))
-                              }
+                                // Clear mark paid error when user types
+                                if (markPaidErrors[award.award_id]) {
+                                  setMarkPaidErrors((prev) => ({ ...prev, [award.award_id]: '' }))
+                                }
+                              }}
                               placeholder="0.00"
                               className="w-20 h-8 text-sm"
                               disabled={isSaving}
                             />
-                            {hasChanged && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-8 w-8 p-0"
-                                onClick={() => handleSavePayout(award.award_id, currentPence)}
-                                disabled={isSaving}
-                              >
-                                {isSaving ? (
-                                  <Loader2 className="size-4 animate-spin" />
-                                ) : (
-                                  <Check className="size-4 text-green-600" />
-                                )}
-                              </Button>
-                            )}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 px-2"
+                              onClick={() => handleSaveAmount(award.award_id)}
+                              disabled={isSaving || !hasUnsavedChanges}
+                              title="Save amount"
+                            >
+                              {isSaving ? (
+                                <Loader2 className="size-4 animate-spin" />
+                              ) : (
+                                <Save className="size-4" />
+                              )}
+                            </Button>
                           </div>
-                          {award.payout_amount_pence === null && (
-                            <span className="text-xs text-amber-600">Needs amount</span>
+                          {payoutStatusMsg && (
+                            <span className={`text-xs ${payoutStatusColor}`}>{payoutStatusMsg}</span>
+                          )}
+                          {markPaidError && (
+                            <span className="text-xs text-red-600 block">{markPaidError}</span>
                           )}
                         </TableCell>
                         <TableCell>
@@ -394,27 +451,41 @@ export default function InstantWinsPage() {
                           )}
                         </TableCell>
                         <TableCell>
-                          <Button
-                            size="sm"
-                            variant={award.is_paid ? 'outline' : 'default'}
-                            onClick={() => handleTogglePaid(award)}
-                            disabled={isSaving}
-                            className="h-8"
-                          >
-                            {isSaving ? (
-                              <Loader2 className="size-4 animate-spin" />
-                            ) : award.is_paid ? (
-                              <>
-                                <X className="size-3 mr-1" />
-                                Unpay
-                              </>
-                            ) : (
-                              <>
-                                <Check className="size-3 mr-1" />
-                                Mark Paid
-                              </>
-                            )}
-                          </Button>
+                          {award.is_paid ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleUnpay(award)}
+                              disabled={isSaving}
+                              className="h-8"
+                            >
+                              {isSaving ? (
+                                <Loader2 className="size-4 animate-spin" />
+                              ) : (
+                                <>
+                                  <X className="size-3 mr-1" />
+                                  Unpay
+                                </>
+                              )}
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="default"
+                              onClick={() => handleMarkPaid(award)}
+                              disabled={isSaving}
+                              className="h-8"
+                            >
+                              {isSaving ? (
+                                <Loader2 className="size-4 animate-spin" />
+                              ) : (
+                                <>
+                                  <Check className="size-3 mr-1" />
+                                  Mark Paid
+                                </>
+                              )}
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     )
