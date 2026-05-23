@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import Image from "next/image"
 import { Zap, ChevronDown, ChevronUp, Gift } from "lucide-react"
 
@@ -20,13 +20,66 @@ interface InstantWinListProps {
   instantWins: InstantWin[]
 }
 
+/**
+ * Extract numeric cash value from prize title for display sorting.
+ * Examples: "£2,000" → 2000, "£500 Cash" → 500, "£10" → 10
+ * Returns null if no cash value can be extracted (non-cash prizes).
+ * This is display-only and does not affect database or slot ordering.
+ */
+function extractCashValue(title: string): number | null {
+  // Match £ followed by digits with optional commas and optional decimal
+  // e.g. "£2,000", "£500", "£10.50", "£1,000 Cash"
+  const match = title.match(/£([\d,]+(?:\.\d{1,2})?)/)
+  if (!match) return null
+  // Remove commas and parse as float
+  const value = parseFloat(match[1].replace(/,/g, ''))
+  return Number.isFinite(value) ? value : null
+}
+
+/**
+ * Sort instant wins for display: cash prizes descending by value,
+ * non-cash prizes preserve their original relative order at the end.
+ */
+function sortInstantWinsForDisplay(wins: InstantWin[]): InstantWin[] {
+  // Create array with original indices to preserve relative order for non-cash
+  const withMeta = wins.map((win, originalIndex) => ({
+    win,
+    originalIndex,
+    cashValue: extractCashValue(win.title),
+  }))
+
+  // Stable sort: cash prizes first (descending), then non-cash (original order)
+  withMeta.sort((a, b) => {
+    const aHasCash = a.cashValue !== null
+    const bHasCash = b.cashValue !== null
+
+    // Both have cash values: sort descending by value
+    if (aHasCash && bHasCash) {
+      return b.cashValue! - a.cashValue!
+    }
+    // Cash prizes come before non-cash
+    if (aHasCash && !bHasCash) return -1
+    if (!aHasCash && bHasCash) return 1
+    // Both non-cash: preserve original order
+    return a.originalIndex - b.originalIndex
+  })
+
+  return withMeta.map((m) => m.win)
+}
+
 export function InstantWinList({ instantWins }: InstantWinListProps) {
   const [expanded, setExpanded] = useState(false)
 
-  if (!instantWins || instantWins.length === 0) return null
+  // Display-only sort: cash prizes descending, non-cash preserve original order
+  const sortedInstantWins = useMemo(
+    () => sortInstantWinsForDisplay(instantWins),
+    [instantWins]
+  )
 
-  const hasMore = instantWins.length > INITIAL_DISPLAY_COUNT
-  const visibleItems = expanded ? instantWins : instantWins.slice(0, INITIAL_DISPLAY_COUNT)
+  if (!sortedInstantWins || sortedInstantWins.length === 0) return null
+
+  const hasMore = sortedInstantWins.length > INITIAL_DISPLAY_COUNT
+  const visibleItems = expanded ? sortedInstantWins : sortedInstantWins.slice(0, INITIAL_DISPLAY_COUNT)
 
   return (
     <section className="space-y-4">
