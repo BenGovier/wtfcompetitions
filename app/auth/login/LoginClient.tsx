@@ -53,12 +53,12 @@ export default function LoginClient({ redirect }: { redirect: string }) {
 
   const description = redirect.startsWith('/admin')
     ? 'Sign in to continue to the admin area.'
-    : 'Sign in to your account.'
+    : 'Sign in to check your entries, tickets, and wins.'
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-2xl">Sign in</CardTitle>
+    <Card className="border-purple-500/20">
+      <CardHeader className="text-center">
+        <CardTitle className="text-2xl">Welcome Back</CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent>
@@ -86,9 +86,23 @@ export default function LoginClient({ redirect }: { redirect: string }) {
               />
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? 'Logging in...' : 'Login'}
+            <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700" disabled={isLoading}>
+              {isLoading ? 'Signing in...' : 'Sign In'}
             </Button>
+            
+            {/* Trust signals */}
+            <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <span aria-hidden="true">🔒</span> Secure checkout
+              </span>
+              <span className="flex items-center gap-1">
+                <span aria-hidden="true">⭐</span> 5-star reviews
+              </span>
+              <span className="flex items-center gap-1">
+                <span aria-hidden="true">🏆</span> Real winners
+              </span>
+            </div>
+
             <div className="flex flex-col gap-2 text-center text-sm">
               <p className="text-muted-foreground">
                 {"Don't have an account? "}

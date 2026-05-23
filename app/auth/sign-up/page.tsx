@@ -106,35 +106,39 @@ export default function SignUpPage() {
   }
 
   return (
-    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
-      <div className="w-full max-w-sm">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-2xl">Create an account</CardTitle>
-            <CardDescription>Enter your details to get started.</CardDescription>
+    <div className="flex min-h-svh w-full items-center justify-center bg-gradient-to-b from-purple-950/20 to-background p-6 md:p-10">
+      <div className="w-full max-w-md">
+        <Card className="border-purple-500/20">
+          <CardHeader className="text-center">
+            <CardTitle className="text-2xl">Join WTF Giveaways</CardTitle>
+            <CardDescription>
+              Create your account to enter cash giveaways, reveal instant wins, and track your tickets.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSignUp}>
               <div className="flex flex-col gap-6">
-                <div className="grid gap-2">
-                  <Label htmlFor="first-name">First name</Label>
-                  <Input
-                    id="first-name"
-                    type="text"
-                    placeholder="Ben"
-                    value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="last-name">Last name</Label>
-                  <Input
-                    id="last-name"
-                    type="text"
-                    placeholder="Govier"
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                  />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid gap-2">
+                    <Label htmlFor="first-name">First name</Label>
+                    <Input
+                      id="first-name"
+                      type="text"
+                      placeholder="Ben"
+                      value={firstName}
+                      onChange={(e) => setFirstName(e.target.value)}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="last-name">Last name</Label>
+                    <Input
+                      id="last-name"
+                      type="text"
+                      placeholder="Govier"
+                      value={lastName}
+                      onChange={(e) => setLastName(e.target.value)}
+                    />
+                  </div>
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="display-name">Winner display name</Label>
@@ -187,14 +191,33 @@ export default function SignUpPage() {
                   />
                 </div>
                 {error && <p className="text-sm text-destructive">{error}</p>}
-                <Button type="submit" className="w-full" disabled={isLoading}>
-                  {isLoading ? 'Creating account...' : 'Sign up'}
+                <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700" disabled={isLoading}>
+                  {isLoading ? 'Creating account...' : 'Create Free Account'}
                 </Button>
+                
+                {/* Trust signals */}
+                <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <span aria-hidden="true">🔒</span> Secure checkout
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span aria-hidden="true">⭐</span> 5-star reviews
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span aria-hidden="true">🏆</span> Real winners
+                  </span>
+                </div>
+
                 <p className="text-center text-sm text-muted-foreground">
                   Already have an account?{' '}
                   <Link href="/auth/login" className="underline underline-offset-4 hover:text-foreground">
                     Sign in
                   </Link>
+                </p>
+                
+                {/* Social proof */}
+                <p className="text-center text-xs text-muted-foreground">
+                  Join thousands already playing with WTF Giveaways.
                 </p>
               </div>
             </form>
