@@ -53,25 +53,22 @@ export async function GET(request: NextRequest) {
   const offset = (page - 1) * limit
 
   try {
-    // === Calculate outstanding amount (DB aggregate) ===
+    // === Calculate outstanding amount via DB aggregate RPC ===
+    // Uses public.get_instant_win_outstanding_pence() which sums unpaid awards server-side
     let outstandingAmountPence = 0
     try {
-      const { data: outstandingData, error: outstandingError } = await svc
-        .from('instant_win_awards')
-        .select('payout_amount_pence')
-        .eq('is_paid', false)
+      const { data: rpcResult, error: rpcError } = await svc.rpc('get_instant_win_outstanding_pence')
 
-      if (outstandingError) {
-        console.error('[admin/instant-winners] Outstanding query error (non-fatal):', outstandingError.message)
+      if (rpcError) {
+        console.error('[admin/instant-winners] Outstanding RPC error (non-fatal):', rpcError.message)
+        // outstandingAmountPence remains 0
       } else {
-        // Sum payout_amount_pence, treating null as 0
-        outstandingAmountPence = (outstandingData ?? []).reduce(
-          (sum, row) => sum + (row.payout_amount_pence ?? 0),
-          0
-        )
+        // RPC returns a single bigint value
+        outstandingAmountPence = typeof rpcResult === 'number' ? rpcResult : parseInt(rpcResult ?? '0', 10) || 0
       }
     } catch (outstandingErr: any) {
-      console.error('[admin/instant-winners] Outstanding exception (non-fatal):', outstandingErr?.message)
+      console.error('[admin/instant-winners] Outstanding RPC exception (non-fatal):', outstandingErr?.message)
+      // outstandingAmountPence remains 0
     }
 
     // === Fetch instant_win_awards with pagination ===
