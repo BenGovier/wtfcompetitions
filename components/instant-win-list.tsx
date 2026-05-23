@@ -79,6 +79,8 @@ interface GroupedInstantWin {
   count: number // How many prizes were grouped
 }
 
+// Display-only grouping: keeps public instant win cards lightweight.
+
 /**
  * Group instant wins by exact title for cleaner display.
  * This is display-only and does not alter source data, snapshots, or DB records.
@@ -97,6 +99,10 @@ function groupInstantWinsForDisplay(wins: InstantWin[]): GroupedInstantWin[] {
       existing.totalAwarded += awarded
       existing.totalRemaining += remaining
       existing.count += 1
+      // Use first available image in group if current group has no image
+      if (!existing.image_url && win.image_url) {
+        existing.image_url = win.image_url
+      }
     } else {
       groups.set(win.title, {
         id: win.id,
