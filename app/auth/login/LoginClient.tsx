@@ -89,19 +89,6 @@ export default function LoginClient({ redirect }: { redirect: string }) {
             <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700" disabled={isLoading}>
               {isLoading ? 'Signing in...' : 'Sign In'}
             </Button>
-            
-            {/* Trust signals */}
-            <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <span aria-hidden="true">🔒</span> Secure checkout
-              </span>
-              <span className="flex items-center gap-1">
-                <span aria-hidden="true">⭐</span> 5-star reviews
-              </span>
-              <span className="flex items-center gap-1">
-                <span aria-hidden="true">🏆</span> Real winners
-              </span>
-            </div>
 
             <div className="flex flex-col gap-3 text-center">
               <p className="text-sm text-muted-foreground">New here?</p>
