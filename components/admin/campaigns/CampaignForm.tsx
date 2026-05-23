@@ -431,11 +431,14 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
       const safeName = file.name.toLowerCase().replace(/\s+/g, '-')
       const path = `campaigns/${campaignId}/${prize.id}/${Date.now()}-${safeName}`
 
+      console.log('[instant-image] starting upload for prize=', prize.id, 'path=', path)
+
       const { error } = await supabase.storage
         .from('instant-win-prizes')
         .upload(path, file, { upsert: true, contentType: file.type })
 
       if (error) {
+        console.log('[instant-image] storage upload failed:', error.message)
         setIwError(error.message)
         return
       }
@@ -445,11 +448,13 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
         .getPublicUrl(path)
 
       const imageUrl = publicUrlData.publicUrl
+      console.log('[instant-image] upload success, imageUrl=', imageUrl)
 
       // Update local state
       handlePrizeFieldChange(prize.id, 'image_url', imageUrl)
 
       // Persist to DB
+      console.log('[instant-image] persisting image_url to DB for prize=', prize.id)
       const res = await fetch('/api/admin/instant-win-prizes', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -460,10 +465,27 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
         }),
       })
       const json = await res.json()
+      console.log('[instant-image] PUT response ok=', res.ok && json.ok, 'error=', json.error)
+
       if (!res.ok || !json.ok) {
+        // PUT failed - show error and stop
         setIwError(json.error || 'Failed to update image URL')
+        // Revert local state since DB save failed
+        handlePrizeFieldChange(prize.id, 'image_url', prize.image_url)
+        return
       }
+
+      // PUT succeeded - update iwOriginal so image state becomes the new source of truth
+      console.log('[instant-image] updating iwOriginal for prize=', prize.id)
+      setIwOriginal((prev) => ({
+        ...prev,
+        [prize.id]: {
+          ...prev[prize.id],
+          image_url: imageUrl,
+        },
+      }))
     } catch (err: any) {
+      console.log('[instant-image] exception:', err?.message)
       setIwError(err?.message || 'Image upload failed')
     } finally {
       setIwUploadingId(null)
