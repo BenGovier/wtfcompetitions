@@ -18,11 +18,8 @@ import { Search, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 const CHECKOUT_STATES = [
   { value: 'all', label: 'All States' },
   { value: 'pending', label: 'Pending' },
-  { value: 'awaiting_payment', label: 'Awaiting Payment' },
-  { value: 'paid', label: 'Paid' },
   { value: 'confirmed', label: 'Confirmed' },
   { value: 'failed', label: 'Failed' },
-  { value: 'expired', label: 'Expired' },
 ]
 
 export default function EntriesPanel() {
@@ -30,7 +27,7 @@ export default function EntriesPanel() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [page, setPage] = useState(1)
-  const [total, setTotal] = useState(0)
+  const [hasNext, setHasNext] = useState(false)
   const [limit] = useState(25)
 
   // Filters
@@ -61,15 +58,15 @@ export default function EntriesPanel() {
       if (!json.ok) {
         setError(json.error || 'Failed to load entries')
         setEntries([])
-        setTotal(0)
+        setHasNext(false)
       } else {
         setEntries(json.entries)
-        setTotal(json.total)
+        setHasNext(json.hasNext ?? false)
       }
     } catch (err: any) {
       setError(err.message || 'Network error')
       setEntries([])
-      setTotal(0)
+      setHasNext(false)
     } finally {
       setLoading(false)
     }
@@ -108,8 +105,6 @@ export default function EntriesPanel() {
     }
     setPage(1)
   }
-
-  const totalPages = Math.ceil(total / limit)
 
   return (
     <>
@@ -178,7 +173,7 @@ export default function EntriesPanel() {
           {/* Pagination */}
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
-              Showing {entries.length} of {total} entries (Page {page} of {totalPages || 1})
+              Showing {entries.length} entries (Page {page})
             </p>
             <div className="flex gap-2">
               <Button
@@ -194,7 +189,7 @@ export default function EntriesPanel() {
                 variant="outline"
                 size="sm"
                 onClick={() => setPage((p) => p + 1)}
-                disabled={page >= totalPages}
+                disabled={!hasNext}
               >
                 Next
                 <ChevronRight className="h-4 w-4" />

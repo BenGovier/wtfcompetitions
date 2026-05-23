@@ -36,7 +36,8 @@ export async function GET(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!supabaseUrl || !serviceRoleKey) {
-    return NextResponse.json({ ok: false, error: 'Missing Supabase config' }, { status: 500, ...NO_STORE })
+    console.error('[admin/entries] Missing Supabase config')
+    return NextResponse.json({ ok: false, error: 'Server configuration error' }, { status: 500, ...NO_STORE })
   }
 
   const svc = createServiceClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } })
@@ -50,82 +51,149 @@ export async function GET(request: NextRequest) {
   const search = searchParams.get('search') || null
 
   const offset = (page - 1) * limit
+  const hasFilter = Boolean(state || search)
 
-  // Build entries query
-  let entriesQuery = svc
-    .from('entries')
-    .select('id, user_id, campaign_id, giveaway_id, qty, created_at, checkout_intent_id', { count: 'exact' })
-    .order('created_at', { ascending: false })
+  try {
+    let entries: any[] = []
+    let hasNext = false
 
-  if (campaignId) {
-    entriesQuery = entriesQuery.eq('campaign_id', campaignId)
-  }
+    if (!hasFilter) {
+      // === PATH A: No state/search filter - entries-first query ===
+      let entriesQuery = svc
+        .from('entries')
+        .select('id, user_id, campaign_id, giveaway_id, qty, created_at, checkout_intent_id')
+        .order('created_at', { ascending: false })
 
-  // Apply pagination
-  entriesQuery = entriesQuery.range(offset, offset + limit - 1)
+      if (campaignId) {
+        entriesQuery = entriesQuery.eq('campaign_id', campaignId)
+      }
 
-  const { data: entries, error: entriesError, count } = await entriesQuery
+      // Fetch limit + 1 to detect hasNext
+      entriesQuery = entriesQuery.range(offset, offset + limit)
 
-  if (entriesError) {
-    return NextResponse.json({ ok: false, error: entriesError.message }, { status: 500, ...NO_STORE })
-  }
+      const { data: entriesData, error: entriesError } = await entriesQuery
 
-  if (!entries || entries.length === 0) {
-    return NextResponse.json({ ok: true, entries: [], total: 0, page, limit }, NO_STORE)
-  }
+      if (entriesError) {
+        console.error('[admin/entries] Entries query error:', entriesError.message)
+        return NextResponse.json({ ok: false, error: 'Failed to fetch entries' }, { status: 500, ...NO_STORE })
+      }
 
-  // Get checkout_intent_ids for joining
-  const checkoutIntentIds = entries.map((e) => e.checkout_intent_id).filter(Boolean)
-  const entryIds = entries.map((e) => e.id)
+      if (!entriesData || entriesData.length === 0) {
+        return NextResponse.json({ ok: true, entries: [], hasNext: false, page, limit }, NO_STORE)
+      }
 
-  // Fetch checkout_intents
-  let checkoutIntentsData: Record<string, any> = {}
-  if (checkoutIntentIds.length > 0) {
-    let checkoutQuery = svc
-      .from('checkout_intents')
-      .select('id, ref, state, total_pence, currency, provider, confirmed_at')
-      .in('id', checkoutIntentIds)
+      // Check if there's a next page
+      if (entriesData.length > limit) {
+        hasNext = true
+        entries = entriesData.slice(0, limit)
+      } else {
+        entries = entriesData
+      }
+    } else {
+      // === PATH B: state/search filter - checkout_intents-first query ===
+      let checkoutQuery = svc
+        .from('checkout_intents')
+        .select('id')
+        .order('created_at', { ascending: false })
+        .limit(500) // Safe maximum
 
-    // Filter by state if provided
-    if (state) {
-      checkoutQuery = checkoutQuery.eq('state', state)
+      if (state) {
+        checkoutQuery = checkoutQuery.eq('state', state)
+      }
+
+      if (search) {
+        checkoutQuery = checkoutQuery.ilike('ref', `%${search}%`)
+      }
+
+      const { data: matchingCheckouts, error: checkoutError } = await checkoutQuery
+
+      if (checkoutError) {
+        console.error('[admin/entries] Checkout filter query error:', checkoutError.message)
+        return NextResponse.json({ ok: false, error: 'Failed to search checkouts' }, { status: 500, ...NO_STORE })
+      }
+
+      if (!matchingCheckouts || matchingCheckouts.length === 0) {
+        return NextResponse.json({ ok: true, entries: [], hasNext: false, page, limit }, NO_STORE)
+      }
+
+      const matchingCheckoutIds = matchingCheckouts.map((c) => c.id)
+
+      // Now query entries with those checkout_intent_ids
+      let entriesQuery = svc
+        .from('entries')
+        .select('id, user_id, campaign_id, giveaway_id, qty, created_at, checkout_intent_id')
+        .in('checkout_intent_id', matchingCheckoutIds)
+        .order('created_at', { ascending: false })
+
+      if (campaignId) {
+        entriesQuery = entriesQuery.eq('campaign_id', campaignId)
+      }
+
+      // Fetch limit + 1 to detect hasNext
+      entriesQuery = entriesQuery.range(offset, offset + limit)
+
+      const { data: entriesData, error: entriesError } = await entriesQuery
+
+      if (entriesError) {
+        console.error('[admin/entries] Filtered entries query error:', entriesError.message)
+        return NextResponse.json({ ok: false, error: 'Failed to fetch entries' }, { status: 500, ...NO_STORE })
+      }
+
+      if (!entriesData || entriesData.length === 0) {
+        return NextResponse.json({ ok: true, entries: [], hasNext: false, page, limit }, NO_STORE)
+      }
+
+      // Check if there's a next page
+      if (entriesData.length > limit) {
+        hasNext = true
+        entries = entriesData.slice(0, limit)
+      } else {
+        entries = entriesData
+      }
     }
 
-    // Search by checkout ref if provided
-    if (search) {
-      checkoutQuery = checkoutQuery.ilike('ref', `%${search}%`)
+    // === Common: batch fetch checkout_intents and ticket_allocations ===
+    const checkoutIntentIds = entries.map((e) => e.checkout_intent_id).filter(Boolean)
+    const entryIds = entries.map((e) => e.id)
+
+    // Fetch checkout_intents
+    let checkoutIntentsData: Record<string, any> = {}
+    if (checkoutIntentIds.length > 0) {
+      const { data: checkoutIntents, error: ciError } = await svc
+        .from('checkout_intents')
+        .select('id, ref, state, total_pence, currency, provider, confirmed_at')
+        .in('id', checkoutIntentIds)
+
+      if (ciError) {
+        console.error('[admin/entries] Checkout intents batch fetch error:', ciError.message)
+      } else {
+        checkoutIntentsData = Object.fromEntries(
+          (checkoutIntents ?? []).map((ci) => [ci.id, ci])
+        )
+      }
     }
 
-    const { data: checkoutIntents } = await checkoutQuery
+    // Fetch ticket_allocations
+    let allocationsData: Record<string, { start_ticket: number; end_ticket: number }> = {}
+    if (entryIds.length > 0) {
+      const { data: allocations, error: allocError } = await svc
+        .from('ticket_allocations')
+        .select('entry_id, start_ticket, end_ticket')
+        .in('entry_id', entryIds)
 
-    checkoutIntentsData = Object.fromEntries(
-      (checkoutIntents ?? []).map((ci) => [ci.id, ci])
-    )
-  }
+      if (allocError) {
+        console.error('[admin/entries] Ticket allocations batch fetch error:', allocError.message)
+      } else {
+        allocationsData = Object.fromEntries(
+          (allocations ?? []).map((a) => [a.entry_id, { start_ticket: a.start_ticket, end_ticket: a.end_ticket }])
+        )
+      }
+    }
 
-  // Fetch ticket_allocations
-  let allocationsData: Record<string, { start_ticket: number; end_ticket: number }> = {}
-  if (entryIds.length > 0) {
-    const { data: allocations } = await svc
-      .from('ticket_allocations')
-      .select('entry_id, start_ticket, end_ticket')
-      .in('entry_id', entryIds)
-
-    allocationsData = Object.fromEntries(
-      (allocations ?? []).map((a) => [a.entry_id, { start_ticket: a.start_ticket, end_ticket: a.end_ticket }])
-    )
-  }
-
-  // Build response entries - filter out entries that don't match state/search filters
-  const responseEntries = entries
-    .map((entry) => {
+    // Build response entries
+    const responseEntries = entries.map((entry) => {
       const checkout = checkoutIntentsData[entry.checkout_intent_id]
       const allocation = allocationsData[entry.id]
-
-      // If state or search filter is applied and checkout doesn't match, skip
-      if ((state || search) && !checkout) {
-        return null
-      }
 
       return {
         id: entry.id,
@@ -144,16 +212,19 @@ export async function GET(request: NextRequest) {
         end_ticket: allocation?.end_ticket ?? null,
       }
     })
-    .filter(Boolean)
 
-  return NextResponse.json(
-    {
-      ok: true,
-      entries: responseEntries,
-      total: count ?? 0,
-      page,
-      limit,
-    },
-    NO_STORE
-  )
+    return NextResponse.json(
+      {
+        ok: true,
+        entries: responseEntries,
+        hasNext,
+        page,
+        limit,
+      },
+      NO_STORE
+    )
+  } catch (err: any) {
+    console.error('[admin/entries] Unexpected error:', err?.message || err)
+    return NextResponse.json({ ok: false, error: 'Internal server error' }, { status: 500, ...NO_STORE })
+  }
 }
