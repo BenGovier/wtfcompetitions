@@ -47,19 +47,65 @@ export default async function AccountPage() {
     }
   }
 
-  // Step 3: Fetch campaigns
-  const campaignMap: Record<string, { title: string; status: string }> = {}
+  // Step 3: Fetch campaigns (extended with image and end date)
+  const campaignMap: Record<string, { title: string; status: string; heroImageUrl: string | null; endAt: string | null }> = {}
 
   if (entries.length > 0) {
     const campaignIds = [...new Set(entries.map((e) => e.campaign_id))]
     const { data: campaigns } = await supabase
       .from('campaigns')
-      .select('id, title, status')
+      .select('id, title, status, hero_image_url, end_at')
       .in('id', campaignIds)
 
     if (campaigns) {
       for (const c of campaigns) {
-        campaignMap[c.id] = { title: c.title || 'Giveaway', status: c.status || 'unknown' }
+        campaignMap[c.id] = {
+          title: c.title || 'Giveaway',
+          status: c.status || 'unknown',
+          heroImageUrl: c.hero_image_url || null,
+          endAt: c.end_at || null,
+        }
+      }
+    }
+  }
+
+  // Step 4: Fetch user's instant wins via checkout_intents
+  const winsMap: Record<string, { prizeTitle: string; awardedAt: string }[]> = {}
+
+  if (entries.length > 0) {
+    // Get checkout_intent_ids for this user
+    const { data: checkouts } = await supabase
+      .from('checkout_intents')
+      .select('id, campaign_id')
+      .eq('user_id', user.id)
+
+    if (checkouts && checkouts.length > 0) {
+      const checkoutIds = checkouts.map((c) => c.id)
+      const checkoutCampaignMap: Record<string, string> = {}
+      for (const c of checkouts) {
+        checkoutCampaignMap[c.id] = c.campaign_id
+      }
+
+      // Get instant_win_awards for those checkout_intents
+      const { data: awards } = await supabase
+        .from('instant_win_awards')
+        .select('checkout_intent_id, prize_id, awarded_at, instant_win_prizes(prize_title)')
+        .in('checkout_intent_id', checkoutIds)
+
+      if (awards) {
+        for (const a of awards) {
+          const campaignId = checkoutCampaignMap[a.checkout_intent_id]
+          if (campaignId) {
+            if (!winsMap[campaignId]) {
+              winsMap[campaignId] = []
+            }
+            const prizeTitle = (a.instant_win_prizes as any)?.prize_title || 'Prize'
+            winsMap[campaignId].push({
+              prizeTitle,
+              awardedAt: a.awarded_at,
+            })
+          }
+        }
       }
     }
   }
@@ -78,6 +124,7 @@ export default async function AccountPage() {
           entriesError={entriesError}
           allocationMap={allocationMap}
           campaignMap={campaignMap}
+          winsMap={winsMap}
         />
       </div>
     </div>
