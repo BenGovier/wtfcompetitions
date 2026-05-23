@@ -146,22 +146,22 @@ export function InstantWinList({ instantWins }: InstantWinListProps) {
           return (
             <div
               key={prize.id}
-              className="flex items-center gap-3 rounded-lg border border-purple-500/20 bg-white/5 p-2"
+              className="flex items-center gap-3 rounded-lg border border-purple-500/20 bg-white/5 p-3"
             >
               {/* Thumbnail */}
-              <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-purple-500/10">
+              <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-md bg-purple-500/10">
                 {prize.image_url ? (
                   <Image
                     src={prize.image_url}
                     alt={prize.title}
                     fill
-                    sizes="40px"
+                    sizes="56px"
                     className="object-cover"
                     loading="lazy"
                   />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center">
-                    <Gift className="size-5 text-purple-400/60" aria-hidden="true" />
+                    <Gift className="size-6 text-purple-400/60" aria-hidden="true" />
                   </div>
                 )}
               </div>
