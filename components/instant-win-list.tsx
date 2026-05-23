@@ -65,19 +65,67 @@ function sortInstantWinsForDisplay(wins: InstantWin[]): InstantWin[] {
   return withMeta.map((m) => m.win)
 }
 
+/**
+ * Grouped instant win for display purposes only.
+ * Aggregates quantity, awarded_count, remaining_count from prizes with identical titles.
+ */
+interface GroupedInstantWin {
+  id: string // First item's ID (used as React key)
+  title: string
+  image_url?: string | null // First item's image
+  totalQuantity: number
+  totalAwarded: number
+  totalRemaining: number
+  count: number // How many prizes were grouped
+}
+
+/**
+ * Group instant wins by exact title for cleaner display.
+ * This is display-only and does not alter source data, snapshots, or DB records.
+ */
+function groupInstantWinsForDisplay(wins: InstantWin[]): GroupedInstantWin[] {
+  const groups = new Map<string, GroupedInstantWin>()
+
+  for (const win of wins) {
+    const quantity = win.quantity ?? 1
+    const remaining = win.remaining_count ?? (win.is_won ? 0 : quantity)
+    const awarded = win.awarded_count ?? (quantity - remaining)
+
+    const existing = groups.get(win.title)
+    if (existing) {
+      existing.totalQuantity += quantity
+      existing.totalAwarded += awarded
+      existing.totalRemaining += remaining
+      existing.count += 1
+    } else {
+      groups.set(win.title, {
+        id: win.id,
+        title: win.title,
+        image_url: win.image_url,
+        totalQuantity: quantity,
+        totalAwarded: awarded,
+        totalRemaining: remaining,
+        count: 1,
+      })
+    }
+  }
+
+  return Array.from(groups.values())
+}
+
 export function InstantWinList({ instantWins }: InstantWinListProps) {
   const [expanded, setExpanded] = useState(false)
 
-  // Display-only sort: cash prizes descending, non-cash preserve original order
-  const sortedInstantWins = useMemo(
-    () => sortInstantWinsForDisplay(instantWins),
-    [instantWins]
-  )
+  // Display-only: sort first (cash prizes descending), then group by title
+  const groupedInstantWins = useMemo(() => {
+    const sorted = sortInstantWinsForDisplay(instantWins)
+    return groupInstantWinsForDisplay(sorted)
+  }, [instantWins])
 
-  if (!sortedInstantWins || sortedInstantWins.length === 0) return null
+  if (!groupedInstantWins || groupedInstantWins.length === 0) return null
 
-  const hasMore = sortedInstantWins.length > INITIAL_DISPLAY_COUNT
-  const visibleItems = expanded ? sortedInstantWins : sortedInstantWins.slice(0, INITIAL_DISPLAY_COUNT)
+  const hasMore = groupedInstantWins.length > INITIAL_DISPLAY_COUNT
+  const visibleItems = expanded ? groupedInstantWins : groupedInstantWins.slice(0, INITIAL_DISPLAY_COUNT)
 
   return (
     <section className="space-y-4">
@@ -87,10 +135,7 @@ export function InstantWinList({ instantWins }: InstantWinListProps) {
       </div>
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {visibleItems.map((prize) => {
-          const quantity = prize.quantity ?? 1
-          const remaining = prize.remaining_count ?? (prize.is_won ? 0 : quantity)
-          const awarded = prize.awarded_count ?? (quantity - remaining)
-          const allClaimed = remaining === 0
+          const allClaimed = prize.totalRemaining === 0
 
           return (
             <div
@@ -118,18 +163,16 @@ export function InstantWinList({ instantWins }: InstantWinListProps) {
               {/* Text content */}
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-white">{prize.title}</p>
-                {quantity > 1 ? (
+                {allClaimed ? (
+                  <p className="text-xs text-amber-400">
+                    {prize.count > 1 ? `x${prize.totalAwarded} Claimed` : 'Claimed'}
+                  </p>
+                ) : prize.totalRemaining > 1 ? (
                   <p className="text-xs text-white/60">
-                    {allClaimed ? (
-                      <span className="text-amber-400">{awarded} claimed</span>
-                    ) : (
-                      <>{remaining} of {quantity} left</>
-                    )}
+                    x{prize.totalRemaining} Available
                   </p>
                 ) : (
-                  <p className="text-xs text-white/60">
-                    {allClaimed ? "Claimed" : "Available"}
-                  </p>
+                  <p className="text-xs text-white/60">Available</p>
                 )}
               </div>
 
@@ -140,7 +183,7 @@ export function InstantWinList({ instantWins }: InstantWinListProps) {
                 </span>
               ) : (
                 <span className="inline-flex shrink-0 items-center rounded-full bg-green-500/20 px-2 py-0.5 text-xs font-semibold text-green-400">
-                  {remaining}
+                  {prize.totalRemaining}
                 </span>
               )}
             </div>
