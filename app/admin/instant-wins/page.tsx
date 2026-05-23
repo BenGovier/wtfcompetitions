@@ -59,7 +59,7 @@ export default function InstantWinsPage() {
 
   // Editing state - keyed by award_id
   const [editingPayout, setEditingPayout] = useState<Record<string, string>>({})
-  const [savingAward, setSavingAward] = useState<string | null>(null)
+  const [savingAwards, setSavingAwards] = useState<Record<string, boolean>>({})
   // Track inline errors for Mark Paid validation
   const [markPaidErrors, setMarkPaidErrors] = useState<Record<string, string>>({})
 
@@ -122,12 +122,37 @@ export default function InstantWinsPage() {
     }
   }
 
+  // Helper to update a single award in local state from PATCH response
+  const updateAwardLocally = useCallback((updated: {
+    award_id: string
+    payout_amount_pence: number | null
+    is_paid: boolean
+    paid_at: string | null
+    paid_by_user_id: string | null
+    payout_notes: string | null
+  }, newOutstanding: number) => {
+    setAwards((prev) =>
+      prev.map((a) =>
+        a.award_id === updated.award_id
+          ? {
+              ...a,
+              payout_amount_pence: updated.payout_amount_pence,
+              is_paid: updated.is_paid,
+              paid_at: updated.paid_at,
+              payout_notes: updated.payout_notes,
+            }
+          : a
+      )
+    )
+    setOutstandingAmountPence(newOutstanding)
+  }, [])
+
   // Save Amount: PATCHes only payout_amount_pence (and payout_notes if included)
   const handleSaveAmount = async (awardId: string) => {
     const inputValue = editingPayout[awardId] ?? ''
     const newPence = parsePounds(inputValue)
 
-    setSavingAward(awardId)
+    setSavingAwards((prev) => ({ ...prev, [awardId]: true }))
     setMarkPaidErrors((prev) => ({ ...prev, [awardId]: '' }))
 
     try {
@@ -137,16 +162,21 @@ export default function InstantWinsPage() {
         body: JSON.stringify({ award_id: awardId, payout_amount_pence: newPence }),
       })
       const json = await res.json()
-      if (json.ok) {
-        // Re-fetch to get updated outstanding total and fresh data
-        await fetchAwards()
+      if (json.ok && json.updated) {
+        // Update only this row locally, update outstanding from response
+        updateAwardLocally(json.updated, json.outstandingAmountPence ?? 0)
+        // Keep the input synced with the new saved value
+        setEditingPayout((prev) => ({
+          ...prev,
+          [awardId]: formatPence(json.updated.payout_amount_pence),
+        }))
       } else {
         alert(json.error || 'Failed to save amount')
       }
     } catch (err: any) {
       alert(err.message || 'Network error')
     } finally {
-      setSavingAward(null)
+      setSavingAwards((prev) => ({ ...prev, [awardId]: false }))
     }
   }
 
@@ -164,7 +194,7 @@ export default function InstantWinsPage() {
       return
     }
 
-    setSavingAward(award.award_id)
+    setSavingAwards((prev) => ({ ...prev, [award.award_id]: true }))
     setMarkPaidErrors((prev) => ({ ...prev, [award.award_id]: '' }))
 
     try {
@@ -178,22 +208,27 @@ export default function InstantWinsPage() {
         }),
       })
       const json = await res.json()
-      if (json.ok) {
-        // Re-fetch to get updated outstanding total and fresh data
-        await fetchAwards()
+      if (json.ok && json.updated) {
+        // Update only this row locally, update outstanding from response
+        updateAwardLocally(json.updated, json.outstandingAmountPence ?? 0)
+        // Keep the input synced with the new saved value
+        setEditingPayout((prev) => ({
+          ...prev,
+          [award.award_id]: formatPence(json.updated.payout_amount_pence),
+        }))
       } else {
         alert(json.error || 'Failed to mark paid')
       }
     } catch (err: any) {
       alert(err.message || 'Network error')
     } finally {
-      setSavingAward(null)
+      setSavingAwards((prev) => ({ ...prev, [award.award_id]: false }))
     }
   }
 
   // Unpay: PATCHes only is_paid=false (preserves payout_amount_pence)
   const handleUnpay = async (award: AdminInstantWinAward) => {
-    setSavingAward(award.award_id)
+    setSavingAwards((prev) => ({ ...prev, [award.award_id]: true }))
     setMarkPaidErrors((prev) => ({ ...prev, [award.award_id]: '' }))
 
     try {
@@ -206,16 +241,17 @@ export default function InstantWinsPage() {
         }),
       })
       const json = await res.json()
-      if (json.ok) {
-        // Re-fetch to get updated outstanding total and fresh data
-        await fetchAwards()
+      if (json.ok && json.updated) {
+        // Update only this row locally, update outstanding from response
+        // Note: payout_amount_pence is preserved by the API, so json.updated has the existing value
+        updateAwardLocally(json.updated, json.outstandingAmountPence ?? 0)
       } else {
         alert(json.error || 'Failed to unpay')
       }
     } catch (err: any) {
       alert(err.message || 'Network error')
     } finally {
-      setSavingAward(null)
+      setSavingAwards((prev) => ({ ...prev, [award.award_id]: false }))
     }
   }
 
@@ -347,7 +383,7 @@ export default function InstantWinsPage() {
                   </TableRow>
                 ) : (
                   awards.map((award) => {
-                    const isSaving = savingAward === award.award_id
+                    const isSaving = savingAwards[award.award_id] ?? false
                     const inputValue = editingPayout[award.award_id] ?? ''
                     const inputPence = parsePounds(inputValue)
                     // Check if the input differs from the saved DB value

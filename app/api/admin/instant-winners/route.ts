@@ -425,17 +425,47 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ ok: false, error: 'No valid fields to update' }, { status: 400, ...NO_STORE })
     }
 
-    const { error: updateError } = await svc
+    const { data: updatedRows, error: updateError } = await svc
       .from('instant_win_awards')
       .update(updateData)
       .eq('id', award_id)
+      .select('id, payout_amount_pence, is_paid, paid_at, paid_by_user_id, payout_notes')
 
     if (updateError) {
       console.error('[admin/instant-winners] Update error:', updateError.message)
       return NextResponse.json({ ok: false, error: 'Failed to update award' }, { status: 500, ...NO_STORE })
     }
 
-    return NextResponse.json({ ok: true }, NO_STORE)
+    const updatedRow = updatedRows?.[0]
+    if (!updatedRow) {
+      return NextResponse.json({ ok: false, error: 'Award not found' }, { status: 404, ...NO_STORE })
+    }
+
+    // Fetch updated outstanding total via RPC
+    let outstandingAmountPence = 0
+    try {
+      const { data: rpcResult, error: rpcError } = await svc.rpc('get_instant_win_outstanding_pence')
+      if (rpcError) {
+        console.error('[admin/instant-winners] Outstanding RPC error after PATCH (non-fatal):', rpcError.message)
+      } else {
+        outstandingAmountPence = typeof rpcResult === 'number' ? rpcResult : parseInt(rpcResult ?? '0', 10) || 0
+      }
+    } catch (rpcErr: any) {
+      console.error('[admin/instant-winners] Outstanding RPC exception after PATCH (non-fatal):', rpcErr?.message)
+    }
+
+    return NextResponse.json({
+      ok: true,
+      updated: {
+        award_id: updatedRow.id,
+        payout_amount_pence: updatedRow.payout_amount_pence,
+        is_paid: updatedRow.is_paid ?? false,
+        paid_at: updatedRow.paid_at,
+        paid_by_user_id: updatedRow.paid_by_user_id,
+        payout_notes: updatedRow.payout_notes,
+      },
+      outstandingAmountPence,
+    }, NO_STORE)
   } catch (err: any) {
     console.error('[admin/instant-winners] PATCH error:', err?.message || err)
     return NextResponse.json({ ok: false, error: 'Internal server error' }, { status: 500, ...NO_STORE })
