@@ -103,14 +103,18 @@ export default function LoginClient({ redirect }: { redirect: string }) {
               </span>
             </div>
 
-            <div className="flex flex-col gap-2 text-center text-sm">
-              <p className="text-muted-foreground">
-                {"Don't have an account? "}
-                <Link href="/auth/sign-up" className="underline underline-offset-4 hover:text-foreground">
-                  Create an account
-                </Link>
-              </p>
-              <Link href="/auth/forgot-password" className="text-muted-foreground underline underline-offset-4 hover:text-foreground">
+            <div className="flex flex-col gap-3 text-center">
+              <p className="text-sm text-muted-foreground">New here?</p>
+              <Link href="/auth/sign-up" className="block">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full border-purple-500 text-purple-600 hover:bg-purple-50 hover:text-purple-700"
+                >
+                  Create your free account
+                </Button>
+              </Link>
+              <Link href="/auth/forgot-password" className="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground">
                 Forgot password?
               </Link>
             </div>
