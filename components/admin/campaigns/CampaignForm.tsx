@@ -436,8 +436,12 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
     setIwError(null)
     try {
       const supabase = createClient()
-      const safeName = file.name.toLowerCase().replace(/\s+/g, '-')
-      const path = `campaigns/${campaignId}/${prize.id}/${Date.now()}-${safeName}`
+      // Sanitize filename: lowercase, remove special chars (£, commas, brackets, etc.), collapse multiple hyphens
+      const safeFileName = file.name
+        .toLowerCase()
+        .replace(/[^a-z0-9.-]/g, '-')
+        .replace(/-+/g, '-')
+      const path = `campaigns/${campaignId}/${prize.id}/${Date.now()}-${safeFileName}`
 
       console.log('[instant-image] starting upload for prize=', prize.id, 'path=', path)
 
