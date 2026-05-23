@@ -1,5 +1,7 @@
 "use client"
 
+// Deployment trigger: instant prize image upload debug active
+
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
