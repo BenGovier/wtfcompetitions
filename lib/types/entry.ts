@@ -1,3 +1,22 @@
+// Admin entry type - matches API response shape
+export type AdminEntry = {
+  id: string
+  created_at: string
+  user_id: string
+  campaign_id: string
+  giveaway_id: string | null
+  qty: number
+  checkout_ref: string | null
+  checkout_state: string | null
+  total_pence: number | null
+  currency: string | null
+  provider: string | null
+  confirmed_at: string | null
+  start_ticket: number | null
+  end_ticket: number | null
+}
+
+// Legacy types kept for compatibility if needed elsewhere
 export type EntrySource = 'free' | 'paid'
 
 export type EntryStatus = 'valid' | 'flagged' | 'refunded'

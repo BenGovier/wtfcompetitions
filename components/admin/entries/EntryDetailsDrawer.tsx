@@ -1,12 +1,40 @@
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import type { Entry } from "@/lib/types/entry"
-import { X, Flag, DollarSign } from 'lucide-react'
+import type { AdminEntry } from "@/lib/types/entry"
+import { X } from 'lucide-react'
 
 type EntryDetailsDrawerProps = {
-  entry: Entry | null
+  entry: AdminEntry | null
   isOpen: boolean
   onClose: () => void
+}
+
+function formatPence(pence: number | null, currency: string | null): string {
+  if (pence === null) return '—'
+  const symbol = currency === 'GBP' ? '£' : currency === 'EUR' ? '€' : '$'
+  return `${symbol}${(pence / 100).toFixed(2)}`
+}
+
+function formatTickets(start: number | null, end: number | null): string {
+  if (start === null || end === null) return '—'
+  if (start === end) return String(start)
+  return `${start} - ${end}`
+}
+
+function getStateBadgeVariant(state: string | null): 'default' | 'secondary' | 'destructive' | 'outline' {
+  switch (state) {
+    case 'confirmed':
+    case 'paid':
+      return 'default'
+    case 'pending':
+    case 'awaiting_payment':
+      return 'secondary'
+    case 'failed':
+    case 'expired':
+      return 'destructive'
+    default:
+      return 'outline'
+  }
 }
 
 export default function EntryDetailsDrawer({
@@ -50,13 +78,13 @@ export default function EntryDetailsDrawer({
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
             <div>
               <div className="text-sm text-muted-foreground mb-1">Entry ID</div>
-              <div className="font-mono text-sm">{entry.id}</div>
+              <div className="font-mono text-sm break-all">{entry.id}</div>
             </div>
 
             <div>
               <div className="text-sm text-muted-foreground mb-1">Time</div>
               <div className="text-sm">
-                {new Date(entry.createdAt).toLocaleString('en-GB', {
+                {new Date(entry.created_at).toLocaleString('en-GB', {
                   weekday: 'short',
                   year: 'numeric',
                   month: 'short',
@@ -68,76 +96,85 @@ export default function EntryDetailsDrawer({
             </div>
 
             <div>
-              <div className="text-sm text-muted-foreground mb-1">User</div>
-              <div className="text-sm">{entry.userLabel}</div>
+              <div className="text-sm text-muted-foreground mb-1">User ID</div>
+              <div className="font-mono text-sm break-all">{entry.user_id}</div>
             </div>
 
             <div>
-              <div className="text-sm text-muted-foreground mb-1">Email</div>
-              <div className="text-sm">{entry.emailMasked}</div>
+              <div className="text-sm text-muted-foreground mb-1">Campaign ID</div>
+              <div className="font-mono text-sm break-all">{entry.campaign_id}</div>
+            </div>
+
+            {entry.giveaway_id && (
+              <div>
+                <div className="text-sm text-muted-foreground mb-1">Giveaway ID</div>
+                <div className="font-mono text-sm break-all">{entry.giveaway_id}</div>
+              </div>
+            )}
+
+            <div className="flex gap-6">
+              <div>
+                <div className="text-sm text-muted-foreground mb-1">Quantity</div>
+                <div className="text-sm font-medium">{entry.qty}</div>
+              </div>
+
+              <div>
+                <div className="text-sm text-muted-foreground mb-1">Tickets</div>
+                <div className="text-sm font-medium">
+                  {formatTickets(entry.start_ticket, entry.end_ticket)}
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div className="text-sm text-muted-foreground mb-1">Checkout Ref</div>
+              <div className="font-mono text-sm">{entry.checkout_ref ?? '—'}</div>
             </div>
 
             <div className="flex gap-6">
               <div>
-                <div className="text-sm text-muted-foreground mb-1">Source</div>
-                <Badge
-                  variant={entry.source === 'paid' ? 'default' : 'secondary'}
-                >
-                  {entry.source === 'paid' ? 'Paid' : 'Free'}
-                </Badge>
+                <div className="text-sm text-muted-foreground mb-1">State</div>
+                {entry.checkout_state ? (
+                  <Badge variant={getStateBadgeVariant(entry.checkout_state)}>
+                    {entry.checkout_state}
+                  </Badge>
+                ) : (
+                  <span className="text-sm">—</span>
+                )}
               </div>
 
               <div>
-                <div className="text-sm text-muted-foreground mb-1">Quantity</div>
-                <div className="text-sm font-medium">{entry.quantity}</div>
+                <div className="text-sm text-muted-foreground mb-1">Provider</div>
+                <div className="text-sm">{entry.provider ?? '—'}</div>
               </div>
             </div>
 
-            {entry.amountPaidPence > 0 && (
+            <div>
+              <div className="text-sm text-muted-foreground mb-1">Amount Paid</div>
+              <div className="text-sm font-medium">
+                {formatPence(entry.total_pence, entry.currency)}
+              </div>
+            </div>
+
+            {entry.confirmed_at && (
               <div>
-                <div className="text-sm text-muted-foreground mb-1">
-                  Amount Paid
-                </div>
-                <div className="text-sm font-medium">
-                  £{(entry.amountPaidPence / 100).toFixed(2)}
+                <div className="text-sm text-muted-foreground mb-1">Confirmed At</div>
+                <div className="text-sm">
+                  {new Date(entry.confirmed_at).toLocaleString('en-GB', {
+                    weekday: 'short',
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
                 </div>
               </div>
             )}
-
-            <div>
-              <div className="text-sm text-muted-foreground mb-1">Status</div>
-              <Badge
-                variant={
-                  entry.status === 'valid'
-                    ? 'outline'
-                    : entry.status === 'flagged'
-                      ? 'destructive'
-                      : 'secondary'
-                }
-              >
-                {entry.status.charAt(0).toUpperCase() + entry.status.slice(1)}
-              </Badge>
-            </div>
           </div>
 
           {/* Footer */}
-          <div className="border-t p-6 space-y-2">
-            <Button
-              variant="outline"
-              className="w-full gap-2"
-              disabled
-            >
-              <Flag className="h-4 w-4" />
-              Mark Flagged
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full gap-2"
-              disabled
-            >
-              <DollarSign className="h-4 w-4" />
-              Refund
-            </Button>
+          <div className="border-t p-6">
             <Button variant="secondary" className="w-full" onClick={onClose}>
               Close
             </Button>
