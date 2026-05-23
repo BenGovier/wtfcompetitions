@@ -448,42 +448,50 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
         .getPublicUrl(path)
 
       const imageUrl = publicUrlData.publicUrl
-      console.log('[instant-image] upload success, imageUrl=', imageUrl)
+      console.log('[instant-image] upload publicUrl =', imageUrl)
 
-      // Update local state
-      handlePrizeFieldChange(prize.id, 'image_url', imageUrl)
+      // Persist to DB immediately
+      const putBody = {
+        id: prize.id,
+        campaign_id: prize.campaign_id,
+        image_url: imageUrl,
+      }
+      console.log('[instant-image] PUT request body =', JSON.stringify(putBody))
 
-      // Persist to DB
-      console.log('[instant-image] persisting image_url to DB for prize=', prize.id)
       const res = await fetch('/api/admin/instant-win-prizes', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: prize.id,
-          campaign_id: prize.campaign_id,
-          image_url: imageUrl,
-        }),
+        body: JSON.stringify(putBody),
       })
       const json = await res.json()
-      console.log('[instant-image] PUT response ok=', res.ok && json.ok, 'error=', json.error)
+      console.log('[instant-image] PUT response =', JSON.stringify(json))
 
       if (!res.ok || !json.ok) {
         // PUT failed - show error and stop
         setIwError(json.error || 'Failed to update image URL')
-        // Revert local state since DB save failed
-        handlePrizeFieldChange(prize.id, 'image_url', prize.image_url)
         return
       }
 
-      // PUT succeeded - update iwOriginal so image state becomes the new source of truth
-      console.log('[instant-image] updating iwOriginal for prize=', prize.id)
+      // Use the returned updated.image_url as the confirmed saved value
+      const confirmedImageUrl = json.updated?.image_url ?? imageUrl
+      console.log('[instant-image] updated image_url =', confirmedImageUrl)
+
+      // Update local state with confirmed value from DB
+      handlePrizeFieldChange(prize.id, 'image_url', confirmedImageUrl)
+
+      // Update iwOriginal so image state is no longer dirty
       setIwOriginal((prev) => ({
         ...prev,
         [prize.id]: {
           ...prev[prize.id],
-          image_url: imageUrl,
+          image_url: confirmedImageUrl,
         },
       }))
+
+      toast({
+        title: "Image saved",
+        description: "Prize image has been uploaded and saved.",
+      })
     } catch (err: any) {
       console.log('[instant-image] exception:', err?.message)
       setIwError(err?.message || 'Image upload failed')
@@ -952,16 +960,27 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
                   {instantWins.map((prize) => (
                     <div key={prize.id} className={`rounded-md border p-3 space-y-3 ${isPrizeDirty(prize) ? 'border-amber-400 bg-amber-50/50 dark:bg-amber-950/20' : ''}`}>
                       <div className="flex flex-wrap items-start gap-3">
-                        {/* Thumbnail */}
+                        {/* Thumbnail with saved indicator */}
                         {prize.image_url && (
-                          <Image
-                            src={prize.image_url}
-                            alt={prize.prize_title}
-                            width={48}
-                            height={48}
-                            className="rounded border object-cover"
-                            unoptimized
-                          />
+                          <div className="flex flex-col items-center gap-1">
+                            <Image
+                              src={prize.image_url}
+                              alt={prize.prize_title}
+                              width={48}
+                              height={48}
+                              className="rounded border object-cover"
+                              unoptimized
+                            />
+                            <span className="text-xs text-green-600 dark:text-green-400 font-medium">Image saved</span>
+                            <a
+                              href={prize.image_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                            >
+                              Open image
+                            </a>
+                          </div>
                         )}
 
                         <div className="flex-1 space-y-2 min-w-[200px]">

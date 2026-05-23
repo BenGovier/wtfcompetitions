@@ -128,19 +128,26 @@ export async function PUT(request: Request) {
   console.log('[instant-debug][prize-api] PUT update object:', JSON.stringify(update))
 
   const svc = getServiceSupabase()
-  const { error } = await svc
+  const { data: updatedRows, error } = await svc
     .from('instant_win_prizes')
     .update(update)
     .eq('id', body.id)
     .eq('campaign_id', body.campaign_id)
+    .select('id, campaign_id, prize_title, prize_value_text, unlock_ratio, image_url, quantity, is_high_value, created_at')
 
   if (error) {
     console.error('[instant-debug][prize-api] PUT DB error:', error)
     return NextResponse.json({ ok: false, error: error.message, details: error }, { status: 500 })
   }
 
-  console.log('[instant-debug][prize-api] PUT success, returning ok=true for id=', body.id)
-  return NextResponse.json({ ok: true })
+  const updated = updatedRows?.[0]
+  if (!updated) {
+    console.error('[instant-debug][prize-api] PUT returned no rows for id=', body.id)
+    return NextResponse.json({ ok: false, error: 'Prize not found' }, { status: 404 })
+  }
+
+  console.log('[instant-debug][prize-api] PUT success, returning updated row for id=', body.id, 'image_url=', updated.image_url)
+  return NextResponse.json({ ok: true, updated })
 }
 
 export async function DELETE(request: Request) {
