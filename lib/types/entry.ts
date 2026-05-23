@@ -14,6 +14,10 @@ export type AdminEntry = {
   confirmed_at: string | null
   start_ticket: number | null
   end_ticket: number | null
+  // Customer contact details
+  customer_name: string
+  customer_email: string
+  customer_mobile: string
 }
 
 // Legacy types kept for compatibility if needed elsewhere

@@ -156,6 +156,9 @@ export async function GET(request: NextRequest) {
     const checkoutIntentIds = entries.map((e) => e.checkout_intent_id).filter(Boolean)
     const entryIds = entries.map((e) => e.id)
 
+    // Collect unique user_ids from current page entries (capped at 50)
+    const userIds = [...new Set(entries.map((e) => e.user_id).filter(Boolean))].slice(0, 50)
+
     // Fetch checkout_intents
     let checkoutIntentsData: Record<string, any> = {}
     if (checkoutIntentIds.length > 0) {
@@ -190,10 +193,51 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // === Fetch customer contact details for current-page user_ids only ===
+    let profilesData: Record<string, { real_name: string | null; mobile: string | null }> = {}
+    let emailsData: Record<string, string | null> = {}
+
+    if (userIds.length > 0) {
+      // Fetch profiles_private (name, mobile) for current-page user_ids
+      const { data: profiles, error: profilesError } = await svc
+        .from('profiles_private')
+        .select('user_id, real_name, mobile')
+        .in('user_id', userIds)
+
+      if (profilesError) {
+        console.error('[admin/entries] Profiles batch fetch error:', profilesError.message)
+      } else {
+        profilesData = Object.fromEntries(
+          (profiles ?? []).map((p) => [p.user_id, { real_name: p.real_name, mobile: p.mobile }])
+        )
+      }
+
+      // Fetch auth emails using auth.admin.getUserById for each user (max 50)
+      // Note: We use getUserById in parallel with Promise.allSettled to handle individual failures
+      const emailResults = await Promise.allSettled(
+        userIds.map(async (userId) => {
+          const { data, error } = await svc.auth.admin.getUserById(userId)
+          if (error) {
+            console.error(`[admin/entries] Auth user lookup failed for ${userId}:`, error.message)
+            return { userId, email: null }
+          }
+          return { userId, email: data?.user?.email ?? null }
+        })
+      )
+
+      for (const result of emailResults) {
+        if (result.status === 'fulfilled') {
+          emailsData[result.value.userId] = result.value.email
+        }
+      }
+    }
+
     // Build response entries
     const responseEntries = entries.map((entry) => {
       const checkout = checkoutIntentsData[entry.checkout_intent_id]
       const allocation = allocationsData[entry.id]
+      const profile = profilesData[entry.user_id]
+      const email = emailsData[entry.user_id]
 
       return {
         id: entry.id,
@@ -210,6 +254,10 @@ export async function GET(request: NextRequest) {
         confirmed_at: checkout?.confirmed_at ?? null,
         start_ticket: allocation?.start_ticket ?? null,
         end_ticket: allocation?.end_ticket ?? null,
+        // Customer contact details with fallbacks
+        customer_name: profile?.real_name || 'Unknown',
+        customer_email: email || '-',
+        customer_mobile: profile?.mobile || '-',
       }
     })
 
