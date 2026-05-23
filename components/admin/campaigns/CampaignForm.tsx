@@ -427,6 +427,9 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
   }
 
   async function handlePrizeImageUpload(prize: InstantWinPrizeRow, file: File) {
+    console.log('[instant-image] handler fired')
+    console.log('[instant-image] prize.id=', prize.id)
+    console.log('[instant-image] file=', file?.name)
     setIwUploadingId(prize.id)
     setIwError(null)
     try {
