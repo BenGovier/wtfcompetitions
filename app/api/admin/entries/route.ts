@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
   // Parse query params
   const { searchParams } = new URL(request.url)
   const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10))
-  const limit = Math.min(50, Math.max(1, parseInt(searchParams.get('limit') || '25', 10)))
+  const limit = Math.min(25, Math.max(1, parseInt(searchParams.get('limit') || '25', 10)))
   const campaignId = searchParams.get('campaignId') || null
   const state = searchParams.get('state') || null
   const search = searchParams.get('search') || null
@@ -156,8 +156,8 @@ export async function GET(request: NextRequest) {
     const checkoutIntentIds = entries.map((e) => e.checkout_intent_id).filter(Boolean)
     const entryIds = entries.map((e) => e.id)
 
-    // Collect unique user_ids from current page entries (capped at 50)
-    const userIds = [...new Set(entries.map((e) => e.user_id).filter(Boolean))].slice(0, 50)
+    // Collect unique user_ids from current page entries (capped at 25 - same as max page size)
+    const userIds = [...new Set(entries.map((e) => e.user_id).filter(Boolean))].slice(0, 25)
 
     // Fetch checkout_intents
     let checkoutIntentsData: Record<string, any> = {}
@@ -193,42 +193,64 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // === Fetch customer contact details for current-page user_ids only ===
+    // === Fetch customer contact details for current-page user_ids only (FAIL-SOFT) ===
+    // These lookups are non-blocking: if they fail, entries still return with fallback values.
     let profilesData: Record<string, { real_name: string | null; mobile: string | null }> = {}
     let emailsData: Record<string, string | null> = {}
 
     if (userIds.length > 0) {
-      // Fetch profiles_private (name, mobile) for current-page user_ids
-      const { data: profiles, error: profilesError } = await svc
-        .from('profiles_private')
-        .select('user_id, real_name, mobile')
-        .in('user_id', userIds)
+      // Fetch profiles_private (name, mobile) for current-page user_ids only
+      // FAIL-SOFT: if this fails, entries still return with customer_name = "Unknown"
+      try {
+        const { data: profiles, error: profilesError } = await svc
+          .from('profiles_private')
+          .select('user_id, real_name, mobile')
+          .in('user_id', userIds)
 
-      if (profilesError) {
-        console.error('[admin/entries] Profiles batch fetch error:', profilesError.message)
-      } else {
-        profilesData = Object.fromEntries(
-          (profiles ?? []).map((p) => [p.user_id, { real_name: p.real_name, mobile: p.mobile }])
-        )
+        if (profilesError) {
+          console.error('[admin/entries] Profiles batch fetch error (non-fatal):', profilesError.message)
+        } else {
+          profilesData = Object.fromEntries(
+            (profiles ?? []).map((p) => [p.user_id, { real_name: p.real_name, mobile: p.mobile }])
+          )
+        }
+      } catch (profileErr: any) {
+        console.error('[admin/entries] Profiles fetch exception (non-fatal):', profileErr?.message)
       }
 
-      // Fetch auth emails using auth.admin.getUserById for each user (max 50)
-      // Note: We use getUserById in parallel with Promise.allSettled to handle individual failures
-      const emailResults = await Promise.allSettled(
-        userIds.map(async (userId) => {
-          const { data, error } = await svc.auth.admin.getUserById(userId)
-          if (error) {
-            console.error(`[admin/entries] Auth user lookup failed for ${userId}:`, error.message)
-            return { userId, email: null }
-          }
-          return { userId, email: data?.user?.email ?? null }
-        })
-      )
+      // ========================================================================
+      // AUTH EMAIL LOOKUP - ADMIN ONLY - PRODUCTION SAFETY NOTES
+      // ========================================================================
+      // - This is ADMIN-ONLY (protected by authorize() check above)
+      // - It is CAPPED to the current page only (max 25 users from userIds array)
+      // - It uses auth.admin.getUserById per user, NOT auth.admin.listUsers
+      // - DO NOT change this to list all users or remove the userIds cap
+      // - FAIL-SOFT: if any lookup fails, entries still return with email = "-"
+      // ========================================================================
+      try {
+        const emailResults = await Promise.allSettled(
+          userIds.map(async (userId) => {
+            try {
+              const { data, error } = await svc.auth.admin.getUserById(userId)
+              if (error) {
+                console.error(`[admin/entries] Auth user lookup failed for ${userId} (non-fatal):`, error.message)
+                return { userId, email: null }
+              }
+              return { userId, email: data?.user?.email ?? null }
+            } catch (innerErr: any) {
+              console.error(`[admin/entries] Auth user lookup exception for ${userId} (non-fatal):`, innerErr?.message)
+              return { userId, email: null }
+            }
+          })
+        )
 
-      for (const result of emailResults) {
-        if (result.status === 'fulfilled') {
-          emailsData[result.value.userId] = result.value.email
+        for (const result of emailResults) {
+          if (result.status === 'fulfilled') {
+            emailsData[result.value.userId] = result.value.email
+          }
         }
+      } catch (emailErr: any) {
+        console.error('[admin/entries] Auth email lookup exception (non-fatal):', emailErr?.message)
       }
     }
 
