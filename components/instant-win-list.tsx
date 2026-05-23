@@ -37,30 +37,28 @@ function extractCashValue(title: string): number | null {
 }
 
 /**
- * Sort instant wins for display: cash prizes descending by value,
- * non-cash prizes preserve their original relative order at the end.
+ * Sort instant wins for display: only reorder when BOTH items have cash values.
+ * If either item lacks a cash value, preserve their original relative order.
+ * This prevents non-cash prizes from being pushed around unexpectedly.
  */
 function sortInstantWinsForDisplay(wins: InstantWin[]): InstantWin[] {
-  // Create array with original indices to preserve relative order for non-cash
+  // Create array with original indices to preserve relative order
   const withMeta = wins.map((win, originalIndex) => ({
     win,
     originalIndex,
     cashValue: extractCashValue(win.title),
   }))
 
-  // Stable sort: cash prizes first (descending), then non-cash (original order)
+  // Stable sort: only reorder when BOTH have cash values, otherwise preserve original order
   withMeta.sort((a, b) => {
     const aHasCash = a.cashValue !== null
     const bHasCash = b.cashValue !== null
 
-    // Both have cash values: sort descending by value
+    // Only reorder if BOTH have cash values: sort descending by value
     if (aHasCash && bHasCash) {
       return b.cashValue! - a.cashValue!
     }
-    // Cash prizes come before non-cash
-    if (aHasCash && !bHasCash) return -1
-    if (!aHasCash && bHasCash) return 1
-    // Both non-cash: preserve original order
+    // If either lacks a cash value, preserve original relative order
     return a.originalIndex - b.originalIndex
   })
 
