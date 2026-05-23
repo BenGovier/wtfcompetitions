@@ -76,6 +76,23 @@ export default function EntryDetailsDrawer({
 
           {/* Content */}
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            {/* Customer Contact Details */}
+            <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Customer</h3>
+              <div>
+                <div className="text-sm text-muted-foreground mb-1">Name</div>
+                <div className="text-sm font-medium">{entry.customer_name}</div>
+              </div>
+              <div>
+                <div className="text-sm text-muted-foreground mb-1">Email</div>
+                <div className="text-sm font-medium break-all">{entry.customer_email}</div>
+              </div>
+              <div>
+                <div className="text-sm text-muted-foreground mb-1">Mobile</div>
+                <div className="text-sm font-medium">{entry.customer_mobile}</div>
+              </div>
+            </div>
+
             <div>
               <div className="text-sm text-muted-foreground mb-1">Entry ID</div>
               <div className="font-mono text-sm break-all">{entry.id}</div>

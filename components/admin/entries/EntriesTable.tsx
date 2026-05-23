@@ -64,9 +64,10 @@ export default function EntriesTable({ entries, onView }: EntriesTableProps) {
             <TableHeader>
               <TableRow>
                 <TableHead>Time</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>Mobile</TableHead>
                 <TableHead>Checkout Ref</TableHead>
-                <TableHead>User ID</TableHead>
-                <TableHead>Campaign ID</TableHead>
                 <TableHead>Tickets</TableHead>
                 <TableHead>Qty</TableHead>
                 <TableHead>Paid</TableHead>
@@ -86,14 +87,17 @@ export default function EntriesTable({ entries, onView }: EntriesTableProps) {
                       minute: '2-digit',
                     })}
                   </TableCell>
+                  <TableCell className="max-w-[120px] truncate" title={entry.customer_name}>
+                    {entry.customer_name}
+                  </TableCell>
+                  <TableCell className="max-w-[160px] truncate text-xs" title={entry.customer_email}>
+                    {entry.customer_email}
+                  </TableCell>
+                  <TableCell className="text-xs whitespace-nowrap">
+                    {entry.customer_mobile}
+                  </TableCell>
                   <TableCell className="font-mono text-xs">
                     {entry.checkout_ref ?? '—'}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {shortenId(entry.user_id)}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {shortenId(entry.campaign_id)}
                   </TableCell>
                   <TableCell>
                     {formatTickets(entry.start_ticket, entry.end_ticket)}
