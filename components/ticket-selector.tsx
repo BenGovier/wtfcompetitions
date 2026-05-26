@@ -509,6 +509,54 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
           </Button>
         </div>
         <p className="text-center text-[11px] text-purple-400">More entries = more chances to win</p>
+
+        {/* ---- Mobile-friendly quantity slider ---- */}
+        <div className="mt-3 space-y-2">
+          <div className="relative">
+            <input
+              type="range"
+              min={1}
+              max={maxQty}
+              value={qty}
+              onChange={(e) => {
+                const newQty = Number(e.target.value)
+                setQty(newQty)
+                setSelectedBundle(null)
+                setQtyBump(true)
+                setTimeout(() => setQtyBump(false), 200)
+              }}
+              className="w-full h-3 appearance-none cursor-pointer rounded-full bg-purple-900/50 
+                [&::-webkit-slider-thumb]:appearance-none 
+                [&::-webkit-slider-thumb]:h-8 
+                [&::-webkit-slider-thumb]:w-8 
+                [&::-webkit-slider-thumb]:rounded-full 
+                [&::-webkit-slider-thumb]:bg-gradient-to-b 
+                [&::-webkit-slider-thumb]:from-[#FFD46A] 
+                [&::-webkit-slider-thumb]:to-[#F7A600] 
+                [&::-webkit-slider-thumb]:shadow-[0_0_15px_rgba(247,166,0,0.5)] 
+                [&::-webkit-slider-thumb]:border-2 
+                [&::-webkit-slider-thumb]:border-white/30 
+                [&::-webkit-slider-thumb]:transition-transform 
+                [&::-webkit-slider-thumb]:duration-150 
+                [&::-webkit-slider-thumb]:active:scale-110
+                [&::-moz-range-thumb]:h-8 
+                [&::-moz-range-thumb]:w-8 
+                [&::-moz-range-thumb]:rounded-full 
+                [&::-moz-range-thumb]:bg-gradient-to-b 
+                [&::-moz-range-thumb]:from-[#FFD46A] 
+                [&::-moz-range-thumb]:to-[#F7A600] 
+                [&::-moz-range-thumb]:shadow-[0_0_15px_rgba(247,166,0,0.5)] 
+                [&::-moz-range-thumb]:border-2 
+                [&::-moz-range-thumb]:border-white/30 
+                [&::-moz-range-thumb]:cursor-pointer"
+              aria-label={`Select quantity: ${qty} tickets`}
+            />
+          </div>
+          <div className="flex justify-between text-[10px] text-purple-400">
+            <span>1</span>
+            <span>{maxQty}</span>
+          </div>
+        </div>
       </div>
 
       {/* ---- Total and CTA ---- */}
