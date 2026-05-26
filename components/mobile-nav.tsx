@@ -59,19 +59,19 @@ export function MobileNav() {
         key={item.href}
         href={item.href}
         className={cn(
-          "flex flex-col items-center gap-0.5 py-2 transition-colors",
-          isActive ? "text-amber-400" : "text-white/70 hover:text-white"
+          "flex flex-col items-center justify-center gap-1 min-w-[60px] py-1 transition-colors",
+          isActive ? "text-amber-400" : "text-white/80 hover:text-white"
         )}
       >
         <div className={cn(
-          "flex items-center justify-center rounded-lg p-1.5 transition-all",
-          isActive && "bg-white/10"
+          "flex items-center justify-center rounded-lg p-2 transition-all",
+          isActive && "bg-white/15"
         )}>
-          <Icon className="h-5 w-5" aria-hidden="true" />
+          <Icon className="h-6 w-6" strokeWidth={isActive ? 2.5 : 2} aria-hidden="true" />
         </div>
         <span className={cn(
-          "text-[10px] font-medium",
-          isActive && "font-semibold"
+          "text-[11px] font-semibold tracking-wide",
+          isActive && "font-bold"
         )}>
           {item.label}
         </span>
@@ -108,19 +108,19 @@ export function MobileNav() {
           </svg>
 
           {/* Nav content */}
-          <div className="relative z-10 flex items-end justify-between px-4 pb-4 pt-2">
+          <div className="relative z-10 flex items-center justify-between px-2 pb-2 pt-6">
             {/* Left items */}
-            <div className="flex flex-1 justify-around">
+            <div className="flex flex-1 justify-evenly">
               {leftItems.map((item) => renderNavItem(item))}
             </div>
 
             {/* Center item (elevated) */}
-            <div className="flex-shrink-0 px-2">
+            <div className="flex-shrink-0 px-1">
               {renderNavItem(centerItem, true)}
             </div>
 
             {/* Right items */}
-            <div className="flex flex-1 justify-around">
+            <div className="flex flex-1 justify-evenly">
               {rightItems.map((item) => renderNavItem(item))}
             </div>
           </div>
