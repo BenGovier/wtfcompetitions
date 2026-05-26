@@ -2,41 +2,130 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Home, Gift, Trophy, User } from "lucide-react"
+import { Home, Gift, Trophy, User, Mail } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-const navItems = [
+// 5 items: Home, Winners on left | Giveaways center | Account, Contact on right
+const leftItems = [
   { href: "/", label: "Home", icon: Home },
-  { href: "/giveaways", label: "Giveaways", icon: Gift },
   { href: "/winners", label: "Winners", icon: Trophy },
+]
+
+const centerItem = { href: "/giveaways", label: "Giveaways", icon: Gift }
+
+const rightItems = [
   { href: "/me", label: "Account", icon: User },
+  { href: "/contact", label: "Contact", icon: Mail },
 ]
 
 export function MobileNav() {
   const pathname = usePathname()
 
-  return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-white/10 bg-[#1a1025] shadow-[0_-2px_10px_rgba(0,0,0,0.3)] md:hidden">
-      <div className="grid grid-cols-4">
-        {navItems.map((item) => {
-          const isActive = pathname === item.href
-          const Icon = item.icon
+  const renderNavItem = (item: typeof leftItems[0], isCenter = false) => {
+    const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href))
+    const Icon = item.icon
 
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex flex-col items-center gap-1 py-3 text-xs font-medium transition-colors",
-                isActive ? "text-white" : "text-white/70 hover:text-white",
-              )}
-            >
-              <Icon className="h-5 w-5" aria-hidden="true" />
-              <span>{item.label}</span>
-            </Link>
-          )
-        })}
-      </div>
-    </nav>
+    if (isCenter) {
+      return (
+        <Link
+          key={item.href}
+          href={item.href}
+          className="relative -mt-6 flex flex-col items-center"
+        >
+          {/* Elevated center button */}
+          <div
+            className={cn(
+              "flex h-16 w-16 items-center justify-center rounded-full shadow-lg transition-all duration-200",
+              "bg-gradient-to-b from-[#FFD46A] to-[#F7A600]",
+              "border-4 border-purple-950",
+              "hover:scale-105 hover:shadow-[0_0_20px_rgba(247,166,0,0.5)]",
+              isActive && "shadow-[0_0_25px_rgba(247,166,0,0.6)] scale-105"
+            )}
+          >
+            <Icon className="h-7 w-7 text-purple-950" aria-hidden="true" />
+          </div>
+          <span className={cn(
+            "mt-1 text-[10px] font-bold uppercase tracking-wide",
+            isActive ? "text-amber-400" : "text-white/90"
+          )}>
+            {item.label}
+          </span>
+        </Link>
+      )
+    }
+
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        className={cn(
+          "flex flex-col items-center justify-center gap-1 min-w-[60px] py-1 transition-colors",
+          isActive ? "text-amber-400" : "text-white/80 hover:text-white"
+        )}
+      >
+        <div className={cn(
+          "flex items-center justify-center rounded-lg p-2 transition-all",
+          isActive && "bg-white/15"
+        )}>
+          <Icon className="h-6 w-6" strokeWidth={isActive ? 2.5 : 2} aria-hidden="true" />
+        </div>
+        <span className={cn(
+          "text-[11px] font-semibold tracking-wide",
+          isActive && "font-bold"
+        )}>
+          {item.label}
+        </span>
+      </Link>
+    )
+  }
+
+  return (
+    <>
+      {/* Spacer to prevent content from being hidden behind the nav */}
+      <div className="h-20 md:hidden" aria-hidden="true" />
+      
+      <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden">
+        {/* Curved notch background using SVG */}
+        <div className="relative">
+          {/* SVG curved background */}
+          <svg
+            className="absolute bottom-0 left-0 right-0 h-20 w-full"
+            viewBox="0 0 400 80"
+            preserveAspectRatio="none"
+            fill="none"
+          >
+            <path
+              d="M0 20 L160 20 Q175 20 180 35 Q200 70 220 35 Q225 20 240 20 L400 20 L400 80 L0 80 Z"
+              className="fill-purple-950"
+            />
+            {/* Subtle top border/glow line */}
+            <path
+              d="M0 20 L160 20 Q175 20 180 35 Q200 70 220 35 Q225 20 240 20 L400 20"
+              className="stroke-purple-700/50"
+              strokeWidth="1"
+              fill="none"
+            />
+          </svg>
+
+          {/* Nav content */}
+          <div className="relative z-10 flex items-center justify-between px-2 pb-2 pt-6">
+            {/* Left items */}
+            <div className="flex flex-1 justify-evenly">
+              {leftItems.map((item) => renderNavItem(item))}
+            </div>
+
+            {/* Center item (elevated) */}
+            <div className="flex-shrink-0 px-1">
+              {renderNavItem(centerItem, true)}
+            </div>
+
+            {/* Right items */}
+            <div className="flex flex-1 justify-evenly">
+              {rightItems.map((item) => renderNavItem(item))}
+            </div>
+          </div>
+        </div>
+      </nav>
+    </>
   )
 }

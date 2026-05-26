@@ -11,16 +11,15 @@ export async function SiteHeader() {
   return (
     <header className="sticky top-0 z-50 border-b bg-background/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-16 items-center justify-between">
-        <Link href="/" className="flex items-center gap-2 transition-opacity hover:opacity-80">
+        <Link href="/" className="flex items-center transition-opacity hover:opacity-80">
           <Image
-            src="/images/wtf-logo.jpg"
+            src="/images/wtf-logo-main.png"
             alt="WTF Giveaways"
-            width={44}
-            height={44}
-            className="rounded-full"
+            width={140}
+            height={50}
+            className="h-auto w-[120px] sm:w-[140px]"
             priority
           />
-          <span className="text-xl font-bold text-foreground">WTF Giveaways</span>
         </Link>
 
         <nav className="hidden items-center gap-6 md:flex">
