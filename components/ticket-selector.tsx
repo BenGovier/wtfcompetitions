@@ -489,12 +489,19 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
           )}
         </div>
 
-        {/* Helper text */}
-        <p className="text-center text-[11px] text-purple-400">Slide to choose your tickets</p>
+        {/* Helper text with drag cue */}
+        <p className="text-center text-sm font-medium text-purple-300">Slide me to choose your tickets</p>
 
-        {/* ---- Mobile-friendly quantity slider ---- */}
-        <div className="space-y-2">
-          <div className="relative px-2">
+        {/* ---- Mobile-friendly quantity slider with wiggle animation ---- */}
+        <div className="space-y-3 py-4">
+          {/* Animated drag hint */}
+          <div className="flex items-center justify-center gap-1.5 text-xs text-purple-400 animate-pulse">
+            <span className="inline-block animate-[bounce_1s_ease-in-out_infinite]">&#8592;</span>
+            <span>Drag</span>
+            <span className="inline-block animate-[bounce_1s_ease-in-out_infinite_0.5s]">&#8594;</span>
+          </div>
+
+          <div className="relative px-4 py-2">
             <input
               type="range"
               min={1}
@@ -508,38 +515,44 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
                 setTimeout(() => setQtyBump(false), 200)
               }}
               className={cn(
-                "w-full h-3 appearance-none cursor-pointer rounded-full bg-purple-900/50",
+                "w-full h-4 appearance-none cursor-pointer rounded-full bg-purple-900/50",
                 "[&::-webkit-slider-thumb]:appearance-none",
-                "[&::-webkit-slider-thumb]:h-11",
-                "[&::-webkit-slider-thumb]:w-11",
+                "[&::-webkit-slider-thumb]:h-12",
+                "[&::-webkit-slider-thumb]:w-12",
                 "[&::-webkit-slider-thumb]:rounded-full",
                 "[&::-webkit-slider-thumb]:bg-gradient-to-b",
                 "[&::-webkit-slider-thumb]:from-[#FFD46A]",
                 "[&::-webkit-slider-thumb]:to-[#F7A600]",
                 "[&::-webkit-slider-thumb]:border-2",
                 "[&::-webkit-slider-thumb]:border-white/40",
-                "[&::-webkit-slider-thumb]:cursor-pointer",
-                "[&::-webkit-slider-thumb]:shadow-[0_0_15px_rgba(247,166,0,0.5)]",
-                "[&::-webkit-slider-thumb]:transition-transform",
+                "[&::-webkit-slider-thumb]:cursor-grab",
+                "[&::-webkit-slider-thumb]:shadow-[0_0_20px_rgba(247,166,0,0.6)]",
+                "[&::-webkit-slider-thumb]:transition-all",
                 "[&::-webkit-slider-thumb]:duration-150",
                 "[&::-webkit-slider-thumb]:active:scale-110",
-                "[&::-moz-range-thumb]:h-11",
-                "[&::-moz-range-thumb]:w-11",
+                "[&::-webkit-slider-thumb]:active:cursor-grabbing",
+                "[&::-webkit-slider-thumb]:animate-[wiggle_2s_ease-in-out_infinite]",
+                "[&::-webkit-slider-thumb]:active:animate-none",
+                "[&::-moz-range-thumb]:h-12",
+                "[&::-moz-range-thumb]:w-12",
                 "[&::-moz-range-thumb]:rounded-full",
                 "[&::-moz-range-thumb]:bg-gradient-to-b",
                 "[&::-moz-range-thumb]:from-[#FFD46A]",
                 "[&::-moz-range-thumb]:to-[#F7A600]",
                 "[&::-moz-range-thumb]:border-2",
                 "[&::-moz-range-thumb]:border-white/40",
-                "[&::-moz-range-thumb]:cursor-pointer",
-                "[&::-moz-range-thumb]:shadow-[0_0_15px_rgba(247,166,0,0.5)]"
+                "[&::-moz-range-thumb]:cursor-grab",
+                "[&::-moz-range-thumb]:shadow-[0_0_20px_rgba(247,166,0,0.6)]",
+                "[&::-moz-range-thumb]:active:cursor-grabbing"
               )}
               aria-label={`Select quantity: ${qty} tickets`}
             />
           </div>
-          <div className="flex justify-between px-2 text-[10px] text-purple-400">
-            <span>1</span>
-            <span>{maxQty}</span>
+
+          {/* Range labels */}
+          <div className="flex justify-between px-4 text-xs text-purple-400">
+            <span>1 ticket</span>
+            <span>{maxQty} tickets</span>
           </div>
         </div>
 
