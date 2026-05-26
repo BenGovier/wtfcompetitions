@@ -169,21 +169,16 @@ export function InstantWinList({ instantWins }: InstantWinListProps) {
               {/* Text content */}
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-white">{prize.title}</p>
-                <p className={allClaimed ? "text-xs text-amber-400" : "text-xs text-white/60"}>
+                <span
+                  className={
+                    allClaimed
+                      ? "mt-1 inline-flex rounded-full bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-400"
+                      : "mt-1 inline-flex rounded-full bg-green-500/20 px-2 py-0.5 text-xs font-medium text-green-400"
+                  }
+                >
                   {prize.totalRemaining}/{prize.totalQuantity} Remaining
-                </p>
+                </span>
               </div>
-
-              {/* Badge */}
-              {allClaimed ? (
-                <span className="inline-flex shrink-0 items-center rounded-full bg-amber-500/20 px-2 py-0.5 text-xs font-semibold text-amber-400">
-                  Won
-                </span>
-              ) : (
-                <span className="inline-flex shrink-0 items-center rounded-full bg-green-500/20 px-2 py-0.5 text-xs font-semibold text-green-400">
-                  {prize.totalRemaining}
-                </span>
-              )}
             </div>
           )
         })}
