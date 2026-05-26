@@ -58,6 +58,17 @@ function TicketDisplay({ start, end }: { start?: number | null; end?: number | n
   )
 }
 
+function resolveCampaignTitle(campaign: CampaignInfo | undefined, entryId?: string, campaignId?: string): string {
+  if (campaign?.title && campaign.title.trim().length > 0) {
+    return campaign.title
+  }
+  // Debug log only for missing campaigns
+  if (!campaign && entryId && campaignId) {
+    console.log('[me-debug] missing campaign for entry', entryId, campaignId)
+  }
+  return 'Competition'
+}
+
 export function AccountTabs({ email, entries, entriesError, allocationMap, campaignMap, winsMap }: AccountTabsProps) {
   const [prefs, setPrefs] = useState<UserPreferences | null>(null)
   const [prefsLoading, setPrefsLoading] = useState(true)
@@ -162,13 +173,24 @@ export function AccountTabs({ email, entries, entriesError, allocationMap, campa
               </Button>
             </div>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {entries.map((entry) => {
+            (() => {
+              // Split entries into live and ended (client-side filter only)
+              const liveEntries = entries.filter((e) => {
+                const status = campaignMap[e.campaign_id]?.status
+                return status === 'live' || status === 'active'
+              })
+              const endedEntries = entries.filter((e) => {
+                const status = campaignMap[e.campaign_id]?.status
+                return status !== 'live' && status !== 'active'
+              })
+
+              const renderEntryCard = (entry: EntryRow) => {
                 const campaign = campaignMap[entry.campaign_id]
                 const allocation = allocationMap[entry.id]
                 const wins = winsMap[entry.campaign_id] || []
                 const status = campaign?.status || 'unknown'
                 const isLive = status === 'live' || status === 'active'
+                const title = resolveCampaignTitle(campaign, entry.id, entry.campaign_id)
 
                 return (
                   <div
@@ -180,7 +202,7 @@ export function AccountTabs({ email, entries, entriesError, allocationMap, campa
                       {campaign?.heroImageUrl ? (
                         <Image
                           src={campaign.heroImageUrl}
-                          alt={campaign?.title || 'Giveaway'}
+                          alt={title}
                           fill
                           sizes="64px"
                           className="object-cover"
@@ -197,7 +219,7 @@ export function AccountTabs({ email, entries, entriesError, allocationMap, campa
                       {/* Title + Badge */}
                       <div className="flex items-start justify-between gap-2">
                         <h3 className="truncate text-sm font-semibold text-white leading-tight">
-                          {campaign?.title || 'Giveaway'}
+                          {title}
                         </h3>
                         <span
                           className={
@@ -235,8 +257,38 @@ export function AccountTabs({ email, entries, entriesError, allocationMap, campa
                     </div>
                   </div>
                 )
-              })}
-            </div>
+              }
+
+              return (
+                <div className="space-y-6">
+                  {/* Live Entries Section */}
+                  <div>
+                    <h3 className="mb-3 text-sm font-semibold text-green-400">
+                      Live entries ({liveEntries.length})
+                    </h3>
+                    {liveEntries.length === 0 ? (
+                      <p className="py-4 text-sm text-white/50">No live entries right now.</p>
+                    ) : (
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {liveEntries.map(renderEntryCard)}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Past Entries Section */}
+                  {endedEntries.length > 0 && (
+                    <div>
+                      <h3 className="mb-3 text-sm font-semibold text-white/70">
+                        Past entries ({endedEntries.length})
+                      </h3>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {endedEntries.map(renderEntryCard)}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })()
           )}
         </div>
       </TabsContent>
