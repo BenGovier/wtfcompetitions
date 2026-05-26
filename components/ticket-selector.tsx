@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Minus, Plus, Clock, CalendarClock, Lock, Flame, Zap, Crown } from "lucide-react"
+import { Clock, CalendarClock, Lock, Flame, Zap, Crown } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { FreeEntryInfo } from "@/components/free-entry-info"
 
@@ -471,43 +471,78 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
         </div>
       )}
 
-      {/* ---- Quantity selector (+/-) ---- */}
-      <div ref={qtyRef} className="space-y-2">
+      {/* ---- Quantity selector (slider-based) ---- */}
+      <div ref={qtyRef} className="space-y-3">
         <label className="text-sm font-medium text-purple-200">
           {hasBundles ? "Or choose your own" : "Pick your entries"}
         </label>
-        <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-14 w-14 rounded-xl border-purple-500/30 bg-white/5 text-white transition-all duration-150 hover:bg-white/10 hover:text-white active:scale-90"
-            onClick={() => handleQuantityChange(-1)}
-            disabled={qty <= 1}
-          >
-            <Minus className="h-6 w-6" />
-            <span className="sr-only">Decrease quantity</span>
-          </Button>
-          <div className={cn(
-            "flex-1 text-center transition-transform duration-200",
-            qtyBump && "scale-125"
-          )}>
-            <div className="bg-gradient-to-b from-[#FFD46A] to-[#F7A600] bg-clip-text text-5xl font-bold text-transparent drop-shadow-[0_0_10px_rgba(247,166,0,0.4)]">{qty}</div>
-            <div className="text-xs text-purple-300">{qty === 1 ? "entry" : "entries"}</div>
-            {selectedBundle && (
-              <div className="mt-0.5 text-[10px] text-pink-300">Bundle selected</div>
-            )}
-          </div>
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-14 w-14 rounded-xl border-purple-500/30 bg-white/5 text-white transition-all duration-150 hover:bg-white/10 hover:text-white active:scale-90"
-            onClick={() => handleQuantityChange(1)}
-            disabled={qty >= maxQty}
-          >
-            <Plus className="h-6 w-6" />
-            <span className="sr-only">Increase quantity</span>
-          </Button>
+        
+        {/* Central quantity display */}
+        <div className={cn(
+          "text-center transition-transform duration-200",
+          qtyBump && "scale-110"
+        )}>
+          <div className="bg-gradient-to-b from-[#FFD46A] to-[#F7A600] bg-clip-text text-5xl font-bold text-transparent drop-shadow-[0_0_10px_rgba(247,166,0,0.4)]">{qty}</div>
+          <div className="text-xs text-purple-300">{qty === 1 ? "entry" : "entries"}</div>
+          {selectedBundle && (
+            <div className="mt-0.5 text-[10px] text-pink-300">Bundle selected</div>
+          )}
         </div>
+
+        {/* Helper text */}
+        <p className="text-center text-[11px] text-purple-400">Slide to choose your tickets</p>
+
+        {/* ---- Mobile-friendly quantity slider ---- */}
+        <div className="space-y-2">
+          <div className="relative px-2">
+            <input
+              type="range"
+              min={1}
+              max={maxQty}
+              value={qty}
+              onChange={(e) => {
+                const newQty = Number(e.target.value)
+                setQty(newQty)
+                setSelectedBundle(null)
+                setQtyBump(true)
+                setTimeout(() => setQtyBump(false), 200)
+              }}
+              className={cn(
+                "w-full h-3 appearance-none cursor-pointer rounded-full bg-purple-900/50",
+                "[&::-webkit-slider-thumb]:appearance-none",
+                "[&::-webkit-slider-thumb]:h-11",
+                "[&::-webkit-slider-thumb]:w-11",
+                "[&::-webkit-slider-thumb]:rounded-full",
+                "[&::-webkit-slider-thumb]:bg-gradient-to-b",
+                "[&::-webkit-slider-thumb]:from-[#FFD46A]",
+                "[&::-webkit-slider-thumb]:to-[#F7A600]",
+                "[&::-webkit-slider-thumb]:border-2",
+                "[&::-webkit-slider-thumb]:border-white/40",
+                "[&::-webkit-slider-thumb]:cursor-pointer",
+                "[&::-webkit-slider-thumb]:shadow-[0_0_15px_rgba(247,166,0,0.5)]",
+                "[&::-webkit-slider-thumb]:transition-transform",
+                "[&::-webkit-slider-thumb]:duration-150",
+                "[&::-webkit-slider-thumb]:active:scale-110",
+                "[&::-moz-range-thumb]:h-11",
+                "[&::-moz-range-thumb]:w-11",
+                "[&::-moz-range-thumb]:rounded-full",
+                "[&::-moz-range-thumb]:bg-gradient-to-b",
+                "[&::-moz-range-thumb]:from-[#FFD46A]",
+                "[&::-moz-range-thumb]:to-[#F7A600]",
+                "[&::-moz-range-thumb]:border-2",
+                "[&::-moz-range-thumb]:border-white/40",
+                "[&::-moz-range-thumb]:cursor-pointer",
+                "[&::-moz-range-thumb]:shadow-[0_0_15px_rgba(247,166,0,0.5)]"
+              )}
+              aria-label={`Select quantity: ${qty} tickets`}
+            />
+          </div>
+          <div className="flex justify-between px-2 text-[10px] text-purple-400">
+            <span>1</span>
+            <span>{maxQty}</span>
+          </div>
+        </div>
+
         <p className="text-center text-[11px] text-purple-400">More entries = more chances to win</p>
       </div>
 
