@@ -98,6 +98,9 @@ export async function POST(req: Request) {
     if (message.length > 2000) {
       return NextResponse.json({ ok: false, error: "Message too long" }, { status: 400 })
     }
+    if (!phone) {
+      return NextResponse.json({ ok: false, error: "Phone number is required" }, { status: 400 })
+    }
 
     // Winner payout validation
     if (enquiry_type === 'winner_payout') {
@@ -177,7 +180,7 @@ export async function POST(req: Request) {
       emailBody += `Email: ${email}\n`
       if (phone) emailBody += `Phone: ${phone}\n`
       if (giveaway_name) emailBody += `Giveaway: ${giveaway_name}\n`
-      if (order_reference) emailBody += `Order Ref: ${order_reference}\n`
+      if (order_reference) emailBody += `TikTok Name / Order Ref: ${order_reference}\n`
       emailBody += `\nMessage:\n${message}\n`
 
       if (enquiry_type === 'winner_payout' && preferred_payout_method) {

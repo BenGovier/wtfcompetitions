@@ -1,5 +1,5 @@
 import { ContactForm } from "@/components/contact/ContactForm"
-import { Mail, Clock, Banknote, ShieldCheck } from "lucide-react"
+import { Clock, Banknote, ShieldCheck } from "lucide-react"
 
 export const metadata = {
   title: "Contact Us | WTF Giveaways",
@@ -41,15 +41,14 @@ export default function ContactPage() {
           </div>
 
           {/* Contact Info Footer - Compact */}
-          <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-purple-200/70">
-            <div className="flex items-center gap-1.5">
-              <Mail className="h-3.5 w-3.5 text-purple-300" />
-              <span>ben@wtf-giveaways.co.uk</span>
-            </div>
+          <div className="mt-4 flex flex-col items-center gap-2 text-xs text-purple-200/70">
             <div className="flex items-center gap-1.5">
               <Clock className="h-3.5 w-3.5 text-purple-300" />
-              <span>Response within 24–48 hours</span>
+              <span>Response within 24-48 hours</span>
             </div>
+            <p className="text-center text-purple-200/60">
+              All winnings are paid Monday - Friday 9am - 5pm, please allow 48 hours.
+            </p>
           </div>
         </div>
       </div>
