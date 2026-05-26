@@ -5,8 +5,10 @@ import { CheckCircle, ShieldAlert } from 'lucide-react'
 
 interface FieldErrors {
   enquiry_type?: string
-  full_name?: string
+  first_name?: string
+  last_name?: string
   email?: string
+  phone?: string
   message?: string
   preferred_payout_method?: string
   payout_account_holder_name?: string
@@ -33,7 +35,8 @@ const PAYOUT_METHODS = [
 export function ContactForm() {
   const [form, setForm] = useState({
     enquiry_type: '',
-    full_name: '',
+    first_name: '',
+    last_name: '',
     email: '',
     phone: '',
     giveaway_name: '',
@@ -56,9 +59,11 @@ export function ContactForm() {
     const e: FieldErrors = {}
     
     if (!form.enquiry_type) e.enquiry_type = 'Please select an enquiry type'
-    if (!form.full_name.trim() || form.full_name.trim().length < 2) e.full_name = 'Please enter your name'
+    if (!form.first_name.trim() || form.first_name.trim().length < 1) e.first_name = 'First name is required'
+    if (!form.last_name.trim() || form.last_name.trim().length < 1) e.last_name = 'Last name is required'
     if (!form.email.trim()) e.email = 'Required'
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) e.email = 'Invalid email'
+    if (!form.phone.trim()) e.phone = 'Phone number is required'
     if (!form.message.trim() || form.message.trim().length < 10) e.message = 'Please provide more details (min 10 characters)'
     if (form.message.length > 2000) e.message = 'Message too long (max 2000 characters)'
 
@@ -94,10 +99,15 @@ export function ContactForm() {
 
     setSubmitting(true)
     try {
+      // Concatenate first_name and last_name into full_name for API compatibility
+      const submitData = {
+        ...form,
+        full_name: `${form.first_name.trim()} ${form.last_name.trim()}`.trim(),
+      }
       const res = await fetch('/api/contact', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify(submitData),
       })
       const json = await res.json()
       if (!res.ok || !json.ok) {
@@ -200,17 +210,30 @@ export function ContactForm() {
         {errors.enquiry_type && <p className={errorClass}>{errors.enquiry_type}</p>}
       </div>
 
-      {/* Basic Info */}
-      <div>
-        <label className={labelClass}>Full name *</label>
-        <input
-          type="text"
-          placeholder="Your full name"
-          className={inputBase}
-          value={form.full_name}
-          onChange={(e) => updateField('full_name', e.target.value)}
-        />
-        {errors.full_name && <p className={errorClass}>{errors.full_name}</p>}
+      {/* Basic Info - First Name and Last Name */}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={labelClass}>First name *</label>
+          <input
+            type="text"
+            placeholder="First name"
+            className={inputBase}
+            value={form.first_name}
+            onChange={(e) => updateField('first_name', e.target.value)}
+          />
+          {errors.first_name && <p className={errorClass}>{errors.first_name}</p>}
+        </div>
+        <div>
+          <label className={labelClass}>Last name *</label>
+          <input
+            type="text"
+            placeholder="Last name"
+            className={inputBase}
+            value={form.last_name}
+            onChange={(e) => updateField('last_name', e.target.value)}
+          />
+          {errors.last_name && <p className={errorClass}>{errors.last_name}</p>}
+        </div>
       </div>
 
       <div>
@@ -226,7 +249,7 @@ export function ContactForm() {
       </div>
 
       <div>
-        <label className={labelClass}>Phone (optional)</label>
+        <label className={labelClass}>Phone *</label>
         <input
           type="tel"
           placeholder="Your phone number"
@@ -234,6 +257,7 @@ export function ContactForm() {
           value={form.phone}
           onChange={(e) => updateField('phone', e.target.value)}
         />
+        {errors.phone && <p className={errorClass}>{errors.phone}</p>}
       </div>
 
       <div>
@@ -248,10 +272,10 @@ export function ContactForm() {
       </div>
 
       <div>
-        <label className={labelClass}>Order reference (optional)</label>
+        <label className={labelClass}>TikTok Win? Your TikTok Name</label>
         <input
           type="text"
-          placeholder="Your order or ticket reference"
+          placeholder="Your TikTok username if this is about a TikTok win"
           className={inputBase}
           value={form.order_reference}
           onChange={(e) => updateField('order_reference', e.target.value)}
