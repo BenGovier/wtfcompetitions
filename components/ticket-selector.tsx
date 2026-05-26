@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Minus, Plus, Clock, CalendarClock, Lock, Flame, Zap, Crown } from "lucide-react"
+import { Clock, CalendarClock, Lock, Flame, Zap, Crown } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { FreeEntryInfo } from "@/components/free-entry-info"
 
@@ -471,43 +471,91 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
         </div>
       )}
 
-      {/* ---- Quantity selector (+/-) ---- */}
-      <div ref={qtyRef} className="space-y-2">
+      {/* ---- Quantity selector (slider-based) ---- */}
+      <div ref={qtyRef} className="space-y-3">
         <label className="text-sm font-medium text-purple-200">
           {hasBundles ? "Or choose your own" : "Pick your entries"}
         </label>
-        <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-14 w-14 rounded-xl border-purple-500/30 bg-white/5 text-white transition-all duration-150 hover:bg-white/10 hover:text-white active:scale-90"
-            onClick={() => handleQuantityChange(-1)}
-            disabled={qty <= 1}
-          >
-            <Minus className="h-6 w-6" />
-            <span className="sr-only">Decrease quantity</span>
-          </Button>
-          <div className={cn(
-            "flex-1 text-center transition-transform duration-200",
-            qtyBump && "scale-125"
-          )}>
-            <div className="bg-gradient-to-b from-[#FFD46A] to-[#F7A600] bg-clip-text text-5xl font-bold text-transparent drop-shadow-[0_0_10px_rgba(247,166,0,0.4)]">{qty}</div>
-            <div className="text-xs text-purple-300">{qty === 1 ? "entry" : "entries"}</div>
-            {selectedBundle && (
-              <div className="mt-0.5 text-[10px] text-pink-300">Bundle selected</div>
-            )}
-          </div>
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-14 w-14 rounded-xl border-purple-500/30 bg-white/5 text-white transition-all duration-150 hover:bg-white/10 hover:text-white active:scale-90"
-            onClick={() => handleQuantityChange(1)}
-            disabled={qty >= maxQty}
-          >
-            <Plus className="h-6 w-6" />
-            <span className="sr-only">Increase quantity</span>
-          </Button>
+        
+        {/* Central quantity display */}
+        <div className={cn(
+          "text-center transition-transform duration-200",
+          qtyBump && "scale-110"
+        )}>
+          <div className="bg-gradient-to-b from-[#FFD46A] to-[#F7A600] bg-clip-text text-5xl font-bold text-transparent drop-shadow-[0_0_10px_rgba(247,166,0,0.4)]">{qty}</div>
+          <div className="text-xs text-purple-300">{qty === 1 ? "entry" : "entries"}</div>
+          {selectedBundle && (
+            <div className="mt-0.5 text-[10px] text-pink-300">Bundle selected</div>
+          )}
         </div>
+
+        {/* Helper text with drag cue */}
+        <p className="text-center text-sm font-medium text-purple-300">Slide me to choose your tickets</p>
+
+        {/* ---- Mobile-friendly quantity slider with wiggle animation ---- */}
+        <div className="space-y-3 py-4">
+          {/* Animated drag hint */}
+          <div className="flex items-center justify-center gap-1.5 text-xs text-purple-400 animate-pulse">
+            <span className="inline-block animate-[bounce_1s_ease-in-out_infinite]">&#8592;</span>
+            <span>Drag</span>
+            <span className="inline-block animate-[bounce_1s_ease-in-out_infinite_0.5s]">&#8594;</span>
+          </div>
+
+          <div className="relative px-4 py-2">
+            <input
+              type="range"
+              min={1}
+              max={maxQty}
+              value={qty}
+              onChange={(e) => {
+                const newQty = Number(e.target.value)
+                setQty(newQty)
+                setSelectedBundle(null)
+                setQtyBump(true)
+                setTimeout(() => setQtyBump(false), 200)
+              }}
+              className={cn(
+                "w-full h-4 appearance-none cursor-pointer rounded-full bg-purple-900/50",
+                "[&::-webkit-slider-thumb]:appearance-none",
+                "[&::-webkit-slider-thumb]:h-12",
+                "[&::-webkit-slider-thumb]:w-12",
+                "[&::-webkit-slider-thumb]:rounded-full",
+                "[&::-webkit-slider-thumb]:bg-gradient-to-b",
+                "[&::-webkit-slider-thumb]:from-[#FFD46A]",
+                "[&::-webkit-slider-thumb]:to-[#F7A600]",
+                "[&::-webkit-slider-thumb]:border-2",
+                "[&::-webkit-slider-thumb]:border-white/40",
+                "[&::-webkit-slider-thumb]:cursor-grab",
+                "[&::-webkit-slider-thumb]:shadow-[0_0_20px_rgba(247,166,0,0.6)]",
+                "[&::-webkit-slider-thumb]:transition-all",
+                "[&::-webkit-slider-thumb]:duration-150",
+                "[&::-webkit-slider-thumb]:active:scale-110",
+                "[&::-webkit-slider-thumb]:active:cursor-grabbing",
+                "[&::-webkit-slider-thumb]:animate-[wiggle_2s_ease-in-out_infinite]",
+                "[&::-webkit-slider-thumb]:active:animate-none",
+                "[&::-moz-range-thumb]:h-12",
+                "[&::-moz-range-thumb]:w-12",
+                "[&::-moz-range-thumb]:rounded-full",
+                "[&::-moz-range-thumb]:bg-gradient-to-b",
+                "[&::-moz-range-thumb]:from-[#FFD46A]",
+                "[&::-moz-range-thumb]:to-[#F7A600]",
+                "[&::-moz-range-thumb]:border-2",
+                "[&::-moz-range-thumb]:border-white/40",
+                "[&::-moz-range-thumb]:cursor-grab",
+                "[&::-moz-range-thumb]:shadow-[0_0_20px_rgba(247,166,0,0.6)]",
+                "[&::-moz-range-thumb]:active:cursor-grabbing"
+              )}
+              aria-label={`Select quantity: ${qty} tickets`}
+            />
+          </div>
+
+          {/* Range labels */}
+          <div className="flex justify-between px-4 text-xs text-purple-400">
+            <span>1 ticket</span>
+            <span>{maxQty} tickets</span>
+          </div>
+        </div>
+
         <p className="text-center text-[11px] text-purple-400">More entries = more chances to win</p>
       </div>
 
