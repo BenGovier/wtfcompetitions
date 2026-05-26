@@ -195,7 +195,7 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
   const displayCap = (hardCapTotalTickets && hardCapTotalTickets > 0) ? hardCapTotalTickets : capTotal
   const hasCapInfo = typeof displaySold === 'number' && typeof displayCap === 'number' && displayCap > 0
   const remaining = hasCapInfo ? Math.max(0, displayCap - displaySold) : null
-  const maxQty = remaining !== null ? Math.min(100, remaining) : 100
+  const maxQty = remaining !== null ? Math.min(500, remaining) : 500
 
   const soldPct = hasCapInfo ? Math.min(100, (displaySold / displayCap!) * 100) : 0
 
