@@ -124,7 +124,7 @@ export default function SignUpPage() {
                     <Input
                       id="first-name"
                       type="text"
-                      placeholder="Ben"
+                      placeholder="First name"
                       value={firstName}
                       onChange={(e) => setFirstName(e.target.value)}
                     />
@@ -134,7 +134,7 @@ export default function SignUpPage() {
                     <Input
                       id="last-name"
                       type="text"
-                      placeholder="Govier"
+                      placeholder="Last name"
                       value={lastName}
                       onChange={(e) => setLastName(e.target.value)}
                     />
@@ -145,7 +145,7 @@ export default function SignUpPage() {
                   <Input
                     id="display-name"
                     type="text"
-                    placeholder="Ben G"
+                    placeholder="Your public winner name"
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
                   />
