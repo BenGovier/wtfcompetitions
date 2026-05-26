@@ -28,11 +28,6 @@ export function SiteFooter() {
               <h3 className="mb-4 text-xs font-semibold uppercase tracking-wider text-amber-400">Company</h3>
               <ul className="space-y-3 text-sm">
                 <li>
-                  <Link href="/about" className="text-white/80 transition-colors hover:text-amber-400">
-                    About Us
-                  </Link>
-                </li>
-                <li>
                   <Link href="/contact" className="text-white/80 transition-colors hover:text-amber-400">
                     Contact
                   </Link>
