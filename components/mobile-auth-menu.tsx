@@ -18,12 +18,12 @@ export function MobileAuthMenu() {
     <Sheet>
       <SheetTrigger asChild>
         <Button
-          variant="ghost"
-          size="sm"
-          className="sm:hidden p-2 text-slate-900 hover:bg-slate-100"
+          variant="outline"
+          size="icon"
+          className="sm:hidden h-11 w-11 rounded-lg border-2 border-purple-300/50 bg-white text-purple-700 shadow-md hover:bg-purple-50 hover:text-purple-800"
           aria-label="Open menu"
         >
-          <Menu className="h-5 w-5" />
+          <Menu className="h-6 w-6" />
         </Button>
       </SheetTrigger>
       <SheetContent
