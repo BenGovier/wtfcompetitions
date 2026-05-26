@@ -492,18 +492,8 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
         {/* Helper text */}
         <p className="text-center text-[11px] text-purple-400">Slide to choose your tickets</p>
 
-        {/* ---- Mobile-friendly quantity slider with pulse animation ---- */}
+        {/* ---- Mobile-friendly quantity slider ---- */}
         <div className="space-y-2">
-          <style jsx>{`
-            @keyframes thumb-pulse {
-              0%, 100% {
-                box-shadow: 0 0 15px rgba(247, 166, 0, 0.5), 0 0 0 0 rgba(247, 166, 0, 0.4);
-              }
-              50% {
-                box-shadow: 0 0 20px rgba(247, 166, 0, 0.7), 0 0 0 6px rgba(247, 166, 0, 0.15);
-              }
-            }
-          `}</style>
           <div className="relative px-2">
             <input
               type="range"
@@ -517,31 +507,33 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
                 setQtyBump(true)
                 setTimeout(() => setQtyBump(false), 200)
               }}
-              className="w-full h-3 appearance-none cursor-pointer rounded-full bg-purple-900/50 
-                [&::-webkit-slider-thumb]:appearance-none 
-                [&::-webkit-slider-thumb]:h-11 
-                [&::-webkit-slider-thumb]:w-11 
-                [&::-webkit-slider-thumb]:rounded-full 
-                [&::-webkit-slider-thumb]:bg-gradient-to-b 
-                [&::-webkit-slider-thumb]:from-[#FFD46A] 
-                [&::-webkit-slider-thumb]:to-[#F7A600] 
-                [&::-webkit-slider-thumb]:border-3 
-                [&::-webkit-slider-thumb]:border-white/40 
-                [&::-webkit-slider-thumb]:cursor-pointer
-                [&::-webkit-slider-thumb]:transition-transform 
-                [&::-webkit-slider-thumb]:duration-150 
-                [&::-webkit-slider-thumb]:active:scale-110
-                [&::-webkit-slider-thumb]:[animation:thumb-pulse_2s_ease-in-out_infinite]
-                [&::-moz-range-thumb]:h-11 
-                [&::-moz-range-thumb]:w-11 
-                [&::-moz-range-thumb]:rounded-full 
-                [&::-moz-range-thumb]:bg-gradient-to-b 
-                [&::-moz-range-thumb]:from-[#FFD46A] 
-                [&::-moz-range-thumb]:to-[#F7A600] 
-                [&::-moz-range-thumb]:border-3 
-                [&::-moz-range-thumb]:border-white/40 
-                [&::-moz-range-thumb]:cursor-pointer
-                [&::-moz-range-thumb]:[animation:thumb-pulse_2s_ease-in-out_infinite]"
+              className={cn(
+                "w-full h-3 appearance-none cursor-pointer rounded-full bg-purple-900/50",
+                "[&::-webkit-slider-thumb]:appearance-none",
+                "[&::-webkit-slider-thumb]:h-11",
+                "[&::-webkit-slider-thumb]:w-11",
+                "[&::-webkit-slider-thumb]:rounded-full",
+                "[&::-webkit-slider-thumb]:bg-gradient-to-b",
+                "[&::-webkit-slider-thumb]:from-[#FFD46A]",
+                "[&::-webkit-slider-thumb]:to-[#F7A600]",
+                "[&::-webkit-slider-thumb]:border-2",
+                "[&::-webkit-slider-thumb]:border-white/40",
+                "[&::-webkit-slider-thumb]:cursor-pointer",
+                "[&::-webkit-slider-thumb]:shadow-[0_0_15px_rgba(247,166,0,0.5)]",
+                "[&::-webkit-slider-thumb]:transition-transform",
+                "[&::-webkit-slider-thumb]:duration-150",
+                "[&::-webkit-slider-thumb]:active:scale-110",
+                "[&::-moz-range-thumb]:h-11",
+                "[&::-moz-range-thumb]:w-11",
+                "[&::-moz-range-thumb]:rounded-full",
+                "[&::-moz-range-thumb]:bg-gradient-to-b",
+                "[&::-moz-range-thumb]:from-[#FFD46A]",
+                "[&::-moz-range-thumb]:to-[#F7A600]",
+                "[&::-moz-range-thumb]:border-2",
+                "[&::-moz-range-thumb]:border-white/40",
+                "[&::-moz-range-thumb]:cursor-pointer",
+                "[&::-moz-range-thumb]:shadow-[0_0_15px_rgba(247,166,0,0.5)]"
+              )}
               aria-label={`Select quantity: ${qty} tickets`}
             />
           </div>
