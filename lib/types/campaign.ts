@@ -13,6 +13,7 @@ export interface Campaign {
   mainPrizeDescription: string
   heroImageUrl: string
   ticketPricePence: number
+  wasPricePence?: number | null
   maxTicketsTotal: number | null
   maxTicketsPerUser: number | null
   bundles?: { quantity: number; price_pence: number; label?: string }[] | null
