@@ -68,6 +68,7 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
   const status = p.status as "draft" | "live" | "paused" | "ended"
   const endsAt = new Date(p.ends_at)
   const ticketPrice = (p.base_ticket_price_pence ?? 0) / 100
+  const wasTicketPricePence = p.was_ticket_price_pence ?? null
   // Snapshot payload `id` is the campaign id in our current snapshot shape
   const campaignId = p.id as string
 
@@ -158,7 +159,7 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
               <Separator />
 
               <div id="ticket-selector" className="scroll-mt-24">
-                <TicketSelector basePrice={ticketPrice} bundles={bundles} campaignId={campaignId} soldCount={soldCount} capTotal={capTotal} startsAt={p.starts_at ?? null} endsAt={p.ends_at ?? null} ticketsSold={p.tickets_sold != null ? Number(p.tickets_sold) : null} hardCapTotalTickets={p.hard_cap_total_tickets != null ? Number(p.hard_cap_total_tickets) : null} isFreeEntry={p.is_free_entry === true || p.is_free_entry === "true"} freeEntryLimitPerUser={p.free_entry_limit_per_user != null ? Number(p.free_entry_limit_per_user) : 1} />
+                <TicketSelector basePrice={ticketPrice} bundles={bundles} campaignId={campaignId} soldCount={soldCount} capTotal={capTotal} startsAt={p.starts_at ?? null} endsAt={p.ends_at ?? null} ticketsSold={p.tickets_sold != null ? Number(p.tickets_sold) : null} hardCapTotalTickets={p.hard_cap_total_tickets != null ? Number(p.hard_cap_total_tickets) : null} isFreeEntry={p.is_free_entry === true || p.is_free_entry === "true"} freeEntryLimitPerUser={p.free_entry_limit_per_user != null ? Number(p.free_entry_limit_per_user) : 1} wasPricePence={wasTicketPricePence} />
               </div>
             </div>
           </div>

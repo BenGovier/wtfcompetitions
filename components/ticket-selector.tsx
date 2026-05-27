@@ -39,6 +39,7 @@ interface TicketSelectorProps {
   hardCapTotalTickets?: number | null
   isFreeEntry?: boolean
   freeEntryLimitPerUser?: number
+  wasPricePence?: number | null
 }
 
 /**
@@ -60,10 +61,11 @@ function normaliseBundles(raw: any[] | undefined | null, basePricePence: number)
   }).sort((a, b) => a.quantity - b.quantity)
 }
 
-export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, soldCount, capTotal, startsAt, endsAt, ticketsSold, hardCapTotalTickets, isFreeEntry, freeEntryLimitPerUser }: TicketSelectorProps) {
+export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, soldCount, capTotal, startsAt, endsAt, ticketsSold, hardCapTotalTickets, isFreeEntry, freeEntryLimitPerUser, wasPricePence }: TicketSelectorProps) {
   const basePricePence = Math.round(basePrice * 100)
   const normBundles = normaliseBundles(rawBundles, basePricePence)
   const hasBundles = normBundles.length > 0
+  const hasSalePrice = wasPricePence != null && wasPricePence > basePricePence
 
   /* ---- Single source of truth state ---- */
   const [now, setNow] = useState(() => Date.now())
@@ -368,6 +370,19 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
             </div>
           </div>
         </>
+      )}
+
+      {/* ---- Sale Price Banner ---- */}
+      {hasSalePrice && (
+        <div className="rounded-xl border-2 border-green-500/50 bg-gradient-to-r from-green-900/30 to-emerald-900/30 p-4 shadow-[0_0_20px_rgba(34,197,94,0.2)]">
+          <div className="flex items-center justify-center gap-3">
+            <div className="flex flex-col items-center">
+              <span className="text-xs font-medium text-white/60 line-through">Was {wasPricePence}p</span>
+              <span className="text-2xl font-extrabold text-green-400">{basePricePence}p</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-green-300 animate-pulse">Tonight only</span>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ---- Progress Bar (percentage only) ---- */}
