@@ -781,6 +781,22 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
           </div>
 
           <div className="space-y-2">
+            <Label htmlFor="wasPricePence">Was price / crossed-out price (pence)</Label>
+            <Input
+              id="wasPricePence"
+              type="number"
+              value={formData.wasPricePence ?? ""}
+              onChange={(e) =>
+                handleChange("wasPricePence", e.target.value ? Number(e.target.value) : null)
+              }
+              placeholder="Leave empty for no sale display"
+            />
+            <p className="text-xs text-muted-foreground">
+              Display only. Checkout still charges the main ticket price.
+            </p>
+          </div>
+
+          <div className="space-y-2">
             <Label htmlFor="maxTicketsTotal">Max Tickets Total (optional)</Label>
             <Input
               id="maxTicketsTotal"
