@@ -15,6 +15,7 @@ function toDbRow(body: Record<string, any>) {
     main_prize_description: body.mainPrizeDescription,
     hero_image_url: body.heroImageUrl,
     ticket_price_pence: body.ticketPricePence,
+    was_price_pence: body.wasPricePence ?? null,
     max_tickets_total: body.maxTicketsTotal ?? null,
     max_tickets_per_user: body.maxTicketsPerUser ?? null,
     bundles: body.bundles ?? null,
