@@ -153,12 +153,23 @@ export default async function HomePage() {
                       </div>
                     )}
 
-                    {/* Ticket price - casino chip badge */}
+                    {/* Ticket price - casino chip badge with sale display */}
                     {giveaway.base_ticket_price_pence != null && (
                       <div className="mt-3">
-                        <span className="inline-flex items-center rounded-full bg-gradient-to-r from-[#FFD700] to-[#FFA500] px-3 py-1 text-xs font-bold text-black shadow-md">
-                          £{(giveaway.base_ticket_price_pence / 100).toFixed(2)} per ticket
-                        </span>
+                        {giveaway.was_ticket_price_pence != null && giveaway.was_ticket_price_pence > giveaway.base_ticket_price_pence ? (
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs text-white/50 line-through">
+                              Was {giveaway.was_ticket_price_pence}p
+                            </span>
+                            <span className="inline-flex items-center rounded-full bg-gradient-to-r from-green-500 to-emerald-600 px-3 py-1 text-xs font-bold text-white shadow-md animate-pulse">
+                              Tonight {giveaway.base_ticket_price_pence}p
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="inline-flex items-center rounded-full bg-gradient-to-r from-[#FFD700] to-[#FFA500] px-3 py-1 text-xs font-bold text-black shadow-md">
+                            £{(giveaway.base_ticket_price_pence / 100).toFixed(2)} per ticket
+                          </span>
+                        )}
                       </div>
                     )}
 

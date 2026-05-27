@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
   // 4) Fetch campaign
   const { data: campaign, error: campaignErr } = await supabase
     .from('campaigns')
-    .select('id, slug, title, summary, description, status, start_at, end_at, main_prize_title, main_prize_description, hero_image_url, ticket_price_pence, max_tickets_total, max_tickets_per_user, bundles, presentation_type, is_free_entry, free_entry_limit_per_user')
+    .select('id, slug, title, summary, description, status, start_at, end_at, main_prize_title, main_prize_description, hero_image_url, ticket_price_pence, was_price_pence, max_tickets_total, max_tickets_per_user, bundles, presentation_type, is_free_entry, free_entry_limit_per_user')
     .eq('id', campaignId)
     .single()
 
@@ -119,6 +119,7 @@ export async function GET(request: NextRequest) {
     hero_image_url: campaign.hero_image_url,
     ends_at: campaign.end_at,
     base_ticket_price_pence: campaign.ticket_price_pence,
+    was_ticket_price_pence: campaign.was_price_pence ?? null,
     status: campaign.status,
     tickets_sold: ticketsSold,
     next_ticket: nextTicket,
@@ -145,6 +146,7 @@ export async function GET(request: NextRequest) {
     ends_at: campaign.end_at,
     currency: 'GBP',
     base_ticket_price_pence: campaign.ticket_price_pence,
+    was_ticket_price_pence: campaign.was_price_pence ?? null,
     bundles: campaign.bundles ?? null,
     hard_cap_total_tickets: campaign.max_tickets_total,
     instant_wins: instantWins,
