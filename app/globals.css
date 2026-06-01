@@ -150,3 +150,8 @@
   25% { transform: translateX(-3px); }
   75% { transform: translateX(3px); }
 }
+
+@keyframes bundle-popular-glow {
+  0%, 100% { box-shadow: 0 0 14px rgba(251, 191, 36, 0.35); }
+  50% { box-shadow: 0 0 26px rgba(251, 191, 36, 0.75); }
+}
