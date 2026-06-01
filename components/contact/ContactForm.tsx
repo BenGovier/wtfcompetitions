@@ -9,6 +9,8 @@ interface FieldErrors {
   last_name?: string
   email?: string
   phone?: string
+  tiktok_username?: string
+  amount_claimed?: string
   message?: string
   preferred_payout_method?: string
   payout_account_holder_name?: string
@@ -41,6 +43,8 @@ export function ContactForm() {
     phone: '',
     giveaway_name: '',
     order_reference: '',
+    tiktok_username: '',
+    amount_claimed: '',
     preferred_payout_method: '',
     payout_account_holder_name: '',
     payout_sort_code: '',
@@ -69,6 +73,15 @@ export function ContactForm() {
 
     // Winner payout validation
     if (form.enquiry_type === 'winner_payout') {
+      if (!form.tiktok_username.trim()) e.tiktok_username = 'TikTok username is required for winner payouts'
+      if (!form.amount_claimed.trim()) {
+        e.amount_claimed = 'Amount is required'
+      } else {
+        const amount = parseFloat(form.amount_claimed)
+        if (isNaN(amount) || amount <= 0) {
+          e.amount_claimed = 'Please enter a valid amount'
+        }
+      }
       if (!form.preferred_payout_method) e.preferred_payout_method = 'Please select a payout method'
       
       if (form.preferred_payout_method === 'bank_transfer') {
@@ -103,6 +116,11 @@ export function ContactForm() {
       const submitData = {
         ...form,
         full_name: `${form.first_name.trim()} ${form.last_name.trim()}`.trim(),
+        // Also send tiktok_username in order_reference as fallback
+        order_reference: form.tiktok_username.trim() || form.order_reference.trim() || null,
+        tiktok_username: form.tiktok_username.trim() || null,
+        // Send amount in pounds - API will convert to pence
+        amount_claimed: form.amount_claimed.trim() ? parseFloat(form.amount_claimed) : null,
       }
       const res = await fetch('/api/contact', {
         method: 'POST',
@@ -134,6 +152,8 @@ export function ContactForm() {
       setForm(prev => ({
         ...prev,
         enquiry_type: value,
+        tiktok_username: '',
+        amount_claimed: '',
         preferred_payout_method: '',
         payout_account_holder_name: '',
         payout_sort_code: '',
@@ -298,6 +318,37 @@ export function ContactForm() {
             <p className="text-xs text-amber-200/90">
               Never enter card details, passwords, PINs, CVV numbers, or online banking login details.
             </p>
+          </div>
+
+          {/* TikTok Username - Required for winner payout */}
+          <div>
+            <label className={labelClass}>TikTok username *</label>
+            <input
+              type="text"
+              placeholder="@yourtiktok"
+              className={inputBase}
+              value={form.tiktok_username}
+              onChange={(e) => updateField('tiktok_username', e.target.value)}
+            />
+            {errors.tiktok_username && <p className={errorClass}>{errors.tiktok_username}</p>}
+          </div>
+
+          {/* Amount Claimed - Required for winner payout */}
+          <div>
+            <label className={labelClass}>Amount you are claiming (£) *</label>
+            <input
+              type="number"
+              placeholder="e.g. 50"
+              min="0"
+              step="0.01"
+              className={inputBase}
+              value={form.amount_claimed}
+              onChange={(e) => updateField('amount_claimed', e.target.value)}
+            />
+            <p className="mt-1 text-xs text-purple-200/60">
+              For Balloon/TikTok LIVE wins, enter the amount you believe you won. We verify this against the live recording before payout.
+            </p>
+            {errors.amount_claimed && <p className={errorClass}>{errors.amount_claimed}</p>}
           </div>
 
           {/* Payout Method - Dropdown */}
