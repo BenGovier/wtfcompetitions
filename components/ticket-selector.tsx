@@ -512,11 +512,23 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
           {/* Animated drag hint */}
           <div className="flex items-center justify-center gap-1.5 text-xs text-purple-400 animate-pulse">
             <span className="inline-block animate-[bounce_1s_ease-in-out_infinite]">&#8592;</span>
-            <span>Drag</span>
+            <span>Drag or tap +/-</span>
             <span className="inline-block animate-[bounce_1s_ease-in-out_infinite_0.5s]">&#8594;</span>
           </div>
 
-          <div className="relative px-4 py-2">
+          <div className="relative flex items-center gap-3 px-2 py-2">
+            {/* Minus button */}
+            <button
+              type="button"
+              onClick={() => handleQuantityChange(-1)}
+              disabled={qty <= 1}
+              aria-label="Decrease tickets"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-purple-900/60 text-2xl font-bold text-purple-200 transition-all hover:bg-purple-800/80 hover:text-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-purple-900/60 disabled:hover:text-purple-200"
+            >
+              &minus;
+            </button>
+
+            {/* Slider */}
             <input
               type="range"
               min={1}
@@ -530,7 +542,7 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
                 setTimeout(() => setQtyBump(false), 200)
               }}
               className={cn(
-                "w-full h-4 appearance-none cursor-pointer rounded-full bg-purple-900/50",
+                "flex-1 h-4 appearance-none cursor-pointer rounded-full bg-purple-900/50",
                 "[&::-webkit-slider-thumb]:appearance-none",
                 "[&::-webkit-slider-thumb]:h-12",
                 "[&::-webkit-slider-thumb]:w-12",
@@ -562,6 +574,17 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
               )}
               aria-label={`Select quantity: ${qty} tickets`}
             />
+
+            {/* Plus button */}
+            <button
+              type="button"
+              onClick={() => handleQuantityChange(1)}
+              disabled={qty >= maxQty}
+              aria-label="Increase tickets"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-purple-900/60 text-2xl font-bold text-purple-200 transition-all hover:bg-purple-800/80 hover:text-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-purple-900/60 disabled:hover:text-purple-200"
+            >
+              +
+            </button>
           </div>
 
           {/* Range labels */}
