@@ -56,7 +56,8 @@ export default async function AdminPayoutsPage({ searchParams }: PageProps) {
       query = query.or("status.is.null,status.eq.new")
       break
     case "processing":
-      query = query.eq("status", "processing")
+      // Filter tab says "Processing" but DB value is "in_progress"
+      query = query.eq("status", "in_progress")
       break
     case "problem":
       query = query.eq("status", "problem")
@@ -111,7 +112,8 @@ export default async function AdminPayoutsPage({ searchParams }: PageProps) {
     switch (status) {
       case "new":
         return "bg-yellow-100 text-yellow-800"
-      case "processing":
+      case "in_progress":
+      case "processing": // fallback for any old data
         return "bg-blue-100 text-blue-800"
       case "paid":
         return "bg-green-100 text-green-800"
@@ -119,6 +121,22 @@ export default async function AdminPayoutsPage({ searchParams }: PageProps) {
         return "bg-red-100 text-red-800"
       default:
         return "bg-gray-100 text-gray-800"
+    }
+  }
+
+  function getStatusLabel(status: string | null): string {
+    switch (status) {
+      case "in_progress":
+      case "processing":
+        return "Processing"
+      case "new":
+        return "New"
+      case "paid":
+        return "Paid"
+      case "problem":
+        return "Problem"
+      default:
+        return status || "New"
     }
   }
 
@@ -139,7 +157,7 @@ export default async function AdminPayoutsPage({ searchParams }: PageProps) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       <div>
         <h1 className="text-2xl font-bold text-foreground">Winner Payouts</h1>
         <p className="text-sm text-muted-foreground">
@@ -177,8 +195,8 @@ export default async function AdminPayoutsPage({ searchParams }: PageProps) {
       )}
 
       {payouts && payouts.length > 0 && (
-        <div className="overflow-x-auto rounded-lg border bg-white">
-          <table className="min-w-[1200px] w-full text-sm">
+        <div className="w-full max-w-full overflow-x-auto rounded-lg border bg-white">
+          <table className="min-w-[1500px] w-full text-sm">
             <thead>
               <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                 <th className="whitespace-nowrap px-3 py-2">Date</th>
@@ -204,7 +222,7 @@ export default async function AdminPayoutsPage({ searchParams }: PageProps) {
                     <span
                       className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${getStatusBadgeClass(row.status)}`}
                     >
-                      {row.status || "new"}
+                      {getStatusLabel(row.status)}
                     </span>
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 font-medium text-gray-900">

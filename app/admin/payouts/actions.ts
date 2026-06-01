@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 
-const ALLOWED_STATUSES = ['new', 'processing', 'paid', 'problem'] as const
+const ALLOWED_STATUSES = ['new', 'in_progress', 'paid', 'problem'] as const
 type PayoutStatus = (typeof ALLOWED_STATUSES)[number]
 
 /**

@@ -12,7 +12,7 @@ export function PayoutActionButtons({ id, currentStatus }: PayoutActionButtonsPr
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
 
-  const handleStatusUpdate = (newStatus: 'processing' | 'paid' | 'problem') => {
+  const handleStatusUpdate = (newStatus: 'in_progress' | 'paid' | 'problem') => {
     setError(null)
     startTransition(async () => {
       const result = await updatePayoutStatus(id, newStatus)
@@ -29,9 +29,9 @@ export function PayoutActionButtons({ id, currentStatus }: PayoutActionButtonsPr
 
   return (
     <div className="flex items-center gap-1">
-      {currentStatus !== 'processing' && (
+      {currentStatus !== 'in_progress' && currentStatus !== 'processing' && (
         <button
-          onClick={() => handleStatusUpdate('processing')}
+          onClick={() => handleStatusUpdate('in_progress')}
           disabled={isPending}
           className="rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-200 disabled:opacity-50"
           title="Mark as processing"
