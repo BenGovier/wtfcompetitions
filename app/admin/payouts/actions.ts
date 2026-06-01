@@ -29,21 +29,41 @@ export async function updatePayoutStatus(
   }
 
   // Auth check - verify current user is an enabled admin
-  const supabase = await createClient()
-  const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  
-  if (authErr || !user) {
-    return { ok: false, error: 'Not authenticated' }
-  }
+  let user
+  try {
+    const supabase = await createClient()
+    const { data, error: authErr } = await supabase.auth.getUser()
+    
+    if (authErr) {
+      console.error('[payouts/actions] Auth error:', authErr.message)
+      return { ok: false, error: 'Authentication failed' }
+    }
+    
+    if (!data?.user) {
+      console.error('[payouts/actions] No user in session')
+      return { ok: false, error: 'Not authenticated - please log in again' }
+    }
+    
+    user = data.user
 
-  const { data: adminRow } = await supabase
-    .from('admin_users')
-    .select('role,is_enabled')
-    .eq('user_id', user.id)
-    .maybeSingle()
+    const { data: adminRow, error: adminErr } = await supabase
+      .from('admin_users')
+      .select('role,is_enabled')
+      .eq('user_id', user.id)
+      .maybeSingle()
 
-  if (!adminRow || adminRow.is_enabled !== true) {
-    return { ok: false, error: 'Not authorized' }
+    if (adminErr) {
+      console.error('[payouts/actions] Admin lookup error:', adminErr.message)
+      return { ok: false, error: 'Failed to verify admin status' }
+    }
+
+    if (!adminRow || adminRow.is_enabled !== true) {
+      console.error('[payouts/actions] User not admin or not enabled:', user.id)
+      return { ok: false, error: 'Not authorized as admin' }
+    }
+  } catch (err) {
+    console.error('[payouts/actions] Unexpected auth error:', err)
+    return { ok: false, error: 'Authentication error' }
   }
 
   // Get service role client for update (bypasses RLS)
@@ -71,8 +91,8 @@ export async function updatePayoutStatus(
     .eq('enquiry_type', 'winner_payout') // Safety: only update winner_payout records
 
   if (updateErr) {
-    console.error('[payouts/actions] Update failed:', updateErr.message)
-    return { ok: false, error: 'Failed to update status' }
+    console.error('[payouts/actions] Update failed:', updateErr.message, updateErr.code)
+    return { ok: false, error: `Database update failed: ${updateErr.code || 'unknown'}` }
   }
 
   // Revalidate the payouts page to show updated data
