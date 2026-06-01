@@ -433,50 +433,52 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
                   key={`${bundle.quantity}-${bundle.price_pence}`}
                   onClick={() => handleSelectBundle(bundle)}
                   className={cn(
-                    "relative flex items-center justify-between gap-3 rounded-xl border-2 px-4 py-3 transition-all duration-200 active:scale-[0.98]",
-                    "md:flex-1 md:min-w-0 md:flex-col md:items-center md:justify-center md:gap-2 md:py-4",
+                    "relative flex items-center justify-between gap-2 rounded-xl border-2 px-3 py-2.5 transition-all duration-200 active:scale-[0.98]",
+                    "md:flex-1 md:min-w-0 md:flex-col md:items-center md:justify-center md:gap-2 md:px-4 md:py-4",
                     isActive
                       ? "scale-[1.02] border-yellow-400 bg-yellow-500/10 shadow-[0_0_30px_rgba(255,215,0,0.25)]"
                       : "border-purple-500/25 bg-white/[0.04] hover:border-purple-400/50 hover:bg-white/[0.07]",
                     isPopular && !isActive && "border-amber-500/50 animate-[bundle-popular-glow_2.5s_ease-in-out_infinite]"
                   )}
                 >
-                  {/* Left side on mobile / Center on desktop: Icon + Quantity + Label */}
-                  <div className="flex items-center gap-3 md:flex-col md:gap-2">
-                    <div className={cn(
-                      "flex h-10 w-10 items-center justify-center rounded-lg",
-                      isActive ? "bg-yellow-500/20" : "bg-white/5"
-                    )}>
-                      <Icon className={cn("h-5 w-5", isActive ? "text-yellow-400" : iconDef.color)} aria-hidden="true" />
-                    </div>
-                    <div className="flex flex-col items-start gap-0.5 md:items-center">
-                      <span className="text-base font-bold text-white">{bundle.quantity} Tickets</span>
-                      {isPopular && (
-                        <span className="text-[11px] font-semibold bg-gradient-to-r from-yellow-400 to-yellow-600 text-black px-2 py-0.5 rounded-full">
-                          Most Popular
-                        </span>
-                      )}
-                    </div>
+                  {/* Mobile: Compact horizontal layout | Desktop: Centered vertical layout */}
+                  
+                  {/* Icon - hidden on mobile, visible on desktop */}
+                  <div className={cn(
+                    "hidden md:flex h-10 w-10 items-center justify-center rounded-lg",
+                    isActive ? "bg-yellow-500/20" : "bg-white/5"
+                  )}>
+                    <Icon className={cn("h-5 w-5", isActive ? "text-yellow-400" : iconDef.color)} aria-hidden="true" />
                   </div>
 
-                  {/* Right side on mobile / Below on desktop: Price block */}
+                  {/* Left side on mobile: Quantity + Popular badge */}
+                  <div className="flex flex-col items-start gap-0.5 md:items-center">
+                    <span className="text-base font-bold text-white">{bundle.quantity} Tickets</span>
+                    {isPopular && (
+                      <span className="text-[10px] font-semibold bg-gradient-to-r from-yellow-400 to-yellow-600 text-black px-1.5 py-0.5 rounded-full md:text-[11px] md:px-2">
+                        Most Popular
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Right side on mobile / Below on desktop: Save % + Price */}
                   <div className="flex flex-col items-end gap-0.5 md:items-center">
                     {savingsPercent > 0 && (
-                      <span className="inline-flex items-center rounded-full bg-emerald-500/15 border border-emerald-400/30 px-2 py-0.5 text-xs font-bold text-emerald-300">
+                      <span className="inline-flex items-center rounded-full bg-emerald-500/15 border border-emerald-400/30 px-1.5 py-0.5 text-[10px] font-bold text-emerald-300 md:px-2 md:text-xs">
                         Save {savingsPercent}%
                       </span>
                     )}
-                    <div className="flex items-baseline gap-1.5">
+                    <div className="flex items-baseline gap-1">
                       {savingsPercent > 0 && (
-                        <span className="text-xs text-white/40 line-through">{formatGBP(fullPricePence / 100)}</span>
+                        <span className="text-[10px] text-white/40 line-through md:text-xs">{formatGBP(fullPricePence / 100)}</span>
                       )}
-                      <span className="text-lg font-bold text-white">{formatGBP(bundle.price_pence / 100)}</span>
+                      <span className="text-base font-bold text-white md:text-lg">{formatGBP(bundle.price_pence / 100)}</span>
                     </div>
                   </div>
 
                   {/* Selected indicator */}
                   {isActive && (
-                    <div className="absolute -top-2 right-3 whitespace-nowrap rounded-full bg-yellow-500 px-2 py-0.5 text-[10px] font-bold text-black shadow md:right-auto md:left-1/2 md:-translate-x-1/2">
+                    <div className="absolute -top-2 right-2 whitespace-nowrap rounded-full bg-yellow-500 px-1.5 py-0.5 text-[9px] font-bold text-black shadow md:right-auto md:left-1/2 md:-translate-x-1/2 md:px-2 md:text-[10px]">
                       Selected
                     </div>
                   )}
