@@ -4,7 +4,7 @@ import { PayoutActionButtons } from "./PayoutActionButtons"
 
 const ITEMS_PER_PAGE = 100
 
-type StatusFilter = "unpaid" | "new" | "processing" | "problem" | "paid" | "all"
+type StatusFilter = "unpaid" | "new" | "problem" | "paid" | "all"
 
 interface PageProps {
   searchParams: Promise<{ status?: string; page?: string }>
@@ -50,14 +50,12 @@ export default async function AdminPayoutsPage({ searchParams }: PageProps) {
   // Apply status filter
   switch (statusFilter) {
     case "unpaid":
-      query = query.or("status.is.null,status.neq.paid")
-      break
-    case "new":
+      // Unpaid = null OR new (everything except paid)
       query = query.or("status.is.null,status.eq.new")
       break
-    case "processing":
-      // Filter tab says "Processing" but DB value is "in_progress"
-      query = query.eq("status", "in_progress")
+    case "new":
+      // New = null OR new
+      query = query.or("status.is.null,status.eq.new")
       break
     case "problem":
       query = query.eq("status", "problem")
@@ -112,23 +110,17 @@ export default async function AdminPayoutsPage({ searchParams }: PageProps) {
     switch (status) {
       case "new":
         return "bg-yellow-100 text-yellow-800"
-      case "in_progress":
-      case "processing": // fallback for any old data
-        return "bg-blue-100 text-blue-800"
       case "paid":
         return "bg-green-100 text-green-800"
       case "problem":
         return "bg-red-100 text-red-800"
       default:
-        return "bg-gray-100 text-gray-800"
+        return "bg-yellow-100 text-yellow-800" // null treated as new
     }
   }
 
   function getStatusLabel(status: string | null): string {
     switch (status) {
-      case "in_progress":
-      case "processing":
-        return "Processing"
       case "new":
         return "New"
       case "paid":
@@ -136,14 +128,13 @@ export default async function AdminPayoutsPage({ searchParams }: PageProps) {
       case "problem":
         return "Problem"
       default:
-        return status || "New"
+        return "New" // null treated as new
     }
   }
 
   const filterTabs: { key: StatusFilter; label: string }[] = [
     { key: "unpaid", label: "Unpaid" },
     { key: "new", label: "New" },
-    { key: "processing", label: "Processing" },
     { key: "problem", label: "Problem" },
     { key: "paid", label: "Paid" },
     { key: "all", label: "All" },
@@ -157,7 +148,7 @@ export default async function AdminPayoutsPage({ searchParams }: PageProps) {
   }
 
   return (
-    <div className="min-w-0 space-y-4">
+    <div className="w-full max-w-full min-w-0 overflow-hidden space-y-4">
       <div>
         <h1 className="text-2xl font-bold text-foreground">Winner Payouts</h1>
         <p className="text-sm text-muted-foreground">
@@ -195,7 +186,7 @@ export default async function AdminPayoutsPage({ searchParams }: PageProps) {
       )}
 
       {payouts && payouts.length > 0 && (
-        <div className="w-full max-w-full overflow-x-auto rounded-lg border bg-white">
+        <div className="w-full max-w-full min-w-0 overflow-x-auto rounded-lg border bg-white">
           <table className="min-w-[1500px] w-full text-sm">
             <thead>
               <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
@@ -296,5 +287,3 @@ export default async function AdminPayoutsPage({ searchParams }: PageProps) {
     </div>
   )
 }
-
-// Force rebuild: 2026-06-01T14:30
