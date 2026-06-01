@@ -21,15 +21,19 @@ interface FieldErrors {
 
 const ENQUIRY_TYPES = [
   { value: 'general', label: 'General enquiry' },
-  { value: 'winner_payout', label: 'Winner payout details' },
   { value: 'ticket_order_problem', label: 'Problem with tickets/order' },
   { value: 'account_login_issue', label: 'Account/login issue' },
   { value: 'other', label: 'Other' },
 ] as const
 
-export function ContactForm() {
+interface ContactFormProps {
+  /** If true, the form starts in winner_payout mode without showing the dropdown */
+  payoutMode?: boolean
+}
+
+export function ContactForm({ payoutMode = false }: ContactFormProps) {
   const [form, setForm] = useState({
-    enquiry_type: '',
+    enquiry_type: payoutMode ? 'winner_payout' : '',
     first_name: '',
     last_name: '',
     email: '',
@@ -183,25 +187,7 @@ export function ContactForm() {
         aria-hidden="true"
       />
 
-      {/* Enquiry Type - Dropdown */}
-      <div>
-        <label className={labelClass}>What do you need help with? *</label>
-        <select
-          value={form.enquiry_type}
-          onChange={(e) => handleEnquiryTypeChange(e.target.value)}
-          className={selectBase}
-        >
-          <option value="" disabled className="bg-white text-slate-900">Select an option</option>
-          {ENQUIRY_TYPES.map((type) => (
-            <option key={type.value} value={type.value} className="bg-white text-slate-900">
-              {type.label}
-            </option>
-          ))}
-        </select>
-        {errors.enquiry_type && <p className={errorClass}>{errors.enquiry_type}</p>}
-      </div>
-
-      {/* ============ WINNER PAYOUT FORM ============ */}
+      {/* ============ WINNER PAYOUT FORM (Direct payout mode) ============ */}
       {isPayoutMode && (
         <>
           {/* Payout Header */}
@@ -343,104 +329,127 @@ export function ContactForm() {
       )}
 
       {/* ============ GENERAL CONTACT FORM ============ */}
-      {!isPayoutMode && form.enquiry_type && (
+      {!isPayoutMode && (
         <>
-          {/* First Name and Last Name */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={labelClass}>First name *</label>
-              <input
-                type="text"
-                placeholder="First name"
-                className={inputBase}
-                value={form.first_name}
-                onChange={(e) => updateField('first_name', e.target.value)}
-              />
-              {errors.first_name && <p className={errorClass}>{errors.first_name}</p>}
-            </div>
-            <div>
-              <label className={labelClass}>Last name *</label>
-              <input
-                type="text"
-                placeholder="Last name"
-                className={inputBase}
-                value={form.last_name}
-                onChange={(e) => updateField('last_name', e.target.value)}
-              />
-              {errors.last_name && <p className={errorClass}>{errors.last_name}</p>}
-            </div>
+          {/* Enquiry Type - Dropdown (only for general contact) */}
+          <div>
+            <label className={labelClass}>What do you need help with? *</label>
+            <select
+              value={form.enquiry_type}
+              onChange={(e) => handleEnquiryTypeChange(e.target.value)}
+              className={selectBase}
+            >
+              <option value="" disabled className="bg-white text-slate-900">Select an option</option>
+              {ENQUIRY_TYPES.map((type) => (
+                <option key={type.value} value={type.value} className="bg-white text-slate-900">
+                  {type.label}
+                </option>
+              ))}
+            </select>
+            {errors.enquiry_type && <p className={errorClass}>{errors.enquiry_type}</p>}
           </div>
 
-          {/* Email */}
-          <div>
-            <label className={labelClass}>Email address *</label>
-            <input
-              type="email"
-              placeholder="you@example.com"
-              className={inputBase}
-              value={form.email}
-              onChange={(e) => updateField('email', e.target.value)}
-            />
-            {errors.email && <p className={errorClass}>{errors.email}</p>}
-          </div>
+          {/* Show fields only after enquiry type selected */}
+          {form.enquiry_type && (
+            <>
+              {/* First Name and Last Name */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelClass}>First name *</label>
+                  <input
+                    type="text"
+                    placeholder="First name"
+                    className={inputBase}
+                    value={form.first_name}
+                    onChange={(e) => updateField('first_name', e.target.value)}
+                  />
+                  {errors.first_name && <p className={errorClass}>{errors.first_name}</p>}
+                </div>
+                <div>
+                  <label className={labelClass}>Last name *</label>
+                  <input
+                    type="text"
+                    placeholder="Last name"
+                    className={inputBase}
+                    value={form.last_name}
+                    onChange={(e) => updateField('last_name', e.target.value)}
+                  />
+                  {errors.last_name && <p className={errorClass}>{errors.last_name}</p>}
+                </div>
+              </div>
 
-          {/* Phone */}
-          <div>
-            <label className={labelClass}>Phone *</label>
-            <input
-              type="tel"
-              placeholder="Your phone number"
-              className={inputBase}
-              value={form.phone}
-              onChange={(e) => updateField('phone', e.target.value)}
-            />
-            {errors.phone && <p className={errorClass}>{errors.phone}</p>}
-          </div>
+              {/* Email */}
+              <div>
+                <label className={labelClass}>Email address *</label>
+                <input
+                  type="email"
+                  placeholder="you@example.com"
+                  className={inputBase}
+                  value={form.email}
+                  onChange={(e) => updateField('email', e.target.value)}
+                />
+                {errors.email && <p className={errorClass}>{errors.email}</p>}
+              </div>
 
-          {/* Giveaway Name - Optional */}
-          <div>
-            <label className={labelClass}>Giveaway name (optional)</label>
-            <input
-              type="text"
-              placeholder="Which giveaway is this about?"
-              className={inputBase}
-              value={form.giveaway_name}
-              onChange={(e) => updateField('giveaway_name', e.target.value)}
-            />
-          </div>
+              {/* Phone */}
+              <div>
+                <label className={labelClass}>Phone *</label>
+                <input
+                  type="tel"
+                  placeholder="Your phone number"
+                  className={inputBase}
+                  value={form.phone}
+                  onChange={(e) => updateField('phone', e.target.value)}
+                />
+                {errors.phone && <p className={errorClass}>{errors.phone}</p>}
+              </div>
 
-          {/* TikTok / Order Reference - Optional */}
-          <div>
-            <label className={labelClass}>TikTok name or order reference (optional)</label>
-            <input
-              type="text"
-              placeholder="Your TikTok username or order reference"
-              className={inputBase}
-              value={form.order_reference}
-              onChange={(e) => updateField('order_reference', e.target.value)}
-            />
-          </div>
+              {/* Giveaway Name - Optional */}
+              <div>
+                <label className={labelClass}>Giveaway name (optional)</label>
+                <input
+                  type="text"
+                  placeholder="Which giveaway is this about?"
+                  className={inputBase}
+                  value={form.giveaway_name}
+                  onChange={(e) => updateField('giveaway_name', e.target.value)}
+                />
+              </div>
 
-          {/* Message - Required */}
-          <div>
-            <label className={labelClass}>Message *</label>
-            <textarea
-              placeholder="Please describe your enquiry..."
-              rows={3}
-              className={`${inputBase} resize-none`}
-              value={form.message}
-              onChange={(e) => updateField('message', e.target.value)}
-              maxLength={2000}
-            />
-            <div className="mt-1 flex justify-between">
-              {errors.message ? (
-                <p className={errorClass}>{errors.message}</p>
-              ) : (
-                <span />
-              )}
-              <span className="text-xs text-purple-300/50">{form.message.length}/2000</span>
-            </div>
-          </div>
+              {/* TikTok / Order Reference - Optional */}
+              <div>
+                <label className={labelClass}>TikTok name or order reference (optional)</label>
+                <input
+                  type="text"
+                  placeholder="Your TikTok username or order reference"
+                  className={inputBase}
+                  value={form.order_reference}
+                  onChange={(e) => updateField('order_reference', e.target.value)}
+                />
+              </div>
+
+              {/* Message - Required */}
+              <div>
+                <label className={labelClass}>Message *</label>
+                <textarea
+                  placeholder="Please describe your enquiry..."
+                  rows={3}
+                  className={`${inputBase} resize-none`}
+                  value={form.message}
+                  onChange={(e) => updateField('message', e.target.value)}
+                  maxLength={2000}
+                />
+                <div className="mt-1 flex justify-between">
+                  {errors.message ? (
+                    <p className={errorClass}>{errors.message}</p>
+                  ) : (
+                    <span />
+                  )}
+                  <span className="text-xs text-purple-300/50">{form.message.length}/2000</span>
+                </div>
+              </div>
+            </>
+          )}
         </>
       )}
 
@@ -450,8 +459,8 @@ export function ContactForm() {
         </p>
       )}
 
-      {/* Submit Button - Only show if enquiry type selected */}
-      {form.enquiry_type && (
+      {/* Submit Button */}
+      {(isPayoutMode || form.enquiry_type) && (
         <button
           type="submit"
           disabled={submitting}
