@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js"
 import Link from "next/link"
-import { PayoutActionButtons } from "./PayoutActionButtons"
+import { PayoutTable } from "./PayoutTable"
 
 const ITEMS_PER_PAGE = 100
 
@@ -89,60 +89,6 @@ export default async function AdminPayoutsPage({ searchParams }: PageProps) {
   function formatPence(pence: number | null): string {
     if (pence == null) return "—"
     return `£${(pence / 100).toFixed(2)}`
-  }
-
-  function formatDate(dateStr: string | null): string {
-    if (!dateStr) return "—"
-    return new Date(dateStr).toLocaleString("en-GB", {
-      day: "2-digit",
-      month: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-    })
-  }
-
-  function getDisplayName(row: {
-    first_name?: string | null
-    last_name?: string | null
-    full_name?: string | null
-  }): string {
-    if (row.first_name && row.last_name) {
-      return `${row.first_name} ${row.last_name}`
-    }
-    return row.full_name || "—"
-  }
-
-  function getTikTokUsername(row: {
-    tiktok_username?: string | null
-    order_reference?: string | null
-  }): string {
-    return row.tiktok_username || row.order_reference || "—"
-  }
-
-  function getStatusBadgeClass(status: string | null): string {
-    switch (status) {
-      case "new":
-        return "bg-yellow-100 text-yellow-800"
-      case "paid":
-        return "bg-green-100 text-green-800"
-      case "problem":
-        return "bg-red-100 text-red-800"
-      default:
-        return "bg-yellow-100 text-yellow-800"
-    }
-  }
-
-  function getStatusLabel(status: string | null): string {
-    switch (status) {
-      case "new":
-        return "New"
-      case "paid":
-        return "Paid"
-      case "problem":
-        return "Problem"
-      default:
-        return "New"
-    }
   }
 
   const filterTabs: { key: StatusFilter; label: string }[] = [
@@ -242,70 +188,7 @@ export default async function AdminPayoutsPage({ searchParams }: PageProps) {
       )}
 
       {payouts && payouts.length > 0 && (
-        <div className="w-full overflow-hidden rounded-lg border bg-white">
-          <div className="overflow-x-auto" style={{ maxWidth: 'calc(100vw - 18rem)' }}>
-            <table className="min-w-[1600px] w-full text-sm">
-              <thead>
-                <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                  <th className="whitespace-nowrap px-3 py-2">Date</th>
-                  <th className="whitespace-nowrap px-3 py-2">Status</th>
-                  <th className="whitespace-nowrap px-3 py-2">Name</th>
-                  <th className="whitespace-nowrap px-3 py-2">TikTok</th>
-                  <th className="whitespace-nowrap px-3 py-2">Claimed</th>
-                  <th className="whitespace-nowrap px-3 py-2">Mobile</th>
-                  <th className="whitespace-nowrap px-3 py-2">Email</th>
-                  <th className="whitespace-nowrap px-3 py-2">Acc Holder</th>
-                  <th className="whitespace-nowrap px-3 py-2">Sort Code</th>
-                  <th className="whitespace-nowrap px-3 py-2">Acc No</th>
-                  <th className="whitespace-nowrap px-3 py-2">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {payouts.map((row) => (
-                  <tr key={row.id} className="hover:bg-gray-50">
-                    <td className="whitespace-nowrap px-3 py-2 text-gray-600">
-                      {formatDate(row.created_at)}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2">
-                      <span
-                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${getStatusBadgeClass(row.status)}`}
-                      >
-                        {getStatusLabel(row.status)}
-                      </span>
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 font-medium text-gray-900">
-                      {getDisplayName(row)}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-gray-600">
-                      {getTikTokUsername(row)}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 font-medium text-amber-600">
-                      {formatPence(row.amount_claimed_pence)}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-gray-600">
-                      {row.phone || "—"}
-                    </td>
-                    <td className="max-w-[180px] truncate px-3 py-2 text-gray-600" title={row.email || ""}>
-                      {row.email || "—"}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-gray-600">
-                      {row.payout_account_holder_name || "—"}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 font-mono text-gray-600">
-                      {row.payout_sort_code || "—"}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 font-mono text-gray-600">
-                      {row.payout_account_number || "—"}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2">
-                      <PayoutActionButtons id={row.id} currentStatus={row.status} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <PayoutTable payouts={payouts} />
       )}
 
       {/* Pagination */}

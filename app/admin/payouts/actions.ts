@@ -163,3 +163,73 @@ export async function deletePayout(
 
   return { ok: true }
 }
+
+/**
+ * Server action to bulk update payout statuses.
+ * - Validates each ID is a valid UUID format
+ * - Verifies admin authorization
+ * - Updates ONLY the explicitly provided IDs
+ * - Does NOT update by filter - only by explicit ID array
+ */
+export async function bulkUpdatePayoutStatus(
+  ids: string[],
+  status: PayoutStatus
+): Promise<{ ok: boolean; error?: string; updated?: number }> {
+  // Validate status
+  if (!ALLOWED_STATUSES.includes(status)) {
+    return { ok: false, error: 'Invalid status' }
+  }
+
+  // Validate ids array
+  if (!Array.isArray(ids)) {
+    return { ok: false, error: 'IDs must be an array' }
+  }
+
+  if (ids.length === 0) {
+    return { ok: false, error: 'No IDs provided' }
+  }
+
+  // UUID regex pattern
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+  // Validate each ID is a valid UUID
+  for (const id of ids) {
+    if (typeof id !== 'string' || !uuidRegex.test(id)) {
+      return { ok: false, error: `Invalid ID format: ${id}` }
+    }
+  }
+
+  // Auth check
+  const authResult = await verifyAdmin()
+  if ('error' in authResult) {
+    return { ok: false, error: authResult.error }
+  }
+
+  const serviceClient = getServiceClient()
+  if (!serviceClient) {
+    console.error('[payouts/actions] Missing Supabase credentials')
+    return { ok: false, error: 'Server configuration error' }
+  }
+
+  // Update ONLY the specified IDs
+  const { data, error: updateErr } = await serviceClient
+    .from('contact_enquiries')
+    .update({
+      status,
+      status_updated_at: new Date().toISOString(),
+      status_updated_by: authResult.user.id,
+    })
+    .in('id', ids)
+    .eq('enquiry_type', 'winner_payout') // Safety: only update winner_payout records
+    .select('id')
+
+  if (updateErr) {
+    console.error('[payouts/actions] Bulk update failed:', updateErr.message, updateErr.code)
+    return { ok: false, error: `Database update failed: ${updateErr.code || 'unknown'}` }
+  }
+
+  // Revalidate the payouts page to show updated data
+  revalidatePath('/admin/payouts')
+
+  return { ok: true, updated: data?.length || 0 }
+}
