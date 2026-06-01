@@ -417,7 +417,7 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
       {hasBundles && (
         <div className="space-y-3">
           <h3 className="text-sm font-semibold text-purple-200">Choose your play</h3>
-          <div className="flex flex-row gap-2.5 overflow-x-auto pb-2 md:overflow-visible md:gap-3 scrollbar-hide">
+          <div className="grid grid-cols-3 gap-2 md:gap-3">
             {normBundles.map((bundle, i) => {
               const isActive = selectedBundle?.quantity === bundle.quantity && selectedBundle?.price_pence === bundle.price_pence
               const fullPricePence = bundle.quantity * basePricePence
@@ -433,8 +433,8 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
                   key={`${bundle.quantity}-${bundle.price_pence}`}
                   onClick={() => handleSelectBundle(bundle)}
                   className={cn(
-                    "relative flex min-w-[140px] flex-shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl border-2 px-3 py-3 transition-all duration-200 active:scale-[0.98]",
-                    "md:min-w-0 md:flex-1 md:gap-2 md:px-4 md:py-4",
+                    "relative flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl border-2 px-2 py-2.5 transition-all duration-200 active:scale-[0.98]",
+                    "md:gap-2 md:px-4 md:py-4",
                     isActive
                       ? "scale-[1.02] border-yellow-400 bg-yellow-500/10 shadow-[0_0_30px_rgba(255,215,0,0.25)]"
                       : "border-purple-500/25 bg-white/[0.04] hover:border-purple-400/50 hover:bg-white/[0.07]",
@@ -451,7 +451,7 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
 
                   {/* Quantity + Popular badge - centered on both mobile and desktop */}
                   <div className="flex flex-col items-center gap-0.5">
-                    <span className="text-sm font-bold text-white md:text-base">{bundle.quantity} Tickets</span>
+                    <span className="text-xs font-bold text-white md:text-base">{bundle.quantity} Tickets</span>
                     {isPopular && (
                       <span className="text-[9px] font-semibold bg-gradient-to-r from-yellow-400 to-yellow-600 text-black px-1.5 py-0.5 rounded-full md:text-[11px] md:px-2">
                         Most Popular
@@ -470,7 +470,7 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
                       {savingsPercent > 0 && (
                         <span className="text-[9px] text-white/40 line-through md:text-xs">{formatGBP(fullPricePence / 100)}</span>
                       )}
-                      <span className="text-sm font-bold text-white md:text-lg">{formatGBP(bundle.price_pence / 100)}</span>
+                      <span className="text-xs font-bold text-white md:text-lg">{formatGBP(bundle.price_pence / 100)}</span>
                     </div>
                   </div>
 
