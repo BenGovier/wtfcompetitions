@@ -178,7 +178,7 @@ export default async function AdminPayoutsPage({ searchParams }: PageProps) {
 
       {payouts && payouts.length > 0 && (
         <div className="overflow-x-auto rounded-lg border bg-white">
-          <table className="w-full text-sm">
+          <table className="min-w-[1200px] w-full text-sm">
             <thead>
               <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                 <th className="whitespace-nowrap px-3 py-2">Date</th>
