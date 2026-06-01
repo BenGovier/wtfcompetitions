@@ -242,9 +242,8 @@ export default async function AdminPayoutsPage({ searchParams }: PageProps) {
       )}
 
       {payouts && payouts.length > 0 && (
-        <div className="w-full overflow-hidden rounded-lg border bg-white">
-          <div className="overflow-x-auto" style={{ maxWidth: 'calc(100vw - 18rem)' }}>
-            <table className="min-w-[1600px] w-full text-sm">
+        <div className="w-full overflow-x-auto rounded-lg border bg-white">
+          <table className="min-w-[1400px] w-full text-sm">
               <thead>
                 <tr className="border-b bg-gray-50 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                   <th className="whitespace-nowrap px-3 py-2">Date</th>
@@ -305,7 +304,6 @@ export default async function AdminPayoutsPage({ searchParams }: PageProps) {
               </tbody>
             </table>
           </div>
-        </div>
       )}
 
       {/* Pagination */}

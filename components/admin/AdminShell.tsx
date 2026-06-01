@@ -47,7 +47,7 @@ export function AdminShell({ children, user }: { children: React.ReactNode; user
           </div>
         </header>
         <main className="flex-1 overflow-auto bg-muted/30">
-          <div className="container max-w-7xl py-8">{children}</div>
+          <div className="w-full max-w-[1800px] mx-auto px-6 py-8">{children}</div>
         </main>
       </div>
     </div>
