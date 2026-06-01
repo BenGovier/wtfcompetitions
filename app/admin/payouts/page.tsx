@@ -1,7 +1,12 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@supabase/supabase-js"
 
 export default async function AdminPayoutsPage() {
-  const supabase = await createClient()
+  // Use service role client to bypass RLS - server-side only, never exposed to browser
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+  const supabase = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
 
   // Query winner_payout enquiries directly - no polling, no realtime
   const { data: payouts, error } = await supabase
