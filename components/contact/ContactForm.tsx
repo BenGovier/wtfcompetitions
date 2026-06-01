@@ -332,19 +332,6 @@ export function ContactForm() {
             </div>
           </div>
 
-          {/* Message / Notes - Optional for payout */}
-          <div>
-            <label className={labelClass}>Message / notes (optional)</label>
-            <textarea
-              placeholder="Any additional info..."
-              rows={2}
-              className={`${inputBase} resize-none`}
-              value={form.message}
-              onChange={(e) => updateField('message', e.target.value)}
-              maxLength={2000}
-            />
-          </div>
-
           {/* Bank Warning */}
           <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
             <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />

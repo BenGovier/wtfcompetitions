@@ -74,7 +74,12 @@ export async function POST(req: Request) {
     const giveaway_name = String(body.giveaway_name ?? "").trim() || null
     const order_reference = String(body.order_reference ?? "").trim() || null
     const tiktok_username = String(body.tiktok_username ?? "").trim() || null
-    const message = String(body.message ?? "").trim()
+    let message = String(body.message ?? "").trim()
+
+    // For winner_payout, set default message if empty
+    if (enquiry_type === 'winner_payout' && !message) {
+      message = "Winner payout details submitted"
+    }
 
     // Amount claimed - convert from pounds to pence if provided
     let amount_claimed_pence: number | null = null
