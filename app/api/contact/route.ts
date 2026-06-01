@@ -104,14 +104,17 @@ export async function POST(req: Request) {
     if (!email || !isValidEmail(email)) {
       return NextResponse.json({ ok: false, error: "Valid email is required" }, { status: 400 })
     }
-    if (!message || message.length < 10) {
-      return NextResponse.json({ ok: false, error: "Message must be at least 10 characters" }, { status: 400 })
+    if (!phone) {
+      return NextResponse.json({ ok: false, error: "Phone number is required" }, { status: 400 })
+    }
+    // Message validation - required for non-payout, optional for payout
+    if (enquiry_type !== 'winner_payout') {
+      if (!message || message.length < 10) {
+        return NextResponse.json({ ok: false, error: "Message must be at least 10 characters" }, { status: 400 })
+      }
     }
     if (message.length > 2000) {
       return NextResponse.json({ ok: false, error: "Message too long" }, { status: 400 })
-    }
-    if (!phone) {
-      return NextResponse.json({ ok: false, error: "Phone number is required" }, { status: 400 })
     }
 
     // Winner payout validation
