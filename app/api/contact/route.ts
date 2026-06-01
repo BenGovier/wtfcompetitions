@@ -67,11 +67,23 @@ export async function POST(req: Request) {
     // Parse and sanitize fields
     const enquiry_type = String(body.enquiry_type ?? "").trim()
     const full_name = String(body.full_name ?? "").trim()
+    const first_name = String(body.first_name ?? "").trim() || null
+    const last_name = String(body.last_name ?? "").trim() || null
     const email = String(body.email ?? "").trim().toLowerCase()
     const phone = String(body.phone ?? "").trim() || null
     const giveaway_name = String(body.giveaway_name ?? "").trim() || null
     const order_reference = String(body.order_reference ?? "").trim() || null
+    const tiktok_username = String(body.tiktok_username ?? "").trim() || null
     const message = String(body.message ?? "").trim()
+
+    // Amount claimed - convert from pounds to pence if provided
+    let amount_claimed_pence: number | null = null
+    if (body.amount_claimed != null && body.amount_claimed !== '') {
+      const amountPounds = parseFloat(String(body.amount_claimed))
+      if (!isNaN(amountPounds) && amountPounds > 0) {
+        amount_claimed_pence = Math.round(amountPounds * 100)
+      }
+    }
 
     // Payout fields
     const preferred_payout_method = String(body.preferred_payout_method ?? "").trim() || null
@@ -104,6 +116,18 @@ export async function POST(req: Request) {
 
     // Winner payout validation
     if (enquiry_type === 'winner_payout') {
+      if (!first_name) {
+        return NextResponse.json({ ok: false, error: "First name is required for winner payouts" }, { status: 400 })
+      }
+      if (!last_name) {
+        return NextResponse.json({ ok: false, error: "Last name is required for winner payouts" }, { status: 400 })
+      }
+      if (!tiktok_username) {
+        return NextResponse.json({ ok: false, error: "TikTok username is required for winner payouts" }, { status: 400 })
+      }
+      if (!amount_claimed_pence || amount_claimed_pence <= 0) {
+        return NextResponse.json({ ok: false, error: "Amount claimed is required for winner payouts" }, { status: 400 })
+      }
       if (!preferred_payout_method || !ALLOWED_PAYOUT_METHODS.includes(preferred_payout_method)) {
         return NextResponse.json({ ok: false, error: "Please select a payout method" }, { status: 400 })
       }
@@ -143,10 +167,14 @@ export async function POST(req: Request) {
       .insert({
         enquiry_type,
         full_name,
+        first_name,
+        last_name,
         email,
         phone,
         giveaway_name,
         order_reference,
+        tiktok_username,
+        amount_claimed_pence: enquiry_type === 'winner_payout' ? amount_claimed_pence : null,
         preferred_payout_method: enquiry_type === 'winner_payout' ? preferred_payout_method : null,
         payout_account_holder_name: enquiry_type === 'winner_payout' && preferred_payout_method === 'bank_transfer' ? payout_account_holder_name : null,
         payout_sort_code: enquiry_type === 'winner_payout' && preferred_payout_method === 'bank_transfer' ? payout_sort_code : null,
@@ -177,14 +205,19 @@ export async function POST(req: Request) {
       let emailBody = `New contact enquiry received:\n\n`
       emailBody += `Type: ${enquiryTypeLabels[enquiry_type] || enquiry_type}\n`
       emailBody += `Name: ${full_name}\n`
+      if (first_name && last_name) emailBody += `(First: ${first_name}, Last: ${last_name})\n`
       emailBody += `Email: ${email}\n`
       if (phone) emailBody += `Phone: ${phone}\n`
       if (giveaway_name) emailBody += `Giveaway: ${giveaway_name}\n`
-      if (order_reference) emailBody += `TikTok Name / Order Ref: ${order_reference}\n`
+      if (tiktok_username) emailBody += `TikTok Username: ${tiktok_username}\n`
+      if (order_reference && order_reference !== tiktok_username) emailBody += `Order Ref: ${order_reference}\n`
       emailBody += `\nMessage:\n${message}\n`
 
-      if (enquiry_type === 'winner_payout' && preferred_payout_method) {
+      if (enquiry_type === 'winner_payout') {
         emailBody += `\n--- Payout Details ---\n`
+        if (amount_claimed_pence) {
+          emailBody += `Amount Claimed: £${(amount_claimed_pence / 100).toFixed(2)}\n`
+        }
         emailBody += `Method: ${preferred_payout_method}\n`
         
         if (preferred_payout_method === 'bank_transfer') {
