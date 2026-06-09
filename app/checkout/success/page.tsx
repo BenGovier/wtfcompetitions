@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
-import { CheckCircle2, Gift, AlertCircle, PartyPopper, Crown, Star, Trophy, Zap } from 'lucide-react'
+import { CheckCircle2, Gift, AlertCircle, PartyPopper, Zap } from 'lucide-react'
 
 type Prize = {
   title: string
@@ -225,73 +225,62 @@ function ConfirmingState({ attempt }: { attempt: number }) {
   )
 }
 
-// Slot machine symbols
-const SLOT_SYMBOLS = [
-  { icon: Gift, color: 'text-pink-400' },
-  { icon: Crown, color: 'text-amber-400' },
-  { icon: Star, color: 'text-fuchsia-400' },
-  { icon: Trophy, color: 'text-yellow-400' },
-  { icon: Zap, color: 'text-violet-400' },
+// ---------------------------------------------------------------------------
+// Instant Win Vault — premium, presentation-only reveal experience.
+// All visuals below are cosmetic. The win/not-won outcome is decided entirely
+// by the backend `award.won` value and is only read AFTER confirmation.
+// ---------------------------------------------------------------------------
+
+type VaultStage = 'locked' | 'tickets' | 'scan' | 'final' | 'revealed'
+
+// Scan-phase messages (cosmetic). Never imply a win or a near-miss.
+const SCAN_MESSAGES = [
+  'Checking for instant wins…',
+  'Scanning your ticket numbers…',
+  'Matching against live instant win slots…',
 ]
 
-// Suspense messages shown in sequence during the instant-win check.
-// These are purely cosmetic and never imply a win before the reveal.
-const SUSPENSE_MESSAGES = [
-  { eyebrow: 'Payment Confirmed', title: 'Allocating your tickets…' },
-  { eyebrow: 'Instant Win Check', title: 'Checking for instant wins…' },
-  { eyebrow: 'Instant Win Check', title: 'Scanning your ticket numbers…' },
-  { eyebrow: 'Instant Win Check', title: 'Finalising your result…' },
-]
+function ticketRangeLabel(award: AwardPayload): string | null {
+  const start = award.ticket_start
+  const end = award.ticket_end
+  if (typeof start !== 'number' || typeof end !== 'number') return null
+  return start === end ? `#${start}` : `#${start}\u2013#${end}`
+}
 
 function ConfirmedState({ award }: { award: AwardPayload }) {
-  const [phase, setPhase] = useState<'intro' | 'spin' | 'stopping' | 'revealed'>('intro')
-  const [stoppedReels, setStoppedReels] = useState([false, false, false])
-  const [messageStep, setMessageStep] = useState(0)
+  const [stage, setStage] = useState<VaultStage>('locked')
+  const [scanStep, setScanStep] = useState(0)
 
   useEffect(() => {
     // Respect users who prefer reduced motion: skip the suspense
-    // animation and reveal the (already-known) backend result immediately.
+    // animation entirely and reveal the (already-known) backend result.
     const prefersReducedMotion =
       typeof window !== 'undefined' &&
       window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
     if (prefersReducedMotion) {
-      setStoppedReels([true, true, true])
-      setPhase('revealed')
+      setStage('revealed')
       return
     }
 
-    // Phase timings
-    const introTimer = setTimeout(() => setPhase('spin'), 900)
-    const spinTimer = setTimeout(() => setPhase('stopping'), 3500)
-
-    // Staged suspense messages (cosmetic only)
-    const msgTimers = [
-      setTimeout(() => setMessageStep(1), 1300),
-      setTimeout(() => setMessageStep(2), 2300),
-      setTimeout(() => setMessageStep(3), 3300),
+    const timers: ReturnType<typeof setTimeout>[] = [
+      // Stage 1: Payment Locked (~700ms)
+      setTimeout(() => setStage('tickets'), 700),
+      // Stage 2: Tickets Load In (~1000ms)
+      setTimeout(() => setStage('scan'), 1700),
+      // Stage 3: Reactor Scan messages (~1800ms window)
+      setTimeout(() => setScanStep(1), 2300),
+      setTimeout(() => setScanStep(2), 2900),
+      // Stage 4: Final Lock (~900ms)
+      setTimeout(() => setStage('final'), 3500),
+      // Stage 5: Reveal
+      setTimeout(() => setStage('revealed'), 4400),
     ]
 
-    // Stagger reel stops
-    const reel1Timer = setTimeout(() => setStoppedReels(prev => [true, prev[1], prev[2]]), 2800)
-    const reel2Timer = setTimeout(() => setStoppedReels(prev => [prev[0], true, prev[2]]), 3400)
-    const reel3Timer = setTimeout(() => setStoppedReels(prev => [prev[0], prev[1], true]), 4100)
-    
-    // Final reveal
-    const revealTimer = setTimeout(() => setPhase('revealed'), 4800)
-
-    return () => {
-      clearTimeout(introTimer)
-      clearTimeout(spinTimer)
-      msgTimers.forEach(clearTimeout)
-      clearTimeout(reel1Timer)
-      clearTimeout(reel2Timer)
-      clearTimeout(reel3Timer)
-      clearTimeout(revealTimer)
-    }
+    return () => timers.forEach(clearTimeout)
   }, [])
 
-  if (phase === 'revealed') {
+  if (stage === 'revealed') {
     // Derive prizes array for backward compatibility: use prizes[] if available, else wrap single prize
     const prizes = award.prizes ?? (award.prize ? [award.prize] : [])
     if (award.won && prizes.length > 0) {
@@ -300,198 +289,266 @@ function ConfirmedState({ award }: { award: AwardPayload }) {
     return <NotWonReveal award={award} />
   }
 
+  return <VaultReveal stage={stage} scanStep={scanStep} award={award} />
+}
+
+// Shared animated backdrop: charcoal base, WTF-red glow (top-right),
+// gold glow (bottom-center), drifting blobs and a dark vignette.
+function VaultBackdrop({ intense = false }: { intense?: boolean }) {
   return (
-    <SlotMachineReveal 
-      phase={phase} 
-      stoppedReels={stoppedReels} 
-      messageStep={messageStep}
-    />
+    <>
+      <div className="absolute inset-0 rounded-2xl bg-[#0a0a0b]" />
+      <div className="absolute inset-0 rounded-2xl bg-gradient-to-b from-zinc-950 via-[#120708] to-black" />
+      {/* WTF red glow top-right */}
+      <div className={`vault-blob absolute -top-10 -right-10 w-64 h-64 rounded-full bg-red-600/30 blur-3xl ${intense ? 'opacity-90' : 'opacity-70'}`} />
+      {/* Gold glow bottom-center */}
+      <div className="vault-blob-slow absolute -bottom-16 left-1/2 -translate-x-1/2 w-72 h-56 rounded-full bg-amber-400/20 blur-3xl" />
+      {/* Secondary red wash */}
+      <div className="vault-blob-alt absolute top-1/3 left-0 w-48 h-48 rounded-full bg-red-500/15 blur-3xl" />
+      {/* Dark vignette */}
+      <div className="absolute inset-0 rounded-2xl shadow-[inset_0_0_90px_30px_rgba(0,0,0,0.85)] pointer-events-none" />
+    </>
   )
 }
 
-function SlotMachineReveal({ 
-  phase, 
-  stoppedReels,
-  messageStep,
-}: { 
-  phase: 'intro' | 'spin' | 'stopping'
-  stoppedReels: boolean[]
-  messageStep: number
-}) {
-  const activeMessage = SUSPENSE_MESSAGES[Math.min(messageStep, SUSPENSE_MESSAGES.length - 1)]
+// Lightweight CSS-only cash/spark particles drifting upward.
+function CashParticles({ count = 14 }: { count?: number }) {
   return (
-    <div className="relative flex flex-col items-center gap-5 w-full -mx-4 -mt-4 -mb-4 px-4 py-6 overflow-hidden">
-      <style jsx>{`
-        @keyframes sparkle-drift {
-          0% { transform: translateY(0) translateX(0) scale(0); opacity: 0; }
-          20% { opacity: 1; transform: scale(1); }
-          100% { transform: translateY(-60px) translateX(20px) scale(0); opacity: 0; }
-        }
-        @keyframes pulse-glow {
-          0%, 100% { opacity: 0.4; }
-          50% { opacity: 0.8; }
-        }
-        @keyframes reel-spin {
-          0% { transform: translateY(0); }
-          100% { transform: translateY(-500%); }
-        }
-        @keyframes reel-stop-bounce {
-          0% { transform: translateY(0); }
-          30% { transform: translateY(-8px); }
-          60% { transform: translateY(4px); }
-          100% { transform: translateY(0); }
-        }
-        @keyframes center-line-flash {
-          0%, 100% { opacity: 0.3; box-shadow: 0 0 10px rgba(236, 72, 153, 0.3); }
-          50% { opacity: 1; box-shadow: 0 0 30px rgba(236, 72, 153, 0.8); }
-        }
-        @keyframes progress-pulse {
-          0%, 100% { opacity: 0.6; }
-          50% { opacity: 1; }
-        }
-        @keyframes fade-in-up {
-          0% { opacity: 0; transform: translateY(10px); }
-          100% { opacity: 1; transform: translateY(0); }
-        }
-        .sparkle {
-          position: absolute;
-          width: 4px;
-          height: 4px;
-          background: white;
-          border-radius: 50%;
-          animation: sparkle-drift 2s ease-out infinite;
-        }
-        .bg-glow {
-          animation: pulse-glow 2s ease-in-out infinite;
-        }
-        .reel-spinning {
-          animation: reel-spin 0.15s linear infinite;
-        }
-        .reel-stopped {
-          animation: reel-stop-bounce 0.3s ease-out forwards;
-        }
-        .center-line {
-          animation: center-line-flash 1s ease-in-out infinite;
-        }
-        .progress-dot {
-          animation: progress-pulse 0.6s ease-in-out infinite;
-        }
-        .fade-in {
-          animation: fade-in-up 0.4s ease-out forwards;
-        }
-      `}</style>
-
-      {/* Background gradient */}
-      <div className="absolute inset-0 bg-gradient-to-b from-violet-950 via-purple-950 to-fuchsia-950 rounded-2xl" />
-      
-      {/* Radial pink glow */}
-      <div className="bg-glow absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 rounded-full bg-pink-500/20 blur-3xl" />
-
-      {/* Sparkle particles */}
-      {Array.from({ length: 12 }).map((_, i) => (
-        <div
+    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      {Array.from({ length: count }).map((_, i) => (
+        <span
           key={i}
-          className="sparkle"
+          className="spark"
           style={{
-            left: `${10 + Math.random() * 80}%`,
-            top: `${20 + Math.random() * 60}%`,
-            animationDelay: `${Math.random() * 2}s`,
+            left: `${5 + ((i * 37) % 90)}%`,
+            bottom: `${(i * 17) % 40}%`,
+            animationDelay: `${(i % 7) * 0.35}s`,
+            background: i % 3 === 0 ? '#f59e0b' : i % 3 === 1 ? '#fbbf24' : '#ef4444',
           }}
         />
       ))}
+    </div>
+  )
+}
+
+function VaultReveal({
+  stage,
+  scanStep,
+  award,
+}: {
+  stage: Exclude<VaultStage, 'revealed'>
+  scanStep: number
+  award: AwardPayload
+}) {
+  const range = ticketRangeLabel(award)
+
+  const eyebrow =
+    stage === 'locked'
+      ? 'Payment Confirmed'
+      : stage === 'tickets'
+      ? 'Allocating'
+      : 'Instant Win Check'
+
+  const title =
+    stage === 'locked'
+      ? 'Your tickets are locked in'
+      : stage === 'tickets'
+      ? 'Allocating your tickets…'
+      : stage === 'final'
+      ? 'Final instant win check…'
+      : SCAN_MESSAGES[Math.min(scanStep, SCAN_MESSAGES.length - 1)]
+
+  const reacting = stage === 'scan' || stage === 'final'
+
+  return (
+    <div className={`vault-root relative flex flex-col items-center gap-5 w-full -mx-4 -mt-4 -mb-4 px-4 py-7 overflow-hidden ${stage === 'final' ? 'vault-darken' : ''}`}>
+      <style jsx>{`
+        @keyframes reactor-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes reactor-spin-fast { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes pulse-ring {
+          0% { transform: scale(0.7); opacity: 0.7; }
+          100% { transform: scale(1.6); opacity: 0; }
+        }
+        @keyframes scan-sweep {
+          0% { transform: translateY(-130%); opacity: 0; }
+          15% { opacity: 1; }
+          85% { opacity: 1; }
+          100% { transform: translateY(130%); opacity: 0; }
+        }
+        @keyframes spark-rise {
+          0% { transform: translateY(0) scale(0); opacity: 0; }
+          20% { opacity: 1; transform: scale(1); }
+          100% { transform: translateY(-90px) scale(0); opacity: 0; }
+        }
+        @keyframes blob-drift {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          50% { transform: translate(10px, -12px) scale(1.08); }
+        }
+        @keyframes blob-drift-alt {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          50% { transform: translate(-12px, 10px) scale(1.1); }
+        }
+        @keyframes flash-in {
+          0% { opacity: 0; transform: scale(0.4); }
+          50% { opacity: 1; }
+          100% { opacity: 0; transform: scale(1.8); }
+        }
+        @keyframes check-pop {
+          0% { transform: scale(0); }
+          60% { transform: scale(1.18); }
+          100% { transform: scale(1); }
+        }
+        @keyframes card-in {
+          0% { transform: translateY(26px) scale(0.92); opacity: 0; }
+          100% { transform: translateY(0) scale(1); opacity: 1; }
+        }
+        @keyframes card-shake {
+          0%, 100% { transform: translateX(0); }
+          20% { transform: translateX(-2px); }
+          40% { transform: translateX(2px); }
+          60% { transform: translateX(-1.5px); }
+          80% { transform: translateX(1.5px); }
+        }
+        @keyframes num-flicker {
+          0%, 100% { opacity: 1; }
+          45% { opacity: 0.55; }
+          70% { opacity: 0.85; }
+        }
+        @keyframes fade-up {
+          0% { opacity: 0; transform: translateY(8px); }
+          100% { opacity: 1; transform: translateY(0); }
+        }
+        .vault-root { background: #060607; }
+        .vault-darken::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: rgba(0,0,0,0.4);
+          animation: fade-up 0.3s ease-out;
+          pointer-events: none;
+          z-index: 20;
+        }
+        .vault-blob { animation: blob-drift 4.5s ease-in-out infinite; }
+        .vault-blob-slow { animation: blob-drift-alt 6s ease-in-out infinite; }
+        .vault-blob-alt { animation: blob-drift 5.2s ease-in-out infinite; }
+        .reactor-ring { animation: reactor-spin 6s linear infinite; }
+        .reactor-ring-fast { animation: reactor-spin-fast 1.6s linear infinite; }
+        .reactor-ring-rev { animation: reactor-spin 9s linear infinite reverse; }
+        .pulse-ring { animation: pulse-ring 1.8s ease-out infinite; }
+        .pulse-ring-fast { animation: pulse-ring 1s ease-out infinite; }
+        .scan-beam { animation: scan-sweep 1.1s ease-in-out infinite; }
+        .spark {
+          position: absolute;
+          width: 5px;
+          height: 5px;
+          border-radius: 9999px;
+          animation: spark-rise 2.4s ease-out infinite;
+        }
+        .flash-burst { animation: flash-in 0.7s ease-out forwards; }
+        .check-pop { animation: check-pop 0.5s ease-out forwards; }
+        .card-in { animation: card-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+        .card-shake { animation: card-shake 0.4s ease-in-out infinite; }
+        .num-flicker { animation: num-flicker 0.5s ease-in-out infinite; }
+        .fade-up { animation: fade-up 0.4s ease-out forwards; }
+        @media (prefers-reduced-motion: reduce) {
+          .reactor-ring, .reactor-ring-fast, .reactor-ring-rev, .pulse-ring, .pulse-ring-fast,
+          .scan-beam, .spark, .vault-blob, .vault-blob-slow, .vault-blob-alt, .card-shake, .num-flicker {
+            animation: none !important;
+          }
+        }
+      `}</style>
+
+      <VaultBackdrop intense={reacting} />
+      {reacting && <CashParticles count={14} />}
+
+      {/* Stage 1 gold/green flash on payment-locked */}
+      {stage === 'locked' && (
+        <div className="flash-burst pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-40 h-40 rounded-full bg-gradient-to-br from-amber-300/60 to-emerald-400/40 blur-2xl z-30" />
+      )}
 
       {/* Content */}
-      <div className="relative z-10 flex flex-col items-center gap-4 w-full">
+      <div className="relative z-10 flex flex-col items-center gap-5 w-full">
         {/* Header text */}
-        <div className="fade-in text-center min-h-[72px]">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-pink-400 mb-1">
-            {activeMessage.eyebrow}
+        <div className="text-center min-h-[78px]">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-amber-400 mb-1">
+            {eyebrow}
           </p>
-          <h2 key={messageStep} className="fade-in text-xl font-bold text-white text-balance">
-            {activeMessage.title}
+          <h2 key={`${stage}-${scanStep}`} className="fade-up text-xl font-bold text-white text-balance leading-snug">
+            {title}
           </h2>
-          <p className="text-sm text-purple-200/70 mt-1">
-            {messageStep === 0
-              ? 'Your entry is locked in. Hold tight…'
-              : 'Hang on — almost there'}
+          <p className="text-sm text-zinc-400 mt-1">
+            {stage === 'locked' ? 'Your entry is secured.' : 'Hang tight — almost there'}
           </p>
         </div>
 
-        {/* Slot Machine */}
-        <div className="relative mt-2">
-          {/* Machine housing */}
-          <div className="relative rounded-3xl bg-gradient-to-b from-purple-900/90 to-violet-950/90 p-1 shadow-2xl shadow-purple-900/50">
-            {/* Inner glow border */}
-            <div className="absolute inset-0 rounded-3xl border border-pink-500/30" />
-            <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-pink-500/20 via-violet-500/20 to-pink-500/20 blur-sm" />
-            
-            {/* Glass panel */}
-            <div className="relative rounded-2xl bg-gradient-to-b from-purple-900/60 to-violet-950/80 backdrop-blur-sm p-4 overflow-hidden">
-              {/* Reels container */}
-              <div className="flex gap-2 relative">
-                {[0, 1, 2].map((reelIndex) => (
-                  <div key={reelIndex} className="relative">
-                    {/* Reel window */}
-                    <div className="w-20 h-24 rounded-xl bg-gradient-to-b from-purple-950 to-violet-950 overflow-hidden relative border border-purple-700/50">
-                      {/* Reel strip */}
-                      <div 
-                        className={`flex flex-col ${
-                          stoppedReels[reelIndex] ? 'reel-stopped' : phase !== 'intro' ? 'reel-spinning' : ''
-                        }`}
-                        style={{
-                          filter: !stoppedReels[reelIndex] && phase !== 'intro' ? 'blur(1px)' : 'none',
-                        }}
-                      >
-                        {/* Repeat symbols for seamless spin */}
-                        {[...SLOT_SYMBOLS, ...SLOT_SYMBOLS, ...SLOT_SYMBOLS].map((symbol, i) => {
-                          const Icon = symbol.icon
-                          return (
-                            <div
-                              key={i}
-                              className="w-20 h-24 flex items-center justify-center shrink-0"
-                            >
-                              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-purple-800/50 to-violet-900/50 flex items-center justify-center border border-purple-600/30">
-                                <Icon className={`size-8 ${symbol.color} drop-shadow-lg`} />
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                      
-                      {/* Top/bottom fade */}
-                      <div className="absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-purple-950 to-transparent pointer-events-none" />
-                      <div className="absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-purple-950 to-transparent pointer-events-none" />
-                    </div>
-                    
-                    {/* Stop flash */}
-                    {stoppedReels[reelIndex] && (
-                      <div className="absolute inset-0 rounded-xl bg-pink-400/20 animate-pulse pointer-events-none" />
-                    )}
-                  </div>
-                ))}
+        {/* Reactor + ticket card centrepiece */}
+        <div className="relative flex items-center justify-center w-[260px] h-[260px]">
+          {/* Expanding pulse rings */}
+          <div className={`pointer-events-none absolute inset-6 rounded-full border-2 border-red-500/40 ${stage === 'final' ? 'pulse-ring-fast' : 'pulse-ring'}`} />
+          <div className={`pointer-events-none absolute inset-6 rounded-full border-2 border-amber-400/30 ${stage === 'final' ? 'pulse-ring-fast' : 'pulse-ring'}`} style={{ animationDelay: '0.6s' }} />
 
-                {/* Center win line */}
-                <div className={`center-line absolute left-0 right-0 top-1/2 -translate-y-1/2 h-0.5 bg-gradient-to-r from-transparent via-pink-500 to-transparent ${
-                  stoppedReels.every(Boolean) ? 'opacity-100' : 'opacity-40'
-                }`} />
+          {/* Outer rotating segmented reactor ring */}
+          <div
+            className={`absolute inset-0 rounded-full ${stage === 'final' ? 'reactor-ring-fast' : 'reactor-ring'}`}
+            style={{
+              background: 'conic-gradient(from 0deg, rgba(239,68,68,0) 0deg, rgba(239,68,68,0.9) 40deg, rgba(245,158,11,0) 90deg, rgba(245,158,11,0.9) 160deg, rgba(239,68,68,0) 210deg, rgba(245,158,11,0.8) 300deg, rgba(239,68,68,0) 360deg)',
+              WebkitMask: 'radial-gradient(farthest-side, transparent calc(100% - 6px), #000 calc(100% - 6px))',
+              mask: 'radial-gradient(farthest-side, transparent calc(100% - 6px), #000 calc(100% - 6px))',
+            }}
+          />
+          {/* Inner counter-rotating ring */}
+          <div
+            className="reactor-ring-rev absolute inset-4 rounded-full opacity-70"
+            style={{
+              background: 'conic-gradient(from 180deg, rgba(245,158,11,0) 0deg, rgba(245,158,11,0.8) 60deg, rgba(239,68,68,0) 120deg, rgba(239,68,68,0.7) 220deg, rgba(245,158,11,0) 320deg)',
+              WebkitMask: 'radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px))',
+              mask: 'radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px))',
+            }}
+          />
+
+          {/* Gold ring tightening on final stage */}
+          <div className={`absolute rounded-full border border-amber-400/60 transition-all duration-500 ${stage === 'final' ? 'inset-8 shadow-[0_0_30px_rgba(245,158,11,0.5)]' : 'inset-5 shadow-[0_0_18px_rgba(245,158,11,0.25)]'}`} />
+
+          {/* Ticket card */}
+          <div
+            className={`card-in ${stage === 'final' ? 'card-shake' : ''} relative w-[150px] rounded-2xl border-2 border-amber-400/80 bg-gradient-to-b from-zinc-900 to-black p-4 shadow-[0_0_35px_rgba(239,68,68,0.45)] overflow-hidden`}
+          >
+            {/* Scan beam */}
+            {reacting && (
+              <div className="scan-beam pointer-events-none absolute inset-x-0 h-10 bg-gradient-to-b from-transparent via-amber-300/70 to-transparent" />
+            )}
+            <div className="relative flex flex-col items-center gap-1.5 text-center">
+              <div className="flex size-9 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-red-500">
+                {stage === 'locked' ? (
+                  <CheckCircle2 className="check-pop size-5 text-black" />
+                ) : (
+                  <Zap className="size-5 text-black" />
+                )}
               </div>
+              <p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-amber-400/90">
+                {range ? 'Your Tickets' : 'Entry'}
+              </p>
+              <p className={`font-mono text-base font-bold text-white ${reacting ? 'num-flicker' : ''}`}>
+                {range ?? `${award.qty} ${award.qty === 1 ? 'ticket' : 'tickets'}`}
+              </p>
             </div>
           </div>
         </div>
 
-        {/* Progress indicator */}
-        <div className="flex items-center gap-2 mt-2">
-          {[0, 1, 2].map((i) => (
-            <div
-              key={i}
-              className={`w-2 h-2 rounded-full transition-all duration-300 ${
-                stoppedReels[i] 
-                  ? 'bg-pink-400 shadow-lg shadow-pink-400/50' 
-                  : 'bg-purple-600 progress-dot'
-              }`}
-              style={{ animationDelay: `${i * 0.2}s` }}
-            />
-          ))}
+        {/* Stage progress dots */}
+        <div className="flex items-center gap-2">
+          {(['locked', 'tickets', 'scan', 'final'] as const).map((s, i) => {
+            const order = { locked: 0, tickets: 1, scan: 2, final: 3 }
+            const active = order[stage] >= i
+            return (
+              <div
+                key={s}
+                className={`h-1.5 rounded-full transition-all duration-300 ${
+                  active ? 'w-6 bg-gradient-to-r from-red-500 to-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.6)]' : 'w-1.5 bg-zinc-700'
+                }`}
+              />
+            )
+          })}
         </div>
       </div>
     </div>
@@ -502,18 +559,30 @@ function WonReveal({ award, prizes }: { award: AwardPayload; prizes: Prize[] }) 
   // For now, render first prize prominently (backward compatible with single-prize flow)
   // Future: can iterate over all prizes when multiple are common
   const prize = prizes[0]
-  
+  const range = ticketRangeLabel(award)
+
   return (
-    <div className="relative flex flex-col items-center gap-5 w-full -mx-4 -mt-4 -mb-4 px-4 py-6 overflow-hidden">
+    <div className="relative flex flex-col items-center gap-5 w-full -mx-4 -mt-4 -mb-4 px-4 py-7 overflow-hidden bg-[#060607]">
       <style jsx>{`
         @keyframes confetti-fall {
           0% { transform: translateY(-20px) rotate(0deg); opacity: 1; }
-          100% { transform: translateY(120px) rotate(720deg); opacity: 0; }
+          100% { transform: translateY(140px) rotate(720deg); opacity: 0; }
         }
-        @keyframes scale-pop {
-          0% { transform: scale(0); opacity: 0; }
-          60% { transform: scale(1.15); }
+        @keyframes cash-rise {
+          0% { transform: translateY(0) scale(0); opacity: 0; }
+          20% { opacity: 1; transform: scale(1); }
+          100% { transform: translateY(-110px) scale(0.4); opacity: 0; }
+        }
+        @keyframes slam-in {
+          0% { transform: scale(2.2); opacity: 0; }
+          55% { transform: scale(0.92); opacity: 1; }
+          75% { transform: scale(1.04); }
           100% { transform: scale(1); opacity: 1; }
+        }
+        @keyframes big-flash {
+          0% { opacity: 0; transform: scale(0.5); }
+          40% { opacity: 1; }
+          100% { opacity: 0; transform: scale(2); }
         }
         @keyframes slide-up {
           0% { transform: translateY(30px); opacity: 0; }
@@ -524,8 +593,8 @@ function WonReveal({ award, prizes }: { award: AwardPayload; prizes: Prize[] }) 
           100% { background-position: 200% center; }
         }
         @keyframes glow-pulse {
-          0%, 100% { box-shadow: 0 0 30px rgba(251, 191, 36, 0.4); }
-          50% { box-shadow: 0 0 60px rgba(251, 191, 36, 0.7); }
+          0%, 100% { box-shadow: 0 0 30px rgba(239, 68, 68, 0.5), 0 0 50px rgba(245, 158, 11, 0.25); }
+          50% { box-shadow: 0 0 55px rgba(239, 68, 68, 0.8), 0 0 80px rgba(245, 158, 11, 0.5); }
         }
         @keyframes ray-spin {
           from { transform: rotate(0deg); }
@@ -536,33 +605,44 @@ function WonReveal({ award, prizes }: { award: AwardPayload; prizes: Prize[] }) 
           width: 8px;
           height: 8px;
           border-radius: 2px;
-          animation: confetti-fall 2.5s ease-out forwards;
+          animation: confetti-fall 2.6s ease-out forwards;
         }
-        .icon-pop { animation: scale-pop 0.5s ease-out forwards; }
-        .title-slide { animation: slide-up 0.4s ease-out 0.2s both; }
-        .details-slide { animation: slide-up 0.4s ease-out 0.35s both; }
-        .actions-slide { animation: slide-up 0.4s ease-out 0.5s both; }
+        .cash {
+          position: absolute;
+          width: 6px;
+          height: 6px;
+          border-radius: 9999px;
+          animation: cash-rise 2.2s ease-out infinite;
+        }
+        .icon-slam { animation: slam-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+        .big-flash { animation: big-flash 0.7s ease-out forwards; }
+        .title-slide { animation: slide-up 0.4s ease-out 0.25s both; }
+        .details-slide { animation: slide-up 0.4s ease-out 0.4s both; }
+        .actions-slide { animation: slide-up 0.4s ease-out 0.55s both; }
         .shimmer-text {
-          background: linear-gradient(90deg, #fbbf24 0%, #fef3c7 30%, #fbbf24 50%, #fef3c7 70%, #fbbf24 100%);
+          background: linear-gradient(90deg, #fbbf24 0%, #fff7ed 30%, #fbbf24 50%, #fff7ed 70%, #fbbf24 100%);
           background-size: 200% auto;
           -webkit-background-clip: text;
           background-clip: text;
           -webkit-text-fill-color: transparent;
           animation: shimmer 2s linear infinite;
         }
-        .glow-badge {
-          animation: glow-pulse 2s ease-in-out infinite;
-        }
-        .rays {
-          animation: ray-spin 20s linear infinite;
+        .glow-badge { animation: glow-pulse 2s ease-in-out infinite; }
+        .rays { animation: ray-spin 22s linear infinite; }
+        @media (prefers-reduced-motion: reduce) {
+          .confetti, .cash, .big-flash, .rays, .glow-badge, .shimmer-text { animation: none !important; }
+          .shimmer-text { -webkit-text-fill-color: #fbbf24; color: #fbbf24; }
         }
       `}</style>
 
-      {/* Background */}
-      <div className="absolute inset-0 bg-gradient-to-b from-violet-950 via-purple-950 to-fuchsia-950 rounded-2xl" />
-      
-      {/* Spinning rays */}
-      <div className="rays absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 opacity-20">
+      {/* Backdrop: charcoal + red/gold */}
+      <div className="absolute inset-0 rounded-2xl bg-gradient-to-b from-zinc-950 via-[#160809] to-black" />
+      <div className="absolute -top-10 -right-10 w-64 h-64 rounded-full bg-red-600/30 blur-3xl" />
+      <div className="absolute -bottom-16 left-1/2 -translate-x-1/2 w-72 h-56 rounded-full bg-amber-400/25 blur-3xl" />
+      <div className="absolute inset-0 rounded-2xl shadow-[inset_0_0_90px_30px_rgba(0,0,0,0.8)] pointer-events-none" />
+
+      {/* Spinning gold rays */}
+      <div className="rays absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 opacity-25">
         {Array.from({ length: 12 }).map((_, i) => (
           <div
             key={i}
@@ -572,17 +652,32 @@ function WonReveal({ award, prizes }: { award: AwardPayload; prizes: Prize[] }) 
         ))}
       </div>
 
-      {/* Confetti */}
+      {/* Big gold flash */}
+      <div className="big-flash pointer-events-none absolute top-[18%] left-1/2 -translate-x-1/2 w-48 h-48 rounded-full bg-gradient-to-br from-amber-300/70 to-red-500/40 blur-2xl z-20" />
+
+      {/* Confetti + cash burst */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         {Array.from({ length: 30 }).map((_, i) => (
           <div
-            key={i}
+            key={`c${i}`}
             className="confetti"
             style={{
               left: `${Math.random() * 100}%`,
               top: `${Math.random() * 20}%`,
-              backgroundColor: ['#fbbf24', '#ec4899', '#a855f7', '#f472b6', '#fef3c7'][i % 5],
+              backgroundColor: ['#fbbf24', '#ef4444', '#f59e0b', '#fff7ed', '#dc2626'][i % 5],
               animationDelay: `${Math.random() * 0.8}s`,
+            }}
+          />
+        ))}
+        {Array.from({ length: 12 }).map((_, i) => (
+          <span
+            key={`cash${i}`}
+            className="cash"
+            style={{
+              left: `${8 + ((i * 41) % 84)}%`,
+              bottom: `${(i * 13) % 30}%`,
+              background: i % 2 === 0 ? '#f59e0b' : '#ef4444',
+              animationDelay: `${(i % 6) * 0.3}s`,
             }}
           />
         ))}
@@ -591,10 +686,10 @@ function WonReveal({ award, prizes }: { award: AwardPayload; prizes: Prize[] }) 
       {/* Content */}
       <div className="relative z-10 flex flex-col items-center gap-4 w-full">
         {/* Win badge */}
-        <div className="icon-pop glow-badge relative flex size-24 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 via-yellow-500 to-orange-500">
-          <PartyPopper className="size-12 text-white drop-shadow-lg" />
+        <div className="icon-slam glow-badge relative flex size-24 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 via-orange-500 to-red-600">
+          <PartyPopper className="size-12 text-black drop-shadow-lg" />
           {prizes.length > 1 && (
-            <span className="absolute -right-1 -top-1 flex size-8 items-center justify-center rounded-full bg-white text-sm font-bold text-amber-600 shadow-lg ring-2 ring-amber-400">
+            <span className="absolute -right-1 -top-1 flex size-8 items-center justify-center rounded-full bg-white text-sm font-bold text-red-600 shadow-lg ring-2 ring-amber-400">
               x{prizes.length}
             </span>
           )}
@@ -602,24 +697,24 @@ function WonReveal({ award, prizes }: { award: AwardPayload; prizes: Prize[] }) 
 
         {/* Title */}
         <div className="title-slide text-center">
-          <p className={`shimmer-text font-bold uppercase tracking-[0.2em] mb-1 ${prizes.length > 1 ? 'text-xl' : 'text-sm'}`}>
-            {prizes.length > 1 ? `${prizes.length} Instant Wins!` : 'Instant Win!'}
+          <p className={`shimmer-text font-extrabold uppercase tracking-[0.18em] mb-1 ${prizes.length > 1 ? 'text-xl' : 'text-base'}`}>
+            {prizes.length > 1 ? `${prizes.length} Instant Wins!` : 'You Hit An Instant Win'}
           </p>
-          <h1 className="text-2xl font-bold text-white text-balance">
+          <h1 className="text-3xl font-extrabold text-white text-balance drop-shadow-[0_0_20px_rgba(239,68,68,0.5)]">
             {prize.title}
           </h1>
           {prize.value_text && (
-            <p className="text-sm text-purple-200/80 mt-1">{prize.value_text}</p>
+            <p className="text-base font-semibold text-amber-300 mt-1">{prize.value_text}</p>
           )}
         </div>
 
         {/* Prize image */}
         {prize.image_url && (
-          <div className="details-slide w-full overflow-hidden rounded-2xl border-2 border-amber-400/40 shadow-xl shadow-amber-500/20">
+          <div className="details-slide w-full overflow-hidden rounded-2xl border-2 border-amber-400/60 shadow-xl shadow-red-500/30">
             <img
-              src={prize.image_url}
+              src={prize.image_url || "/placeholder.svg"}
               alt={prize.title}
-              className="h-48 w-full object-contain bg-gradient-to-b from-purple-900/50 to-violet-950/50"
+              className="h-48 w-full object-contain bg-gradient-to-b from-zinc-900 to-black"
             />
           </div>
         )}
@@ -627,18 +722,18 @@ function WonReveal({ award, prizes }: { award: AwardPayload; prizes: Prize[] }) 
         {/* Additional prizes (if multiple won) */}
         {prizes.length > 1 && (
           <div className="details-slide w-full space-y-2">
-            <p className="text-xs font-medium uppercase tracking-wider text-amber-400/80 text-center">
+            <p className="text-xs font-medium uppercase tracking-wider text-amber-400/90 text-center">
               + {prizes.length - 1} more {prizes.length === 2 ? 'prize' : 'prizes'}
             </p>
             <div className="space-y-2">
               {prizes.slice(1).map((p, i) => (
-                <div key={i} className="flex items-center gap-3 rounded-xl border border-amber-400/30 bg-purple-900/40 px-3 py-2">
+                <div key={i} className="flex items-center gap-3 rounded-xl border border-amber-400/30 bg-zinc-900/70 px-3 py-2">
                   {p.image_url && (
-                    <img src={p.image_url} alt={p.title} className="h-10 w-10 rounded-lg object-cover" />
+                    <img src={p.image_url || "/placeholder.svg"} alt={p.title} className="h-10 w-10 rounded-lg object-cover" />
                   )}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-white">{p.title}</p>
-                    {p.value_text && <p className="text-xs text-purple-200/70">{p.value_text}</p>}
+                    {p.value_text && <p className="text-xs text-zinc-400">{p.value_text}</p>}
                   </div>
                 </div>
               ))}
@@ -647,47 +742,41 @@ function WonReveal({ award, prizes }: { award: AwardPayload; prizes: Prize[] }) 
         )}
 
         {/* Congratulations text */}
-        <p className="details-slide text-sm text-purple-200/80 text-center leading-relaxed">
+        <p className="details-slide text-sm text-zinc-300 text-center leading-relaxed">
           {prizes.length > 1 
             ? 'Congratulations — your prizes have been locked in.'
             : 'Congratulations — your prize has been locked in.'}
         </p>
 
         {/* Ticket numbers */}
-        <div className="details-slide w-full">
-          <div className="rounded-xl border border-purple-500/30 bg-purple-900/40 px-4 py-3 text-center">
-            {award.ticket_start !== null && award.ticket_end !== null && (
-              <>
-                <p className="text-xs font-medium uppercase tracking-wider text-purple-300/70 mb-1">
-                  {award.ticket_start === award.ticket_end ? 'Your Ticket Number' : 'Your Ticket Numbers'}
-                </p>
-                <p className="text-lg font-bold text-white font-mono">
-                  {award.ticket_start === award.ticket_end 
-                    ? `#${award.ticket_start}` 
-                    : `#${award.ticket_start}–#${award.ticket_end}`}
-                </p>
-              </>
-            )}
+        {range && (
+          <div className="details-slide w-full">
+            <div className="rounded-xl border border-amber-400/30 bg-zinc-900/70 px-4 py-3 text-center">
+              <p className="text-xs font-medium uppercase tracking-wider text-amber-400/80 mb-1">
+                {award.ticket_start === award.ticket_end ? 'Your Ticket Number' : 'Your Ticket Numbers'}
+              </p>
+              <p className="text-lg font-bold text-white font-mono">{range}</p>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Actions */}
         <div className="actions-slide flex flex-col gap-3 w-full">
-          <p className="text-xs text-purple-300/60 text-center">
+          <p className="text-xs text-zinc-500 text-center">
             {prizes.length > 1
               ? "You've also been entered into the main draw. We'll be in touch about your prizes."
               : "You've also been entered into the main draw. We'll be in touch about your prize."}
           </p>
           <div className="flex flex-col gap-2">
-            <Button asChild className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold shadow-lg shadow-amber-500/25 border-0">
-              <Link href="/me">View My Entries</Link>
+            <Button asChild className="w-full bg-gradient-to-r from-amber-500 to-red-600 hover:from-amber-600 hover:to-red-700 text-white font-bold shadow-lg shadow-red-500/30 border-0">
+              <Link href="/me">Claim Your Winnings</Link>
             </Button>
             {award.campaign_slug && (
-              <Button asChild className="w-full bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-700 hover:to-violet-700 text-white font-semibold shadow-lg shadow-purple-500/25 border-0">
+              <Button asChild className="w-full bg-white/10 hover:bg-white/20 text-white font-semibold border border-amber-400/30 hover:border-amber-400/50">
                 <Link href={`/giveaways/${award.campaign_slug}`}>Buy More Tickets</Link>
               </Button>
             )}
-            <Button asChild className="w-full bg-white/10 hover:bg-white/20 text-white font-medium border border-white/20 hover:border-white/40">
+            <Button asChild className="w-full bg-white/5 hover:bg-white/10 text-white font-medium border border-white/15 hover:border-white/30">
               <Link href="/giveaways">Enter More Giveaways</Link>
             </Button>
           </div>
@@ -698,97 +787,96 @@ function WonReveal({ award, prizes }: { award: AwardPayload; prizes: Prize[] }) 
 }
 
 function NotWonReveal({ award }: { award: AwardPayload }) {
+  const range = ticketRangeLabel(award)
+
   return (
-    <div className="relative flex flex-col items-center gap-5 w-full -mx-4 -mt-4 -mb-4 px-4 py-6 overflow-hidden">
+    <div className="relative flex flex-col items-center gap-5 w-full -mx-4 -mt-4 -mb-4 px-4 py-7 overflow-hidden bg-[#060607]">
       <style jsx>{`
-        @keyframes scale-in {
-          0% { transform: scale(0.8); opacity: 0; }
-          100% { transform: scale(1); opacity: 1; }
+        @keyframes flip-in {
+          0% { transform: rotateY(90deg) scale(0.9); opacity: 0; }
+          100% { transform: rotateY(0deg) scale(1); opacity: 1; }
         }
         @keyframes slide-up {
           0% { transform: translateY(20px); opacity: 0; }
           100% { transform: translateY(0); opacity: 1; }
         }
         @keyframes glow-soft {
-          0%, 100% { box-shadow: 0 0 20px rgba(168, 85, 247, 0.3); }
-          50% { box-shadow: 0 0 40px rgba(168, 85, 247, 0.5); }
+          0%, 100% { box-shadow: 0 0 22px rgba(245, 158, 11, 0.25); }
+          50% { box-shadow: 0 0 42px rgba(245, 158, 11, 0.45); }
         }
-        .icon-scale { animation: scale-in 0.4s ease-out forwards; }
+        .card-flip { animation: flip-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards; transform-style: preserve-3d; }
         .title-slide { animation: slide-up 0.4s ease-out 0.15s both; }
         .entries-slide { animation: slide-up 0.4s ease-out 0.25s both; }
         .tickets-slide { animation: slide-up 0.4s ease-out 0.35s both; }
         .note-slide { animation: slide-up 0.4s ease-out 0.45s both; }
         .actions-slide { animation: slide-up 0.4s ease-out 0.55s both; }
-        .glow-badge {
-          animation: glow-soft 2s ease-in-out infinite;
+        .glow-badge { animation: glow-soft 2.4s ease-in-out infinite; }
+        @media (prefers-reduced-motion: reduce) {
+          .card-flip, .glow-badge { animation: none !important; }
         }
       `}</style>
 
-      {/* Background */}
-      <div className="absolute inset-0 bg-gradient-to-b from-violet-950 via-purple-950 to-fuchsia-950 rounded-2xl" />
-      
-      {/* Subtle glow */}
-      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 rounded-full bg-purple-500/15 blur-3xl" />
+      {/* Backdrop: charcoal with retained soft gold glow */}
+      <div className="absolute inset-0 rounded-2xl bg-gradient-to-b from-zinc-950 via-[#100a06] to-black" />
+      <div className="absolute -top-10 -right-10 w-56 h-56 rounded-full bg-red-600/15 blur-3xl" />
+      <div className="absolute -bottom-14 left-1/2 -translate-x-1/2 w-64 h-48 rounded-full bg-amber-400/15 blur-3xl" />
+      <div className="absolute inset-0 rounded-2xl shadow-[inset_0_0_90px_30px_rgba(0,0,0,0.8)] pointer-events-none" />
 
       {/* Content */}
       <div className="relative z-10 flex flex-col items-center gap-4 w-full">
-        {/* Icon */}
-        <div className="icon-scale glow-badge flex size-20 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-purple-600">
-          <CheckCircle2 className="size-10 text-white drop-shadow-lg" />
+        {/* Draw entry card (flips in from the "ticket") */}
+        <div className="card-flip glow-badge flex size-20 items-center justify-center rounded-2xl border border-amber-400/40 bg-gradient-to-br from-zinc-900 to-black">
+          <Gift className="size-10 text-amber-400 drop-shadow-lg" />
         </div>
 
         {/* Title */}
         <div className="title-slide text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-pink-400 mb-1">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-400 mb-1">
             Entry Confirmed
           </p>
-          <h1 className="text-2xl font-bold text-white">{"You're In!"}</h1>
-          <p className="text-sm text-purple-200/70 mt-1">
+          <h1 className="text-2xl font-bold text-white">{"You're In The Draw!"}</h1>
+          <p className="text-sm text-zinc-400 mt-1">
             No instant win this time
           </p>
         </div>
 
         {/* Entries badge */}
-        <div className="entries-slide flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-900/60 to-violet-900/60 border border-purple-500/30 px-5 py-3">
-          <Gift className="size-5 text-pink-400" />
+        <div className="entries-slide flex items-center gap-2 rounded-xl bg-zinc-900/70 border border-amber-400/25 px-5 py-3">
+          <Gift className="size-5 text-amber-400" />
           <span className="text-sm font-semibold text-white">
             {award.qty} {award.qty === 1 ? 'ticket entered' : 'tickets entered'}
           </span>
         </div>
 
         {/* Ticket numbers */}
-        {award.ticket_start !== null && award.ticket_end !== null && (
+        {range && (
           <div className="tickets-slide w-full">
-            <div className="rounded-xl border border-purple-500/30 bg-purple-900/40 px-4 py-3 text-center">
-              <p className="text-xs font-medium uppercase tracking-wider text-purple-300/70 mb-1">
+            <div className="rounded-xl border border-amber-400/25 bg-zinc-900/70 px-4 py-3 text-center">
+              <p className="text-xs font-medium uppercase tracking-wider text-amber-400/80 mb-1">
                 {award.ticket_start === award.ticket_end ? 'Your Ticket Number' : 'Your Ticket Numbers'}
               </p>
-              <p className="text-lg font-bold text-white font-mono">
-                {award.ticket_start === award.ticket_end 
-                  ? `#${award.ticket_start}` 
-                  : `#${award.ticket_start}–#${award.ticket_end}`}
-              </p>
+              <p className="text-lg font-bold text-white font-mono">{range}</p>
             </div>
           </div>
         )}
 
         {/* Reassurance */}
-        <p className="note-slide text-sm text-purple-200/70 text-center leading-relaxed bg-purple-900/30 rounded-xl px-4 py-3">
-          {"Your entry is secured for the main draw — good luck!"}
+        <p className="note-slide text-sm text-zinc-300 text-center leading-relaxed bg-zinc-900/50 rounded-xl px-4 py-3 border border-white/5">
+          {"Your tickets are still entered into the main draw — good luck!"}
         </p>
 
         {/* Actions */}
         <div className="actions-slide flex flex-col gap-2 w-full">
-          <Button asChild className="w-full bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white font-semibold shadow-lg shadow-purple-500/25 border-0">
-            <Link href="/me">View My Entries</Link>
-          </Button>
           {award.campaign_slug && (
-            <Button asChild className="w-full bg-gradient-to-r from-pink-600 to-fuchsia-600 hover:from-pink-700 hover:to-fuchsia-700 text-white font-semibold shadow-lg shadow-pink-500/25 border-0">
-              <Link href={`/giveaways/${award.campaign_slug}`}>Buy More Tickets</Link>
+            <Button asChild className="w-full bg-gradient-to-r from-amber-500 to-red-600 hover:from-amber-600 hover:to-red-700 text-white font-bold shadow-lg shadow-red-500/25 border-0">
+              <Link href={`/giveaways/${award.campaign_slug}`}>Try Another Competition</Link>
             </Button>
           )}
-          <Button asChild className="w-full bg-white/10 hover:bg-white/20 text-white font-medium border border-white/20 hover:border-white/40">
-            <Link href="/giveaways">Enter More Giveaways</Link>
+          <Button asChild className="w-full bg-white/10 hover:bg-white/20 text-white font-semibold border border-amber-400/25 hover:border-amber-400/50">
+            <Link href="/giveaways">View More Giveaways</Link>
+          </Button>
+          <Button asChild className="w-full bg-white/5 hover:bg-white/10 text-white font-medium border border-white/15 hover:border-white/30">
+            <Link href="/me">View My Entries</Link>
           </Button>
         </div>
       </div>
