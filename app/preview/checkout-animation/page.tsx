@@ -28,19 +28,50 @@ import {
 
 /* ----------------------------- mock data ----------------------------- */
 
-const MOCK_WIN = {
-  prizeLabel: "£1,000 Instant Win",
-  prizeAmount: "1,000",
+type Scenario = {
+  qty: number
+  ticketStart: number
+  ticketEnd: number
+  winningTicket?: number
+  prizeAmount?: string
+  orderRef: string
+}
+
+// Small order (5 tickets)
+const SMALL_WIN: Scenario = {
+  qty: 5,
   ticketStart: 8421,
   ticketEnd: 8425,
   winningTicket: 8423,
-  orderRef: "CHK-PREVIEW-WIN",
+  prizeAmount: "1,000",
+  orderRef: "CHK-PREVIEW-WIN-5",
 }
-
-const MOCK_NOWIN = {
+const SMALL_NOWIN: Scenario = {
+  qty: 5,
   ticketStart: 8421,
   ticketEnd: 8425,
-  orderRef: "CHK-PREVIEW-NOWIN",
+  orderRef: "CHK-PREVIEW-NOWIN-5",
+}
+
+// Large order (500 tickets)
+const LARGE_WIN: Scenario = {
+  qty: 500,
+  ticketStart: 8421,
+  ticketEnd: 8920,
+  winningTicket: 8764,
+  prizeAmount: "1,000",
+  orderRef: "CHK-PREVIEW-WIN-500",
+}
+const LARGE_NOWIN: Scenario = {
+  qty: 500,
+  ticketStart: 8421,
+  ticketEnd: 8920,
+  orderRef: "CHK-PREVIEW-NOWIN-500",
+}
+
+function scenarioFor(result: Result, size: Size): Scenario {
+  if (size === "large") return result === "win" ? LARGE_WIN : LARGE_NOWIN
+  return result === "win" ? SMALL_WIN : SMALL_NOWIN
 }
 
 function ticketRange(start: number, end: number) {
@@ -49,10 +80,14 @@ function ticketRange(start: number, end: number) {
   return out
 }
 
+// Show individual pills only for small orders.
+const PILL_THRESHOLD = 10
+
 /* ----------------------------- stages ----------------------------- */
 
 type Stage = "payment" | "tickets" | "checking" | "final" | "reveal"
 type Result = "win" | "nowin"
+type Size = "small" | "large"
 type Speed = "normal" | "fast"
 
 const STAGE_LABEL: Record<Stage, string> = {
@@ -78,6 +113,7 @@ const SEQUENCE: Stage[] = ["payment", "tickets", "checking", "final", "reveal"]
 export default function CheckoutAnimationPreviewPage() {
   const [playing, setPlaying] = useState(false)
   const [result, setResult] = useState<Result>("win")
+  const [size, setSize] = useState<Size>("small")
   const [speed, setSpeed] = useState<Speed>("normal")
   const [stageIndex, setStageIndex] = useState(0)
   const [runId, setRunId] = useState(0)
@@ -89,9 +125,10 @@ export default function CheckoutAnimationPreviewPage() {
   }, [])
 
   const start = useCallback(
-    (nextResult?: Result) => {
+    (nextResult: Result, nextSize: Size) => {
       clearTimers()
-      if (nextResult) setResult(nextResult)
+      setResult(nextResult)
+      setSize(nextSize)
       setStageIndex(0)
       setPlaying(true)
       setRunId((id) => id + 1)
@@ -99,20 +136,24 @@ export default function CheckoutAnimationPreviewPage() {
     [clearTimers],
   )
 
+  const replay = useCallback(() => {
+    clearTimers()
+    setStageIndex(0)
+    setPlaying(true)
+    setRunId((id) => id + 1)
+  }, [clearTimers])
+
   // Drive the stage sequence with timers whenever a run starts.
   useEffect(() => {
     if (!playing) return
     clearTimers()
     const factor = speed === "fast" ? 0.5 : 1
     let elapsed = 0
-    // schedule transitions payment->tickets->checking->final->reveal
     for (let i = 0; i < SEQUENCE.length - 1; i++) {
       const stage = SEQUENCE[i] as Exclude<Stage, "reveal">
       elapsed += STAGE_DURATION[stage] * factor
       const target = i + 1
-      timers.current.push(
-        setTimeout(() => setStageIndex(target), elapsed),
-      )
+      timers.current.push(setTimeout(() => setStageIndex(target), elapsed))
     }
     return clearTimers
     // runId forces a fresh schedule on each replay
@@ -123,16 +164,16 @@ export default function CheckoutAnimationPreviewPage() {
 
   const currentStage = SEQUENCE[stageIndex]
   const switchResult = useCallback(() => {
-    start(result === "win" ? "nowin" : "win")
-  }, [result, start])
+    start(result === "win" ? "nowin" : "win", size)
+  }, [result, size, start])
 
   return (
-    <main className="min-h-screen bg-black text-white">
+    <main className="min-h-screen bg-[#15101F] text-white">
       <PreviewKeyframes />
 
       {/* Control bar */}
       <header className="mx-auto max-w-md px-4 pt-8 pb-4">
-        <p className="text-center text-[11px] font-semibold uppercase tracking-[0.3em] text-red-500">
+        <p className="text-center text-[11px] font-semibold uppercase tracking-[0.3em] text-amber-400">
           Interactive Animation Preview
         </p>
         <h1 className="mt-1 text-center text-2xl font-extrabold tracking-tight">
@@ -142,23 +183,51 @@ export default function CheckoutAnimationPreviewPage() {
           Mock data only. No checkout, payment, or backend logic is touched.
         </p>
 
-        {/* Big start buttons */}
+        {/* Big start buttons: 2x2 (win/nowin x 5/500) */}
         <div className="mt-5 grid grid-cols-2 gap-3">
           <button
             type="button"
-            onClick={() => start("win")}
-            className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-amber-400 to-amber-500 px-4 py-3.5 text-sm font-bold text-black shadow-[0_0_24px_rgba(245,158,11,0.45)] transition active:scale-[0.98]"
+            onClick={() => start("win", "small")}
+            className="flex flex-col items-center justify-center gap-1 rounded-xl bg-gradient-to-b from-amber-400 to-amber-500 px-4 py-3 text-sm font-bold text-black shadow-[0_0_24px_rgba(245,158,11,0.45)] transition active:scale-[0.98]"
           >
-            <Play className="h-4 w-4" aria-hidden="true" />
-            Preview Instant Win
+            <span className="flex items-center gap-2">
+              <Play className="h-4 w-4" aria-hidden="true" />
+              Instant Win
+            </span>
+            <span className="text-[11px] font-semibold opacity-70">5 tickets</span>
           </button>
           <button
             type="button"
-            onClick={() => start("nowin")}
-            className="flex items-center justify-center gap-2 rounded-xl border border-red-500/50 bg-red-500/10 px-4 py-3.5 text-sm font-bold text-white transition active:scale-[0.98]"
+            onClick={() => start("nowin", "small")}
+            className="flex flex-col items-center justify-center gap-1 rounded-xl border border-purple-400/40 bg-purple-500/15 px-4 py-3 text-sm font-bold text-white transition active:scale-[0.98]"
           >
-            <Play className="h-4 w-4" aria-hidden="true" />
-            Preview No Win
+            <span className="flex items-center gap-2">
+              <Play className="h-4 w-4" aria-hidden="true" />
+              No Win
+            </span>
+            <span className="text-[11px] font-semibold text-white/50">5 tickets</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => start("win", "large")}
+            className="flex flex-col items-center justify-center gap-1 rounded-xl bg-gradient-to-b from-amber-400 to-amber-500 px-4 py-3 text-sm font-bold text-black shadow-[0_0_24px_rgba(245,158,11,0.45)] transition active:scale-[0.98]"
+          >
+            <span className="flex items-center gap-2">
+              <Play className="h-4 w-4" aria-hidden="true" />
+              Instant Win
+            </span>
+            <span className="text-[11px] font-semibold opacity-70">500 tickets</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => start("nowin", "large")}
+            className="flex flex-col items-center justify-center gap-1 rounded-xl border border-purple-400/40 bg-purple-500/15 px-4 py-3 text-sm font-bold text-white transition active:scale-[0.98]"
+          >
+            <span className="flex items-center gap-2">
+              <Play className="h-4 w-4" aria-hidden="true" />
+              No Win
+            </span>
+            <span className="text-[11px] font-semibold text-white/50">500 tickets</span>
           </button>
         </div>
 
@@ -166,7 +235,7 @@ export default function CheckoutAnimationPreviewPage() {
         <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
           <button
             type="button"
-            onClick={() => start()}
+            onClick={replay}
             disabled={!playing}
             className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs font-semibold text-white/80 transition hover:bg-white/10 disabled:opacity-40"
           >
@@ -200,7 +269,8 @@ export default function CheckoutAnimationPreviewPage() {
             />
             {playing ? (
               <>
-                stage {stageIndex + 1}/5 · {currentStage} · {result.toUpperCase()}
+                stage {stageIndex + 1}/5 · {currentStage} · {result.toUpperCase()} ·{" "}
+                {size === "large" ? "500" : "5"}t
               </>
             ) : (
               "idle — press a preview button"
@@ -211,11 +281,11 @@ export default function CheckoutAnimationPreviewPage() {
 
       {/* Phone-framed stage viewport */}
       <div className="mx-auto max-w-md px-4 pb-16">
-        <div className="relative mx-auto aspect-[9/19] w-full max-w-[380px] overflow-hidden rounded-[2.5rem] border border-white/10 bg-black shadow-[0_0_0_1px_rgba(255,255,255,0.05),0_30px_80px_rgba(0,0,0,0.6)]">
+        <div className="relative mx-auto aspect-[9/19] w-full max-w-[380px] overflow-hidden rounded-[2.5rem] border border-white/10 bg-[#0E0A17] shadow-[0_0_0_1px_rgba(255,255,255,0.05),0_30px_80px_rgba(0,0,0,0.6)]">
           {!playing ? (
             <IdleScreen />
           ) : (
-            <StagePlayer key={runId} stage={currentStage} result={result} />
+            <StagePlayer key={runId} stage={currentStage} result={result} size={size} />
           )}
         </div>
       </div>
@@ -228,15 +298,13 @@ export default function CheckoutAnimationPreviewPage() {
 function IdleScreen() {
   return (
     <div className="relative flex h-full flex-col items-center justify-center px-8 text-center">
-      <VaultBackdrop tone="red" />
-      <div className="relative flex h-20 w-20 items-center justify-center rounded-full border-2 border-red-500/40 bg-red-500/10 shadow-[0_0_36px_rgba(239,68,68,0.35)]">
-        <Sparkles className="h-9 w-9 text-red-400" aria-hidden="true" />
+      <VaultBackdrop tone="purple" />
+      <div className="relative flex h-20 w-20 items-center justify-center rounded-full border-2 border-amber-400/40 bg-amber-400/10 shadow-[0_0_36px_rgba(245,158,11,0.35)]">
+        <Sparkles className="h-9 w-9 text-amber-300" aria-hidden="true" />
       </div>
       <h2 className="relative mt-6 text-xl font-extrabold tracking-tight">Ready to Preview</h2>
       <p className="relative mt-2 max-w-xs text-pretty text-sm text-white/50">
-        Press <span className="font-semibold text-amber-300">Preview Instant Win</span> or{" "}
-        <span className="font-semibold text-white">Preview No Win</span> to play the full reveal
-        sequence.
+        Pick a scenario above to play the full reveal sequence in the WTF Giveaways style.
       </p>
     </div>
   )
@@ -244,17 +312,22 @@ function IdleScreen() {
 
 /* ----------------------------- stage player ----------------------------- */
 
-function StagePlayer({ stage, result }: { stage: Stage; result: Result }) {
+function StagePlayer({ stage, result, size }: { stage: Stage; result: Result; size: Size }) {
+  const data = scenarioFor(result, size)
   return (
     <div className="relative h-full w-full">
-      {/* Each stage cross-fades using a keyed wrapper */}
-      <div key={stage} className="absolute inset-0 anim-stage-in">
+      {/* Each stage cross-fades using a keyed wrapper. Safe-area padding keeps
+          content clear of any mobile bottom nav. */}
+      <div
+        key={stage}
+        className="absolute inset-0 anim-stage-in pb-[env(safe-area-inset-bottom)]"
+      >
         {stage === "payment" && <PaymentStage />}
-        {stage === "tickets" && <TicketsStage result={result} />}
-        {stage === "checking" && <CheckingStage />}
+        {stage === "tickets" && <TicketsStage data={data} />}
+        {stage === "checking" && <CheckingStage data={data} />}
         {stage === "final" && <FinalStage />}
         {stage === "reveal" &&
-          (result === "win" ? <WinnerReveal /> : <NotWonReveal />)}
+          (result === "win" ? <WinnerReveal data={data} /> : <NotWonReveal data={data} />)}
       </div>
     </div>
   )
@@ -262,18 +335,23 @@ function StagePlayer({ stage, result }: { stage: Stage; result: Result }) {
 
 /* ----------------------------- shared visuals ----------------------------- */
 
-function VaultBackdrop({ tone = "red" }: { tone?: "red" | "gold" | "green" }) {
+function VaultBackdrop({ tone = "purple" }: { tone?: "purple" | "gold" | "green" }) {
   const glow =
     tone === "gold"
-      ? "bg-[radial-gradient(circle_at_50%_32%,rgba(245,158,11,0.30),transparent_62%)]"
+      ? "bg-[radial-gradient(circle_at_50%_30%,rgba(245,158,11,0.28),transparent_60%),radial-gradient(circle_at_50%_90%,rgba(109,40,217,0.35),transparent_70%)]"
       : tone === "green"
-        ? "bg-[radial-gradient(circle_at_50%_32%,rgba(16,185,129,0.24),transparent_62%)]"
-        : "bg-[radial-gradient(circle_at_50%_32%,rgba(239,68,68,0.30),transparent_62%)]"
+        ? "bg-[radial-gradient(circle_at_50%_30%,rgba(16,185,129,0.22),transparent_60%),radial-gradient(circle_at_50%_92%,rgba(109,40,217,0.32),transparent_72%)]"
+        : "bg-[radial-gradient(circle_at_50%_28%,rgba(124,58,237,0.45),transparent_62%),radial-gradient(circle_at_50%_96%,rgba(245,158,11,0.12),transparent_70%)]"
   return (
     <>
+      {/* Deep purple base wash */}
+      <div
+        className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#2E1065] via-[#1B1230] to-[#0E0A17]"
+        aria-hidden="true"
+      />
       <div className={`pointer-events-none absolute inset-0 ${glow}`} aria-hidden="true" />
       <div
-        className="pointer-events-none absolute inset-0 opacity-[0.06]"
+        className="pointer-events-none absolute inset-0 opacity-[0.05]"
         style={{
           backgroundImage:
             "linear-gradient(rgba(255,255,255,0.6) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.6) 1px, transparent 1px)",
@@ -285,9 +363,8 @@ function VaultBackdrop({ tone = "red" }: { tone?: "red" | "gold" | "green" }) {
   )
 }
 
-function FloatingParticles({ tone = "gold" }: { tone?: "gold" | "red" | "green" }) {
-  const color =
-    tone === "red" ? "bg-red-400" : tone === "green" ? "bg-emerald-400" : "bg-amber-300"
+function FloatingParticles({ tone = "gold" }: { tone?: "gold" | "purple" }) {
+  const color = tone === "purple" ? "bg-purple-300" : "bg-amber-300"
   const dots = [
     { left: "12%", top: "20%", size: "h-2 w-2", delay: "0s", dur: "3.2s" },
     { left: "80%", top: "24%", size: "h-1.5 w-1.5", delay: "0.6s", dur: "3.8s" },
@@ -317,7 +394,10 @@ function PaymentStage() {
     <div className="relative flex h-full flex-col items-center justify-center px-8 text-center">
       <VaultBackdrop tone="green" />
       <div className="relative anim-pop">
-        <div className="absolute inset-0 -m-4 rounded-full bg-emerald-500/25 blur-2xl anim-pulse-glow" aria-hidden="true" />
+        <div
+          className="absolute inset-0 -m-4 rounded-full bg-emerald-500/25 blur-2xl anim-pulse-glow"
+          aria-hidden="true"
+        />
         <div className="relative flex h-24 w-24 items-center justify-center rounded-full border-2 border-emerald-400/60 bg-emerald-500/10 shadow-[0_0_40px_rgba(16,185,129,0.5)]">
           <CheckCircle2 className="h-12 w-12 text-emerald-400 anim-check" aria-hidden="true" />
         </div>
@@ -335,36 +415,77 @@ function PaymentStage() {
 
 /* ----------------------------- STAGE 2: Tickets ----------------------------- */
 
-function TicketsStage({ result }: { result: Result }) {
-  const data = result === "win" ? MOCK_WIN : MOCK_NOWIN
-  const tickets = ticketRange(data.ticketStart, data.ticketEnd)
+function TicketChip({ n }: { n: number }) {
   return (
-    <div className="relative flex h-full flex-col items-center justify-center px-8 text-center">
-      <VaultBackdrop tone="red" />
-      <div className="relative flex h-20 w-20 items-center justify-center rounded-2xl border-2 border-red-500/50 bg-red-500/10 shadow-[0_0_36px_rgba(239,68,68,0.45)] anim-pop">
-        <Ticket className="h-10 w-10 text-red-400" aria-hidden="true" />
+    <div className="flex items-center gap-1.5 rounded-lg border border-amber-400/40 bg-gradient-to-b from-amber-400/15 to-amber-500/5 px-3 py-2 shadow-[0_0_14px_rgba(245,158,11,0.25)]">
+      <Ticket className="h-3.5 w-3.5 text-amber-300" aria-hidden="true" />
+      <span className="font-mono text-sm font-bold tracking-wider text-amber-200">#{n}</span>
+    </div>
+  )
+}
+
+function TicketsStage({ data }: { data: Scenario }) {
+  const isLarge = data.qty > PILL_THRESHOLD
+
+  return (
+    <div className="relative flex h-full flex-col items-center justify-center px-6 text-center">
+      <VaultBackdrop tone="purple" />
+      <div className="relative flex h-20 w-20 items-center justify-center rounded-2xl border-2 border-purple-400/50 bg-purple-500/15 shadow-[0_0_36px_rgba(124,58,237,0.5)] anim-pop">
+        <Ticket className="h-10 w-10 text-purple-200" aria-hidden="true" />
       </div>
-      <p className="relative mt-6 text-xs font-semibold uppercase tracking-[0.3em] text-red-500">
+      <p className="relative mt-6 text-xs font-semibold uppercase tracking-[0.3em] text-amber-400">
         Tickets Locked In
       </p>
       <h3 className="relative mt-2 text-2xl font-extrabold tracking-tight">
-        {tickets.length} Tickets Secured
+        {data.qty} Tickets Secured
       </h3>
 
-      <div className="relative mt-6 flex w-full flex-wrap items-center justify-center gap-2">
-        {tickets.map((t, i) => (
-          <div
-            key={t}
-            className="anim-ticket-in flex items-center gap-1.5 rounded-lg border border-amber-400/40 bg-gradient-to-b from-amber-400/15 to-amber-500/5 px-3 py-2 shadow-[0_0_14px_rgba(245,158,11,0.25)]"
-            style={{ animationDelay: `${i * 120}ms` }}
-          >
-            <Ticket className="h-3.5 w-3.5 text-amber-300" aria-hidden="true" />
-            <span className="font-mono text-sm font-bold tracking-wider text-amber-200">
-              #{t}
+      {isLarge ? (
+        /* Compact summary card for large orders (no per-ticket pills). */
+        <div className="relative mt-6 w-full max-w-xs rounded-2xl border border-purple-400/30 bg-purple-500/10 p-4 shadow-[0_0_24px_rgba(124,58,237,0.25)] anim-card-in">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-purple-200/70">
+            Ticket Range
+          </p>
+          <p className="mt-1 font-mono text-lg font-bold tracking-wider text-amber-200">
+            #{data.ticketStart} – #{data.ticketEnd}
+          </p>
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-1.5">
+            {[data.ticketStart, data.ticketStart + 1, data.ticketStart + 2].map((t) => (
+              <span
+                key={t}
+                className="rounded-md border border-amber-400/30 bg-amber-400/10 px-2 py-1 font-mono text-xs font-semibold text-amber-200"
+              >
+                #{t}
+              </span>
+            ))}
+            <span className="px-1 text-amber-300/70" aria-hidden="true">
+              &hellip;
             </span>
+            {[data.ticketEnd - 2, data.ticketEnd - 1, data.ticketEnd].map((t) => (
+              <span
+                key={t}
+                className="rounded-md border border-amber-400/30 bg-amber-400/10 px-2 py-1 font-mono text-xs font-semibold text-amber-200"
+              >
+                #{t}
+              </span>
+            ))}
           </div>
-        ))}
-      </div>
+        </div>
+      ) : (
+        /* Individual pills for small orders. */
+        <div className="relative mt-6 flex w-full flex-wrap items-center justify-center gap-2">
+          {ticketRange(data.ticketStart, data.ticketEnd).map((t, i) => (
+            <div
+              key={t}
+              className="anim-ticket-in"
+              style={{ animationDelay: `${i * 120}ms` }}
+            >
+              <TicketChip n={t} />
+            </div>
+          ))}
+        </div>
+      )}
+
       <p className="relative mt-6 max-w-xs text-pretty text-sm text-white/55">
         Your ticket numbers are locked. Next up: the instant win scan.
       </p>
@@ -374,30 +495,36 @@ function TicketsStage({ result }: { result: Result }) {
 
 /* ----------------------------- STAGE 3: Checking (scan) ----------------------------- */
 
-function CheckingStage() {
+function CheckingStage({ data }: { data: Scenario }) {
   return (
     <div className="relative flex h-full flex-col items-center justify-center px-8 text-center">
-      <VaultBackdrop tone="red" />
-      <FloatingParticles tone="red" />
+      <VaultBackdrop tone="purple" />
+      <FloatingParticles tone="purple" />
 
       <div className="relative flex h-44 w-44 items-center justify-center">
-        <div className="absolute inset-0 rounded-full border-2 border-red-500/40 anim-ring-pulse" aria-hidden="true" />
-        <div className="absolute inset-2 rounded-full border border-amber-400/30 shadow-[inset_0_0_30px_rgba(245,158,11,0.25)]" aria-hidden="true" />
-        {/* rotating conic scan sweep */}
         <div
-          className="absolute inset-0 rounded-full anim-scan-rotate bg-[conic-gradient(from_0deg,transparent_0deg,rgba(239,68,68,0.35)_40deg,transparent_90deg)]"
+          className="absolute inset-0 rounded-full border-2 border-purple-400/40 anim-ring-pulse"
           aria-hidden="true"
         />
-        <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-red-500/10 shadow-[0_0_30px_rgba(239,68,68,0.55)]">
-          <ScanLine className="h-9 w-9 text-red-400" aria-hidden="true" />
+        <div
+          className="absolute inset-2 rounded-full border border-amber-400/30 shadow-[inset_0_0_30px_rgba(245,158,11,0.25)]"
+          aria-hidden="true"
+        />
+        {/* rotating conic scan sweep (gold) */}
+        <div
+          className="absolute inset-0 rounded-full anim-scan-rotate bg-[conic-gradient(from_0deg,transparent_0deg,rgba(245,158,11,0.4)_40deg,transparent_90deg)]"
+          aria-hidden="true"
+        />
+        <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-purple-500/15 shadow-[0_0_30px_rgba(124,58,237,0.6)]">
+          <ScanLine className="h-9 w-9 text-amber-300" aria-hidden="true" />
         </div>
       </div>
 
-      <p className="relative mt-8 text-xs font-semibold uppercase tracking-[0.3em] text-red-500">
+      <p className="relative mt-8 text-xs font-semibold uppercase tracking-[0.3em] text-amber-400">
         Instant Win Check
       </p>
       <h3 className="relative mt-2 text-2xl font-extrabold tracking-tight">
-        Scanning Your Tickets&hellip;
+        Scanning all {data.qty} tickets&hellip;
       </h3>
       <p className="relative mt-3 max-w-xs text-pretty text-sm text-white/55">
         Running your ticket numbers against the instant win vault.
@@ -415,10 +542,19 @@ function FinalStage() {
       <FloatingParticles tone="gold" />
 
       <div className="relative flex h-48 w-48 items-center justify-center">
-        <div className="absolute inset-0 rounded-full border-2 border-amber-400/50 shadow-[0_0_50px_rgba(245,158,11,0.5)] anim-charge" aria-hidden="true" />
-        <div className="absolute inset-3 rounded-full border border-red-500/40 anim-ring-pulse" aria-hidden="true" />
-        <div className="absolute inset-6 rounded-full bg-amber-500/10 blur-md anim-pulse-glow" aria-hidden="true" />
-        <div className="relative flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-b from-amber-400/25 to-red-500/10 shadow-[0_0_40px_rgba(245,158,11,0.65)]">
+        <div
+          className="absolute inset-0 rounded-full border-2 border-amber-400/50 shadow-[0_0_50px_rgba(245,158,11,0.5)] anim-charge"
+          aria-hidden="true"
+        />
+        <div
+          className="absolute inset-3 rounded-full border border-purple-400/40 anim-ring-pulse"
+          aria-hidden="true"
+        />
+        <div
+          className="absolute inset-6 rounded-full bg-amber-500/10 blur-md anim-pulse-glow"
+          aria-hidden="true"
+        />
+        <div className="relative flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-b from-amber-400/25 to-purple-500/15 shadow-[0_0_40px_rgba(245,158,11,0.6)]">
           <Zap className="h-12 w-12 text-amber-300 anim-zap" aria-hidden="true" />
         </div>
       </div>
@@ -438,61 +574,64 @@ function FinalStage() {
 
 /* ----------------------------- STAGE 5a: Winner ----------------------------- */
 
-function WinnerReveal() {
+function WinnerReveal({ data }: { data: Scenario }) {
   const burst = useMemo(
     () =>
       Array.from({ length: 18 }).map((_, i) => ({
         left: `${Math.round((Math.sin(i * 2.3) * 0.5 + 0.5) * 100)}%`,
         delay: `${(i % 6) * 90}ms`,
         dur: `${1600 + (i % 5) * 240}ms`,
-        gold: i % 2 === 0,
+        gold: i % 3 !== 0,
         size: i % 3 === 0 ? "h-2.5 w-2.5" : "h-1.5 w-1.5",
       })),
     [],
   )
   return (
-    <div className="relative flex h-full flex-col items-center justify-center px-8 text-center">
+    <div className="relative flex h-full flex-col items-center justify-center px-6 pb-6 text-center">
       <VaultBackdrop tone="gold" />
 
-      {/* cash/confetti burst */}
+      {/* cash/confetti burst (gold with controlled purple accent) */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
         {burst.map((b, i) => (
           <span
             key={i}
-            className={`absolute top-1/3 ${b.size} rounded-sm anim-burst ${b.gold ? "bg-amber-300" : "bg-red-400"}`}
+            className={`absolute top-1/3 ${b.size} rounded-sm anim-burst ${b.gold ? "bg-amber-300" : "bg-purple-300"}`}
             style={{ left: b.left, animationDelay: b.delay, animationDuration: b.dur }}
           />
         ))}
       </div>
 
       <div className="relative anim-pop">
-        <div className="absolute inset-0 -m-6 rounded-full bg-amber-400/30 blur-3xl anim-pulse-glow" aria-hidden="true" />
-        <div className="relative flex h-28 w-28 items-center justify-center rounded-full border-2 border-amber-300 bg-gradient-to-b from-amber-400/30 to-amber-600/10 shadow-[0_0_60px_rgba(245,158,11,0.75)]">
-          <Trophy className="h-14 w-14 text-amber-300" aria-hidden="true" />
+        <div
+          className="absolute inset-0 -m-6 rounded-full bg-amber-400/30 blur-3xl anim-pulse-glow"
+          aria-hidden="true"
+        />
+        <div className="relative flex h-24 w-24 items-center justify-center rounded-full border-2 border-amber-300 bg-gradient-to-b from-amber-400/30 to-amber-600/10 shadow-[0_0_60px_rgba(245,158,11,0.75)]">
+          <Trophy className="h-12 w-12 text-amber-300" aria-hidden="true" />
         </div>
       </div>
 
-      <p className="relative mt-8 text-xs font-semibold uppercase tracking-[0.35em] text-amber-400">
+      <p className="relative mt-6 text-xs font-semibold uppercase tracking-[0.35em] text-amber-400">
         Instant Winner
       </p>
       <h3 className="relative mt-2 bg-gradient-to-b from-amber-200 to-amber-400 bg-clip-text text-4xl font-extrabold tracking-tight text-transparent drop-shadow-[0_0_20px_rgba(245,158,11,0.55)] anim-pop-big">
         YOU WON!
       </h3>
 
-      <div className="relative mt-6 w-full max-w-xs rounded-2xl border-2 border-amber-400/50 bg-gradient-to-b from-amber-400/15 to-black/40 p-5 shadow-[0_0_40px_rgba(245,158,11,0.4)] anim-card-in">
+      <div className="relative mt-5 w-full max-w-xs rounded-2xl border-2 border-amber-400/50 bg-gradient-to-b from-amber-400/15 to-[#1B1230]/60 p-5 shadow-[0_0_40px_rgba(245,158,11,0.4)] anim-card-in">
         <div className="flex items-center justify-center gap-2">
           <PoundSterling className="h-6 w-6 text-amber-300" aria-hidden="true" />
-          <span className="text-3xl font-extrabold">{MOCK_WIN.prizeAmount} Instant Win</span>
+          <span className="text-3xl font-extrabold">{data.prizeAmount} Instant Win</span>
         </div>
         <p className="mt-1 text-xs uppercase tracking-[0.2em] text-amber-200/70">
-          Winning Ticket #{MOCK_WIN.winningTicket}
+          Winning Ticket #{data.winningTicket}
         </p>
-        <p className="mt-1 font-mono text-[10px] text-white/40">{MOCK_WIN.orderRef}</p>
+        <p className="mt-1 font-mono text-[10px] text-white/40">{data.orderRef}</p>
       </div>
 
       <button
         type="button"
-        className="relative mt-7 w-full max-w-xs rounded-xl bg-gradient-to-b from-amber-400 to-amber-500 px-6 py-3.5 text-base font-bold text-black shadow-[0_0_30px_rgba(245,158,11,0.5)] transition active:scale-[0.98]"
+        className="relative mt-6 w-full max-w-xs rounded-xl bg-gradient-to-b from-amber-400 to-amber-500 px-6 py-3.5 text-base font-bold text-black shadow-[0_0_30px_rgba(245,158,11,0.5)] transition active:scale-[0.98]"
       >
         Claim Your Prize
       </button>
@@ -502,15 +641,17 @@ function WinnerReveal() {
 
 /* ----------------------------- STAGE 5b: No Win ----------------------------- */
 
-function NotWonReveal() {
-  const tickets = ticketRange(MOCK_NOWIN.ticketStart, MOCK_NOWIN.ticketEnd)
+function NotWonReveal({ data }: { data: Scenario }) {
   return (
-    <div className="relative flex h-full flex-col items-center justify-center px-8 text-center">
-      <VaultBackdrop tone="gold" />
-      <FloatingParticles tone="gold" />
+    <div className="relative flex h-full flex-col items-center justify-center px-6 pb-6 text-center">
+      <VaultBackdrop tone="purple" />
+      <FloatingParticles tone="purple" />
 
       <div className="relative anim-pop">
-        <div className="absolute inset-0 -m-4 rounded-full bg-amber-400/20 blur-2xl anim-pulse-glow" aria-hidden="true" />
+        <div
+          className="absolute inset-0 -m-4 rounded-full bg-amber-400/20 blur-2xl anim-pulse-glow"
+          aria-hidden="true"
+        />
         <div className="relative flex h-24 w-24 items-center justify-center rounded-full border-2 border-amber-400/50 bg-amber-400/10 shadow-[0_0_40px_rgba(245,158,11,0.4)]">
           <Gift className="h-11 w-11 text-amber-300" aria-hidden="true" />
         </div>
@@ -523,21 +664,21 @@ function NotWonReveal() {
         All Tickets Entered!
       </h3>
       <p className="relative mt-3 max-w-xs text-pretty text-sm leading-relaxed text-white/60">
-        No instant win on this order, but all {tickets.length} of your tickets are locked into the
-        main prize draw. Good luck!
+        No instant win on this order, but all {data.qty} of your tickets are locked into the main
+        prize draw. Good luck!
       </p>
 
       <div className="relative mt-6 flex items-center gap-2 rounded-full border border-amber-400/30 bg-amber-400/5 px-4 py-2 anim-card-in">
         <Sparkles className="h-4 w-4 text-amber-300" aria-hidden="true" />
         <span className="text-sm font-semibold text-amber-200">
-          {tickets.length} tickets in the main draw
+          {data.qty} tickets in the main draw
         </span>
       </div>
-      <p className="relative mt-2 font-mono text-[10px] text-white/40">{MOCK_NOWIN.orderRef}</p>
+      <p className="relative mt-2 font-mono text-[10px] text-white/40">{data.orderRef}</p>
 
       <button
         type="button"
-        className="relative mt-7 w-full max-w-xs rounded-xl border border-amber-400/50 bg-amber-400/10 px-6 py-3.5 text-base font-bold text-white transition active:scale-[0.98]"
+        className="relative mt-6 w-full max-w-xs rounded-xl border border-amber-400/50 bg-amber-400/10 px-6 py-3.5 text-base font-bold text-white transition active:scale-[0.98]"
       >
         Enter Another Giveaway
       </button>
