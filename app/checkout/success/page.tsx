@@ -234,15 +234,44 @@ const SLOT_SYMBOLS = [
   { icon: Zap, color: 'text-violet-400' },
 ]
 
+// Suspense messages shown in sequence during the instant-win check.
+// These are purely cosmetic and never imply a win before the reveal.
+const SUSPENSE_MESSAGES = [
+  { eyebrow: 'Payment Confirmed', title: 'Allocating your tickets…' },
+  { eyebrow: 'Instant Win Check', title: 'Checking for instant wins…' },
+  { eyebrow: 'Instant Win Check', title: 'Scanning your ticket numbers…' },
+  { eyebrow: 'Instant Win Check', title: 'Finalising your result…' },
+]
+
 function ConfirmedState({ award }: { award: AwardPayload }) {
   const [phase, setPhase] = useState<'intro' | 'spin' | 'stopping' | 'revealed'>('intro')
   const [stoppedReels, setStoppedReels] = useState([false, false, false])
+  const [messageStep, setMessageStep] = useState(0)
 
   useEffect(() => {
+    // Respect users who prefer reduced motion: skip the suspense
+    // animation and reveal the (already-known) backend result immediately.
+    const prefersReducedMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+
+    if (prefersReducedMotion) {
+      setStoppedReels([true, true, true])
+      setPhase('revealed')
+      return
+    }
+
     // Phase timings
     const introTimer = setTimeout(() => setPhase('spin'), 900)
     const spinTimer = setTimeout(() => setPhase('stopping'), 3500)
-    
+
+    // Staged suspense messages (cosmetic only)
+    const msgTimers = [
+      setTimeout(() => setMessageStep(1), 1300),
+      setTimeout(() => setMessageStep(2), 2300),
+      setTimeout(() => setMessageStep(3), 3300),
+    ]
+
     // Stagger reel stops
     const reel1Timer = setTimeout(() => setStoppedReels(prev => [true, prev[1], prev[2]]), 2800)
     const reel2Timer = setTimeout(() => setStoppedReels(prev => [prev[0], true, prev[2]]), 3400)
@@ -254,6 +283,7 @@ function ConfirmedState({ award }: { award: AwardPayload }) {
     return () => {
       clearTimeout(introTimer)
       clearTimeout(spinTimer)
+      msgTimers.forEach(clearTimeout)
       clearTimeout(reel1Timer)
       clearTimeout(reel2Timer)
       clearTimeout(reel3Timer)
@@ -274,17 +304,21 @@ function ConfirmedState({ award }: { award: AwardPayload }) {
     <SlotMachineReveal 
       phase={phase} 
       stoppedReels={stoppedReels} 
+      messageStep={messageStep}
     />
   )
 }
 
 function SlotMachineReveal({ 
   phase, 
-  stoppedReels 
+  stoppedReels,
+  messageStep,
 }: { 
   phase: 'intro' | 'spin' | 'stopping'
   stoppedReels: boolean[]
+  messageStep: number
 }) {
+  const activeMessage = SUSPENSE_MESSAGES[Math.min(messageStep, SUSPENSE_MESSAGES.length - 1)]
   return (
     <div className="relative flex flex-col items-center gap-5 w-full -mx-4 -mt-4 -mb-4 px-4 py-6 overflow-hidden">
       <style jsx>{`
@@ -369,21 +403,17 @@ function SlotMachineReveal({
       {/* Content */}
       <div className="relative z-10 flex flex-col items-center gap-4 w-full">
         {/* Header text */}
-        <div className="fade-in text-center">
+        <div className="fade-in text-center min-h-[72px]">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-pink-400 mb-1">
-            {phase === 'intro' ? 'Payment Confirmed' : 'Instant Win Check'}
+            {activeMessage.eyebrow}
           </p>
-          <h2 className="text-xl font-bold text-white">
-            {phase === 'intro' 
-              ? 'Checking your instant win...' 
-              : phase === 'stopping'
-              ? 'Finalising result...'
-              : 'Spinning your instant win...'}
+          <h2 key={messageStep} className="fade-in text-xl font-bold text-white text-balance">
+            {activeMessage.title}
           </h2>
           <p className="text-sm text-purple-200/70 mt-1">
-            {phase === 'intro' 
-              ? 'Your entry is locked in. Get ready for the reveal.'
-              : 'This is your moment'}
+            {messageStep === 0
+              ? 'Your entry is locked in. Hold tight…'
+              : 'Hang on — almost there'}
           </p>
         </div>
 
