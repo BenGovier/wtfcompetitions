@@ -65,7 +65,11 @@ export default async function AdminPayoutsPage({ searchParams }: PageProps) {
       message
     `, { count: "exact" })
     .eq("enquiry_type", "winner_payout")
-    .order("created_at", { ascending: sortOrder === "oldest" })
+    // Paid tab behaves like an audit/history view: sort by when it was paid.
+    // All other tabs keep sorting by submission date (created_at).
+    .order(statusFilter === "paid" ? "status_updated_at" : "created_at", {
+      ascending: sortOrder === "oldest",
+    })
     .range(offset, offset + ITEMS_PER_PAGE - 1)
 
   // Apply status filter
@@ -192,7 +196,7 @@ export default async function AdminPayoutsPage({ searchParams }: PageProps) {
       )}
 
       {payouts && payouts.length > 0 && (
-        <PayoutTable payouts={payouts} />
+        <PayoutTable payouts={payouts} statusFilter={statusFilter} />
       )}
 
       {/* Pagination */}

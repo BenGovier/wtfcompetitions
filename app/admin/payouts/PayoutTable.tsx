@@ -25,12 +25,17 @@ interface PayoutRow {
 
 interface PayoutTableProps {
   payouts: PayoutRow[]
+  statusFilter?: string
 }
 
-export function PayoutTable({ payouts }: PayoutTableProps) {
+export function PayoutTable({ payouts, statusFilter }: PayoutTableProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
+
+  // Show the dedicated Paid date column on the Paid tab (and on "all",
+  // where paid rows can appear). Keeps other tabs unchanged.
+  const showPaidDate = statusFilter === 'paid' || statusFilter === 'all'
 
   const allSelected = payouts.length > 0 && selectedIds.size === payouts.length
   const someSelected = selectedIds.size > 0
@@ -182,6 +187,7 @@ export function PayoutTable({ payouts }: PayoutTableProps) {
               <th className="whitespace-nowrap px-3 py-2">Acc Holder</th>
               <th className="whitespace-nowrap px-3 py-2">Sort Code</th>
               <th className="whitespace-nowrap px-3 py-2">Acc No</th>
+              {showPaidDate && <th className="whitespace-nowrap px-3 py-2">Paid date</th>}
               <th className="whitespace-nowrap px-3 py-2">Actions</th>
             </tr>
           </thead>
@@ -233,6 +239,15 @@ export function PayoutTable({ payouts }: PayoutTableProps) {
                 <td className="whitespace-nowrap px-3 py-2 font-mono text-gray-600">
                   {row.payout_account_number || "—"}
                 </td>
+                {showPaidDate && (
+                  <td className="whitespace-nowrap px-3 py-2 text-gray-600">
+                    {row.status === 'paid' && row.status_updated_at ? (
+                      <span className="font-medium text-green-700">{formatDate(row.status_updated_at)}</span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                )}
                 <td className="whitespace-nowrap px-3 py-2">
                   <PayoutActionButtons
                     id={row.id}
@@ -247,11 +262,6 @@ export function PayoutTable({ payouts }: PayoutTableProps) {
                       accountNumber: row.payout_account_number,
                     }}
                   />
-                  {row.status === 'paid' && row.status_updated_at && (
-                    <div className="mt-1 text-xs text-green-700">
-                      Paid on {formatDate(row.status_updated_at)}
-                    </div>
-                  )}
                 </td>
               </tr>
             ))}
