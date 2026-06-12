@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js"
 import Link from "next/link"
 import { PayoutTable } from "./PayoutTable"
+import { requireAdmin } from "@/lib/admin/auth"
 
 const ITEMS_PER_PAGE = 100
 
@@ -12,6 +13,8 @@ interface PageProps {
 }
 
 export default async function AdminPayoutsPage({ searchParams }: PageProps) {
+  await requireAdmin({ roles: ['admin'] })
+
   const params = await searchParams
   const statusFilter = (params.status as StatusFilter) || "unpaid"
   const sortOrder = (params.sort as SortOrder) || "newest"

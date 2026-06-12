@@ -1,36 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
+import { authorizeAdminApi } from '@/lib/admin/auth'
 
 const NO_STORE = { headers: { 'Cache-Control': 'private, no-cache' } }
 
-async function authorize(supabase: Awaited<ReturnType<typeof createClient>>) {
-  const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { user: null, error: 'Not authenticated' }
-
-  const { data: adminRow } = await supabase
-    .from('admin_users')
-    .select('role,is_enabled')
-    .eq('user_id', user.id)
-    .maybeSingle()
-
-  if (!adminRow || adminRow.is_enabled !== true) return { user: null, error: 'Not authorized' }
-
-  return { user, error: null }
-}
-
 export async function GET(request: NextRequest) {
-  const allowStagingBypass = process.env.VERCEL_ENV !== 'production'
-
-  if (!allowStagingBypass) {
-    const supabase = await createClient()
-    const { user, error: authError } = await authorize(supabase)
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, error: authError },
-        { status: authError === 'Not authenticated' ? 401 : 403, ...NO_STORE }
-      )
-    }
+  // Admin-only. Hosts (ops) and read_only are rejected.
+  const supabase = await createClient()
+  const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin'] })
+  if (!user) {
+    return NextResponse.json(
+      { ok: false, error: authError },
+      { status: authError === 'Not authenticated' ? 401 : 403, ...NO_STORE }
+    )
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL

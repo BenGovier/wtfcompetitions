@@ -1,34 +1,17 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
-
-async function authorize(supabase: Awaited<ReturnType<typeof createClient>>) {
-  const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { user: null, error: 'Not authenticated' }
-
-  const { data: adminRow } = await supabase
-    .from('admin_users')
-    .select('role,is_enabled')
-    .eq('user_id', user.id)
-    .maybeSingle()
-
-  if (!adminRow || adminRow.is_enabled !== true) return { user: null, error: 'Not authorized' }
-
-  return { user, error: null }
-}
+import { authorizeAdminApi } from '@/lib/admin/auth'
 
 export async function GET() {
-  const allowStagingBypass = process.env.VERCEL_ENV !== 'production'
-
-  if (!allowStagingBypass) {
-    const supabase = await createClient()
-    const { user, error: authError } = await authorize(supabase)
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, error: authError },
-        { status: authError === 'Not authenticated' ? 401 : 403 }
-      )
-    }
+  // Live feed is accessible to full admins and Hosts (ops).
+  const supabase = await createClient()
+  const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin', 'ops'] })
+  if (!user) {
+    return NextResponse.json(
+      { ok: false, error: authError },
+      { status: authError === 'Not authenticated' ? 401 : 403 }
+    )
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL

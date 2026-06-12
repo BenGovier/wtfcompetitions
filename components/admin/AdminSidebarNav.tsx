@@ -4,6 +4,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Radio } from "lucide-react"
+import { canAccessRoute, type AdminRole } from "@/lib/admin/permissions"
 
 const navItems = [
   { href: "/admin", label: "Dashboard" },
@@ -14,10 +15,14 @@ const navItems = [
   { href: "/admin/payouts", label: "Payouts" },
   { href: "/admin/reports", label: "Reports" },
   { href: "/admin/audit-logs", label: "Audit Logs" },
+  { href: "/admin/hosts", label: "Hosts" },
 ]
 
-export function AdminSidebarNav() {
+export function AdminSidebarNav({ role }: { role: AdminRole }) {
   const pathname = usePathname()
+
+  // Hosts (ops) only see the routes they can access; admins see everything.
+  const visibleItems = navItems.filter((item) => canAccessRoute(role, item.href))
 
   return (
     <aside className="w-64 border-r border-border bg-card">
@@ -25,7 +30,7 @@ export function AdminSidebarNav() {
         <h2 className="text-lg font-semibold">WTF Admin</h2>
       </div>
       <nav className="space-y-1 p-4">
-        {navItems.map((item) => {
+        {visibleItems.map((item) => {
           const isActive = pathname === item.href
           return (
             <Link
