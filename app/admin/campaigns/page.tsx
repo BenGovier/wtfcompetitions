@@ -2,9 +2,12 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { CampaignsTable } from "@/components/admin/campaigns/CampaignsTable"
 import { createClient } from "@/lib/supabase/server"
+import { requireAdmin } from "@/lib/admin/auth"
 import type { Campaign } from "@/lib/types/campaign"
 
 export default async function CampaignsPage() {
+  await requireAdmin({ roles: ['admin'] })
+
   const supabase = await createClient()
 
   const { data: rows, error } = await supabase

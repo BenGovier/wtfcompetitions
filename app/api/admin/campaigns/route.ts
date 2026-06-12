@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
+import { authorizeAdminApi } from '@/lib/admin/auth'
 
 function toDbRow(body: Record<string, any>) {
   return {
@@ -23,21 +24,6 @@ function toDbRow(body: Record<string, any>) {
     is_free_entry: body.is_free_entry ?? body.isFreeEntry ?? false,
     free_entry_limit_per_user: body.free_entry_limit_per_user ?? body.freeEntryLimitPerUser ?? 1,
   }
-}
-
-async function authorize(supabase: Awaited<ReturnType<typeof createClient>>) {
-  const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { user: null, error: 'Not authenticated' }
-
-  const { data: adminRow } = await supabase
-    .from('admin_users')
-    .select('role,is_enabled')
-    .eq('user_id', user.id)
-    .maybeSingle()
-
-  if (!adminRow || adminRow.is_enabled !== true) return { user: null, error: 'Not authorized' }
-
-  return { user, error: null }
 }
 
 async function refreshSnapshotsNow(campaignId: string) {
@@ -162,7 +148,7 @@ async function refreshSnapshotsNow(campaignId: string) {
 
 export async function POST(request: Request) {
   const supabase = await createClient()
-  const { user, error: authError } = await authorize(supabase)
+  const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin'] })
   if (!user) return NextResponse.json({ ok: false, error: authError }, { status: authError === 'Not authenticated' ? 401 : 403 })
 
   let body: Record<string, any>
@@ -192,7 +178,7 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   console.log('[instant-debug][campaign-api] PUT hit')
   const supabase = await createClient()
-  const { user, error: authError } = await authorize(supabase)
+  const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin'] })
   if (!user) {
     console.log('[instant-debug][campaign-api] PUT auth failed:', authError)
     return NextResponse.json({ ok: false, error: authError }, { status: authError === 'Not authenticated' ? 401 : 403 })

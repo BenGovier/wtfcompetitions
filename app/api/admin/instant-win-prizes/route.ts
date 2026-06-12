@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
+import { authorizeAdminApi } from '@/lib/admin/auth'
 
 function getServiceSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -8,24 +9,9 @@ function getServiceSupabase() {
   return createServiceClient(url, key, { auth: { persistSession: false } })
 }
 
-async function authorize(supabase: Awaited<ReturnType<typeof createClient>>) {
-  const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { user: null, error: 'Not authenticated' }
-
-  const { data: adminRow } = await supabase
-    .from('admin_users')
-    .select('role,is_enabled')
-    .eq('user_id', user.id)
-    .maybeSingle()
-
-  if (!adminRow || adminRow.is_enabled !== true) return { user: null, error: 'Not authorized' }
-
-  return { user, error: null }
-}
-
 export async function GET(request: Request) {
   const supabase = await createClient()
-  const { user, error: authError } = await authorize(supabase)
+  const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin'] })
   if (!user) return NextResponse.json({ ok: false, error: authError }, { status: authError === 'Not authenticated' ? 401 : 403 })
 
   const { searchParams } = new URL(request.url)
@@ -57,7 +43,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const supabase = await createClient()
-  const { user, error: authError } = await authorize(supabase)
+  const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin'] })
   if (!user) return NextResponse.json({ ok: false, error: authError }, { status: authError === 'Not authenticated' ? 401 : 403 })
 
   let body: Record<string, any>
@@ -96,7 +82,7 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   console.log('[instant-debug][prize-api] PUT hit')
   const supabase = await createClient()
-  const { user, error: authError } = await authorize(supabase)
+  const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin'] })
   if (!user) {
     console.log('[instant-debug][prize-api] PUT auth failed:', authError)
     return NextResponse.json({ ok: false, error: authError }, { status: authError === 'Not authenticated' ? 401 : 403 })
@@ -152,7 +138,7 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   const supabase = await createClient()
-  const { user, error: authError } = await authorize(supabase)
+  const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin'] })
   if (!user) return NextResponse.json({ ok: false, error: authError }, { status: authError === 'Not authenticated' ? 401 : 403 })
 
   const { searchParams } = new URL(request.url)

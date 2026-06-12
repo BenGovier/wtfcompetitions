@@ -3,46 +3,26 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
+import { authorizeAdminApi } from '@/lib/admin/auth'
 
 const ALLOWED_STATUSES = ['new', 'paid', 'problem'] as const
 type PayoutStatus = (typeof ALLOWED_STATUSES)[number]
 
 /**
- * Helper to verify admin authorization.
- * Returns user if authorized, null otherwise.
+ * Helper to verify admin authorization (full admins only — not Hosts).
+ * Returns user if authorized, error otherwise.
  */
 async function verifyAdmin(): Promise<{ user: { id: string } } | { error: string }> {
   try {
     const supabase = await createClient()
-    const { data, error: authErr } = await supabase.auth.getUser()
-    
-    if (authErr) {
-      console.error('[payouts/actions] Auth error:', authErr.message)
-      return { error: 'Authentication failed' }
-    }
-    
-    if (!data?.user) {
-      console.error('[payouts/actions] No user in session')
-      return { error: 'Not authenticated - please log in again' }
+    const { user, error } = await authorizeAdminApi(supabase, { roles: ['admin'] })
+
+    if (!user) {
+      console.error('[payouts/actions] Authorization failed:', error)
+      return { error: error === 'Not authenticated' ? 'Not authenticated - please log in again' : 'Not authorized as admin' }
     }
 
-    const { data: adminRow, error: adminErr } = await supabase
-      .from('admin_users')
-      .select('role,is_enabled')
-      .eq('user_id', data.user.id)
-      .maybeSingle()
-
-    if (adminErr) {
-      console.error('[payouts/actions] Admin lookup error:', adminErr.message)
-      return { error: 'Failed to verify admin status' }
-    }
-
-    if (!adminRow || adminRow.is_enabled !== true) {
-      console.error('[payouts/actions] User not admin or not enabled:', data.user.id)
-      return { error: 'Not authorized as admin' }
-    }
-
-    return { user: { id: data.user.id } }
+    return { user: { id: user.id } }
   } catch (err) {
     console.error('[payouts/actions] Unexpected auth error:', err)
     return { error: 'Authentication error' }
