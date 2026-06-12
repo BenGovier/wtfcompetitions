@@ -1,3 +1,4 @@
+// Touch to force redeploy — no functional change.
 /**
  * Client-safe admin role utilities.
  *
