@@ -41,8 +41,9 @@ export default async function HomePage() {
     .from('giveaway_snapshots')
     .select('payload')
     .eq('kind', 'list')
+    .eq('payload->>status', 'live')
     .order('generated_at', { ascending: false })
-    .limit(6)
+    .limit(20)
 
   const giveaways = (data ?? [])
     .map((x: any) => x.payload)
