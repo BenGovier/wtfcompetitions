@@ -61,6 +61,7 @@ export default async function AdminPayoutsPage({ searchParams }: PageProps) {
       payout_sort_code,
       payout_account_number,
       status,
+      status_updated_at,
       message
     `, { count: "exact" })
     .eq("enquiry_type", "winner_payout")
