@@ -2,15 +2,37 @@
 
 import { useState, useTransition } from 'react'
 import { updatePayoutStatus, deletePayout } from './actions'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+
+interface PayoutDetails {
+  name: string
+  email: string | null
+  phone: string | null
+  amount: string
+  accountHolder: string | null
+  sortCode: string | null
+  accountNumber: string | null
+}
 
 interface PayoutActionButtonsProps {
   id: string
   currentStatus: string | null
+  details: PayoutDetails
 }
 
-export function PayoutActionButtons({ id, currentStatus }: PayoutActionButtonsProps) {
+export function PayoutActionButtons({ id, currentStatus, details }: PayoutActionButtonsProps) {
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
+  const [confirmPaidOpen, setConfirmPaidOpen] = useState(false)
 
   const handleStatusUpdate = (newStatus: 'new' | 'paid' | 'problem', requireConfirm?: string) => {
     if (requireConfirm && !window.confirm(requireConfirm)) {
@@ -19,6 +41,18 @@ export function PayoutActionButtons({ id, currentStatus }: PayoutActionButtonsPr
     setError(null)
     startTransition(async () => {
       const result = await updatePayoutStatus(id, newStatus)
+      if (!result.ok) {
+        setError(result.error || 'Update failed')
+      }
+    })
+  }
+
+  // Marking as paid always goes through the confirmation dialog.
+  const confirmMarkPaid = () => {
+    setConfirmPaidOpen(false)
+    setError(null)
+    startTransition(async () => {
+      const result = await updatePayoutStatus(id, 'paid')
       if (!result.ok) {
         setError(result.error || 'Update failed')
       }
@@ -39,6 +73,45 @@ export function PayoutActionButtons({ id, currentStatus }: PayoutActionButtonsPr
   }
 
   const buttonBase = "rounded px-2 py-0.5 text-xs font-medium disabled:opacity-50"
+
+  const detailRow = (label: string, value: string | null) => (
+    <div className="flex justify-between gap-4 py-1 text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-medium text-foreground text-right break-all">{value || '—'}</span>
+    </div>
+  )
+
+  const confirmPaidDialog = (
+    <AlertDialog open={confirmPaidOpen} onOpenChange={setConfirmPaidOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Mark this payout as paid?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Please confirm you are marking the correct payout as paid. This updates the payout status.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="rounded-md border bg-muted/40 p-3">
+          {detailRow('Winner', details.name)}
+          {detailRow('Email', details.email)}
+          {detailRow('Phone', details.phone)}
+          {detailRow('Amount', details.amount)}
+          {detailRow('Account holder', details.accountHolder)}
+          {detailRow('Sort code', details.sortCode)}
+          {detailRow('Account number', details.accountNumber)}
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={confirmMarkPaid}
+            disabled={isPending}
+            className="bg-green-600 text-white hover:bg-green-700"
+          >
+            Confirm mark as paid
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
 
   // For paid rows: show Unpaid and Delete
   if (currentStatus === 'paid') {
@@ -69,8 +142,9 @@ export function PayoutActionButtons({ id, currentStatus }: PayoutActionButtonsPr
   if (currentStatus === 'problem') {
     return (
       <div className="flex items-center gap-1">
+        {confirmPaidDialog}
         <button
-          onClick={() => handleStatusUpdate('paid')}
+          onClick={() => setConfirmPaidOpen(true)}
           disabled={isPending}
           className={`${buttonBase} bg-green-100 text-green-700 hover:bg-green-200`}
           title="Mark as paid"
@@ -101,8 +175,9 @@ export function PayoutActionButtons({ id, currentStatus }: PayoutActionButtonsPr
   // For unpaid/new rows: show Paid, Problem, Delete
   return (
     <div className="flex items-center gap-1">
+      {confirmPaidDialog}
       <button
-        onClick={() => handleStatusUpdate('paid')}
+        onClick={() => setConfirmPaidOpen(true)}
         disabled={isPending}
         className={`${buttonBase} bg-green-100 text-green-700 hover:bg-green-200`}
         title="Mark as paid"
