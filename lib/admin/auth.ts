@@ -1,56 +1,30 @@
+import 'server-only'
 import { redirect } from 'next/navigation'
 import type { User } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
+import {
+  type AdminRole,
+  normalizeRole,
+} from '@/lib/admin/permissions'
 
-/**
- * Admin role model (code-only — DB values are managed manually).
- *
- *  - 'admin'     => full admin access to every /admin route + API
- *  - 'ops'       => "Host" (UI label). Live-feed-only access.
- *  - 'read_only' => reserved / no access for now
- *
- * NOTE: never surface the raw 'ops' value in the UI. Use ROLE_LABELS / "Host".
- */
-export type AdminRole = 'admin' | 'ops' | 'read_only'
-
-export const ADMIN_ROLES: AdminRole[] = ['admin', 'ops', 'read_only']
-
-/** User-facing labels. 'ops' is always shown as "Host". */
-export const ROLE_LABELS: Record<AdminRole, string> = {
-  admin: 'Admin',
-  ops: 'Host',
-  read_only: 'Read Only',
-}
-
-/** The internal role value used when saving a Host. */
-export const HOST_ROLE: AdminRole = 'ops'
-
-/** Routes a Host (ops) is allowed to reach. Admins can reach everything. */
-export const HOST_ALLOWED_ROUTES = ['/admin/live-feed']
+// Re-export shared, client-safe utilities so existing server-side imports
+// from '@/lib/admin/auth' keep working.
+export {
+  type AdminRole,
+  ADMIN_ROLES,
+  ROLE_LABELS,
+  HOST_ROLE,
+  HOST_ALLOWED_ROUTES,
+  normalizeRole,
+  canAccessRoute,
+  canAccessAdmin,
+} from '@/lib/admin/permissions'
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 
 export interface AdminContext {
   user: User
   role: AdminRole
-}
-
-function normalizeRole(value: unknown): AdminRole | null {
-  return ADMIN_ROLES.includes(value as AdminRole) ? (value as AdminRole) : null
-}
-
-/**
- * Returns true if the given role may access the given pathname.
- * Admin => everything. Host (ops) => only HOST_ALLOWED_ROUTES. read_only => nothing.
- */
-export function canAccessRoute(role: AdminRole | null, pathname: string): boolean {
-  if (role === 'admin') return true
-  if (role === 'ops') {
-    return HOST_ALLOWED_ROUTES.some(
-      (route) => pathname === route || pathname.startsWith(`${route}/`),
-    )
-  }
-  return false
 }
 
 /**

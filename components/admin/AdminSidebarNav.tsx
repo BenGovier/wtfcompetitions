@@ -4,7 +4,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Radio } from "lucide-react"
-import { canAccessRoute, type AdminRole } from "@/lib/admin/auth"
+import { canAccessRoute, type AdminRole } from "@/lib/admin/permissions"
 
 const navItems = [
   { href: "/admin", label: "Dashboard" },

@@ -8,7 +8,7 @@ import { createClient } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
 import { LogOut } from "lucide-react"
 import type { User } from "@supabase/supabase-js"
-import type { AdminRole } from "@/lib/admin/auth"
+import type { AdminRole } from "@/lib/admin/permissions"
 
 export function AdminShell({
   children,
