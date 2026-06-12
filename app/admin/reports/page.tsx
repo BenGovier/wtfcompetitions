@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { requireAdmin } from "@/lib/admin/auth"
 import {
   Table,
   TableBody,
@@ -251,6 +252,8 @@ function AverageOrderCard({ totalPence, totalOrders }: { totalPence: number; tot
 // ============ PAGE ============
 
 export default async function AdminReportsPage() {
+  await requireAdmin({ roles: ['admin'] })
+
   // Fetch dashboard metrics and campaign reports in parallel
   const [dashboard, { data: reports, error: reportsError }] = await Promise.all([
     getRevenueDashboard(),

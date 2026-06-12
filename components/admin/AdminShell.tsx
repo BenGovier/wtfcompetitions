@@ -8,8 +8,17 @@ import { createClient } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
 import { LogOut } from "lucide-react"
 import type { User } from "@supabase/supabase-js"
+import type { AdminRole } from "@/lib/admin/auth"
 
-export function AdminShell({ children, user }: { children: React.ReactNode; user: User }) {
+export function AdminShell({
+  children,
+  user,
+  role,
+}: {
+  children: React.ReactNode
+  user: User
+  role: AdminRole
+}) {
   const router = useRouter()
 
   const handleLogout = async () => {
@@ -21,7 +30,7 @@ export function AdminShell({ children, user }: { children: React.ReactNode; user
 
   return (
     <div className="flex h-screen">
-      <AdminSidebarNav />
+      <AdminSidebarNav role={role} />
       <div className="flex flex-1 flex-col overflow-hidden">
         <header className="flex h-16 items-center justify-between border-b border-border bg-card px-6">
           <h1 className="text-xl font-semibold">WTF Giveaways Admin</h1>

@@ -1,5 +1,6 @@
 import { CampaignForm } from "@/components/admin/campaigns/CampaignForm"
 import { createClient } from "@/lib/supabase/server"
+import { requireAdmin } from "@/lib/admin/auth"
 import type { Campaign } from "@/lib/types/campaign"
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -29,6 +30,8 @@ export default async function CampaignFormPage({
 }) {
   const { id } = await params
   const isNew = id === "new"
+
+  await requireAdmin({ roles: ['admin'] })
 
   if (isNew) {
     return (

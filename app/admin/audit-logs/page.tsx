@@ -1,5 +1,6 @@
 import AuditLogsPanel from "@/components/admin/audit-logs/AuditLogsPanel"
 import type { AuditLogEntry } from "@/lib/types/auditLog"
+import { requireAdmin } from "@/lib/admin/auth"
 
 // Mock audit logs data
 const mockLogs: AuditLogEntry[] = [
@@ -205,7 +206,9 @@ const mockLogs: AuditLogEntry[] = [
   },
 ]
 
-export default function AuditLogsPage() {
+export default async function AuditLogsPage() {
+  await requireAdmin({ roles: ['admin'] })
+
   return (
     <div className="space-y-8">
       <div>

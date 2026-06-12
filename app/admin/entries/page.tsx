@@ -1,6 +1,9 @@
 import EntriesPanel from "@/components/admin/entries/EntriesPanel"
+import { requireAdmin } from "@/lib/admin/auth"
 
-export default function EntriesPage() {
+export default async function EntriesPage() {
+  await requireAdmin({ roles: ['admin'] })
+
   return (
     <div className="space-y-8">
       <div>
