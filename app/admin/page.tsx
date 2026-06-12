@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { createClient } from "@supabase/supabase-js"
-import { requireAdmin } from "@/lib/admin/auth"
+import { redirect } from "next/navigation"
+import { getAdminContext } from "@/lib/admin/auth"
 
 async function getSalesStats(): Promise<{ today: number | null; week: number | null; month: number | null; allTime: number | null }> {
   const supabase = createClient(
@@ -46,8 +47,20 @@ function formatGBP(amount: number | null): string {
 }
 
 export default async function AdminDashboard() {
-  // Admin-only. Hosts (ops) are redirected to /auth/unauthorized.
-  await requireAdmin({ roles: ['admin'] })
+  // Hosts (ops) should land on the live feed, not see an unauthorized page.
+  const adminContext = await getAdminContext()
+
+  if (!adminContext) {
+    redirect('/auth/unauthorized')
+  }
+
+  if (adminContext.role === 'ops') {
+    redirect('/admin/live-feed')
+  }
+
+  if (adminContext.role !== 'admin') {
+    redirect('/auth/unauthorized')
+  }
 
   const sales = await getSalesStats()
 
