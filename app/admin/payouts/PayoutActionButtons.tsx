@@ -33,6 +33,7 @@ export function PayoutActionButtons({ id, currentStatus, details }: PayoutAction
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
   const [confirmPaidOpen, setConfirmPaidOpen] = useState(false)
+  const [confirmUnpaidOpen, setConfirmUnpaidOpen] = useState(false)
 
   const handleStatusUpdate = (newStatus: 'new' | 'paid' | 'problem', requireConfirm?: string) => {
     if (requireConfirm && !window.confirm(requireConfirm)) {
@@ -53,6 +54,18 @@ export function PayoutActionButtons({ id, currentStatus, details }: PayoutAction
     setError(null)
     startTransition(async () => {
       const result = await updatePayoutStatus(id, 'paid')
+      if (!result.ok) {
+        setError(result.error || 'Update failed')
+      }
+    })
+  }
+
+  // Marking back to unpaid (new) also goes through a confirmation dialog.
+  const confirmMarkUnpaid = () => {
+    setConfirmUnpaidOpen(false)
+    setError(null)
+    startTransition(async () => {
+      const result = await updatePayoutStatus(id, 'new')
       if (!result.ok) {
         setError(result.error || 'Update failed')
       }
@@ -113,12 +126,45 @@ export function PayoutActionButtons({ id, currentStatus, details }: PayoutAction
     </AlertDialog>
   )
 
+  const confirmUnpaidDialog = (
+    <AlertDialog open={confirmUnpaidOpen} onOpenChange={setConfirmUnpaidOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Mark this payout as unpaid?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Please confirm you are reverting the correct payout back to unpaid. This updates the payout status.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="rounded-md border bg-muted/40 p-3">
+          {detailRow('Winner', details.name)}
+          {detailRow('Email', details.email)}
+          {detailRow('Phone', details.phone)}
+          {detailRow('Amount', details.amount)}
+          {detailRow('Account holder', details.accountHolder)}
+          {detailRow('Sort code', details.sortCode)}
+          {detailRow('Account number', details.accountNumber)}
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={confirmMarkUnpaid}
+            disabled={isPending}
+            className="bg-yellow-500 text-white hover:bg-yellow-600"
+          >
+            Confirm mark as unpaid
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+
   // For paid rows: show Unpaid and Delete
   if (currentStatus === 'paid') {
     return (
       <div className="flex items-center gap-1">
+        {confirmUnpaidDialog}
         <button
-          onClick={() => handleStatusUpdate('new', 'Are you sure you want to mark this payout as unpaid again?')}
+          onClick={() => setConfirmUnpaidOpen(true)}
           disabled={isPending}
           className={`${buttonBase} bg-yellow-100 text-yellow-700 hover:bg-yellow-200`}
           title="Mark as unpaid"
@@ -143,6 +189,7 @@ export function PayoutActionButtons({ id, currentStatus, details }: PayoutAction
     return (
       <div className="flex items-center gap-1">
         {confirmPaidDialog}
+        {confirmUnpaidDialog}
         <button
           onClick={() => setConfirmPaidOpen(true)}
           disabled={isPending}
@@ -152,7 +199,7 @@ export function PayoutActionButtons({ id, currentStatus, details }: PayoutAction
           {isPending ? '...' : 'Paid'}
         </button>
         <button
-          onClick={() => handleStatusUpdate('new')}
+          onClick={() => setConfirmUnpaidOpen(true)}
           disabled={isPending}
           className={`${buttonBase} bg-yellow-100 text-yellow-700 hover:bg-yellow-200`}
           title="Mark as unpaid/new"
