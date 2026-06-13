@@ -70,9 +70,14 @@ export function CampaignsTable({ campaigns }: CampaignsTableProps) {
               <TableCell className="hidden md:table-cell">{formatDate(campaign.endAt)}</TableCell>
               <TableCell className="hidden sm:table-cell">{formatPrice(campaign.ticketPricePence)}</TableCell>
               <TableCell className="text-right">
-                <Button asChild variant="outline" size="sm" className="bg-transparent">
-                  <Link href={`/admin/campaigns/${campaign.id}`}>Edit</Link>
-                </Button>
+                <div className="flex items-center justify-end gap-2">
+                  <Button asChild variant="outline" size="sm" className="bg-transparent">
+                    <Link href={`/admin/campaigns/${campaign.id}/tickets`}>View Tickets</Link>
+                  </Button>
+                  <Button asChild variant="outline" size="sm" className="bg-transparent">
+                    <Link href={`/admin/campaigns/${campaign.id}`}>Edit</Link>
+                  </Button>
+                </div>
               </TableCell>
             </TableRow>
           ))}
