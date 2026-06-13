@@ -51,24 +51,24 @@ export function CampaignsTable({ campaigns }: CampaignsTableProps) {
           <TableRow>
             <TableHead>Title</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead>Start</TableHead>
-            <TableHead>End</TableHead>
-            <TableHead>Ticket Price</TableHead>
+            <TableHead className="hidden md:table-cell">Start</TableHead>
+            <TableHead className="hidden md:table-cell">End</TableHead>
+            <TableHead className="hidden sm:table-cell">Ticket Price</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {campaigns.map((campaign) => (
             <TableRow key={campaign.id}>
-              <TableCell className="font-medium">{campaign.title}</TableCell>
+              <TableCell className="font-semibold text-foreground">{campaign.title}</TableCell>
               <TableCell>
                 <Badge variant={getStatusVariant(campaign.status)}>
                   {campaign.status}
                 </Badge>
               </TableCell>
-              <TableCell>{formatDate(campaign.startAt)}</TableCell>
-              <TableCell>{formatDate(campaign.endAt)}</TableCell>
-              <TableCell>{formatPrice(campaign.ticketPricePence)}</TableCell>
+              <TableCell className="hidden md:table-cell">{formatDate(campaign.startAt)}</TableCell>
+              <TableCell className="hidden md:table-cell">{formatDate(campaign.endAt)}</TableCell>
+              <TableCell className="hidden sm:table-cell">{formatPrice(campaign.ticketPricePence)}</TableCell>
               <TableCell className="text-right">
                 <Button asChild variant="outline" size="sm" className="bg-transparent">
                   <Link href={`/admin/campaigns/${campaign.id}`}>Edit</Link>
