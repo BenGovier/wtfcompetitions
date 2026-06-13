@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js"
 import Link from "next/link"
 import { PayoutTable } from "./PayoutTable"
+import { requireAdmin } from "@/lib/admin/auth"
 
 const ITEMS_PER_PAGE = 100
 
@@ -12,6 +13,8 @@ interface PageProps {
 }
 
 export default async function AdminPayoutsPage({ searchParams }: PageProps) {
+  await requireAdmin({ roles: ['admin'] })
+
   const params = await searchParams
   const statusFilter = (params.status as StatusFilter) || "unpaid"
   const sortOrder = (params.sort as SortOrder) || "newest"
@@ -58,10 +61,15 @@ export default async function AdminPayoutsPage({ searchParams }: PageProps) {
       payout_sort_code,
       payout_account_number,
       status,
+      status_updated_at,
       message
     `, { count: "exact" })
     .eq("enquiry_type", "winner_payout")
-    .order("created_at", { ascending: sortOrder === "oldest" })
+    // Paid tab behaves like an audit/history view: sort by when it was paid.
+    // All other tabs keep sorting by submission date (created_at).
+    .order(statusFilter === "paid" ? "status_updated_at" : "created_at", {
+      ascending: sortOrder === "oldest",
+    })
     .range(offset, offset + ITEMS_PER_PAGE - 1)
 
   // Apply status filter
@@ -188,7 +196,7 @@ export default async function AdminPayoutsPage({ searchParams }: PageProps) {
       )}
 
       {payouts && payouts.length > 0 && (
-        <PayoutTable payouts={payouts} />
+        <PayoutTable payouts={payouts} statusFilter={statusFilter} />
       )}
 
       {/* Pagination */}

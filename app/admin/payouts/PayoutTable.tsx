@@ -19,17 +19,23 @@ interface PayoutRow {
   payout_sort_code: string | null
   payout_account_number: string | null
   status: string | null
+  status_updated_at: string | null
   message: string | null
 }
 
 interface PayoutTableProps {
   payouts: PayoutRow[]
+  statusFilter?: string
 }
 
-export function PayoutTable({ payouts }: PayoutTableProps) {
+export function PayoutTable({ payouts, statusFilter }: PayoutTableProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
+
+  // Show the dedicated Paid date column on the Paid tab (and on "all",
+  // where paid rows can appear). Keeps other tabs unchanged.
+  const showPaidDate = statusFilter === 'paid' || statusFilter === 'all'
 
   const allSelected = payouts.length > 0 && selectedIds.size === payouts.length
   const someSelected = selectedIds.size > 0
@@ -56,7 +62,15 @@ export function PayoutTable({ payouts }: PayoutTableProps) {
     const count = selectedIds.size
     if (count === 0) return
 
-    if (!window.confirm(`Mark ${count} selected payout record${count > 1 ? 's' : ''} as paid?`)) {
+    const totalPence = payouts
+      .filter((p) => selectedIds.has(p.id))
+      .reduce((sum, p) => sum + (p.amount_claimed_pence || 0), 0)
+
+    if (
+      !window.confirm(
+        `Mark ${count} selected payout record${count > 1 ? 's' : ''} as paid?\n\nTotal payout value: ${formatPence(totalPence)}`,
+      )
+    ) {
       return
     }
 
@@ -173,6 +187,7 @@ export function PayoutTable({ payouts }: PayoutTableProps) {
               <th className="whitespace-nowrap px-3 py-2">Acc Holder</th>
               <th className="whitespace-nowrap px-3 py-2">Sort Code</th>
               <th className="whitespace-nowrap px-3 py-2">Acc No</th>
+              {showPaidDate && <th className="whitespace-nowrap px-3 py-2">Paid date</th>}
               <th className="whitespace-nowrap px-3 py-2">Actions</th>
             </tr>
           </thead>
@@ -224,8 +239,29 @@ export function PayoutTable({ payouts }: PayoutTableProps) {
                 <td className="whitespace-nowrap px-3 py-2 font-mono text-gray-600">
                   {row.payout_account_number || "—"}
                 </td>
+                {showPaidDate && (
+                  <td className="whitespace-nowrap px-3 py-2 text-gray-600">
+                    {row.status === 'paid' && row.status_updated_at ? (
+                      <span className="font-medium text-green-700">{formatDate(row.status_updated_at)}</span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                )}
                 <td className="whitespace-nowrap px-3 py-2">
-                  <PayoutActionButtons id={row.id} currentStatus={row.status} />
+                  <PayoutActionButtons
+                    id={row.id}
+                    currentStatus={row.status}
+                    details={{
+                      name: getDisplayName(row),
+                      email: row.email,
+                      phone: row.phone,
+                      amount: formatPence(row.amount_claimed_pence),
+                      accountHolder: row.payout_account_holder_name,
+                      sortCode: row.payout_sort_code,
+                      accountNumber: row.payout_account_number,
+                    }}
+                  />
                 </td>
               </tr>
             ))}
