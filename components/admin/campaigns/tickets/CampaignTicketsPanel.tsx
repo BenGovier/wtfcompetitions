@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { CampaignTicketsTable, type CampaignTicket } from "./CampaignTicketsTable"
-import { ChevronLeft, ChevronRight, RefreshCw } from "lucide-react"
+import { ChevronLeft, ChevronRight, RefreshCw, Download } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
 
 const PAGE_SIZE = 100
 
@@ -21,6 +22,7 @@ export function CampaignTicketsPanel({ campaignId }: { campaignId: string }) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const { toast } = useToast()
 
   const pageParam = Math.max(1, parseInt(searchParams.get("page") || "1", 10))
 
@@ -28,6 +30,7 @@ export function CampaignTicketsPanel({ campaignId }: { campaignId: string }) {
   const [totalTicketsSold, setTotalTicketsSold] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [exporting, setExporting] = useState(false)
 
   const totalPages = Math.max(1, Math.ceil(totalTicketsSold / PAGE_SIZE))
   const currentPage = Math.min(pageParam, totalPages)
@@ -64,6 +67,51 @@ export function CampaignTicketsPanel({ campaignId }: { campaignId: string }) {
     const params = new URLSearchParams(searchParams.toString())
     params.set("page", String(page))
     router.push(`${pathname}?${params.toString()}`)
+  }
+
+  // Export runs ONLY on click. The full CSV is streamed to a blob and handed to
+  // the browser as a download — it is never held in React state.
+  async function handleExport() {
+    if (exporting) return
+    setExporting(true)
+    try {
+      const res = await fetch(`/api/admin/campaigns/${campaignId}/tickets?format=csv`, {
+        cache: "no-store",
+      })
+
+      if (!res.ok) {
+        let message = "Export failed. Please try again."
+        try {
+          const json = await res.json()
+          if (json?.error) message = json.error
+        } catch {
+          /* non-JSON error body */
+        }
+        throw new Error(message)
+      }
+
+      const blob = await res.blob()
+      const disposition = res.headers.get("Content-Disposition") || ""
+      const match = disposition.match(/filename="?([^"]+)"?/i)
+      const filename = match?.[1] || "tickets.csv"
+
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (err: any) {
+      toast({
+        title: "Export failed",
+        description: err?.message || "Something went wrong while exporting.",
+        variant: "destructive",
+      })
+    } finally {
+      setExporting(false)
+    }
   }
 
   const rangeStart = totalTicketsSold === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1
@@ -119,9 +167,21 @@ export function CampaignTicketsPanel({ campaignId }: { campaignId: string }) {
           <span className="font-medium text-foreground">{rangeEnd}</span> of{" "}
           <span className="font-medium text-foreground">{totalTicketsSold.toLocaleString("en-GB")}</span>
         </p>
-        <p className="text-sm text-muted-foreground">
-          Page {currentPage} of {totalPages}
-        </p>
+        <div className="flex items-center gap-3">
+          <p className="text-sm text-muted-foreground">
+            Page {currentPage} of {totalPages}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExport}
+            disabled={exporting}
+            className="bg-transparent"
+          >
+            <Download className="mr-2 h-4 w-4" />
+            {exporting ? "Preparing export…" : "Export CSV"}
+          </Button>
+        </div>
       </div>
 
       <CampaignTicketsTable tickets={tickets} />
