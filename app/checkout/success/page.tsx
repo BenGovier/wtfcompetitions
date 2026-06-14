@@ -1,12 +1,32 @@
 'use client'
 
 import { Suspense, useEffect, useRef, useState, useCallback } from 'react'
+import dynamic from 'next/dynamic'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { CheckCircle2, Gift, AlertCircle, PartyPopper, Crown, Star, Trophy, Zap } from 'lucide-react'
+
+// Lazy-loaded so normal campaigns never download/parse the scratch-card
+// canvas + confetti bundle. The chunk is only fetched when a confirmed award
+// identifies the campaign as scratch_card (see the reveal selector below).
+const ScratchCardReveal = dynamic(
+  () =>
+    import('@/components/checkout/reveal/ScratchCardReveal').then(
+      (module) => module.ScratchCardReveal,
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex flex-col items-center gap-4 py-8 text-center">
+        <Spinner className="h-6 w-6 text-amber-400" />
+        <p className="text-sm text-zinc-300">Preparing your scratch card…</p>
+      </div>
+    ),
+  },
+)
 
 type Prize = {
   title: string
@@ -25,6 +45,15 @@ type AwardPayload = {
   ticket_start?: number | null
   ticket_end?: number | null
   campaign_slug?: string | null
+  reveal_type?: 'normal' | 'scratch_card' | null
+}
+
+/**
+ * Presentation-only selector. Any null/missing/unknown value falls back to
+ * 'normal' so existing campaigns behave exactly as before.
+ */
+function normalizeRevealType(value: unknown): 'normal' | 'scratch_card' {
+  return value === 'scratch_card' ? 'scratch_card' : 'normal'
 }
 
 function TicketNumbers({ award }: { award: AwardPayload }) {
@@ -179,7 +208,12 @@ function CheckoutSuccessClient() {
         <CardContent className="flex flex-col items-center gap-6 p-8 text-center">
           {state.kind === 'missing_ref' && <MissingRefState />}
           {state.kind === 'confirming' && <ConfirmingState attempt={state.attempt} />}
-          {state.kind === 'confirmed' && <ConfirmedState award={state.award} />}
+          {state.kind === 'confirmed' &&
+            (normalizeRevealType(state.award.reveal_type) === 'scratch_card' ? (
+              <ScratchCardReveal award={state.award} />
+            ) : (
+              <ConfirmedState award={state.award} />
+            ))}
           {state.kind === 'failed' && <FailedState error={state.error} onRetry={handleRetry} />}
         </CardContent>
       </Card>

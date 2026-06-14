@@ -21,6 +21,9 @@ function toDbRow(body: Record<string, any>) {
     max_tickets_per_user: body.maxTicketsPerUser ?? null,
     bundles: body.bundles ?? null,
     presentation_type: body.presentation_type ?? body.presentationType ?? null,
+    // Presentation-only: only 'scratch_card' is accepted, everything else → 'normal'.
+    reveal_type:
+      (body.reveal_type ?? body.revealType) === 'scratch_card' ? 'scratch_card' : 'normal',
     is_free_entry: body.is_free_entry ?? body.isFreeEntry ?? false,
     free_entry_limit_per_user: body.free_entry_limit_per_user ?? body.freeEntryLimitPerUser ?? 1,
   }
@@ -38,7 +41,7 @@ async function refreshSnapshotsNow(campaignId: string) {
 
   const { data: c, error: fetchError } = await svc
     .from('campaigns')
-    .select('id, slug, title, summary, description, status, start_at, end_at, main_prize_title, main_prize_description, hero_image_url, ticket_price_pence, max_tickets_total, max_tickets_per_user, bundles, presentation_type, is_free_entry, free_entry_limit_per_user')
+    .select('id, slug, title, summary, description, status, start_at, end_at, main_prize_title, main_prize_description, hero_image_url, ticket_price_pence, max_tickets_total, max_tickets_per_user, bundles, presentation_type, reveal_type, is_free_entry, free_entry_limit_per_user')
     .eq('id', campaignId)
     .single()
 
@@ -103,6 +106,7 @@ async function refreshSnapshotsNow(campaignId: string) {
     status: c.status,
     tickets_sold: ticketsSold,
     presentation_type: c.presentation_type ?? null,
+    reveal_type: c.reveal_type ?? 'normal',
     is_free_entry: c.is_free_entry ?? false,
     free_entry_limit_per_user: c.free_entry_limit_per_user ?? 1,
   }
@@ -128,6 +132,7 @@ async function refreshSnapshotsNow(campaignId: string) {
     tickets_sold: ticketsSold,
     instant_wins: instantWins,
     presentation_type: c.presentation_type ?? null,
+    reveal_type: c.reveal_type ?? 'normal',
     is_free_entry: c.is_free_entry ?? false,
     free_entry_limit_per_user: c.free_entry_limit_per_user ?? 1,
   }
