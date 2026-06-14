@@ -36,6 +36,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
   const [formData, setFormData] = useState<Campaign>({
     ...campaign,
     presentation_type: campaign.presentation_type ?? 'instant_cash',
+    reveal_type: campaign.reveal_type ?? 'normal',
     is_free_entry: campaign.is_free_entry ?? false,
     free_entry_limit_per_user: campaign.free_entry_limit_per_user ?? 1,
   })
@@ -581,6 +582,25 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
             </Select>
             <p className="text-xs text-muted-foreground">
               Optional presentation style for the giveaway card
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="reveal_type">Ticket reveal style</Label>
+            <Select
+              value={formData.reveal_type ?? "normal"}
+              onValueChange={(value) => handleChange("reveal_type", value)}
+            >
+              <SelectTrigger id="reveal_type">
+                <SelectValue placeholder="Select reveal style" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="normal">Normal</SelectItem>
+                <SelectItem value="scratch_card">Scratch Card</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Changes only how customers reveal their confirmed result. It does not affect ticket allocation or winning logic.
             </p>
           </div>
 
