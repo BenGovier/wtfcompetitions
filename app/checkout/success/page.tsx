@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { CheckCircle2, Gift, AlertCircle, PartyPopper, Crown, Star, Trophy, Zap } from 'lucide-react'
+import { ScratchCardReveal } from '@/components/checkout/reveal/ScratchCardReveal'
 
 type Prize = {
   title: string
@@ -25,6 +26,15 @@ type AwardPayload = {
   ticket_start?: number | null
   ticket_end?: number | null
   campaign_slug?: string | null
+  reveal_type?: 'normal' | 'scratch_card' | null
+}
+
+/**
+ * Presentation-only selector. Any null/missing/unknown value falls back to
+ * 'normal' so existing campaigns behave exactly as before.
+ */
+function normalizeRevealType(value: unknown): 'normal' | 'scratch_card' {
+  return value === 'scratch_card' ? 'scratch_card' : 'normal'
 }
 
 function TicketNumbers({ award }: { award: AwardPayload }) {
@@ -179,7 +189,12 @@ function CheckoutSuccessClient() {
         <CardContent className="flex flex-col items-center gap-6 p-8 text-center">
           {state.kind === 'missing_ref' && <MissingRefState />}
           {state.kind === 'confirming' && <ConfirmingState attempt={state.attempt} />}
-          {state.kind === 'confirmed' && <ConfirmedState award={state.award} />}
+          {state.kind === 'confirmed' &&
+            (normalizeRevealType(state.award.reveal_type) === 'scratch_card' ? (
+              <ScratchCardReveal award={state.award} />
+            ) : (
+              <ConfirmedState award={state.award} />
+            ))}
           {state.kind === 'failed' && <FailedState error={state.error} onRetry={handleRetry} />}
         </CardContent>
       </Card>

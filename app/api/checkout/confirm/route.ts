@@ -358,6 +358,8 @@ export async function POST(request: Request) {
     // Lightweight lookup to get campaign_slug for "Buy More Tickets" button
     // Uses service client to avoid auth issues, single indexed query
     let campaignSlug: string | null = null
+    // Presentation-only: how the customer reveals their (already-decided) result.
+    let campaignRevealType: 'normal' | 'scratch_card' = 'normal'
     let intentForEmail: { id: string; user_id: string; campaign_id: string; qty: number } | null = null
     const svc = getServiceSupabase()
     try {
@@ -372,17 +374,19 @@ export async function POST(request: Request) {
 
         const { data: campaignData } = await svc
           .from('campaigns')
-          .select('slug')
+          .select('slug, reveal_type')
           .eq('id', intentData.campaign_id)
           .single()
 
         campaignSlug = campaignData?.slug ?? null
+        campaignRevealType =
+          campaignData?.reveal_type === 'scratch_card' ? 'scratch_card' : 'normal'
       }
     } catch {
       // Non-fatal - button just won't render
     }
 
-    const awardWithSlug = { ...award, campaign_slug: campaignSlug }
+    const awardWithSlug = { ...award, campaign_slug: campaignSlug, reveal_type: campaignRevealType }
 
     // === POST-PURCHASE CONFIRMATION EMAIL (best-effort, non-blocking) ===
     // Runs after successful confirmPaymentAndAward(), cannot fail checkout
