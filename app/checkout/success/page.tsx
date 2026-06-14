@@ -1,13 +1,32 @@
 'use client'
 
 import { Suspense, useEffect, useRef, useState, useCallback } from 'react'
+import dynamic from 'next/dynamic'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { CheckCircle2, Gift, AlertCircle, PartyPopper, Crown, Star, Trophy, Zap } from 'lucide-react'
-import { ScratchCardReveal } from '@/components/checkout/reveal/ScratchCardReveal'
+
+// Lazy-loaded so normal campaigns never download/parse the scratch-card
+// canvas + confetti bundle. The chunk is only fetched when a confirmed award
+// identifies the campaign as scratch_card (see the reveal selector below).
+const ScratchCardReveal = dynamic(
+  () =>
+    import('@/components/checkout/reveal/ScratchCardReveal').then(
+      (module) => module.ScratchCardReveal,
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex flex-col items-center gap-4 py-8 text-center">
+        <Spinner className="h-6 w-6 text-amber-400" />
+        <p className="text-sm text-zinc-300">Preparing your scratch card…</p>
+      </div>
+    ),
+  },
+)
 
 type Prize = {
   title: string
