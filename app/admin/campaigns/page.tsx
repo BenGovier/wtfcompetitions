@@ -36,7 +36,7 @@ export default async function CampaignsPage({
   const { data: rows, error } = await supabase
     .from('campaigns')
     .select(
-      'id, status, title, slug, summary, description, start_at, end_at, main_prize_title, main_prize_description, hero_image_url, ticket_price_pence, max_tickets_total, max_tickets_per_user'
+      'id, status, title, slug, summary, description, start_at, end_at, main_prize_title, main_prize_description, hero_image_url, ticket_price_pence, max_tickets_total, max_tickets_per_user, presentation_type'
     )
     .order('created_at', { ascending: false })
 
@@ -68,6 +68,12 @@ export default async function CampaignsPage({
     ticketPricePence: r.ticket_price_pence ?? 0,
     maxTicketsTotal: r.max_tickets_total ?? null,
     maxTicketsPerUser: r.max_tickets_per_user ?? null,
+    presentation_type:
+      r.presentation_type === 'balloon_pop'
+        ? 'balloon_pop'
+        : r.presentation_type === 'instant_cash'
+          ? 'instant_cash'
+          : null,
   }))
 
   // Counts per tab (computed from the single query result — no extra queries).
