@@ -71,6 +71,11 @@ export function CampaignsTable({ campaigns }: CampaignsTableProps) {
               <TableCell className="hidden sm:table-cell">{formatPrice(campaign.ticketPricePence)}</TableCell>
               <TableCell className="text-right">
                 <div className="flex items-center justify-end gap-2">
+                  {campaign.presentation_type === "balloon_pop" && (
+                    <Button asChild variant="outline" size="sm" className="bg-transparent">
+                      <Link href={`/admin/campaigns/${campaign.id}/balloon-board`}>Manage Balloon Board</Link>
+                    </Button>
+                  )}
                   <Button asChild variant="outline" size="sm" className="bg-transparent">
                     <Link href={`/admin/campaigns/${campaign.id}/tickets`}>View Tickets</Link>
                   </Button>
