@@ -26,24 +26,30 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
   const { slug } = await params
   const supabase = createPublicClient()
 
-  // Single indexed query - no JSONB scan
+  // Filter by slug at the database-query level so unrelated campaigns
+  // refreshing can never push this campaign's snapshots out of the result.
   const { data, error } = await supabase
     .from('giveaway_snapshots')
     .select('kind, payload')
     .in('kind', ['detail', 'list'])
+    .eq('payload->>slug', slug)
     .order('generated_at', { ascending: false })
-    .limit(10)
+    .limit(2)
 
   if (error) {
+    // A temporary database/query failure must not be presented as a 404.
     console.error('[giveaways/[slug]] snapshot fetch failed', {
       slug,
       message: error.message,
       code: (error as any).code,
+      details: (error as any).details,
+      hint: (error as any).hint,
     })
+    throw error
   }
 
-  // In-memory filter to find matching slug, explicitly prefer detail over list
-  const matchingRows = data?.filter((x) => x.payload?.slug === slug) ?? []
+  // Prefer the detail snapshot, fall back to list.
+  const matchingRows = data ?? []
   const row =
     matchingRows.find((x) => x.kind === 'detail') ??
     matchingRows[0] ??
