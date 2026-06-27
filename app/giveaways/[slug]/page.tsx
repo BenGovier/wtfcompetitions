@@ -8,6 +8,7 @@ import { SocialProofRow } from "@/components/social-proof-row"
 import { RulesAccordion } from "@/components/rules-accordion"
 import { InstantWinDisclosure } from "@/components/instant-win-disclosure"
 import { InstantWinList } from "@/components/instant-win-list"
+import { LiveBalloonStatePanel } from "@/components/live-balloon-state-panel"
 import { TrustBadges } from "@/components/trust-badges"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
@@ -90,6 +91,15 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
     p.tickets_sold != null && !Number.isNaN(Number(p.tickets_sold))
       ? Number(p.tickets_sold)
       : 0
+
+  // presentation_type lives on the list snapshot payload (not the detail one),
+  // and both rows were already fetched above — so read it without an extra query.
+  const listRow = matchingRows.find((x) => x.kind === 'list')
+  const presentationType =
+    (p.presentation_type as string | undefined) ??
+    ((listRow?.payload as Record<string, any> | undefined)?.presentation_type as string | undefined) ??
+    null
+  const isBalloonPop = presentationType === 'balloon_pop'
 
   const instantWins = Array.isArray(p.instant_wins) ? p.instant_wins : []
   const bundles = p.bundles || undefined
@@ -174,6 +184,9 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
       {/* Main Content */}
       <div className="container max-w-5xl px-4 py-8">
         <div className="space-y-8">
+          {/* Live Balloon Pop state (Balloon Pop campaigns only) */}
+          {isBalloonPop && <LiveBalloonStatePanel slug={slug} status={status} />}
+
           {/* Instant Win Prizes */}
           <InstantWinDisclosure />
           <InstantWinList instantWins={instantWins} />
