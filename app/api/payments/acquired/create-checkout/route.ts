@@ -93,9 +93,20 @@ export async function POST(request: Request) {
   const mid = process.env.ACQUIRED_MID
 
   if (!appId || !appKey || !companyId || !mid) {
-    console.error('[payments/acquired] Missing Acquired configuration')
+    // Build a list of names only (never values/lengths). This block is only
+    // reachable in staging/preview because of the early 404 guard above.
+    const missing = [
+      ['ACQUIRED_APP_ID', appId],
+      ['ACQUIRED_APP_KEY', appKey],
+      ['ACQUIRED_COMPANY_ID', companyId],
+      ['ACQUIRED_MID', mid],
+    ]
+      .filter(([, value]) => !value)
+      .map(([name]) => name)
+
+    console.error('[payments/acquired] Missing Acquired configuration', { missing })
     return NextResponse.json(
-      { ok: false, error: 'Server configuration error' },
+      { ok: false, error: 'Server configuration error', missing },
       { status: 500, headers: noStore },
     )
   }
