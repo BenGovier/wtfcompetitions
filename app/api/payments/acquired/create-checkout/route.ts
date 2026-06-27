@@ -173,9 +173,24 @@ export async function POST(request: Request) {
     const raw = await linkRes.text().catch(() => '')
 
     if (!linkRes.ok) {
+      // Build a safe diagnostic from Acquired's RESPONSE only. This never
+      // contains our app key, access token, Authorization header, Company-Id,
+      // Mid, or outgoing request body — only what Acquired returned to us.
+      let acquiredError: unknown
+      try {
+        acquiredError = JSON.parse(raw || '')
+      } catch {
+        acquiredError = (raw || '').slice(0, 1000)
+      }
+
       console.error('[payments/acquired] payment-link creation failed', linkRes.status)
       return NextResponse.json(
-        { ok: false, error: 'acquired_payment_link_failed', status: linkRes.status },
+        {
+          ok: false,
+          error: 'acquired_payment_link_failed',
+          status: linkRes.status,
+          acquired_error: acquiredError,
+        },
         { status: 502, headers: noStore },
       )
     }
