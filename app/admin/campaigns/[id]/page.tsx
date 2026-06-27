@@ -59,7 +59,7 @@ export default async function CampaignFormPage({
   const { data: r, error } = await supabase
     .from('campaigns')
     .select(
-      'id, status, title, slug, summary, description, start_at, end_at, main_prize_title, main_prize_description, hero_image_url, ticket_price_pence, was_price_pence, max_tickets_total, max_tickets_per_user, bundles, reveal_type'
+      'id, status, title, slug, summary, description, start_at, end_at, main_prize_title, main_prize_description, hero_image_url, ticket_price_pence, was_price_pence, max_tickets_total, max_tickets_per_user, bundles, reveal_type, presentation_type'
     )
     .eq('id', id)
     .single()
@@ -93,6 +93,7 @@ export default async function CampaignFormPage({
     maxTicketsPerUser: r.max_tickets_per_user ?? null,
     bundles: r.bundles ?? null,
     reveal_type: r.reveal_type === 'scratch_card' ? 'scratch_card' : 'normal',
+    presentation_type: r.presentation_type ?? null,
   }
 
   return (
