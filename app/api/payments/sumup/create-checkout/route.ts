@@ -14,6 +14,19 @@ function getServiceSupabase() {
 }
 
 export async function POST(request: Request) {
+  // 0) Staging-only safety guard.
+  // Block SumUp on preview/staging only. Production behaviour is unchanged.
+  const isStaging =
+    process.env.VERCEL_ENV === 'preview' ||
+    (process.env.NEXT_PUBLIC_SITE_URL ?? '').includes('staging.wtf-giveaways.co.uk')
+
+  if (isStaging) {
+    return NextResponse.json(
+      { ok: false, error: 'SumUp is disabled on staging. Use Acquired test checkout.' },
+      { status: 403 },
+    )
+  }
+
   // 1) Auth
   const supabase = await createClient()
   const {
