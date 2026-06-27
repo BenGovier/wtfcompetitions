@@ -47,9 +47,13 @@ function notBalloonPopResponse(opts: {
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: Promise<{ slug: string }> },
+  { params }: { params: Promise<{ campaignId: string }> },
 ) {
-  const { slug } = await params
+  // This dynamic segment is named `campaignId` to share Next's dynamic folder
+  // with the sibling live-count route, but for THIS endpoint the value is the
+  // public campaign slug (e.g. /api/giveaways/Salli2/live-balloon-state).
+  const { campaignId } = await params
+  const slug = campaignId
 
   if (!slug) {
     return NextResponse.json(
