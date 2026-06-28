@@ -19,9 +19,19 @@ const RECENT_EVENTS_LIMIT = 20
  * admin UI can always inspect state.
  */
 export async function GET(
-  _request: NextRequest,
-  { params }: { params: Promise<{ campaignId: string }> },
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
 ) {
+  // Temporary staging diagnostic: returns immediately, before auth/DB, so we
+  // can confirm the route resolves at all. Safe — echoes only the campaign id.
+  const { id: campaignId } = await params
+  if (request.nextUrl.searchParams.get('ping') === '1') {
+    return NextResponse.json(
+      { ok: true, route: 'admin-live-board', campaignId: campaignId ?? null },
+      NO_STORE,
+    )
+  }
+
   const supabase = await createClient()
   const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin'] })
   if (!user) {
@@ -31,7 +41,6 @@ export async function GET(
     )
   }
 
-  const { campaignId } = await params
   if (!campaignId) {
     return NextResponse.json({ ok: false, error: 'campaign_not_found' }, { status: 400, ...NO_STORE })
   }
@@ -224,7 +233,7 @@ async function saveBoard(request: NextRequest, campaignId: string, userId: strin
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ campaignId: string }> },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const supabase = await createClient()
   const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin'] })
@@ -234,7 +243,7 @@ export async function POST(
       { status: authError === 'Not authenticated' ? 401 : 403, ...NO_STORE },
     )
   }
-  const { campaignId } = await params
+  const { id: campaignId } = await params
   if (!campaignId) {
     return NextResponse.json({ ok: false, error: 'campaign_not_found' }, { status: 400, ...NO_STORE })
   }
@@ -243,7 +252,7 @@ export async function POST(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: Promise<{ campaignId: string }> },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const supabase = await createClient()
   const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin'] })
@@ -253,7 +262,7 @@ export async function PUT(
       { status: authError === 'Not authenticated' ? 401 : 403, ...NO_STORE },
     )
   }
-  const { campaignId } = await params
+  const { id: campaignId } = await params
   if (!campaignId) {
     return NextResponse.json({ ok: false, error: 'campaign_not_found' }, { status: 400, ...NO_STORE })
   }
