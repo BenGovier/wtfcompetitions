@@ -168,6 +168,18 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
                 )}
               </div>
 
+              {/* Live Balloon Board (Balloon Pop campaigns, while live) — placed
+                  high, directly under the campaign intro and above the ticket
+                  selector, so first-time visitors understand the mechanic before
+                  buying. The component re-checks the endpoint and renders nothing
+                  until the host enables the public board. */}
+              {isBalloonPop && status === "live" && (
+                <>
+                  <Separator />
+                  <PublicLiveBalloonBoard campaignId={campaignId} />
+                </>
+              )}
+
               <Separator />
 
               <div id="ticket-selector" className="scroll-mt-24">
@@ -181,13 +193,6 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
       {/* Main Content */}
       <div className="container max-w-5xl px-4 py-8">
         <div className="space-y-8">
-          {/* Live Balloon Board (Balloon Pop campaigns, while live). The
-              component re-checks the endpoint and renders nothing if the host
-              has not enabled the public board yet. */}
-          {isBalloonPop && status === "live" && (
-            <PublicLiveBalloonBoard campaignId={campaignId} />
-          )}
-
           {/* Instant Win Prizes */}
           <InstantWinDisclosure />
           <InstantWinList instantWins={instantWins} />
