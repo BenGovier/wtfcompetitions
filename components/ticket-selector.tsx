@@ -76,9 +76,6 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
   const [hasAcceptedTerms, setHasAcceptedTerms] = useState(false)
   const [qtyBump, setQtyBump] = useState(false)
   const [mounted, setMounted] = useState(false)
-  // Custom-amount slider is collapsed by default when bundles exist, so the
-  // bundle cards + Enter Now button surface sooner on mobile.
-  const [showCustom, setShowCustom] = useState(false)
 
   // Live sold count from API polling
   const [liveSoldCount, setLiveSoldCount] = useState<number | null>(null)
@@ -319,117 +316,47 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
     }
   }
 
-  /* ---- Custom-amount slider markup (reused inline when there are no bundles,
-        or inside the collapsible "Choose custom amount" panel when there are) ---- */
-  const customSlider = (
-    <div className="space-y-3">
-      <label className="text-sm font-medium text-purple-200">
-        {hasBundles ? "Or choose your own" : "Pick your entries"}
-      </label>
-
-      {/* Central quantity display */}
-      <div className={cn(
-        "text-center transition-transform duration-200",
-        qtyBump && "scale-110"
-      )}>
-        <div className="bg-gradient-to-b from-[#FFD46A] to-[#F7A600] bg-clip-text text-5xl font-bold text-transparent drop-shadow-[0_0_10px_rgba(247,166,0,0.4)]">{qty}</div>
-        <div className="text-xs text-purple-300">{qty === 1 ? "entry" : "entries"}</div>
-        {selectedBundle && (
-          <div className="mt-0.5 text-[10px] text-pink-300">Bundle selected</div>
-        )}
+  /* ---- Compact custom quantity control ----
+        A small inline stepper that shares the same qty state as the bundles.
+        Replaces the old full-height slider so the buying flow stays short on
+        mobile. Used directly under the bundle cards (and as the primary picker
+        when there are no bundles). Respects min (1) and max (maxQty) via
+        handleQuantityChange. */
+  const customQuantity = (
+    <div className="flex items-center justify-between gap-3 rounded-xl border border-purple-500/25 bg-white/[0.04] px-4 py-3">
+      <span className="text-sm font-medium text-purple-200">
+        {hasBundles ? "Need a different amount?" : "How many tickets?"}
+      </span>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => handleQuantityChange(-1)}
+          disabled={qty <= 1}
+          aria-label="Decrease tickets"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-900/60 text-2xl font-bold leading-none text-purple-200 transition-all hover:bg-purple-800/80 hover:text-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-purple-900/60 disabled:hover:text-purple-200"
+        >
+          &minus;
+        </button>
+        <div
+          className={cn(
+            "min-w-[5.5rem] text-center transition-transform duration-200",
+            qtyBump && "scale-110",
+          )}
+          aria-live="polite"
+        >
+          <span className="text-lg font-bold tabular-nums text-white">{qty}</span>
+          <span className="ml-1 text-xs text-purple-300">{qty === 1 ? "ticket" : "tickets"}</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => handleQuantityChange(1)}
+          disabled={qty >= maxQty}
+          aria-label="Increase tickets"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-900/60 text-2xl font-bold leading-none text-purple-200 transition-all hover:bg-purple-800/80 hover:text-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-purple-900/60 disabled:hover:text-purple-200"
+        >
+          +
+        </button>
       </div>
-
-      {/* Helper text with drag cue */}
-      <p className="text-center text-sm font-medium text-purple-300">Slide me to choose your tickets</p>
-
-      {/* ---- Mobile-friendly quantity slider with wiggle animation ---- */}
-      <div className="space-y-3 py-4">
-        {/* Animated drag hint */}
-        <div className="flex items-center justify-center gap-1.5 text-xs text-purple-400 animate-pulse">
-          <span className="inline-block animate-[bounce_1s_ease-in-out_infinite]">&#8592;</span>
-          <span>Drag or tap +/-</span>
-          <span className="inline-block animate-[bounce_1s_ease-in-out_infinite_0.5s]">&#8594;</span>
-        </div>
-
-        <div className="relative flex items-center gap-3 px-2 py-2">
-          {/* Minus button */}
-          <button
-            type="button"
-            onClick={() => handleQuantityChange(-1)}
-            disabled={qty <= 1}
-            aria-label="Decrease tickets"
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-purple-900/60 text-2xl font-bold text-purple-200 transition-all hover:bg-purple-800/80 hover:text-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-purple-900/60 disabled:hover:text-purple-200"
-          >
-            &minus;
-          </button>
-
-          {/* Slider */}
-          <input
-            type="range"
-            min={1}
-            max={maxQty}
-            value={qty}
-            onChange={(e) => {
-              const newQty = Number(e.target.value)
-              setQty(newQty)
-              setSelectedBundle(null)
-              setQtyBump(true)
-              setTimeout(() => setQtyBump(false), 200)
-            }}
-            className={cn(
-              "flex-1 h-4 appearance-none cursor-pointer rounded-full bg-purple-900/50",
-              "[&::-webkit-slider-thumb]:appearance-none",
-              "[&::-webkit-slider-thumb]:h-12",
-              "[&::-webkit-slider-thumb]:w-12",
-              "[&::-webkit-slider-thumb]:rounded-full",
-              "[&::-webkit-slider-thumb]:bg-gradient-to-b",
-              "[&::-webkit-slider-thumb]:from-[#FFD46A]",
-              "[&::-webkit-slider-thumb]:to-[#F7A600]",
-              "[&::-webkit-slider-thumb]:border-2",
-              "[&::-webkit-slider-thumb]:border-white/40",
-              "[&::-webkit-slider-thumb]:cursor-grab",
-              "[&::-webkit-slider-thumb]:shadow-[0_0_20px_rgba(247,166,0,0.6)]",
-              "[&::-webkit-slider-thumb]:transition-all",
-              "[&::-webkit-slider-thumb]:duration-150",
-              "[&::-webkit-slider-thumb]:active:scale-110",
-              "[&::-webkit-slider-thumb]:active:cursor-grabbing",
-              "[&::-webkit-slider-thumb]:animate-[wiggle_2s_ease-in-out_infinite]",
-              "[&::-webkit-slider-thumb]:active:animate-none",
-              "[&::-moz-range-thumb]:h-12",
-              "[&::-moz-range-thumb]:w-12",
-              "[&::-moz-range-thumb]:rounded-full",
-              "[&::-moz-range-thumb]:bg-gradient-to-b",
-              "[&::-moz-range-thumb]:from-[#FFD46A]",
-              "[&::-moz-range-thumb]:to-[#F7A600]",
-              "[&::-moz-range-thumb]:border-2",
-              "[&::-moz-range-thumb]:border-white/40",
-              "[&::-moz-range-thumb]:cursor-grab",
-              "[&::-moz-range-thumb]:shadow-[0_0_20px_rgba(247,166,0,0.6)]",
-              "[&::-moz-range-thumb]:active:cursor-grabbing"
-            )}
-            aria-label={`Select quantity: ${qty} tickets`}
-          />
-
-          {/* Plus button */}
-          <button
-            type="button"
-            onClick={() => handleQuantityChange(1)}
-            disabled={qty >= maxQty}
-            aria-label="Increase tickets"
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-purple-900/60 text-2xl font-bold text-purple-200 transition-all hover:bg-purple-800/80 hover:text-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-purple-900/60 disabled:hover:text-purple-200"
-          >
-            +
-          </button>
-        </div>
-
-        {/* Range labels */}
-        <div className="flex justify-between px-4 text-xs text-purple-400">
-          <span>1 ticket</span>
-          <span>{maxQty} tickets</span>
-        </div>
-      </div>
-
-      <p className="text-center text-[11px] text-purple-400">More entries = more chances to win</p>
     </div>
   )
 
@@ -608,12 +535,14 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
               )
             })}
           </div>
+
+          {/* Compact custom amount, directly under the bundle cards */}
+          {customQuantity}
         </div>
       )}
 
-      {/* When there are NO bundles, the slider is the primary picker and stays
-          visible here, above the total. */}
-      {!hasBundles && customSlider}
+      {/* When there are NO bundles, the compact stepper is the primary picker. */}
+      {!hasBundles && customQuantity}
 
       {/* ---- Total and CTA ---- */}
       <div ref={qtyRef} className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-5 shadow-2xl backdrop-blur-lg">
@@ -670,23 +599,6 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
           <FreeEntryInfo />
         </div>
       </div>
-
-      {/* ---- Optional custom amount (collapsed by default, bundles only) ----
-          Keeps the slider available without pushing the Enter Now button down
-          the page. Tapping reveals the full slider. */}
-      {hasBundles && (
-        <div className="space-y-3">
-          <button
-            type="button"
-            onClick={() => setShowCustom((v) => !v)}
-            aria-expanded={showCustom}
-            className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-purple-500/30 bg-white/5 py-3 text-sm font-medium text-purple-200 transition-colors hover:bg-white/10"
-          >
-            {showCustom ? "Hide custom amount" : "Choose custom amount"}
-          </button>
-          {showCustom && customSlider}
-        </div>
-      )}
 
       {/* ---- Sticky bottom CTA (mobile only, after scrolling past qty) ---- */}
       {showStickyCta && !isEnded && !isNotStarted && remaining !== 0 && (
