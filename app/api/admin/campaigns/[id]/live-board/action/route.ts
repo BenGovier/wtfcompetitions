@@ -29,7 +29,7 @@ function jsonError(error: string, status: number) {
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ campaignId: string }> },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const supabase = await createClient()
   const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin'] })
@@ -40,7 +40,7 @@ export async function POST(
     )
   }
 
-  const { campaignId } = await params
+  const { id: campaignId } = await params
   if (!campaignId) return jsonError('campaign_not_found', 400)
 
   let body: ActionBody
