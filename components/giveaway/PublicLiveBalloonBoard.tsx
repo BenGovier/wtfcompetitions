@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Crown } from "lucide-react"
+import { Crown, ChevronRight } from "lucide-react"
 
 /**
  * PUBLIC, customer-facing Live Balloon Board.
@@ -118,6 +118,10 @@ export function PublicLiveBalloonBoard({ campaignId }: { campaignId: string }) {
 
   const visibleItems = sortItems(state.items.filter((it) => it.remaining > 0))
 
+  // Top prize = highest remaining amountPence across items still left to pop.
+  const topPrizePence = visibleItems.reduce((max, it) => (it.amountPence > max ? it.amountPence : max), 0)
+  const hasVip = state.totals.vipRemaining > 0
+
   return (
     <section
       aria-label="Live Balloon Board"
@@ -126,7 +130,7 @@ export function PublicLiveBalloonBoard({ campaignId }: { campaignId: string }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="text-xl font-semibold">Live Balloon Board</h2>
-          <p className="text-sm text-purple-200">Prizes still left to pop</p>
+          <p className="text-sm text-purple-200">Cash balloons still hidden in this competition</p>
         </div>
         <span className="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-3 py-1 text-xs font-bold uppercase tracking-wide text-white">
           <span className="relative flex h-2 w-2">
@@ -137,23 +141,32 @@ export function PublicLiveBalloonBoard({ campaignId }: { campaignId: string }) {
         </span>
       </div>
 
-      {/* Totals */}
-      <div className="mt-4 grid grid-cols-3 gap-2">
+      {/* Short explainer for first-time visitors */}
+      <p className="mt-3 text-sm leading-relaxed text-purple-100">
+        Buy entries below. If your ticket hits a hidden balloon, you win the prize shown.
+      </p>
+
+      {/* Scannable summary stats */}
+      <div className={`mt-4 grid gap-2 ${hasVip ? "grid-cols-3" : "grid-cols-2"}`}>
         <div className="rounded-lg border border-purple-500/20 bg-white/5 p-3 text-center">
           <div className="text-2xl font-bold tabular-nums">{state.totals.totalRemaining}</div>
-          <div className="mt-0.5 text-xs text-purple-200">Total left</div>
+          <div className="mt-0.5 text-xs text-purple-200">Balloons left</div>
         </div>
-        <div className="rounded-lg border border-purple-500/20 bg-white/5 p-3 text-center">
-          <div className="text-2xl font-bold tabular-nums">{state.totals.standardRemaining}</div>
-          <div className="mt-0.5 text-xs text-purple-200">Standard</div>
-        </div>
-        <div className="rounded-lg border border-amber-400/40 bg-amber-400/10 p-3 text-center">
-          <div className="flex items-center justify-center gap-1 text-2xl font-bold tabular-nums text-amber-300">
-            <Crown className="size-4" aria-hidden="true" />
-            {state.totals.vipRemaining}
+        <div className="rounded-lg border border-pink-400/30 bg-pink-400/10 p-3 text-center">
+          <div className="text-2xl font-bold tabular-nums text-pink-200">
+            {topPrizePence > 0 ? formatGBP(topPrizePence) : "—"}
           </div>
-          <div className="mt-0.5 text-xs text-purple-200">VIP</div>
+          <div className="mt-0.5 text-xs text-purple-200">Top prize still live</div>
         </div>
+        {hasVip && (
+          <div className="rounded-lg border border-amber-400/40 bg-amber-400/10 p-3 text-center">
+            <div className="flex items-center justify-center gap-1 text-2xl font-bold tabular-nums text-amber-300">
+              <Crown className="size-4" aria-hidden="true" />
+              {state.totals.vipRemaining}
+            </div>
+            <div className="mt-0.5 text-xs text-purple-200">VIP balloons left</div>
+          </div>
+        )}
       </div>
 
       {/* Grouped prize values */}
@@ -180,7 +193,17 @@ export function PublicLiveBalloonBoard({ campaignId }: { campaignId: string }) {
         <p className="mt-4 text-center text-sm text-purple-200">All prizes have been popped!</p>
       )}
 
-      <p className="mt-4 text-center text-xs text-purple-300/70">Updates automatically during the live</p>
+      {/* Conversion CTA — anchors to the existing ticket selector (#ticket-selector).
+          No checkout logic here; it simply scrolls to the buying controls. */}
+      <a
+        href="#ticket-selector"
+        className="mt-4 flex w-full items-center justify-center gap-1 rounded-lg bg-brand px-4 py-3 text-sm font-bold text-white shadow-[0_0_18px_rgba(255,0,200,0.35)] transition-colors hover:bg-brand/90"
+      >
+        Choose entries below
+        <ChevronRight className="size-4" aria-hidden="true" />
+      </a>
+
+      <p className="mt-3 text-center text-xs text-purple-300/70">Updates automatically during the live</p>
     </section>
   )
 }
