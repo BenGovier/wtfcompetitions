@@ -33,7 +33,9 @@ export async function GET(
   }
 
   const supabase = await createClient()
-  const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin'] })
+  // Hosts (ops) operate the live board during TikTok lives, so they need read
+  // access here too — alongside full admins.
+  const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin', 'ops'] })
   if (!user) {
     return NextResponse.json(
       { ok: false, error: authError },
@@ -236,7 +238,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const supabase = await createClient()
-  const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin'] })
+  const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin', 'ops'] })
   if (!user) {
     return NextResponse.json(
       { ok: false, error: authError },
@@ -255,7 +257,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const supabase = await createClient()
-  const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin'] })
+  const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin', 'ops'] })
   if (!user) {
     return NextResponse.json(
       { ok: false, error: authError },
