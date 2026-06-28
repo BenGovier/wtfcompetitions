@@ -187,6 +187,16 @@ export function LiveBoardPanel({ campaignId }: { campaignId: string }) {
 
   const sortedItems = useMemo(() => (board ? sortItems(board.items) : []), [board])
 
+  // VIP or featured prizes stay large/full-width; everything else is compact.
+  const prominentItems = useMemo(
+    () => sortedItems.filter((it) => it.type === "vip" || it.featured),
+    [sortedItems],
+  )
+  const standardItems = useMemo(
+    () => sortedItems.filter((it) => it.type !== "vip" && !it.featured),
+    [sortedItems],
+  )
+
   const totals = useMemo(() => {
     const items = board?.items ?? []
     let standard = 0
@@ -237,8 +247,10 @@ export function LiveBoardPanel({ campaignId }: { campaignId: string }) {
 
   return (
     <div className="space-y-6">
-      {/* Status + global controls */}
-      <Card className="p-4 sm:p-6">
+      {/* Status + global controls.
+          Sticky so the host always sees totals, Enable/Disable and Undo while
+          scrolling a long prize list. Sticks within the admin <main> scroll area. */}
+      <Card className="sticky top-0 z-30 p-4 shadow-sm sm:p-6">
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant={campaign?.status === "live" ? "default" : "secondary"}>
@@ -319,90 +331,140 @@ export function LiveBoardPanel({ campaignId }: { campaignId: string }) {
         </div>
       </Card>
 
-      {/* Prize items */}
-      <div className="space-y-3">
-        {sortedItems.length === 0 ? (
-          <Card className="p-6">
-            <p className="text-sm text-muted-foreground">This board has no prizes configured.</p>
-          </Card>
-        ) : (
-          sortedItems.map((item) => {
-            const isVip = item.type === "vip"
-            const prominent = isVip || item.featured
-            const popKey = `pop:${item.id}`
-            const incKey = `inc:${item.id}`
-            const atZero = item.remaining <= 0
-            const atStart = item.remaining >= item.starting
+      {/* Prize items.
+          VIP/featured prizes stay large and full-width; standard prize values
+          render as compact cards in a responsive grid so 60-100 balloon events
+          stay scannable without endless full-width rows. Grouped values only —
+          individual balloons are never shown. */}
+      {sortedItems.length === 0 ? (
+        <Card className="p-6">
+          <p className="text-sm text-muted-foreground">This board has no prizes configured.</p>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {prominentItems.length > 0 && (
+            <div className="space-y-3">
+              {prominentItems.map((item) => {
+                const isVip = item.type === "vip"
+                const popKey = `pop:${item.id}`
+                const incKey = `inc:${item.id}`
+                const atZero = item.remaining <= 0
+                const atStart = item.remaining >= item.starting
 
-            return (
-              <Card
-                key={item.id}
-                className={cn(
-                  "p-4",
-                  prominent && "border-2",
-                  isVip && "border-amber-400/70 bg-amber-50/60 dark:bg-amber-950/20",
-                  !isVip && item.featured && "border-primary/50",
-                )}
-              >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      {isVip ? (
-                        <Badge className="bg-amber-500 text-white hover:bg-amber-500">
-                          <Crown className="mr-1 size-3" />
-                          VIP
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary">Standard</Badge>
-                      )}
-                      <span
-                        className={cn(
-                          "truncate font-semibold",
-                          prominent ? "text-lg sm:text-xl" : "text-base",
-                        )}
+                return (
+                  <Card
+                    key={item.id}
+                    className={cn(
+                      "border-2 p-4",
+                      isVip
+                        ? "border-amber-400/70 bg-amber-50/60 dark:bg-amber-950/20"
+                        : "border-primary/50",
+                    )}
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          {isVip ? (
+                            <Badge className="bg-amber-500 text-white hover:bg-amber-500">
+                              <Crown className="mr-1 size-3" />
+                              VIP
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary">Featured</Badge>
+                          )}
+                          <span className="truncate text-lg font-semibold sm:text-xl">{item.label}</span>
+                        </div>
+                        <div className="mt-1 flex items-center gap-3 text-sm text-muted-foreground">
+                          <span className="font-medium text-foreground">{formatGBP(item.amountPence)}</span>
+                          <span className="tabular-nums">
+                            {item.remaining} / {item.starting} left
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="lg"
+                          className="h-16 flex-1 text-base font-bold sm:w-32 sm:flex-none"
+                          disabled={atZero || busyKey === popKey}
+                          onClick={() => runAction({ action: "decrement", itemId: item.id }, popKey)}
+                        >
+                          {busyKey === popKey ? (
+                            <Spinner className="mr-2 size-5" />
+                          ) : (
+                            <Minus className="mr-2 size-5" />
+                          )}
+                          POPPED
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="outline"
+                          className="h-16 w-12 shrink-0"
+                          aria-label={`Add one back to ${item.label}`}
+                          disabled={atStart || busyKey === incKey}
+                          onClick={() => runAction({ action: "increment", itemId: item.id }, incKey)}
+                        >
+                          {busyKey === incKey ? <Spinner className="size-5" /> : <Plus className="size-5" />}
+                        </Button>
+                      </div>
+                    </div>
+                  </Card>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Standard prizes: compact grid */}
+          {standardItems.length > 0 && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {standardItems.map((item) => {
+                const popKey = `pop:${item.id}`
+                const incKey = `inc:${item.id}`
+                const atZero = item.remaining <= 0
+                const atStart = item.remaining >= item.starting
+
+                return (
+                  <Card key={item.id} className="flex flex-col gap-3 p-3">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="truncate text-base font-semibold">{item.label}</span>
+                      <span className="shrink-0 text-sm font-medium text-muted-foreground">
+                        {formatGBP(item.amountPence)}
+                      </span>
+                    </div>
+                    <div className="text-sm tabular-nums text-muted-foreground">
+                      {item.remaining} / {item.starting} left
+                    </div>
+                    <div className="mt-auto flex items-center gap-2">
+                      <Button
+                        className="h-14 flex-1 text-sm font-bold"
+                        disabled={atZero || busyKey === popKey}
+                        onClick={() => runAction({ action: "decrement", itemId: item.id }, popKey)}
                       >
-                        {item.label}
-                      </span>
+                        {busyKey === popKey ? (
+                          <Spinner className="mr-1 size-4" />
+                        ) : (
+                          <Minus className="mr-1 size-4" />
+                        )}
+                        POPPED
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        className="h-14 w-11 shrink-0"
+                        aria-label={`Add one back to ${item.label}`}
+                        disabled={atStart || busyKey === incKey}
+                        onClick={() => runAction({ action: "increment", itemId: item.id }, incKey)}
+                      >
+                        {busyKey === incKey ? <Spinner className="size-4" /> : <Plus className="size-4" />}
+                      </Button>
                     </div>
-                    <div className="mt-1 flex items-center gap-3 text-sm text-muted-foreground">
-                      <span className="font-medium text-foreground">{formatGBP(item.amountPence)}</span>
-                      <span className="tabular-nums">
-                        {item.remaining} / {item.starting} left
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <Button
-                      size="lg"
-                      className="h-16 flex-1 text-base font-bold sm:w-32 sm:flex-none"
-                      disabled={atZero || busyKey === popKey}
-                      onClick={() => runAction({ action: "decrement", itemId: item.id }, popKey)}
-                    >
-                      {busyKey === popKey ? (
-                        <Spinner className="mr-2 size-5" />
-                      ) : (
-                        <Minus className="mr-2 size-5" />
-                      )}
-                      POPPED
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="outline"
-                      className="h-16 w-12 shrink-0"
-                      aria-label={`Add one back to ${item.label}`}
-                      disabled={atStart || busyKey === incKey}
-                      onClick={() => runAction({ action: "increment", itemId: item.id }, incKey)}
-                    >
-                      {busyKey === incKey ? <Spinner className="size-5" /> : <Plus className="size-5" />}
-                    </Button>
-                  </div>
-                </div>
-              </Card>
-            )
-          })
-        )}
-      </div>
+                  </Card>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Recent events */}
       <Card className="p-4 sm:p-6">

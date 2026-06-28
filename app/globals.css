@@ -155,3 +155,18 @@
   0%, 100% { box-shadow: 0 0 14px rgba(251, 191, 36, 0.35); }
   50% { box-shadow: 0 0 26px rgba(251, 191, 36, 0.75); }
 }
+
+/*
+ * Admin live-control screen only: hide the public site footer and the fixed
+ * mobile bottom nav so a host gets a clean, full-height control surface.
+ * Scoped via the [data-hide-public-chrome] marker that ONLY the
+ * /admin/live-feed/[id] page renders, so public pages are never affected.
+ * SiteFooter (<footer>), MobileNav (<nav>) and its spacer (<div class="h-20 md:hidden">)
+ * are direct children of <body>, so direct-child selectors stay safe/specific
+ * and never touch the admin sidebar nav (which is nested inside AdminShell).
+ */
+body:has([data-hide-public-chrome]) > footer,
+body:has([data-hide-public-chrome]) > nav,
+body:has([data-hide-public-chrome]) > div.h-20.md\:hidden {
+  display: none !important;
+}
