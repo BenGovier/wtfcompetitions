@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -80,10 +80,6 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
   // Live sold count from API polling
   const [liveSoldCount, setLiveSoldCount] = useState<number | null>(null)
 
-  // Sticky CTA visibility
-  const qtyRef = useRef<HTMLDivElement>(null)
-  const [showStickyCta, setShowStickyCta] = useState(false)
-
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
@@ -116,17 +112,6 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
     const interval = setInterval(fetchLiveCount, 15000)
     return () => clearInterval(interval)
   }, [campaignId])
-
-  // IntersectionObserver for sticky CTA
-  useEffect(() => {
-    if (!qtyRef.current) return
-    const observer = new IntersectionObserver(
-      ([entry]) => setShowStickyCta(!entry.isIntersecting),
-      { threshold: 0 }
-    )
-    observer.observe(qtyRef.current)
-    return () => observer.disconnect()
-  }, [])
 
   // Auto-select default bundle (highest quantity) when bundles are available
   useEffect(() => {
@@ -579,16 +564,20 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
             })}
           </div>
 
-          {/* Compact custom amount, directly under the bundle cards */}
-          {customQuantity}
+          {/* Compact custom amount, directly under the bundle cards.
+              Desktop only — on mobile the slider lives in the sticky bar. */}
+          <div className="hidden md:block">{customQuantity}</div>
         </div>
       )}
 
-      {/* When there are NO bundles, the compact stepper is the primary picker. */}
-      {!hasBundles && customQuantity}
+      {/* When there are NO bundles, the compact stepper is the primary picker
+          (desktop only — mobile uses the sticky bar slider). */}
+      {!hasBundles && <div className="hidden md:block">{customQuantity}</div>}
 
-      {/* ---- Total and CTA ---- */}
-      <div ref={qtyRef} className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-5 shadow-2xl backdrop-blur-lg">
+      {/* ---- Total and CTA (desktop only) ----
+          On mobile the sticky purchase bar below is the single checkout action,
+          so this larger card is hidden to avoid duplication. */}
+      <div className="hidden space-y-3 rounded-2xl border border-white/10 bg-white/5 p-5 shadow-2xl backdrop-blur-lg md:block">
         <div className="flex items-baseline justify-between">
           <span className="text-sm text-purple-200">Total</span>
           <div className="text-right">
@@ -638,25 +627,134 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
         </div>
       </div>
 
-      {/* ---- Sticky bottom CTA (mobile only, after scrolling past qty) ---- */}
-      {showStickyCta && !isEnded && !isNotStarted && remaining !== 0 && (
-        <div className="fixed inset-x-0 bottom-0 z-50 border-t border-purple-500/30 bg-[#0e0618]/95 px-4 py-3 shadow-[0_-4px_30px_rgba(168,85,247,0.3)] backdrop-blur-xl md:hidden">
-          <div className="flex items-center gap-3">
-            <div className="shrink-0">
-              <div className="text-[10px] font-medium uppercase text-purple-400">Total</div>
-              <div className="bg-gradient-to-r from-[#FFD46A] to-[#F7A600] bg-clip-text text-xl font-bold text-transparent">{formatGBP(totalGBP)}</div>
-            </div>
-            <Button
-              size="lg"
-              className="flex-1 rounded-xl bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] py-3.5 text-sm font-bold text-black shadow-[0_8px_30px_rgba(255,180,0,0.4)] transition-all active:scale-[0.98] disabled:opacity-60"
-              disabled={isProcessing || qty < 1 || !hasAcceptedTerms || totalPence < 100}
-              onClick={handleEnter}
-            >
-              {isProcessing ? "Checking out..." : totalPence < 100 ? "Minimum order £1" : hasAcceptedTerms ? "Enter Now" : "Accept T&Cs above"}
-            </Button>
-          </div>
+      {/* ---- Mobile sticky purchase bar (mobile only) ----
+          The single, always-visible checkout surface on giveaway detail pages.
+          Mirrors the same qty / selectedBundle / hasAcceptedTerms state as the
+          bundles and desktop card, so picking a bundle above instantly updates
+          the slider, quantity and total here. The normal mobile bottom nav is
+          suppressed on these pages (see MobileNav). */}
+      <div className="fixed inset-x-0 bottom-0 z-50 border-t border-purple-500/30 bg-[#0e0618]/95 px-4 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2.5 shadow-[0_-4px_30px_rgba(168,85,247,0.3)] backdrop-blur-xl md:hidden">
+        {/* Quantity + total summary */}
+        <div className="flex items-center justify-between gap-3">
+          <span
+            className={cn(
+              "text-sm font-semibold tabular-nums text-white transition-transform duration-200",
+              qtyBump && "scale-105",
+            )}
+            aria-live="polite"
+          >
+            {qty} {qty === 1 ? "ticket" : "tickets"}
+          </span>
+          <span className="bg-gradient-to-r from-[#FFD46A] to-[#F7A600] bg-clip-text text-xl font-bold text-transparent">
+            {formatGBP(totalGBP)}
+          </span>
         </div>
-      )}
+
+        {/* Compact [-] [slider] [+] control */}
+        <div className="mt-2 flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => handleQuantityChange(-1)}
+            disabled={qty <= 1}
+            aria-label="Decrease tickets"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-purple-900/60 text-2xl font-bold leading-none text-purple-200 transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            &minus;
+          </button>
+          <input
+            type="range"
+            min={1}
+            max={maxQty}
+            value={qty}
+            onChange={(e) => {
+              const newQty = Number(e.target.value)
+              setQty(newQty)
+              setSelectedBundle(null)
+              setQtyBump(true)
+              setTimeout(() => setQtyBump(false), 200)
+            }}
+            aria-label={`Select quantity: ${qty} tickets`}
+            className={cn(
+              "h-2.5 flex-1 cursor-pointer appearance-none rounded-full bg-purple-900/50",
+              "[&::-webkit-slider-thumb]:appearance-none",
+              "[&::-webkit-slider-thumb]:h-7",
+              "[&::-webkit-slider-thumb]:w-7",
+              "[&::-webkit-slider-thumb]:rounded-full",
+              "[&::-webkit-slider-thumb]:bg-gradient-to-b",
+              "[&::-webkit-slider-thumb]:from-[#FFD46A]",
+              "[&::-webkit-slider-thumb]:to-[#F7A600]",
+              "[&::-webkit-slider-thumb]:border-2",
+              "[&::-webkit-slider-thumb]:border-white/40",
+              "[&::-webkit-slider-thumb]:shadow-[0_0_12px_rgba(247,166,0,0.55)]",
+              "[&::-moz-range-thumb]:h-7",
+              "[&::-moz-range-thumb]:w-7",
+              "[&::-moz-range-thumb]:rounded-full",
+              "[&::-moz-range-thumb]:bg-gradient-to-b",
+              "[&::-moz-range-thumb]:from-[#FFD46A]",
+              "[&::-moz-range-thumb]:to-[#F7A600]",
+              "[&::-moz-range-thumb]:border-2",
+              "[&::-moz-range-thumb]:border-white/40",
+              "[&::-moz-range-thumb]:shadow-[0_0_12px_rgba(247,166,0,0.55)]",
+            )}
+          />
+          <button
+            type="button"
+            onClick={() => handleQuantityChange(1)}
+            disabled={qty >= maxQty}
+            aria-label="Increase tickets"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-purple-900/60 text-2xl font-bold leading-none text-purple-200 transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            +
+          </button>
+        </div>
+
+        {error && <div className="mt-2 rounded-md bg-red-500/20 p-2 text-xs text-red-300">{error}</div>}
+        {totalPence < 100 && (
+          <p className="mt-2 text-center text-xs font-medium text-amber-400">Minimum order is £1.00</p>
+        )}
+
+        {/* Compact 18+ / T&Cs row — explicit, never pre-ticked, blocks checkout */}
+        <label className="mt-2 flex cursor-pointer select-none items-center gap-2">
+          <input
+            type="checkbox"
+            checked={hasAcceptedTerms}
+            onChange={(e) => setHasAcceptedTerms(e.target.checked)}
+            className="h-4 w-4 shrink-0 rounded border-purple-500/50 bg-white/10 accent-amber-500 focus:ring-2 focus:ring-amber-400 focus:ring-offset-0"
+          />
+          <span className="text-xs text-purple-200">
+            I am 18+ and agree to the{" "}
+            <a
+              href="/terms"
+              className="text-amber-400 underline underline-offset-2 hover:text-amber-300"
+              onClick={(e) => e.stopPropagation()}
+            >
+              T&Cs
+            </a>
+          </span>
+        </label>
+
+        <Button
+          size="lg"
+          className="mt-2 w-full rounded-xl bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] py-3.5 text-sm font-bold text-black shadow-[0_8px_30px_rgba(255,180,0,0.4)] transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={isProcessing || qty < 1 || remaining === 0 || !hasAcceptedTerms || totalPence < 100}
+          onClick={handleEnter}
+        >
+          {isProcessing
+            ? "Starting checkout..."
+            : remaining === 0
+              ? "Sold out"
+              : totalPence < 100
+                ? "Minimum order £1"
+                : !hasAcceptedTerms
+                  ? "Accept T&Cs to enter"
+                  : "Enter Now"}
+        </Button>
+
+        {/* Free postal entry kept accessible right inside the purchase area */}
+        <div className="text-center leading-none">
+          <FreeEntryInfo />
+        </div>
+      </div>
     </div>
   )
 }
