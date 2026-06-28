@@ -32,7 +32,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const supabase = await createClient()
-  const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin'] })
+  // Hosts (ops) must be able to pop balloons / correct / undo during a live,
+  // so this mutating route allows both full admins and Hosts.
+  const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin', 'ops'] })
   if (!user) {
     return NextResponse.json(
       { ok: false, error: authError },
