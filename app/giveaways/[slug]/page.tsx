@@ -146,20 +146,28 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
             {/* Prize Details */}
             <div className="space-y-6">
               <div>
-                <div className="flex flex-wrap items-center gap-2 pb-3">
-                  <CountdownBadge endsAt={endsAt} status={status} />
-                  {isLive && (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-3 py-1 text-xs font-bold uppercase tracking-wide text-white shadow-[0_0_12px_rgba(255,0,0,0.5)]">
-                      <span className="relative flex h-2 w-2">
-                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
-                        <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
+                {/* Balloon Pop pages hide these duplicate urgency badges (the
+                    live board shows its own live state and the ticket selector
+                    shows the countdown), keeping the top focused on the buying
+                    journey. Other giveaway types keep the badges. */}
+                {!isBalloonPop && (
+                  <div className="flex flex-wrap items-center gap-2 pb-3">
+                    <CountdownBadge endsAt={endsAt} status={status} />
+                    {isLive && (
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-3 py-1 text-xs font-bold uppercase tracking-wide text-white shadow-[0_0_12px_rgba(255,0,0,0.5)]">
+                        <span className="relative flex h-2 w-2">
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
+                          <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
+                        </span>
+                        LIVE
                       </span>
-                      LIVE
-                    </span>
-                  )}
-                </div>
+                    )}
+                  </div>
+                )}
                 <h1 className="text-balance text-4xl font-extrabold leading-tight tracking-tight drop-shadow-[0_0_15px_rgba(255,0,200,0.4)] md:text-5xl">{title}</h1>
-                <ExpandableDescription text={description ?? prizeTitle} />
+                {/* On Balloon Pop pages the description moves into a collapsed
+                    "About this competition" section lower down (see Main Content). */}
+                {!isBalloonPop && <ExpandableDescription text={description ?? prizeTitle} />}
                 {prizeValueText && (
                   <div className="mt-3 flex items-baseline gap-2">
                     <span className="text-sm text-purple-200">Retail Value:</span>
@@ -182,7 +190,7 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
 
               <Separator />
 
-              <div id="ticket-selector" className="scroll-mt-24">
+              <div id="choose-tickets" className="scroll-mt-24">
                 <TicketSelector basePrice={ticketPrice} bundles={bundles} campaignId={campaignId} soldCount={soldCount} capTotal={capTotal} startsAt={p.starts_at ?? null} endsAt={p.ends_at ?? null} ticketsSold={p.tickets_sold != null ? Number(p.tickets_sold) : null} hardCapTotalTickets={p.hard_cap_total_tickets != null ? Number(p.hard_cap_total_tickets) : null} isFreeEntry={p.is_free_entry === true || p.is_free_entry === "true"} freeEntryLimitPerUser={p.free_entry_limit_per_user != null ? Number(p.free_entry_limit_per_user) : 1} wasPricePence={wasTicketPricePence} />
               </div>
             </div>
@@ -193,6 +201,19 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
       {/* Main Content */}
       <div className="container max-w-5xl px-4 py-8">
         <div className="space-y-8">
+          {/* About this competition — the campaign description moved here (below
+              the hero/tickets) on Balloon Pop pages, collapsed by default so the
+              top of the page stays focused on entering. */}
+          {isBalloonPop && description && (
+            <details className="group rounded-lg border border-purple-500/20 bg-white/5 p-4 backdrop-blur-sm">
+              <summary className="flex cursor-pointer items-center justify-between gap-2 text-lg font-semibold">
+                About this competition
+                <ChevronRight className="h-5 w-5 shrink-0 text-purple-300 transition-transform group-open:rotate-90" aria-hidden="true" />
+              </summary>
+              <ExpandableDescription text={description} />
+            </details>
+          )}
+
           {/* Instant Win Prizes */}
           <InstantWinDisclosure />
           <InstantWinList instantWins={instantWins} />

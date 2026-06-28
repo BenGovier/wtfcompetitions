@@ -150,9 +150,9 @@ export function PublicLiveBalloonBoard({ campaignId }: { campaignId: string }) {
         {summaryParts.join(" · ")}
       </p>
 
-      {/* Conversion CTA — scrolls to the existing ticket selector (#ticket-selector). */}
+      {/* Conversion CTA — scrolls to the ticket selector (#choose-tickets). */}
       <a
-        href="#ticket-selector"
+        href="#choose-tickets"
         className="mt-3 flex w-full items-center justify-center gap-1 rounded-lg bg-brand px-4 py-3 text-sm font-bold text-white shadow-[0_0_18px_rgba(255,0,200,0.35)] transition-colors hover:bg-brand/90"
       >
         Get tickets
