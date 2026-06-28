@@ -274,7 +274,9 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
         </div>
       </div>
 
-
+      {/* Bottom spacer so the mobile sticky purchase bar never covers the last
+          of the page content (rules/FAQ). Mobile only. */}
+      <div className="h-52 md:hidden" aria-hidden="true" />
     </div>
   )
 }
