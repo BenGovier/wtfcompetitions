@@ -122,88 +122,66 @@ export function PublicLiveBalloonBoard({ campaignId }: { campaignId: string }) {
   const topPrizePence = visibleItems.reduce((max, it) => (it.amountPence > max ? it.amountPence : max), 0)
   const hasVip = state.totals.vipRemaining > 0
 
+  // Compact summary line, e.g. "30 balloons left · Top prize £1,000 · 3 VIP left".
+  const summaryParts = [
+    `${state.totals.totalRemaining} balloon${state.totals.totalRemaining === 1 ? "" : "s"} left`,
+    topPrizePence > 0 ? `Top prize ${formatGBP(topPrizePence)}` : null,
+    hasVip ? `${state.totals.vipRemaining} VIP left` : null,
+  ].filter(Boolean) as string[]
+
   return (
     <section
       aria-label="Live Balloon Board"
-      className="rounded-xl border border-purple-500/20 bg-white/5 p-5 backdrop-blur-sm"
+      className="rounded-xl border border-purple-500/20 bg-white/5 p-4 backdrop-blur-sm"
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 className="text-xl font-semibold">Live Balloon Board</h2>
-          <p className="text-sm text-purple-200">Cash balloons still hidden in this competition</p>
-        </div>
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-3 py-1 text-xs font-bold uppercase tracking-wide text-white">
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
-          </span>
-          Live
+      {/* Heading with a small, subtle live dot (no large duplicate LIVE badge —
+          the campaign title area already shows LIVE + countdown). */}
+      <div className="flex items-center gap-2">
+        <span className="relative flex h-2 w-2" aria-hidden="true">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
         </span>
+        <h2 className="text-lg font-semibold">Live Balloon Board</h2>
       </div>
+      <p className="mt-0.5 text-sm text-purple-200">Cash balloons still hidden</p>
 
-      {/* Short explainer for first-time visitors */}
-      <p className="mt-3 text-sm leading-relaxed text-purple-100">
-        Buy entries below. If your ticket hits a hidden balloon, you win the prize shown.
+      {/* Compact horizontal summary line (wraps on mobile, no large cards). */}
+      <p className="mt-3 text-sm font-medium text-purple-100">
+        {summaryParts.join(" · ")}
       </p>
 
-      {/* Scannable summary stats */}
-      <div className={`mt-4 grid gap-2 ${hasVip ? "grid-cols-3" : "grid-cols-2"}`}>
-        <div className="rounded-lg border border-purple-500/20 bg-white/5 p-3 text-center">
-          <div className="text-2xl font-bold tabular-nums">{state.totals.totalRemaining}</div>
-          <div className="mt-0.5 text-xs text-purple-200">Balloons left</div>
-        </div>
-        <div className="rounded-lg border border-pink-400/30 bg-pink-400/10 p-3 text-center">
-          <div className="text-2xl font-bold tabular-nums text-pink-200">
-            {topPrizePence > 0 ? formatGBP(topPrizePence) : "—"}
-          </div>
-          <div className="mt-0.5 text-xs text-purple-200">Top prize still live</div>
-        </div>
-        {hasVip && (
-          <div className="rounded-lg border border-amber-400/40 bg-amber-400/10 p-3 text-center">
-            <div className="flex items-center justify-center gap-1 text-2xl font-bold tabular-nums text-amber-300">
-              <Crown className="size-4" aria-hidden="true" />
-              {state.totals.vipRemaining}
-            </div>
-            <div className="mt-0.5 text-xs text-purple-200">VIP balloons left</div>
-          </div>
-        )}
-      </div>
+      {/* Conversion CTA — scrolls to the existing ticket selector (#ticket-selector). */}
+      <a
+        href="#ticket-selector"
+        className="mt-3 flex w-full items-center justify-center gap-1 rounded-lg bg-brand px-4 py-3 text-sm font-bold text-white shadow-[0_0_18px_rgba(255,0,200,0.35)] transition-colors hover:bg-brand/90"
+      >
+        Get tickets
+        <ChevronRight className="size-4" aria-hidden="true" />
+      </a>
 
-      {/* Grouped prize values */}
+      {/* Grouped prize values (tight list; never individual balloons). */}
       {visibleItems.length > 0 ? (
-        <ul className="mt-4 divide-y divide-purple-500/10">
+        <ul className="mt-3 divide-y divide-purple-500/10 text-sm">
           {visibleItems.map((it) => (
-            <li key={it.id} className="flex items-center justify-between gap-3 py-2">
+            <li key={it.id} className="flex items-center justify-between gap-3 py-1.5">
               <span className="flex items-center gap-2 font-medium">
                 {it.type === "vip" && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/15 px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-amber-300">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/15 px-1.5 py-0.5 text-xs font-bold uppercase tracking-wide text-amber-300">
                     <Crown className="size-3" aria-hidden="true" />
                     VIP
                   </span>
                 )}
                 <span>{formatGBP(it.amountPence)}</span>
               </span>
-              <span className="shrink-0 tabular-nums text-purple-200">
-                {it.remaining} left
-              </span>
+              <span className="shrink-0 tabular-nums text-purple-200">{it.remaining} left</span>
             </li>
           ))}
         </ul>
       ) : (
-        <p className="mt-4 text-center text-sm text-purple-200">All prizes have been popped!</p>
+        <p className="mt-3 text-center text-sm text-purple-200">All prizes have been popped!</p>
       )}
 
-      {/* Conversion CTA — anchors to the existing ticket selector (#ticket-selector).
-          No checkout logic here; it simply scrolls to the buying controls. */}
-      <a
-        href="#ticket-selector"
-        className="mt-4 flex w-full items-center justify-center gap-1 rounded-lg bg-brand px-4 py-3 text-sm font-bold text-white shadow-[0_0_18px_rgba(255,0,200,0.35)] transition-colors hover:bg-brand/90"
-      >
-        Choose entries below
-        <ChevronRight className="size-4" aria-hidden="true" />
-      </a>
-
-      <p className="mt-3 text-center text-xs text-purple-300/70">Updates automatically during the live</p>
+      <p className="mt-3 text-center text-xs text-purple-300/70">Updated during the live</p>
     </section>
   )
 }
