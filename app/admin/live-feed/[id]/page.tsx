@@ -30,7 +30,9 @@ export default async function CampaignLiveControlPage({
   const status = campaign?.status ?? ""
 
   return (
-    <div className="space-y-6">
+    // data-hide-public-chrome: hides the public footer + mobile bottom nav for
+    // this admin live-control screen only (see globals.css). UI-only marker.
+    <div className="space-y-6" data-hide-public-chrome>
       <div className="space-y-3">
         <Link
           href="/admin/live-feed"
@@ -58,13 +60,15 @@ export default async function CampaignLiveControlPage({
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_minmax(280px,360px)]">
-        {/* Live Balloon Pop controls (handles its own no-board state). */}
-        <div className="order-2 lg:order-1">
+        {/* Live Balloon Pop controls (handles its own no-board state).
+            order-1 keeps the controls (with the sticky totals/actions) directly
+            under the campaign header on mobile, before the recent-wins feed. */}
+        <div className="order-1">
           <LiveBoardPanel campaignId={id} />
         </div>
 
         {/* Campaign-scoped instant win feed. */}
-        <div className="order-1 lg:order-2">
+        <div className="order-2">
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Recent instant wins</CardTitle>
