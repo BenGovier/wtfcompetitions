@@ -8,6 +8,7 @@ import { SocialProofRow } from "@/components/social-proof-row"
 import { RulesAccordion } from "@/components/rules-accordion"
 import { InstantWinDisclosure } from "@/components/instant-win-disclosure"
 import { InstantWinList } from "@/components/instant-win-list"
+import { PublicLiveBalloonBoard } from "@/components/giveaway/PublicLiveBalloonBoard"
 import { TrustBadges } from "@/components/trust-badges"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
@@ -83,6 +84,12 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
     console.error('[giveaways/[slug]] missing campaignId in snapshot payload', { slug, payloadKeys: Object.keys(p || {}) })
     notFound()
   }
+
+  // presentation_type lives on the list snapshot payload (the detail payload
+  // omits it), so read it from the already-fetched list row as a fallback.
+  const listPayload = matchingRows.find((r) => r.kind === 'list')?.payload as Record<string, any> | undefined
+  const presentationType = p.presentation_type ?? listPayload?.presentation_type ?? null
+  const isBalloonPop = presentationType === 'balloon_pop'
 
   // Derive soldCount from snapshot payload only (no live DB query)
   const capTotal: number | null = p.hard_cap_total_tickets ?? null
@@ -174,6 +181,13 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
       {/* Main Content */}
       <div className="container max-w-5xl px-4 py-8">
         <div className="space-y-8">
+          {/* Live Balloon Board (Balloon Pop campaigns, while live). The
+              component re-checks the endpoint and renders nothing if the host
+              has not enabled the public board yet. */}
+          {isBalloonPop && status === "live" && (
+            <PublicLiveBalloonBoard campaignId={campaignId} />
+          )}
+
           {/* Instant Win Prizes */}
           <InstantWinDisclosure />
           <InstantWinList instantWins={instantWins} />
