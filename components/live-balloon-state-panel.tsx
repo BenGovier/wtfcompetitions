@@ -27,7 +27,10 @@ interface LiveBalloonStatePanelProps {
 
 type ConnState = "connecting" | "live" | "paused"
 
-const POLL_MS = 5000
+// Poll every 10s. Combined with the endpoint's short CDN cache
+// (s-maxage=3, stale-while-revalidate=5), this keeps origin/database
+// pressure low even during high-traffic live events.
+const POLL_MS = 10000
 
 function buildInitial(initial?: Partial<BalloonState> | null): BalloonState | null {
   if (
@@ -76,9 +79,10 @@ export function LiveBalloonStatePanel({ slug, status, initial }: LiveBalloonStat
     abortRef.current = controller
 
     try {
+      // No `cache: "no-store"` here on purpose — the endpoint's response
+      // headers (short CDN s-maxage + stale-while-revalidate) control caching.
       const res = await fetch(`/api/giveaways/${encodeURIComponent(slug)}/live-balloon-state`, {
         signal: controller.signal,
-        cache: "no-store",
       })
       if (!res.ok) throw new Error(`status ${res.status}`)
       const json = await res.json()
