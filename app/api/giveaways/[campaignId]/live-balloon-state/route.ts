@@ -3,6 +3,16 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 
 const NO_STORE = { headers: { 'Cache-Control': 'no-store' } }
 
+// Short, shared CDN cache for SUCCESSFUL responses only. This is safe because
+// the endpoint returns nothing but public aggregate balloon counts — no
+// customer data, no checkout IDs, no ticket/winning numbers, and no raw rows.
+// s-maxage=3 lets the CDN absorb high-traffic polling (e.g. TikTok Live spikes)
+// while keeping figures near-live; stale-while-revalidate=5 avoids origin
+// stampedes during refresh.
+const SUCCESS_CACHE = {
+  headers: { 'Cache-Control': 'public, s-maxage=3, stale-while-revalidate=5' },
+}
+
 function getServiceSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -101,7 +111,7 @@ export async function GET(
           presentationType,
           revealType,
         }),
-        NO_STORE,
+        SUCCESS_CACHE,
       )
     }
 
@@ -203,7 +213,7 @@ export async function GET(
 
         updatedAt: new Date().toISOString(),
       },
-      NO_STORE,
+      SUCCESS_CACHE,
     )
   } catch (err: any) {
     console.error('[live-balloon-state] unexpected error:', err?.message)
