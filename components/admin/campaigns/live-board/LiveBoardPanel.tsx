@@ -18,7 +18,7 @@ import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/components/ui/spinner"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
-import { Crown, Minus, Plus, RotateCcw, Power, AlertTriangle, History } from "lucide-react"
+import { Crown, Plus, RotateCcw, Power, AlertTriangle, History } from "lucide-react"
 
 type ItemType = "standard" | "vip"
 
@@ -263,22 +263,24 @@ export function LiveBoardPanel({ campaignId }: { campaignId: string }) {
           <div className="flex items-center gap-2">
             <Button
               size="lg"
-              className="h-16 flex-1 text-base font-bold sm:w-32 sm:flex-none"
+              className="h-16 flex-1 text-base font-bold sm:w-40 sm:flex-none"
               disabled={atZero || busyKey === popKey}
               onClick={() => runAction({ action: "decrement", itemId: item.id }, popKey)}
             >
-              {busyKey === popKey ? <Spinner className="mr-2 size-5" /> : <Minus className="mr-2 size-5" />}
-              POPPED
+              {busyKey === popKey ? <Spinner className="mr-2 size-5" /> : null}
+              MARK POPPED
             </Button>
             <Button
-              size="icon"
               variant="outline"
-              className="h-16 w-12 shrink-0"
+              size="sm"
+              className="h-16 shrink-0 text-muted-foreground"
               aria-label={`Add one back to ${item.label}`}
+              title="Add one back to the remaining count"
               disabled={atStart || busyKey === incKey}
               onClick={() => runAction({ action: "increment", itemId: item.id }, incKey)}
             >
-              {busyKey === incKey ? <Spinner className="size-5" /> : <Plus className="size-5" />}
+              {busyKey === incKey ? <Spinner className="size-4" /> : <Plus className="mr-1 size-4" />}
+              Add back
             </Button>
           </div>
         </div>
@@ -310,18 +312,20 @@ export function LiveBoardPanel({ campaignId }: { campaignId: string }) {
             disabled={atZero || busyKey === popKey}
             onClick={() => runAction({ action: "decrement", itemId: item.id }, popKey)}
           >
-            {busyKey === popKey ? <Spinner className="mr-1 size-4" /> : <Minus className="mr-1 size-4" />}
-            POPPED
+            {busyKey === popKey ? <Spinner className="mr-1 size-4" /> : null}
+            MARK POPPED
           </Button>
           <Button
-            size="icon"
+            size="sm"
             variant="outline"
-            className="h-14 w-11 shrink-0"
+            className="h-14 shrink-0 px-2 text-xs text-muted-foreground"
             aria-label={`Add one back to ${item.label}`}
+            title="Add one back to the remaining count"
             disabled={atStart || busyKey === incKey}
             onClick={() => runAction({ action: "increment", itemId: item.id }, incKey)}
           >
-            {busyKey === incKey ? <Spinner className="size-4" /> : <Plus className="size-4" />}
+            {busyKey === incKey ? <Spinner className="size-4" /> : <Plus className="mr-1 size-3.5" />}
+            Add back
           </Button>
         </div>
       </Card>
@@ -372,22 +376,44 @@ export function LiveBoardPanel({ campaignId }: { campaignId: string }) {
           scrolling a long prize list. Sticks within the admin <main> scroll area. */}
       <Card className="sticky top-0 z-30 p-4 shadow-sm sm:p-6">
         <div className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <Badge variant={campaign?.status === "live" ? "default" : "secondary"}>
               {campaign?.status ?? "unknown"}
             </Badge>
-            <Badge
-              className={cn(
-                enabled
-                  ? "bg-green-600 text-white hover:bg-green-600"
-                  : "bg-muted text-muted-foreground hover:bg-muted",
-              )}
-            >
-              {enabled ? "Public board ON" : "Public board OFF"}
-            </Badge>
+
+            {/* Public board toggle — intentionally secondary/subtle. Hosts rarely
+                touch this during a live, so it is a small control, not the
+                dominant button. State is shown clearly via label + dot. */}
+            {enabled ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 gap-2 border-green-600/40 text-green-700 dark:text-green-400"
+                disabled={busyKey === "toggle"}
+                onClick={() => setConfirmDisable(true)}
+              >
+                {busyKey === "toggle" ? (
+                  <Spinner className="size-3.5" />
+                ) : (
+                  <span className="size-2 rounded-full bg-green-600" aria-hidden />
+                )}
+                Public board on
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 gap-2 text-muted-foreground"
+                disabled={busyKey === "toggle"}
+                onClick={() => runAction({ action: "enable" }, "toggle")}
+              >
+                {busyKey === "toggle" ? <Spinner className="size-3.5" /> : <Power className="size-3.5" />}
+                Turn public board on
+              </Button>
+            )}
           </div>
 
-          {/* Totals */}
+          {/* Totals — primary at-a-glance info for the host. */}
           <div className="grid grid-cols-3 gap-3">
             <div className="rounded-lg border bg-card p-3 text-center">
               <div className="text-3xl font-bold tabular-nums sm:text-4xl">{totals.total}</div>
@@ -406,31 +432,7 @@ export function LiveBoardPanel({ campaignId }: { campaignId: string }) {
             </div>
           </div>
 
-          {/* Enable / Disable */}
-          {enabled ? (
-            <Button
-              size="lg"
-              variant="outline"
-              className="h-14 w-full text-base font-semibold"
-              disabled={busyKey === "toggle"}
-              onClick={() => setConfirmDisable(true)}
-            >
-              {busyKey === "toggle" ? <Spinner className="mr-2 size-5" /> : <Power className="mr-2 size-5" />}
-              Disable Public Board
-            </Button>
-          ) : (
-            <Button
-              size="lg"
-              className="h-14 w-full bg-green-600 text-base font-semibold text-white hover:bg-green-700"
-              disabled={busyKey === "toggle"}
-              onClick={() => runAction({ action: "enable" }, "toggle")}
-            >
-              {busyKey === "toggle" ? <Spinner className="mr-2 size-5" /> : <Power className="mr-2 size-5" />}
-              Enable Public Board
-            </Button>
-          )}
-
-          {/* Undo */}
+          {/* Undo — the fastest mis-click recovery, kept prominent. */}
           <Button
             size="lg"
             variant="secondary"
