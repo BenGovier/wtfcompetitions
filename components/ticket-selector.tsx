@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Clock, CalendarClock, Lock, Flame, Zap, Crown } from "lucide-react"
+import { Clock, CalendarClock, Flame, Zap, Crown } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { FreeEntryInfo } from "@/components/free-entry-info"
 
@@ -317,17 +317,18 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
   }
 
   /* ---- Compact custom quantity control ----
-        A small inline stepper that shares the same qty state as the bundles.
-        Replaces the old full-height slider so the buying flow stays short on
-        mobile. Used directly under the bundle cards (and as the primary picker
+        A compact slider + / - stepper that shares the same qty state as the
+        bundles, restoring fast quantity changes without the old full-height
+        slider. Used directly under the bundle cards (and as the primary picker
         when there are no bundles). Respects min (1) and max (maxQty) via
-        handleQuantityChange. */
+        handleQuantityChange and the range input bounds. Moving the slider or
+        +/- deselects any bundle (custom per-ticket pricing). */
   const customQuantity = (
-    <div className="flex items-center justify-between gap-3 rounded-xl border border-purple-500/25 bg-white/[0.04] px-4 py-3">
+    <div className="space-y-2 rounded-xl border border-purple-500/25 bg-white/[0.04] px-4 py-3">
       <span className="text-sm font-medium text-purple-200">
         {hasBundles ? "Need a different amount?" : "How many tickets?"}
       </span>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
         <button
           type="button"
           onClick={() => handleQuantityChange(-1)}
@@ -337,16 +338,49 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
         >
           &minus;
         </button>
-        <div
+
+        <input
+          type="range"
+          min={1}
+          max={maxQty}
+          value={qty}
+          onChange={(e) => {
+            const newQty = Number(e.target.value)
+            setQty(newQty)
+            setSelectedBundle(null)
+            setQtyBump(true)
+            setTimeout(() => setQtyBump(false), 200)
+          }}
+          aria-label={`Select quantity: ${qty} tickets`}
           className={cn(
-            "min-w-[5.5rem] text-center transition-transform duration-200",
-            qtyBump && "scale-110",
+            "h-3 flex-1 cursor-pointer appearance-none rounded-full bg-purple-900/50",
+            "[&::-webkit-slider-thumb]:appearance-none",
+            "[&::-webkit-slider-thumb]:h-8",
+            "[&::-webkit-slider-thumb]:w-8",
+            "[&::-webkit-slider-thumb]:rounded-full",
+            "[&::-webkit-slider-thumb]:bg-gradient-to-b",
+            "[&::-webkit-slider-thumb]:from-[#FFD46A]",
+            "[&::-webkit-slider-thumb]:to-[#F7A600]",
+            "[&::-webkit-slider-thumb]:border-2",
+            "[&::-webkit-slider-thumb]:border-white/40",
+            "[&::-webkit-slider-thumb]:cursor-grab",
+            "[&::-webkit-slider-thumb]:shadow-[0_0_14px_rgba(247,166,0,0.55)]",
+            "[&::-webkit-slider-thumb]:transition-transform",
+            "[&::-webkit-slider-thumb]:active:scale-110",
+            "[&::-webkit-slider-thumb]:active:cursor-grabbing",
+            "[&::-moz-range-thumb]:h-8",
+            "[&::-moz-range-thumb]:w-8",
+            "[&::-moz-range-thumb]:rounded-full",
+            "[&::-moz-range-thumb]:bg-gradient-to-b",
+            "[&::-moz-range-thumb]:from-[#FFD46A]",
+            "[&::-moz-range-thumb]:to-[#F7A600]",
+            "[&::-moz-range-thumb]:border-2",
+            "[&::-moz-range-thumb]:border-white/40",
+            "[&::-moz-range-thumb]:cursor-grab",
+            "[&::-moz-range-thumb]:shadow-[0_0_14px_rgba(247,166,0,0.55)]",
           )}
-          aria-live="polite"
-        >
-          <span className="text-lg font-bold tabular-nums text-white">{qty}</span>
-          <span className="ml-1 text-xs text-purple-300">{qty === 1 ? "ticket" : "tickets"}</span>
-        </div>
+        />
+
         <button
           type="button"
           onClick={() => handleQuantityChange(1)}
@@ -357,6 +391,15 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
           +
         </button>
       </div>
+      <p
+        className={cn(
+          "text-center text-sm font-semibold tabular-nums text-purple-100 transition-transform duration-200",
+          qtyBump && "scale-105",
+        )}
+        aria-live="polite"
+      >
+        {qty} {qty === 1 ? "ticket" : "tickets"} selected
+      </p>
     </div>
   )
 
@@ -589,11 +632,6 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
         >
           {isProcessing ? "Starting checkout..." : "Enter Now"}
         </Button>
-
-        <p className="flex items-center justify-center gap-1.5 text-center text-xs text-purple-200">
-          <Lock className="h-3 w-3" aria-hidden="true" />
-          Instant confirmation &bull; Secure checkout
-        </p>
 
         <div className="text-center">
           <FreeEntryInfo />
