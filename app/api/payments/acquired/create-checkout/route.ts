@@ -262,13 +262,37 @@ export async function POST(request: Request) {
     )
   }
 
-  // 11) Success.
+  // 11) Success. Include a safe diagnostic so we can prove the deployed
+  //     payment-link request included webhook_url. Derived from the actual
+  //     linkPayload/webhookUrl — origin + pathname only (never the query
+  //     string), and key names only (no secrets, MID, or field values).
+  const webhookUrlSent =
+    typeof (linkPayload as Record<string, unknown>).webhook_url === 'string'
+  let webhookUrlOrigin: string | null = null
+  let webhookUrlPathname: string | null = null
+  if (webhookUrlSent) {
+    try {
+      const parsed = new URL((linkPayload as { webhook_url: string }).webhook_url)
+      webhookUrlOrigin = parsed.origin
+      webhookUrlPathname = parsed.pathname
+    } catch {
+      // Leave origin/pathname null if the URL is somehow unparseable.
+    }
+  }
+
   return NextResponse.json(
     {
       ok: true,
       checkout_url: checkoutUrl,
       provider: 'acquired',
       provider_session_id: linkId,
+      request_debug: {
+        webhook_url_was_sent: webhookUrlSent,
+        webhook_url_origin: webhookUrlOrigin,
+        webhook_url_pathname: webhookUrlPathname,
+        payload_top_level_keys: Object.keys(linkPayload),
+        transaction_keys: Object.keys(linkPayload.transaction),
+      },
     },
     { status: 200, headers: noStore },
   )
