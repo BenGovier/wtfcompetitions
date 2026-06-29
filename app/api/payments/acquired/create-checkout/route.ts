@@ -157,14 +157,15 @@ export async function POST(request: Request) {
         'Content-Type': 'application/json',
         'Company-Id': companyId,
       },
+      // Minimum Hosted Checkout request per Acquired support: Company-Id only,
+      // no MID/public key/signing keys, and only the transaction object (no
+      // is_recurring/tds or other optional fields).
       body: JSON.stringify({
         transaction: {
           order_id: intent.ref,
           amount: amountDecimal,
           currency: 'GBP',
         },
-        is_recurring: false,
-        tds: { is_active: true },
       }),
     })
 
