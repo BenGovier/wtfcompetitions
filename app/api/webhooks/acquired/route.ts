@@ -16,12 +16,17 @@ function getServiceSupabase() {
 }
 
 /**
- * Acquired webhook capture (staging).
+ * Acquired webhook (staging).
  *
- * CAPTURE/LOGGING ONLY. This endpoint verifies the Acquired webhook hash and
- * records the provider result against the matching checkout_intents row. It does
- * NOT confirm the intent, does NOT set state, and does NOT allocate tickets or
- * award instant wins — fulfilment is intentionally deferred to a later stage.
+ * Verifies the Acquired webhook hash, records the provider result against the
+ * matching checkout_intents row, and — for a verified successful status_update —
+ * fulfils the order by calling the existing idempotent DB RPC
+ * public.confirm_payment_and_award(p_ref, p_user_id).
+ *
+ * This route NEVER sets state/confirmed_at directly and NEVER allocates tickets
+ * or awards instant wins itself — all of that is delegated to the RPC, which is
+ * idempotent. We additionally skip the RPC entirely when the intent is already
+ * confirmed, so duplicate Acquired webhooks cannot trigger redundant work.
  */
 export async function POST(request: Request) {
   // 1) Signing key must be configured.
@@ -91,7 +96,9 @@ export async function POST(request: Request) {
   const svc = getServiceSupabase()
   const { data: intent, error: lookupErr } = await svc
     .from('checkout_intents')
-    .select('ref')
+    .select(
+      'id, ref, user_id, state, total_pence, provider_transaction_id, provider_status',
+    )
     .eq('ref', orderId)
     .maybeSingle()
 
@@ -134,16 +141,63 @@ export async function POST(request: Request) {
     )
   }
 
-  // 8) Safe acknowledgement (no secrets, no payload echo).
+  // 8) Fulfilment (delegated to the idempotent RPC). The capture update above
+  //    has already persisted the provider result regardless of the outcome here.
+  const ackBase = {
+    ok: true as const,
+    webhook_type: webhookType ?? null,
+    webhook_id: webhookId ?? null,
+    order_id: orderId,
+    status: status ?? null,
+    transaction_id: transactionId ?? null,
+  }
+
+  // 8a) Already confirmed → never call the RPC again (idempotency guard at the
+  //     route level, on top of the RPC's own protection).
+  if (intent.state === 'confirmed') {
+    return NextResponse.json(
+      { ...ackBase, fulfilment_status: 'already_confirmed' },
+      { status: 200, headers: noStore },
+    )
+  }
+
+  // 8b) Only a verified successful status_update with a transaction id may
+  //     fulfil. Anything else is captured but not fulfilled.
+  const eligibleToFulfil =
+    webhookType === 'status_update' && status === 'success' && Boolean(transactionId)
+
+  if (!eligibleToFulfil) {
+    return NextResponse.json(
+      { ...ackBase, fulfilment_status: 'not_success_status' },
+      { status: 200, headers: noStore },
+    )
+  }
+
+  // 8c) Successful, pending checkout → fulfil via the existing RPC only.
+  const { data: rpcData, error: rpcErr } = await svc.rpc('confirm_payment_and_award', {
+    p_ref: intent.ref,
+    p_user_id: intent.user_id,
+  })
+
+  if (rpcErr) {
+    console.error('[webhooks/acquired] fulfilment RPC failed', rpcErr.message)
+    return NextResponse.json(
+      {
+        ok: false,
+        error: 'fulfilment_failed',
+        webhook_id: webhookId ?? null,
+        order_id: orderId,
+        transaction_id: transactionId ?? null,
+        provider_status: status ?? null,
+        rpc_error_message: rpcErr.message,
+      },
+      { status: 500, headers: noStore },
+    )
+  }
+
+  // 8d) Fulfilled. Echo the RPC result (ticket/instant-win allocation summary).
   return NextResponse.json(
-    {
-      ok: true,
-      webhook_type: webhookType ?? null,
-      webhook_id: webhookId ?? null,
-      order_id: orderId,
-      status: status ?? null,
-      transaction_id: transactionId ?? null,
-    },
+    { ...ackBase, fulfilment_status: 'fulfilled', fulfilment: rpcData ?? null },
     { status: 200, headers: noStore },
   )
 }
