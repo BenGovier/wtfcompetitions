@@ -86,20 +86,19 @@ export async function POST(request: Request) {
     )
   }
 
-  // 6) Env vars.
+  // 6) Env vars. Per Acquired support, Hosted Checkout payment-links must NOT
+  //    specify a MID, so ACQUIRED_MID is no longer read or required.
   const appId = process.env.ACQUIRED_APP_ID
   const appKey = process.env.ACQUIRED_APP_KEY
   const companyId = process.env.ACQUIRED_COMPANY_ID
-  const mid = process.env.ACQUIRED_MID
 
-  if (!appId || !appKey || !companyId || !mid) {
+  if (!appId || !appKey || !companyId) {
     // Build a list of names only (never values/lengths). This block is only
     // reachable in staging/preview because of the early 404 guard above.
     const missing = [
       ['ACQUIRED_APP_ID', appId],
       ['ACQUIRED_APP_KEY', appKey],
       ['ACQUIRED_COMPANY_ID', companyId],
-      ['ACQUIRED_MID', mid],
     ]
       .filter(([, value]) => !value)
       .map(([name]) => name)
@@ -157,7 +156,6 @@ export async function POST(request: Request) {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
         'Company-Id': companyId,
-        Mid: mid,
       },
       body: JSON.stringify({
         transaction: {
@@ -175,7 +173,7 @@ export async function POST(request: Request) {
     if (!linkRes.ok) {
       // Build a safe diagnostic from Acquired's RESPONSE only. This never
       // contains our app key, access token, Authorization header, Company-Id,
-      // Mid, or outgoing request body — only what Acquired returned to us.
+      // or outgoing request body — only what Acquired returned to us.
       let acquiredError: unknown
       try {
         acquiredError = JSON.parse(raw || '')
