@@ -148,25 +148,30 @@ export async function POST(request: Request) {
   // 8) Create Acquired payment link.
   const amountDecimal = parseFloat((intent.total_pence / 100).toFixed(2))
 
+  // Minimum Hosted Checkout request per Acquired support: Company-Id only,
+  // no MID/public key/signing keys, and only the transaction object (no
+  // is_recurring/tds or other optional fields). Defined as variables so the
+  // staging diagnostic below can describe exactly what was sent (key names and
+  // booleans only — never values).
+  const linkHeaders: Record<string, string> = {
+    Authorization: `Bearer ${accessToken}`,
+    'Content-Type': 'application/json',
+    'Company-Id': companyId,
+  }
+  const linkPayload = {
+    transaction: {
+      order_id: intent.ref,
+      amount: amountDecimal,
+      currency: 'GBP',
+    },
+  }
+
   let linkData: Record<string, any> = {}
   try {
     const linkRes = await fetch('https://test-api.acquired.com/v1/payment-links', {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-        'Company-Id': companyId,
-      },
-      // Minimum Hosted Checkout request per Acquired support: Company-Id only,
-      // no MID/public key/signing keys, and only the transaction object (no
-      // is_recurring/tds or other optional fields).
-      body: JSON.stringify({
-        transaction: {
-          order_id: intent.ref,
-          amount: amountDecimal,
-          currency: 'GBP',
-        },
-      }),
+      headers: linkHeaders,
+      body: JSON.stringify(linkPayload),
     })
 
     const raw = await linkRes.text().catch(() => '')
@@ -182,6 +187,20 @@ export async function POST(request: Request) {
         acquiredError = (raw || '').slice(0, 1000)
       }
 
+      // Safe staging-only diagnostic: key names and booleans only, derived from
+      // the actual outgoing headers/payload. Never includes the app key, access
+      // token, Authorization header, Company-Id value, any MID value, or the
+      // outgoing field values themselves.
+      const ACQUIRED_SUPPORT_COMPANY_ID = '019e081a-d351-714b-b676-6c2c1c08dd63'
+      const requestDebug = {
+        company_id_present: Boolean(process.env.ACQUIRED_COMPANY_ID),
+        company_id_matches_support_value:
+          process.env.ACQUIRED_COMPANY_ID === ACQUIRED_SUPPORT_COMPANY_ID,
+        mid_header_sent: Object.prototype.hasOwnProperty.call(linkHeaders, 'Mid'),
+        payload_top_level_keys: Object.keys(linkPayload),
+        transaction_keys: Object.keys(linkPayload.transaction),
+      }
+
       console.error('[payments/acquired] payment-link creation failed', linkRes.status)
       return NextResponse.json(
         {
@@ -189,6 +208,7 @@ export async function POST(request: Request) {
           error: 'acquired_payment_link_failed',
           status: linkRes.status,
           acquired_error: acquiredError,
+          request_debug: requestDebug,
         },
         { status: 502, headers: noStore },
       )
