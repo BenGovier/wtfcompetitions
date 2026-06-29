@@ -158,12 +158,17 @@ export async function POST(request: Request) {
     'Content-Type': 'application/json',
     'Company-Id': companyId,
   }
+  // Acquired will POST status updates to this URL. Built from the current
+  // request origin so it follows whichever staging/preview host served this
+  // request. No redirect_url/template_id/tds/is_recurring/MID/public key added.
+  const webhookUrl = `${new URL(request.url).origin}/api/webhooks/acquired`
   const linkPayload = {
     transaction: {
       order_id: intent.ref,
       amount: amountDecimal,
       currency: 'GBP',
     },
+    webhook_url: webhookUrl,
   }
 
   let linkData: Record<string, any> = {}
@@ -257,13 +262,37 @@ export async function POST(request: Request) {
     )
   }
 
-  // 11) Success.
+  // 11) Success. Include a safe diagnostic so we can prove the deployed
+  //     payment-link request included webhook_url. Derived from the actual
+  //     linkPayload/webhookUrl — origin + pathname only (never the query
+  //     string), and key names only (no secrets, MID, or field values).
+  const webhookUrlSent =
+    typeof (linkPayload as Record<string, unknown>).webhook_url === 'string'
+  let webhookUrlOrigin: string | null = null
+  let webhookUrlPathname: string | null = null
+  if (webhookUrlSent) {
+    try {
+      const parsed = new URL((linkPayload as { webhook_url: string }).webhook_url)
+      webhookUrlOrigin = parsed.origin
+      webhookUrlPathname = parsed.pathname
+    } catch {
+      // Leave origin/pathname null if the URL is somehow unparseable.
+    }
+  }
+
   return NextResponse.json(
     {
       ok: true,
       checkout_url: checkoutUrl,
       provider: 'acquired',
       provider_session_id: linkId,
+      request_debug: {
+        webhook_url_was_sent: webhookUrlSent,
+        webhook_url_origin: webhookUrlOrigin,
+        webhook_url_pathname: webhookUrlPathname,
+        payload_top_level_keys: Object.keys(linkPayload),
+        transaction_keys: Object.keys(linkPayload.transaction),
+      },
     },
     { status: 200, headers: noStore },
   )
