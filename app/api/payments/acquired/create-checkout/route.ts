@@ -158,12 +158,17 @@ export async function POST(request: Request) {
     'Content-Type': 'application/json',
     'Company-Id': companyId,
   }
+  // Acquired will POST status updates to this URL. Built from the current
+  // request origin so it follows whichever staging/preview host served this
+  // request. No redirect_url/template_id/tds/is_recurring/MID/public key added.
+  const webhookUrl = `${new URL(request.url).origin}/api/webhooks/acquired`
   const linkPayload = {
     transaction: {
       order_id: intent.ref,
       amount: amountDecimal,
       currency: 'GBP',
     },
+    webhook_url: webhookUrl,
   }
 
   let linkData: Record<string, any> = {}
