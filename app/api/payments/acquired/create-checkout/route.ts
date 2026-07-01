@@ -49,7 +49,7 @@ export async function POST(request: Request) {
   // 4) Fetch the matching checkout_intents row.
   const { data: intent, error: intentErr } = await svc
     .from('checkout_intents')
-    .select('ref, total_pence, currency, state, campaign_id')
+    .select('id, ref, user_id, total_pence, currency, state, campaign_id, provider_customer_id')
     .eq('ref', ref)
     .single()
 
@@ -145,6 +145,162 @@ export async function POST(request: Request) {
     )
   }
 
+  // 7b) Resolve an Acquired customer_id (staging QA). We either reuse a
+  //     previously-created customer for this user, or create a new one from the
+  //     safe data we already hold. Failures to CREATE are fatal (we do not
+  //     create a payment link without a customer). Failures to *enrich* the
+  //     payload (auth/profile lookups) are soft — reference is the only hard
+  //     requirement. No secrets, email, name, mobile, or user_id are ever
+  //     returned to the client.
+  let customerId = ''
+  let customerSource: 'reused' | 'created' | 'none' = 'none'
+  let customerPayloadKeys: string[] = []
+
+  // A) Reuse the most recent acquired customer_id for this user, if any.
+  if (intent.user_id) {
+    const { data: priorIntent } = await svc
+      .from('checkout_intents')
+      .select('provider_customer_id')
+      .eq('user_id', intent.user_id)
+      .eq('provider', 'acquired')
+      .not('provider_customer_id', 'is', null)
+      .neq('provider_customer_id', '')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (priorIntent?.provider_customer_id) {
+      customerId = priorIntent.provider_customer_id as string
+      customerSource = 'reused'
+    }
+  }
+
+  // B) No reusable customer → create one from safe available data.
+  if (!customerId) {
+    // Soft-fetch auth email + metadata (never blocks on failure).
+    let email = ''
+    let metaFirstName = ''
+    let metaLastName = ''
+    let metaDisplayName = ''
+    if (intent.user_id) {
+      try {
+        const { data: authData } = await svc.auth.admin.getUserById(intent.user_id)
+        const authUser = authData?.user
+        email = (authUser?.email as string) || ''
+        const meta = (authUser?.user_metadata ?? {}) as Record<string, unknown>
+        metaFirstName = typeof meta.first_name === 'string' ? meta.first_name : ''
+        metaLastName = typeof meta.last_name === 'string' ? meta.last_name : ''
+        metaDisplayName = typeof meta.display_name === 'string' ? meta.display_name : ''
+      } catch {
+        // Ignore — continue with whatever we have.
+      }
+    }
+
+    // Soft-fetch profile real_name (never blocks on failure).
+    let realName = ''
+    if (intent.user_id) {
+      try {
+        const { data: profile } = await svc
+          .from('profiles_private')
+          .select('real_name, mobile')
+          .eq('user_id', intent.user_id)
+          .maybeSingle()
+        realName = typeof profile?.real_name === 'string' ? profile.real_name : ''
+      } catch {
+        // Ignore — continue with whatever we have.
+      }
+    }
+
+    // Derive first/last name from the best available source, split safely.
+    const nameSource = (realName || metaDisplayName).trim()
+    let firstName = metaFirstName.trim()
+    let lastName = metaLastName.trim()
+    if ((!firstName || !lastName) && nameSource) {
+      const parts = nameSource.split(/\s+/).filter(Boolean)
+      if (parts.length > 0) {
+        if (!firstName) firstName = parts[0]
+        if (!lastName && parts.length > 1) lastName = parts.slice(1).join(' ')
+      }
+    }
+
+    // Build the customer payload. `reference` is always present; everything
+    // else is included only when non-empty. No address/postcode/phone is sent
+    // in this first QA pass.
+    const customerPayload: Record<string, unknown> = {
+      reference: `wtf_user_${intent.user_id ?? intent.id}`,
+    }
+    if (firstName) customerPayload.first_name = firstName
+    if (lastName) customerPayload.last_name = lastName
+    if (email) customerPayload.billing = { email }
+    customerPayloadKeys = Object.keys(customerPayload)
+
+    try {
+      const customerRes = await fetch('https://test-api.acquired.com/v1/customers', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'Company-Id': companyId,
+        },
+        body: JSON.stringify(customerPayload),
+      })
+
+      const customerRaw = await customerRes.text().catch(() => '')
+
+      if (!customerRes.ok) {
+        let acquiredError: unknown
+        try {
+          acquiredError = JSON.parse(customerRaw || '')
+        } catch {
+          acquiredError = (customerRaw || '').slice(0, 1000)
+        }
+        console.error('[payments/acquired] customer creation failed', customerRes.status)
+        return NextResponse.json(
+          {
+            ok: false,
+            error: 'acquired_customer_create_failed',
+            status: customerRes.status,
+            acquired_error: acquiredError,
+          },
+          { status: 502, headers: noStore },
+        )
+      }
+
+      let customerData: Record<string, any> = {}
+      try {
+        customerData = JSON.parse(customerRaw || '{}')
+      } catch {
+        customerData = {}
+      }
+      customerId = (customerData.customer_id as string) || ''
+      customerSource = 'created'
+    } catch (err: any) {
+      console.error('[payments/acquired] customer fetch error', String(err?.message || err))
+      return NextResponse.json(
+        { ok: false, error: 'acquired_customer_create_failed' },
+        { status: 502, headers: noStore },
+      )
+    }
+
+    if (!customerId) {
+      console.error('[payments/acquired] customer creation returned no customer_id')
+      return NextResponse.json(
+        { ok: false, error: 'acquired_customer_create_failed' },
+        { status: 502, headers: noStore },
+      )
+    }
+
+    // Persist the freshly-created customer_id on the intent immediately (in
+    // addition to the later provider_session_id/status/payload update).
+    await svc
+      .from('checkout_intents')
+      .update({
+        provider_customer_id: customerId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('ref', ref)
+  }
+
   // 8) Create Acquired payment link.
   const amountDecimal = parseFloat((intent.total_pence / 100).toFixed(2))
 
@@ -173,6 +329,9 @@ export async function POST(request: Request) {
       order_id: intent.ref,
       amount: amountDecimal,
       currency: 'GBP',
+    },
+    customer: {
+      customer_id: customerId,
     },
     webhook_url: webhookUrl,
     redirect_url: redirectUrl,
@@ -316,6 +475,9 @@ export async function POST(request: Request) {
         redirect_url_was_sent: redirectUrlSent,
         redirect_url_pathname: redirectUrlPathname,
         redirect_url_provider: redirectUrlProvider,
+        customer_id_was_sent: Boolean(customerId),
+        customer_id_source: customerSource,
+        customer_payload_keys: customerPayloadKeys,
         payload_top_level_keys: Object.keys(linkPayload),
         transaction_keys: Object.keys(linkPayload.transaction),
       },
