@@ -1,36 +1,27 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { randomUUID } from 'crypto'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 const NO_STORE = { headers: { 'Cache-Control': 'no-store' } }
-const STAGING_BYPASS_USER_ID = '00000000-0000-0000-0000-000000000000'
 
 export async function POST(request: Request) {
-  // 1) Auth
+  // 1) Auth — a real authenticated Supabase user is REQUIRED in every
+  //    environment (local, preview/staging, and production). There is no
+  //    bypass/fallback/fixed user_id: unauthenticated checkout is rejected so a
+  //    checkout_intent can never be attributed to a shared placeholder user.
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
-  const allowStagingCheckoutBypass =
-    process.env.VERCEL_ENV === 'preview' &&
-    process.env.ALLOW_STAGING_CHECKOUT_BYPASS === 'true'
-
-  const resolvedUser = user ?? (allowStagingCheckoutBypass ? { id: STAGING_BYPASS_USER_ID } : null)
-
-  if (!resolvedUser) {
-    return NextResponse.json({ ok: false, error: 'Not authenticated' }, { status: 401, ...NO_STORE })
+  if (!user) {
+    return NextResponse.json({ ok: false, error: 'auth_required' }, { status: 401, ...NO_STORE })
   }
 
-  if (!user && allowStagingCheckoutBypass) {
-    console.warn('[checkout/create] using staging auth bypass', {
-      bypassUserId: STAGING_BYPASS_USER_ID,
-    })
-  }
+  const resolvedUser = user
 
   // 2) Parse body
   let body: Record<string, unknown>
@@ -135,16 +126,8 @@ export async function POST(request: Request) {
   const ref = `CHK-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   const providerSessionId = randomUUID()
 
-  // 4) Insert checkout_intent
-  const insertClient =
-    !user && allowStagingCheckoutBypass
-      ? createAdminClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.SUPABASE_SERVICE_ROLE_KEY!
-        )
-      : supabase
-
-  const { error: insertErr } = await insertClient
+  // 4) Insert checkout_intent as the authenticated user (RLS-scoped client).
+  const { error: insertErr } = await supabase
     .from('checkout_intents')
     .insert({
       ref,
@@ -171,7 +154,6 @@ export async function POST(request: Request) {
     giveawayId,
     qty,
     userId: resolvedUser.id,
-    bypassedAuth: !user && allowStagingCheckoutBypass,
   })
 
   return NextResponse.json({ ok: true, ref, providerSessionId }, NO_STORE)
