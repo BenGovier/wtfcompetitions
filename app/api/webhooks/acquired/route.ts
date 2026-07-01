@@ -84,6 +84,7 @@ export async function POST(request: Request) {
   const orderId = webhookBody.order_id as string | undefined
   const status = webhookBody.status as string | undefined
   const transactionId = webhookBody.transaction_id as string | undefined
+  const cardId = webhookBody.card_id as string | undefined
 
   if (!orderId) {
     return NextResponse.json(
@@ -97,7 +98,7 @@ export async function POST(request: Request) {
   const { data: intent, error: lookupErr } = await svc
     .from('checkout_intents')
     .select(
-      'id, ref, user_id, state, total_pence, provider_transaction_id, provider_status',
+      'id, ref, user_id, state, total_pence, provider_transaction_id, provider_status, provider_payload',
     )
     .eq('ref', orderId)
     .maybeSingle()
@@ -114,6 +115,68 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { ok: false, error: 'intent_not_found' },
       { status: 404, headers: noStore },
+    )
+  }
+
+  // 6b) card_new webhook: Acquired stored the card credential and returned a
+  //     card_id. This branch is CAPTURE ONLY — it records the card_id and never
+  //     touches state/confirmed_at, never calls confirm_payment_and_award, and
+  //     never allocates tickets or awards instant wins. It is intentionally
+  //     independent of the status_update payment flow so card_new arriving
+  //     before OR after status_update can neither confirm nor undo a payment.
+  if (webhookType === 'card_new') {
+    if (!cardId) {
+      return NextResponse.json(
+        { ok: false, error: 'missing_card_id' },
+        { status: 400, headers: noStore },
+      )
+    }
+
+    // Preserve existing provider_payload (the payment status_update data) and
+    // merge the card_new payload under a clear key, without clobbering it. Only
+    // merge when the existing payload is a plain object; otherwise start fresh.
+    const existingPayload = intent.provider_payload
+    const mergedPayload =
+      existingPayload && typeof existingPayload === 'object' && !Array.isArray(existingPayload)
+        ? { ...(existingPayload as Record<string, unknown>), acquired_card_new_webhook: parsedBody }
+        : { acquired_card_new_webhook: parsedBody }
+
+    // Deliberately do NOT overwrite provider_status (keep it as the payment
+    // status) or provider_webhook_event_id (keep the payment status_update id) —
+    // card_new details live inside provider_payload instead.
+    const cardPatch: Record<string, unknown> = {
+      provider: 'acquired',
+      provider_card_id: cardId,
+      provider_payload: mergedPayload,
+      updated_at: new Date().toISOString(),
+    }
+    if (transactionId) cardPatch.provider_transaction_id = transactionId
+
+    const { error: cardUpdateErr } = await svc
+      .from('checkout_intents')
+      .update(cardPatch)
+      .eq('ref', orderId)
+
+    if (cardUpdateErr) {
+      console.error('[webhooks/acquired] card_new update failed', cardUpdateErr.message)
+      return NextResponse.json(
+        { ok: false, error: 'card_update_failed' },
+        { status: 500, headers: noStore },
+      )
+    }
+
+    // Never expose the actual card_id in the response.
+    return NextResponse.json(
+      {
+        ok: true,
+        webhook_type: 'card_new',
+        webhook_id: webhookId ?? null,
+        order_id: orderId,
+        transaction_id: transactionId ?? null,
+        card_status: status ?? null,
+        card_saved: true,
+      },
+      { status: 200, headers: noStore },
     )
   }
 
