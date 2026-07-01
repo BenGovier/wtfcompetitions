@@ -250,6 +250,48 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
       }
 
       if (res.ok && json.ok && json.ref) {
+        // Staging/preview only: route the customer through Acquired Hosted
+        // Checkout instead of SumUp. Production continues to use SumUp exactly
+        // as before. Detection is client-side and origin-based only (no
+        // secrets): the staging domain or Vercel preview (*.vercel.app) hosts.
+        const host = window.location.hostname
+        const useAcquired =
+          host === 'staging.wtf-giveaways.co.uk' || host.endsWith('.vercel.app')
+
+        if (useAcquired) {
+          const acquiredRes = await fetch('/api/payments/acquired/create-checkout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ref: json.ref }),
+          })
+
+          if (acquiredRes.status === 401) {
+            const returnTo = window.location.pathname + window.location.search
+            window.location.href = `/auth/login?redirect=${encodeURIComponent(returnTo)}`
+            return
+          }
+
+          let acquiredJson: Record<string, unknown>
+          try {
+            acquiredJson = await acquiredRes.json()
+          } catch {
+            setError('Something went wrong. Please try again.')
+            return
+          }
+
+          if (acquiredRes.ok && acquiredJson.ok && acquiredJson.checkout_url) {
+            const checkoutUrl = acquiredJson.checkout_url as string
+            if (!checkoutUrl || typeof checkoutUrl !== 'string') {
+              throw new Error('Missing checkout_url')
+            }
+            window.location.assign(checkoutUrl)
+            return
+          }
+
+          setError((acquiredJson.error as string) || 'Something went wrong. Please try again.')
+          return
+        }
+
         const sumupRes = await fetch('/api/payments/sumup/create-checkout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
