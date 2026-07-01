@@ -336,7 +336,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: 'Missing or invalid ref' }, { status: 400, ...NO_STORE })
   }
 
-  if (provider !== 'sumup' && provider !== 'paypal' && provider !== 'debug') {
+  // 'acquired' is accepted so the browser can poll this route after returning
+  // from Acquired Hosted Checkout, but confirmPaymentAndAward NEVER verifies or
+  // fulfils Acquired from the browser — it only reads an already-confirmed
+  // intent (confirmed by the verified Acquired webhook) or returns the 409
+  // awaiting_provider_confirmation poll state.
+  if (
+    provider !== 'sumup' &&
+    provider !== 'paypal' &&
+    provider !== 'debug' &&
+    provider !== 'acquired'
+  ) {
     return NextResponse.json({ ok: false, error: 'Missing or invalid provider' }, { status: 400, ...NO_STORE })
   }
 
