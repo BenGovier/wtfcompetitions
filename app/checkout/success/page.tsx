@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useRef, useState, useCallback } from 'react'
 import dynamic from 'next/dynamic'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -126,6 +126,25 @@ function CheckoutSuccessClient() {
   const abortRef = useRef<AbortController | null>(null)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const doneRef = useRef(false)
+
+  // Auth-aware header refresh (UI only).
+  //
+  // The site header is server-rendered in the root layout via
+  // supabase.auth.getUser(). When the customer is returned here by a top-level
+  // cross-site navigation from Acquired's hosted checkout, that initial
+  // document can render the header before the same-site session cookies are
+  // applied, so the nav shows "Log in / Create account" even though the session
+  // is valid (which is why /me and this page's confirm call still work). A
+  // single same-origin router.refresh() re-runs the server components with the
+  // now-present cookies so the header reflects the real session. Guarded to run
+  // once; it does not touch payment/confirm logic.
+  const router = useRouter()
+  const refreshedRef = useRef(false)
+  useEffect(() => {
+    if (refreshedRef.current) return
+    refreshedRef.current = true
+    router.refresh()
+  }, [router])
 
   const confirm = useCallback(async () => {
     if (!ref) return
