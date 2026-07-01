@@ -324,6 +324,11 @@ export async function POST(request: Request) {
   const origin = new URL(request.url).origin
   const webhookUrl = `${origin}/api/webhooks/acquired`
   const redirectUrl = `${origin}/checkout/success?ref=${encodeURIComponent(intent.ref)}&provider=acquired`
+  // is_recurring:true instructs Acquired Hosted Checkout to store the card
+  // credential against the customer (returning a card_id via the card_new
+  // webhook) so it can be reused for QA. Still no MID header / public key /
+  // signing key / tds / template_id / payment_methods / address / postcode /
+  // phone in the body.
   const linkPayload = {
     transaction: {
       order_id: intent.ref,
@@ -333,6 +338,7 @@ export async function POST(request: Request) {
     customer: {
       customer_id: customerId,
     },
+    is_recurring: true,
     webhook_url: webhookUrl,
     redirect_url: redirectUrl,
   }
@@ -485,6 +491,8 @@ export async function POST(request: Request) {
         redirect_url_was_sent: redirectUrlSent,
         redirect_url_pathname: redirectUrlPathname,
         redirect_url_provider: redirectUrlProvider,
+        is_recurring_was_sent:
+          (linkPayload as Record<string, unknown>).is_recurring === true,
         customer_id_was_sent: Boolean(customerId),
         customer_id_source: customerSource,
         customer_payload_keys: customerPayloadKeys,
