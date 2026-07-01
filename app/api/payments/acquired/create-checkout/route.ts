@@ -407,17 +407,27 @@ export async function POST(request: Request) {
   const checkoutUrl = `https://test-pay.acquired.com/v1/${linkId}`
 
   // 10) Update the existing checkout_intents row at runtime only.
+  //     provider_customer_id is ALWAYS included here (for both "created" and
+  //     "reused" sources) so the current row is guaranteed to carry its own
+  //     customer_id and the final update can never accidentally clear it. It is
+  //     only set when we actually have a customerId (always true at this point,
+  //     since a missing customer aborts earlier with 502).
+  const finalUpdate: Record<string, unknown> = {
+    provider: 'acquired',
+    provider_session_id: linkId,
+    provider_status: 'payment_link_created',
+    provider_payload: linkData,
+    updated_at: new Date().toISOString(),
+  }
+  if (customerId) {
+    finalUpdate.provider_customer_id = customerId
+  }
+
   const { data: updated, error: updateErr } = await svc
     .from('checkout_intents')
-    .update({
-      provider: 'acquired',
-      provider_session_id: linkId,
-      provider_status: 'payment_link_created',
-      provider_payload: linkData,
-      updated_at: new Date().toISOString(),
-    })
+    .update(finalUpdate)
     .eq('ref', ref)
-    .select('ref, provider_session_id')
+    .select('ref, provider_session_id, provider_customer_id')
     .maybeSingle()
 
   if (updateErr || !updated?.provider_session_id) {
@@ -478,6 +488,11 @@ export async function POST(request: Request) {
         customer_id_was_sent: Boolean(customerId),
         customer_id_source: customerSource,
         customer_payload_keys: customerPayloadKeys,
+        // The current row's provider_customer_id is confirmed stored: we only
+        // reach this success branch after the final update succeeded, and that
+        // update includes provider_customer_id whenever a customerId exists.
+        // Verified against the returned row rather than assumed.
+        current_intent_customer_id_was_stored: Boolean(updated?.provider_customer_id),
         payload_top_level_keys: Object.keys(linkPayload),
         transaction_keys: Object.keys(linkPayload.transaction),
       },
