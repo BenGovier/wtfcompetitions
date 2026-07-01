@@ -350,6 +350,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: 'Missing or invalid provider' }, { status: 400, ...NO_STORE })
   }
 
+  // Safety: the unverified 'debug' provider (which awards without any external
+  // payment verification) is only permitted outside production. In production
+  // we refuse before confirmPaymentAndAward / the award RPC can ever run.
+  // VERCEL_ENV is server-only; when it's unset (local dev) debug stays allowed.
+  if (provider === 'debug' && process.env.VERCEL_ENV === 'production') {
+    return NextResponse.json({ ok: false, error: 'debug_provider_disabled' }, { status: 403, ...NO_STORE })
+  }
+
   // 3) Call confirmPaymentAndAward
   console.log('[checkout/confirm] confirm attempt:', {
     ref,
