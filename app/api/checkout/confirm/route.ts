@@ -8,7 +8,6 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 const NO_STORE = { headers: { 'Cache-Control': 'no-store' } }
-const STAGING_BYPASS_USER_ID = '00000000-0000-0000-0000-000000000000'
 
 async function sendResendEmail(args: {
   apiKey: string
@@ -297,29 +296,21 @@ function getServiceSupabase() {
 }
 
 export async function POST(request: Request) {
-  // 1) Auth
+  // 1) Auth — a real authenticated Supabase user is REQUIRED in every
+  //    environment (local, preview/staging, and production). There is no
+  //    bypass/fallback/fixed user_id.
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
-  const allowStagingCheckoutBypass =
-    process.env.VERCEL_ENV === 'preview' &&
-    process.env.ALLOW_STAGING_CHECKOUT_BYPASS === 'true'
-
-  const resolvedUser = user ?? (allowStagingCheckoutBypass ? { id: STAGING_BYPASS_USER_ID } : null)
-
-  console.log('[checkout/confirm] caller user:', resolvedUser?.id ?? null)
-
-  if (!resolvedUser) {
-    return NextResponse.json({ ok: false, error: 'Not authenticated' }, { status: 401, ...NO_STORE })
+  if (!user) {
+    return NextResponse.json({ ok: false, error: 'auth_required' }, { status: 401, ...NO_STORE })
   }
 
-  if (!user && allowStagingCheckoutBypass) {
-    console.warn('[checkout/confirm] using staging auth bypass', {
-      bypassUserId: STAGING_BYPASS_USER_ID,
-    })
-  }
+  const resolvedUser = user
+
+  console.log('[checkout/confirm] caller user:', resolvedUser.id)
 
   // 2) Parse body
   let body: Record<string, unknown>
@@ -363,7 +354,6 @@ export async function POST(request: Request) {
     ref,
     provider,
     callerUserId: resolvedUser.id,
-    bypassedAuth: !user && allowStagingCheckoutBypass,
   })
 
   try {
@@ -529,7 +519,6 @@ export async function POST(request: Request) {
       ref,
       provider,
       callerUserId: resolvedUser.id,
-      bypassedAuth: !user && allowStagingCheckoutBypass,
     })
     return NextResponse.json({ ok: false, error: 'Internal server error' }, { status: 500, ...NO_STORE })
   }
