@@ -301,6 +301,38 @@ export async function POST(request: Request) {
       .eq('ref', ref)
   }
 
+  // 7c) Tracking only: copy a previously-stored provider_card_id forward.
+  //     Acquired's card_new webhook only fires the FIRST time a card is stored
+  //     for a customer, so later reuse checkouts would otherwise leave
+  //     provider_card_id null even though a stored card exists. We look up the
+  //     latest existing provider_card_id for this user + customer and copy it
+  //     onto the current row for audit/QA. This is NOT sent to Acquired (the
+  //     stored card is selected via customer.customer_id at Hosted Checkout) and
+  //     it never blocks checkout. If none is found we leave it null so card_new
+  //     can still populate it later.
+  let existingCardId = ''
+  if (intent.user_id && customerId) {
+    try {
+      const { data: priorCard } = await svc
+        .from('checkout_intents')
+        .select('provider_card_id')
+        .eq('user_id', intent.user_id)
+        .eq('provider', 'acquired')
+        .eq('provider_customer_id', customerId)
+        .not('provider_card_id', 'is', null)
+        .neq('provider_card_id', '')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (priorCard?.provider_card_id) {
+        existingCardId = priorCard.provider_card_id as string
+      }
+    } catch {
+      // Soft-fail: tracking only, never blocks checkout.
+    }
+  }
+
   // 8) Create Acquired payment link.
   const amountDecimal = parseFloat((intent.total_pence / 100).toFixed(2))
 
@@ -428,12 +460,18 @@ export async function POST(request: Request) {
   if (customerId) {
     finalUpdate.provider_customer_id = customerId
   }
+  // Tracking only: carry the previously-stored card forward when we found one.
+  // If none was found we leave provider_card_id untouched so the card_new
+  // webhook can still populate it later.
+  if (existingCardId) {
+    finalUpdate.provider_card_id = existingCardId
+  }
 
   const { data: updated, error: updateErr } = await svc
     .from('checkout_intents')
     .update(finalUpdate)
     .eq('ref', ref)
-    .select('ref, provider_session_id, provider_customer_id')
+    .select('ref, provider_session_id, provider_customer_id, provider_card_id')
     .maybeSingle()
 
   if (updateErr || !updated?.provider_session_id) {
@@ -501,6 +539,9 @@ export async function POST(request: Request) {
         // update includes provider_customer_id whenever a customerId exists.
         // Verified against the returned row rather than assumed.
         current_intent_customer_id_was_stored: Boolean(updated?.provider_customer_id),
+        // Saved-card reuse tracking (booleans only — never the actual card_id).
+        existing_card_id_found: Boolean(existingCardId),
+        current_intent_card_id_was_stored: Boolean(updated?.provider_card_id),
         payload_top_level_keys: Object.keys(linkPayload),
         transaction_keys: Object.keys(linkPayload.transaction),
       },
