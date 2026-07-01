@@ -158,10 +158,16 @@ export async function POST(request: Request) {
     'Content-Type': 'application/json',
     'Company-Id': companyId,
   }
-  // Acquired will POST status updates to this URL. Built from the current
-  // request origin so it follows whichever staging/preview host served this
-  // request. No redirect_url/template_id/tds/is_recurring/MID/public key added.
-  const webhookUrl = `${new URL(request.url).origin}/api/webhooks/acquired`
+  // Acquired will POST status updates to this URL (source of truth). The
+  // redirect_url is where the customer's browser is returned after paying — it
+  // points at the existing WTF success page and ALWAYS includes
+  // provider=acquired so the success page can never fall back to its unverified
+  // "debug" provider default. Both URLs are built from the current request
+  // origin so they follow whichever staging/preview host served this request.
+  // Still no template_id/tds/is_recurring/MID/public key/signing key in the body.
+  const origin = new URL(request.url).origin
+  const webhookUrl = `${origin}/api/webhooks/acquired`
+  const redirectUrl = `${origin}/checkout/success?ref=${encodeURIComponent(intent.ref)}&provider=acquired`
   const linkPayload = {
     transaction: {
       order_id: intent.ref,
@@ -169,6 +175,7 @@ export async function POST(request: Request) {
       currency: 'GBP',
     },
     webhook_url: webhookUrl,
+    redirect_url: redirectUrl,
   }
 
   let linkData: Record<string, any> = {}
@@ -280,6 +287,22 @@ export async function POST(request: Request) {
     }
   }
 
+  // Safe redirect_url diagnostic: pathname + the provider value only. We never
+  // echo the full query string (which contains the checkout ref).
+  const redirectUrlSent =
+    typeof (linkPayload as Record<string, unknown>).redirect_url === 'string'
+  let redirectUrlPathname: string | null = null
+  let redirectUrlProvider: string | null = null
+  if (redirectUrlSent) {
+    try {
+      const parsed = new URL((linkPayload as { redirect_url: string }).redirect_url)
+      redirectUrlPathname = parsed.pathname
+      redirectUrlProvider = parsed.searchParams.get('provider')
+    } catch {
+      // Leave pathname/provider null if the URL is somehow unparseable.
+    }
+  }
+
   return NextResponse.json(
     {
       ok: true,
@@ -290,6 +313,9 @@ export async function POST(request: Request) {
         webhook_url_was_sent: webhookUrlSent,
         webhook_url_origin: webhookUrlOrigin,
         webhook_url_pathname: webhookUrlPathname,
+        redirect_url_was_sent: redirectUrlSent,
+        redirect_url_pathname: redirectUrlPathname,
+        redirect_url_provider: redirectUrlProvider,
         payload_top_level_keys: Object.keys(linkPayload),
         transaction_keys: Object.keys(linkPayload.transaction),
       },
