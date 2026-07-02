@@ -6,6 +6,18 @@ export const revalidate = 0
 
 const noStore = { 'Cache-Control': 'no-store' }
 
+/**
+ * Normalise an Acquired base URL from env. Trims whitespace, falls back to the
+ * QA/test host when unset (so we can never accidentally hit LIVE without
+ * explicit configuration), and strips any trailing slash(es) so that
+ * `${base}/v1/...` is never malformed (e.g. no `//v1`).
+ */
+function normalizeBaseUrl(value: string | undefined, fallback: string): string {
+  const raw = (value ?? '').trim()
+  const base = raw || fallback
+  return base.replace(/\/+$/, '')
+}
+
 function getServiceSupabase() {
   return createServiceClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -15,14 +27,20 @@ function getServiceSupabase() {
 }
 
 export async function POST(request: Request) {
-  // 1) Staging/Preview only.
-  const isStaging =
-    process.env.VERCEL_ENV === 'preview' ||
-    (process.env.NEXT_PUBLIC_SITE_URL ?? '').includes('staging.wtf-giveaways.co.uk')
-
-  if (!isStaging) {
-    return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404, headers: noStore })
-  }
+  // 1) Env-driven Acquired base URLs (production cutover). Production sets these
+  //    to the LIVE Acquired hosts; Preview/staging sets them to the QA/test
+  //    hosts. This real checkout route is allowed to run in production — the
+  //    provider used per-environment is controlled at the client via
+  //    NEXT_PUBLIC_CHECKOUT_PROVIDER (Acquired vs SumUp), and SumUp remains the
+  //    rollback path.
+  const apiBaseUrl = normalizeBaseUrl(
+    process.env.ACQUIRED_API_BASE_URL,
+    'https://test-api.acquired.com',
+  )
+  const payBaseUrl = normalizeBaseUrl(
+    process.env.ACQUIRED_PAY_BASE_URL,
+    'https://test-pay.acquired.com',
+  )
 
   // 2) Parse body and validate checkout ref.
   let body: Record<string, unknown>
@@ -93,8 +111,8 @@ export async function POST(request: Request) {
   const companyId = process.env.ACQUIRED_COMPANY_ID
 
   if (!appId || !appKey || !companyId) {
-    // Build a list of names only (never values/lengths). This block is only
-    // reachable in staging/preview because of the early 404 guard above.
+    // Build a list of names only (never values/lengths). Safe to return in any
+    // environment because it contains configuration key names only, no secrets.
     const missing = [
       ['ACQUIRED_APP_ID', appId],
       ['ACQUIRED_APP_KEY', appKey],
@@ -110,10 +128,11 @@ export async function POST(request: Request) {
     )
   }
 
-  // 7) Login to Acquired test API for a server-side-only access token.
+  // 7) Login to the Acquired API (env-driven host) for a server-side-only
+  //    access token.
   let accessToken = ''
   try {
-    const loginRes = await fetch('https://test-api.acquired.com/v1/login', {
+    const loginRes = await fetch(`${apiBaseUrl}/v1/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ app_id: appId, app_key: appKey }),
@@ -235,7 +254,7 @@ export async function POST(request: Request) {
     customerPayloadKeys = Object.keys(customerPayload)
 
     try {
-      const customerRes = await fetch('https://test-api.acquired.com/v1/customers', {
+      const customerRes = await fetch(`${apiBaseUrl}/v1/customers`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -356,12 +375,22 @@ export async function POST(request: Request) {
   const origin = new URL(request.url).origin
   const webhookUrl = `${origin}/api/webhooks/acquired`
   const redirectUrl = `${origin}/checkout/success?ref=${encodeURIComponent(intent.ref)}&provider=acquired`
+  // Optional payment-method allow-list. Only sent when ACQUIRED_PAYMENT_METHODS
+  // is explicitly configured (comma-separated). When unset we OMIT
+  // payment_methods entirely so Acquired uses its account defaults. This is the
+  // safeguard that keeps Pay by Bank (a QA-only method) out of Production: it
+  // can only ever appear if "pay_by_bank" is explicitly listed in this env var.
+  const paymentMethods = (process.env.ACQUIRED_PAYMENT_METHODS ?? '')
+    .split(',')
+    .map((method) => method.trim())
+    .filter(Boolean)
+
   // is_recurring:true instructs Acquired Hosted Checkout to store the card
   // credential against the customer (returning a card_id via the card_new
-  // webhook) so it can be reused for QA. tds.is_active:true enables 3-D Secure
-  // (PSD2/SCA) on the Hosted Checkout as required by Acquired QA. Still no MID
-  // header / public key / signing key / template_id / payment_methods /
-  // address / postcode / phone in the body.
+  // webhook) so it can be reused. tds.is_active:true enables 3-D Secure
+  // (PSD2/SCA) on the Hosted Checkout. Still no MID header / public key /
+  // signing key / template_id / address / postcode / phone in the body.
+  // payment_methods is included ONLY when explicitly configured (see above).
   const linkPayload = {
     transaction: {
       order_id: intent.ref,
@@ -378,11 +407,12 @@ export async function POST(request: Request) {
     is_recurring: true,
     webhook_url: webhookUrl,
     redirect_url: redirectUrl,
+    ...(paymentMethods.length > 0 ? { payment_methods: paymentMethods } : {}),
   }
 
   let linkData: Record<string, any> = {}
   try {
-    const linkRes = await fetch('https://test-api.acquired.com/v1/payment-links', {
+    const linkRes = await fetch(`${apiBaseUrl}/v1/payment-links`, {
       method: 'POST',
       headers: linkHeaders,
       body: JSON.stringify(linkPayload),
@@ -447,7 +477,7 @@ export async function POST(request: Request) {
     )
   }
 
-  const checkoutUrl = `https://test-pay.acquired.com/v1/${linkId}`
+  const checkoutUrl = `${payBaseUrl}/v1/${linkId}`
 
   // 10) Build the safe request diagnostic BEFORE the DB update so it can be
   //     persisted into provider_payload (and reused in the response). It uses

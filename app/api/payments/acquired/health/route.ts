@@ -35,9 +35,16 @@ export async function POST() {
     )
   }
 
+  // Env-driven Acquired API host (trailing slash stripped). Falls back to the
+  // QA/test host when unset so we never accidentally hit LIVE. This diagnostic
+  // route stays staging/preview-only via the guard above.
+  const apiBaseUrl = (process.env.ACQUIRED_API_BASE_URL ?? '')
+    .trim()
+    .replace(/\/+$/, '') || 'https://test-api.acquired.com'
+
   let res: Response
   try {
-    res = await fetch('https://test-api.acquired.com/v1/login', {
+    res = await fetch(`${apiBaseUrl}/v1/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ app_id: appId, app_key: appKey }),
