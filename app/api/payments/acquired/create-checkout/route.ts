@@ -449,48 +449,11 @@ export async function POST(request: Request) {
 
   const checkoutUrl = `https://test-pay.acquired.com/v1/${linkId}`
 
-  // 10) Update the existing checkout_intents row at runtime only.
-  //     provider_customer_id is ALWAYS included here (for both "created" and
-  //     "reused" sources) so the current row is guaranteed to carry its own
-  //     customer_id and the final update can never accidentally clear it. It is
-  //     only set when we actually have a customerId (always true at this point,
-  //     since a missing customer aborts earlier with 502).
-  const finalUpdate: Record<string, unknown> = {
-    provider: 'acquired',
-    provider_session_id: linkId,
-    provider_status: 'payment_link_created',
-    provider_payload: linkData,
-    updated_at: new Date().toISOString(),
-  }
-  if (customerId) {
-    finalUpdate.provider_customer_id = customerId
-  }
-  // Tracking only: carry the previously-stored card forward when we found one.
-  // If none was found we leave provider_card_id untouched so the card_new
-  // webhook can still populate it later.
-  if (existingCardId) {
-    finalUpdate.provider_card_id = existingCardId
-  }
-
-  const { data: updated, error: updateErr } = await svc
-    .from('checkout_intents')
-    .update(finalUpdate)
-    .eq('ref', ref)
-    .select('ref, provider_session_id, provider_customer_id, provider_card_id')
-    .maybeSingle()
-
-  if (updateErr || !updated?.provider_session_id) {
-    console.error('[payments/acquired] DB update failed', updateErr?.message)
-    return NextResponse.json(
-      { ok: false, error: 'Failed to update intent' },
-      { status: 500, headers: noStore },
-    )
-  }
-
-  // 11) Success. Include a safe diagnostic so we can prove the deployed
-  //     payment-link request included webhook_url. Derived from the actual
-  //     linkPayload/webhookUrl — origin + pathname only (never the query
-  //     string), and key names only (no secrets, MID, or field values).
+  // 10) Build the safe request diagnostic BEFORE the DB update so it can be
+  //     persisted into provider_payload (and reused in the response). It uses
+  //     key names and booleans only — never the actual customer_id, card_id,
+  //     email, name, mobile, user_id, app key, access token, signing key,
+  //     Company ID, full webhook_url, or the redirect_url query string.
   const webhookUrlSent =
     typeof (linkPayload as Record<string, unknown>).webhook_url === 'string'
   let webhookUrlOrigin: string | null = null
@@ -521,6 +484,81 @@ export async function POST(request: Request) {
     }
   }
 
+  // Persisted diagnostic (safe subset). current_intent_card_id_was_stored
+  // reflects whether THIS create-checkout carried a card id forward.
+  const requestDebug = {
+    customer_id_was_sent: Boolean(customerId),
+    is_recurring_was_sent:
+      (linkPayload as Record<string, unknown>).is_recurring === true,
+    tds_was_sent:
+      typeof (linkPayload as Record<string, unknown>).tds === 'object' &&
+      (linkPayload as Record<string, unknown>).tds !== null,
+    tds_is_active_was_sent: linkPayload.tds?.is_active === true,
+    tds_challenge_preference_was_sent:
+      typeof linkPayload.tds?.challenge_preference === 'string' &&
+      linkPayload.tds.challenge_preference.length > 0,
+    webhook_url_was_sent: webhookUrlSent,
+    redirect_url_was_sent: redirectUrlSent,
+    payload_top_level_keys: Object.keys(linkPayload),
+    transaction_keys: Object.keys(linkPayload.transaction),
+    redirect_url_pathname: redirectUrlPathname,
+    redirect_url_provider: redirectUrlProvider,
+    customer_id_source: customerSource,
+    existing_card_id_found: Boolean(existingCardId),
+    current_intent_card_id_was_stored: Boolean(existingCardId),
+  }
+
+  // 10b) Update the existing checkout_intents row at runtime only.
+  //     provider_customer_id is ALWAYS included here (for both "created" and
+  //     "reused" sources) so the current row is guaranteed to carry its own
+  //     customer_id and the final update can never accidentally clear it. It is
+  //     only set when we actually have a customerId (always true at this point,
+  //     since a missing customer aborts earlier with 502).
+  //     provider_payload persists the Acquired response fields PLUS the safe
+  //     acquired_payment_link_request_debug diagnostic; the webhook later MERGES
+  //     into this object so the diagnostic is preserved.
+  const finalUpdate: Record<string, unknown> = {
+    provider: 'acquired',
+    provider_session_id: linkId,
+    provider_status: 'payment_link_created',
+    provider_payload: {
+      ...(linkData && typeof linkData === 'object' && !Array.isArray(linkData)
+        ? linkData
+        : {}),
+      acquired_payment_link_request_debug: requestDebug,
+    },
+    updated_at: new Date().toISOString(),
+  }
+  if (customerId) {
+    finalUpdate.provider_customer_id = customerId
+  }
+  // Tracking only: carry the previously-stored card forward when we found one.
+  // If none was found we leave provider_card_id untouched so the card_new
+  // webhook can still populate it later.
+  if (existingCardId) {
+    finalUpdate.provider_card_id = existingCardId
+  }
+
+  const { data: updated, error: updateErr } = await svc
+    .from('checkout_intents')
+    .update(finalUpdate)
+    .eq('ref', ref)
+    .select('ref, provider_session_id, provider_customer_id, provider_card_id')
+    .maybeSingle()
+
+  if (updateErr || !updated?.provider_session_id) {
+    console.error('[payments/acquired] DB update failed', updateErr?.message)
+    return NextResponse.json(
+      { ok: false, error: 'Failed to update intent' },
+      { status: 500, headers: noStore },
+    )
+  }
+
+  // 11) Success. Reuse the persisted diagnostic (proving the deployed
+  //     payment-link request), plus a few response-only fields verified against
+  //     the returned row. Still key names + booleans only — no secrets, MID, or
+  //     field values, and the full webhook_url / redirect_url query string are
+  //     never echoed.
   return NextResponse.json(
     {
       ok: true,
@@ -528,34 +566,15 @@ export async function POST(request: Request) {
       provider: 'acquired',
       provider_session_id: linkId,
       request_debug: {
-        webhook_url_was_sent: webhookUrlSent,
+        ...requestDebug,
+        // Response-only extras (not persisted): full origin/pathname of the
+        // webhook and the payload key list, plus post-update verifications.
         webhook_url_origin: webhookUrlOrigin,
         webhook_url_pathname: webhookUrlPathname,
-        redirect_url_was_sent: redirectUrlSent,
-        redirect_url_pathname: redirectUrlPathname,
-        redirect_url_provider: redirectUrlProvider,
-        is_recurring_was_sent:
-          (linkPayload as Record<string, unknown>).is_recurring === true,
-        tds_was_sent:
-          typeof (linkPayload as Record<string, unknown>).tds === 'object' &&
-          (linkPayload as Record<string, unknown>).tds !== null,
-        tds_is_active_was_sent: linkPayload.tds?.is_active === true,
-        tds_challenge_preference_was_sent:
-          typeof linkPayload.tds?.challenge_preference === 'string' &&
-          linkPayload.tds.challenge_preference.length > 0,
-        customer_id_was_sent: Boolean(customerId),
-        customer_id_source: customerSource,
         customer_payload_keys: customerPayloadKeys,
-        // The current row's provider_customer_id is confirmed stored: we only
-        // reach this success branch after the final update succeeded, and that
-        // update includes provider_customer_id whenever a customerId exists.
         // Verified against the returned row rather than assumed.
         current_intent_customer_id_was_stored: Boolean(updated?.provider_customer_id),
-        // Saved-card reuse tracking (booleans only — never the actual card_id).
-        existing_card_id_found: Boolean(existingCardId),
         current_intent_card_id_was_stored: Boolean(updated?.provider_card_id),
-        payload_top_level_keys: Object.keys(linkPayload),
-        transaction_keys: Object.keys(linkPayload.transaction),
       },
     },
     { status: 200, headers: noStore },
