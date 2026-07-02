@@ -20,6 +20,7 @@ import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 import { Crown, Plus, RotateCcw, Power, AlertTriangle, History, Settings } from "lucide-react"
 import { LiveBoardSetup } from "./LiveBoardSetup"
+import { LiveTakeoverControl } from "./LiveTakeoverControl"
 
 type ItemType = "standard" | "vip"
 
@@ -45,6 +46,15 @@ interface BoardEvent {
   createdAt: string
 }
 
+interface SiteTakeover {
+  enabled: boolean
+  headline: string | null
+  subtext: string | null
+  primaryLabel: string | null
+  watchUrl: string | null
+  updatedAt: string | null
+}
+
 interface BoardData {
   id: string
   enabled: boolean
@@ -52,6 +62,7 @@ interface BoardData {
   lastEventLabel: string | null
   lastEventAt: string | null
   updatedAt: string
+  siteTakeover?: SiteTakeover | null
 }
 
 interface CampaignSummary {
@@ -498,6 +509,13 @@ export function LiveBoardPanel({ campaignId }: { campaignId: string }) {
           ) : null}
         </div>
       </Card>
+
+      {/* Live site takeover — independent of the balloon board items. */}
+      <LiveTakeoverControl
+        campaignId={campaignId}
+        initial={board.siteTakeover}
+        onSaved={fetchBoard}
+      />
 
       {/* Prize items, grouped for fast scanning during 60-100 balloon events.
           Three sections: VIP/Featured, Big Prizes, Standard Prizes. VIP/Featured
