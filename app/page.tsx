@@ -3,6 +3,7 @@ import Link from "next/link"
 import Image from "next/image"
 import { ArrowRight, Clock } from "lucide-react"
 import { createClient } from "@/lib/supabase/server"
+import { LiveNowTakeover } from "@/components/live/LiveNowTakeover"
 
 // Helper to format countdown from ends_at
 function formatTimeLeft(endsAt: string | null | undefined): string | null {
@@ -64,6 +65,9 @@ export default async function HomePage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#1a002b] via-[#2d0050] to-[#0a0014]">
       <div className="container px-4 py-8 md:py-16">
+      {/* LIVE NOW site takeover — renders only when a takeover is enabled. */}
+      <LiveNowTakeover />
+
       {/* Featured Giveaways */}
       <section className="mb-16">
         <div>
