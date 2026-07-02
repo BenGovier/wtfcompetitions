@@ -12,6 +12,8 @@
  *
  * The scratch-card path is handled elsewhere (ScratchCardReveal); this file is
  * only rendered for reveal_type === 'normal'.
+ *
+ * Redeploy note: no-op change to trigger a fresh deployment (2026-07-02).
  */
 
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
