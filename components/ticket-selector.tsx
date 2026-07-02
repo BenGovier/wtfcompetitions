@@ -250,13 +250,12 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
       }
 
       if (res.ok && json.ok && json.ref) {
-        // Staging/preview only: route the customer through Acquired Hosted
-        // Checkout instead of SumUp. Production continues to use SumUp exactly
-        // as before. Detection is client-side and origin-based only (no
-        // secrets): the staging domain or Vercel preview (*.vercel.app) hosts.
-        const host = window.location.hostname
+        // Provider routing is controlled by NEXT_PUBLIC_CHECKOUT_PROVIDER, which
+        // gives us a production rollback switch (no hostname logic):
+        //   "acquired"    -> Acquired Hosted Checkout (live in production)
+        //   "sumup"/unset -> SumUp (fallback / rollback)
         const useAcquired =
-          host === 'staging.wtf-giveaways.co.uk' || host.endsWith('.vercel.app')
+          (process.env.NEXT_PUBLIC_CHECKOUT_PROVIDER ?? '').trim().toLowerCase() === 'acquired'
 
         if (useAcquired) {
           const acquiredRes = await fetch('/api/payments/acquired/create-checkout', {
