@@ -12,6 +12,8 @@
  *
  * The scratch-card path is handled elsewhere (ScratchCardReveal); this file is
  * only rendered for reveal_type === 'normal'.
+ *
+ * Redeploy note: no-op change to trigger a fresh deployment (2026-07-02).
  */
 
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
@@ -176,55 +178,29 @@ function ReactorCore({ stage, won }: { stage: Stage; won: boolean }) {
         opening ? 'scale-[1.4]' : 'scale-100'
       }`}
     >
-      {/* Red energy glow behind the core */}
+      {/* Red energy glow behind the core. Fixed size + transform scale only (no
+          width/height transition) so it never triggers layout/re-raster. */}
       <div
-        className={`reactor-glow absolute rounded-full bg-red-600/40 blur-3xl transition-all duration-500 ${
-          surging ? 'size-72 opacity-90' : 'size-56 opacity-60'
+        className={`absolute size-64 rounded-full bg-red-600/40 blur-2xl transition-[transform,opacity] duration-500 ${
+          surging ? 'scale-110 opacity-90' : 'scale-90 opacity-60'
         }`}
       />
-      {/* Energy build: ramps opacity + scale hard over the 4s surge so the whole
-          reactor visibly charges toward the result. Transform/opacity only. */}
+      {/* Energy build: ramps opacity + scale over the 4s surge, ease-in so it
+          charges HARDER toward RESULT OPENING. Transform/opacity only — the
+          radial gradient is soft, so NO filter blur is needed. */}
       {stage === 'surge' && (
         <div
-          className="reactor-energy absolute size-80 rounded-full bg-[radial-gradient(circle,rgba(239,68,68,0.7),rgba(245,158,11,0.4)_45%,transparent_70%)] blur-2xl"
+          className="reactor-energy absolute size-72 rounded-full bg-[radial-gradient(circle,rgba(239,68,68,0.7),rgba(245,158,11,0.4)_45%,transparent_70%)]"
           aria-hidden="true"
         />
       )}
       {/* Gold halo */}
-      <div className="absolute size-60 rounded-full bg-amber-400/15 blur-2xl" />
+      <div className="absolute size-60 rounded-full bg-amber-400/15 blur-xl" />
 
-      {/* Charge ring: fills clockwise around the core over the full 4s surge to
-          communicate "the result is charging". SVG stroke-dashoffset animation. */}
-      {stage === 'surge' && (
-        <svg
-          className="absolute size-60 -rotate-90"
-          viewBox="0 0 100 100"
-          fill="none"
-          aria-hidden="true"
-        >
-          <circle cx="50" cy="50" r="46" stroke="rgba(255,255,255,0.08)" strokeWidth="3" />
-          <circle
-            className="reactor-charge-ring"
-            cx="50"
-            cy="50"
-            r="46"
-            stroke="url(#reactorChargeGrad)"
-            strokeWidth="4"
-            strokeLinecap="round"
-            pathLength={100}
-          />
-          <defs>
-            <linearGradient id="reactorChargeGrad" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#fbbf24" />
-              <stop offset="100%" stopColor="#ef4444" />
-            </linearGradient>
-          </defs>
-        </svg>
-      )}
-
-      {/* Rotating outer ring (conic sweep) */}
+      {/* Single conic charge ring (the only conic+mask ring). It spins faster
+          while the reactor is charging. Transform-only, no drop-shadow filter. */}
       <div
-        className="reactor-ring absolute size-56 rounded-full"
+        className={`reactor-ring absolute size-56 rounded-full ${surging ? 'reactor-ring-charged' : ''}`}
         style={{
           background:
             'conic-gradient(from 0deg, transparent 0deg, rgba(245,158,11,0.75) 60deg, transparent 150deg, transparent 210deg, rgba(239,68,68,0.7) 270deg, transparent 340deg)',
@@ -299,13 +275,20 @@ const LAUNCH_VECTORS = [
   { x: 20, y: -200, r: -8 }, // ticket 5 — drops from above
   { x: 0, y: 190, r: 10 }, // ticket 6 — from lower centre
 ]
-// Launch is staggered 0.25s apart so cards clearly arrive one after another.
-const LAUNCH_STEP = 0.25
-// Each ticket then takes its turn surging INTO the reactor, in sequence, so it
-// reads as "tickets powering the result". Feed distance ~50-70px toward centre.
-const FEED_PULL = 0.55
-const FEED_BASE = 1.4 // first feed at ~1.4s of the surge phase
-const FEED_STEP = 0.4 // then every 0.4s: 1.4 / 1.8 / 2.2 / 2.6 / 3.0 / 3.4s
+// Launch is tightly staggered so all six have arrived by ~0.95s into the surge
+// phase (reveal ~1.75s), leaving the rest of the 4s for the surge waves.
+const LAUNCH_STEP = 0.08
+// Grouped surge waves (delays are relative to surge-stage mount at reveal 800ms):
+//   Wave A (tickets 1,3,5 -> even indices) surges at 1.0s  (reveal 1.8-2.8s)
+//   Wave B (tickets 2,4,6 -> odd indices)  surges at 2.0s  (reveal 2.8-3.8s)
+// Each surge pulls the card 65-85px toward the reactor, then returns to orbit.
+const FEED_PULL = 0.72
+const FEED_WAVE_A = 1.0
+const FEED_WAVE_B = 2.0
+// Final charge wave: ALL tickets pull gently inward together and hold, at 3.0s
+// (reveal 3.8-4.8s), right up to RESULT OPENING. Distance ~20-25% of the slot.
+const CHARGE_PULL = 0.22
+const CHARGE_DELAY = 3.0
 
 function TicketOrbit({ stage, tickets }: { stage: Stage; tickets: number[] }) {
   if (stage !== 'surge' && stage !== 'opening') return null
@@ -314,8 +297,11 @@ function TicketOrbit({ stage, tickets }: { stage: Stage; tickets: number[] }) {
   const opening = stage === 'opening'
 
   return (
+    // The FIELD is the single promoted layer for all tickets (one will-change).
+    // None of the per-card nested elements are promoted — this keeps the layer
+    // count low during TICKETS ACTIVE.
     <div
-      className={`pointer-events-none absolute inset-0 flex items-center justify-center ${
+      className={`reactor-orbit-field pointer-events-none absolute inset-0 flex items-center justify-center ${
         opening ? 'reactor-passes-out' : ''
       }`}
       aria-hidden="true"
@@ -323,13 +309,15 @@ function TicketOrbit({ stage, tickets }: { stage: Stage; tickets: number[] }) {
       {passes.map((n, i) => {
         const slot = ORBIT_SLOTS[i % ORBIT_SLOTS.length]
         const launch = LAUNCH_VECTORS[i % LAUNCH_VECTORS.length]
-        // Nested transform layers never fight each other (each owns one axis of
-        // motion, on its own element):
-        //  - wrapper: static resting slot position (translate + rotate)
-        //  - launch:  one-shot big fly-in from a screen edge
-        //  - feed:    one-shot surge toward the reactor core, in sequence
-        //  - orbit:   continuous bob + sway for the whole surge
-        //  - card:    gold border/glow pulse
+        const feedDelay = i % 2 === 0 ? FEED_WAVE_A : FEED_WAVE_B
+        // Nested transform layers each own ONE motion and compose cleanly
+        // (no two transforms fight on the same element). None are promoted:
+        //  - wrapper:      static resting slot position (translate + rotate)
+        //  - launch:       one-shot fly-in from off-screen (0-0.95s)
+        //  - charge-pull:  final inward pull for ALL tickets (3.0-4.0s, holds)
+        //  - feed:         grouped surge wave toward the reactor, then returns
+        //  - orbit:        continuous elliptical drift for the whole surge
+        //  - card:         inner glow overlay pulses OPACITY only
         return (
           <div
             key={n}
@@ -348,21 +336,41 @@ function TicketOrbit({ stage, tickets }: { stage: Stage; tickets: number[] }) {
               }
             >
               <div
-                className="reactor-feed"
+                className="reactor-charge-pull"
                 style={
                   {
-                    '--fx': `${-slot.x * FEED_PULL}px`,
-                    '--fy': `${-slot.y * FEED_PULL}px`,
-                    animationDelay: `${FEED_BASE + i * FEED_STEP}s`,
+                    '--cx': `${-slot.x * CHARGE_PULL}px`,
+                    '--cy': `${-slot.y * CHARGE_PULL}px`,
+                    animationDelay: `${CHARGE_DELAY}s`,
                   } as CSSProperties
                 }
               >
-                <div className="reactor-orbit" style={{ animationDelay: `${i * 140}ms` }}>
-                  <div className="reactor-cardglow flex flex-col items-center rounded-lg border border-amber-400/50 bg-black/70 px-2.5 py-1 backdrop-blur-sm">
-                    <span className="text-[8px] font-bold uppercase tracking-[0.2em] text-amber-400/70">
-                      Ticket
-                    </span>
-                    <span className="font-mono text-sm font-bold text-amber-200">#{n}</span>
+                <div
+                  className="reactor-feed"
+                  style={
+                    {
+                      '--fx': `${-slot.x * FEED_PULL}px`,
+                      '--fy': `${-slot.y * FEED_PULL}px`,
+                      animationDelay: `${feedDelay}s`,
+                    } as CSSProperties
+                  }
+                >
+                  <div className="reactor-orbit" style={{ animationDelay: `${i * 220}ms` }}>
+                    {/* Solid card: no backdrop-filter, no animated box-shadow,
+                        no filter blur. Moves via transform only; the glow is a
+                        separate overlay whose OPACITY animates. */}
+                    <div className="relative flex flex-col items-center rounded-lg border border-amber-400/60 bg-zinc-950/90 px-2.5 py-1 shadow-[0_0_12px_rgba(239,68,68,0.35)]">
+                      <div
+                        className="reactor-cardpulse pointer-events-none absolute inset-0 rounded-lg"
+                        aria-hidden="true"
+                      />
+                      <span className="relative text-[8px] font-bold uppercase tracking-[0.2em] text-amber-400/70">
+                        Ticket
+                      </span>
+                      <span className="relative font-mono text-sm font-bold text-amber-200">
+                        #{n}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -553,21 +561,19 @@ function ResultReactorBackground({ stage, won }: { stage: Stage; won: boolean })
     <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
       {/* Black base */}
       <div className="absolute inset-0 bg-[#060607]" />
-      {/* Deep red radial glow from top-right */}
+      {/* Deep red radial glow from top-right. The radial-gradient is already
+          soft, so no blur filter is needed (removes a large blur surface). */}
       <div
-        className={`absolute -right-24 -top-24 h-[26rem] w-[26rem] rounded-full bg-[radial-gradient(circle,rgba(220,38,38,0.4),transparent_65%)] blur-2xl transition-opacity duration-700 ${
+        className={`absolute -right-24 -top-24 h-[26rem] w-[26rem] rounded-full bg-[radial-gradient(circle,rgba(220,38,38,0.4),transparent_65%)] transition-opacity duration-700 ${
           intense ? 'opacity-100' : 'opacity-70'
         }`}
       />
-      {/* Gold glow from bottom-centre */}
+      {/* Gold glow from bottom-centre (no blur filter — gradient is soft). */}
       <div
-        className={`absolute -bottom-28 left-1/2 h-[24rem] w-[28rem] -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgba(245,158,11,0.32),transparent_65%)] blur-2xl transition-opacity duration-700 ${
+        className={`absolute -bottom-28 left-1/2 h-[24rem] w-[28rem] -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgba(245,158,11,0.32),transparent_65%)] transition-opacity duration-700 ${
           intense ? 'opacity-100' : 'opacity-70'
         }`}
       />
-      {/* Diagonal beams */}
-      <div className="absolute -left-1/4 top-0 h-[140%] w-40 rotate-12 bg-gradient-to-b from-amber-300/10 to-transparent blur-xl" />
-      <div className="absolute right-0 top-0 h-[140%] w-40 -rotate-12 bg-gradient-to-b from-red-500/10 to-transparent blur-xl" />
       {/* Dotted texture */}
       <div
         className="absolute inset-0 opacity-[0.12]"
@@ -593,40 +599,32 @@ function ReactorFlashes({ stage, won }: { stage: Stage; won: boolean }) {
   return (
     <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden" aria-hidden="true">
       {stage === 'surge' && (
-        <>
-          {/* Three obvious screen-wide pulses at ~1.5s / 2.7s / 3.8s of surge. */}
-          <div
-            className="reactor-screenpulse absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,rgba(239,68,68,0.5),transparent_65%)] mix-blend-screen"
-            style={{ animationDelay: '0.7s' }}
-          />
-          <div
-            className="reactor-screenpulse absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,rgba(245,158,11,0.55),transparent_65%)] mix-blend-screen"
-            style={{ animationDelay: '1.9s' }}
-          />
-          <div
-            className="reactor-screenpulse-strong absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,rgba(245,158,11,0.6),rgba(239,68,68,0.4)_45%,transparent_70%)] mix-blend-screen"
-            style={{ animationDelay: '3.0s' }}
-          />
-        </>
+        // A SINGLE subtle screen pulse — opacity only, no blend mode, no second
+        // stacked overlay — timed to the final charge so the screen brightens
+        // as the reactor peaks.
+        <div
+          className="reactor-screenpulse-strong absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,rgba(245,158,11,0.4),rgba(239,68,68,0.25)_45%,transparent_70%)]"
+          style={{ animationDelay: '3.0s' }}
+        />
       )}
 
       {stage === 'opening' && (
         <>
-          {/* Background flash as the reactor opens. */}
+          {/* Background flash as the reactor opens — opacity only, no blend. */}
           <div
-            className={`reactor-flash absolute inset-0 mix-blend-screen ${
+            className={`reactor-flash absolute inset-0 ${
               won
-                ? 'bg-[radial-gradient(circle_at_50%_45%,rgba(253,224,71,0.85),rgba(245,158,11,0.4)_45%,transparent_75%)]'
-                : 'bg-[radial-gradient(circle_at_50%_45%,rgba(248,113,113,0.8),rgba(239,68,68,0.35)_45%,transparent_75%)]'
+                ? 'bg-[radial-gradient(circle_at_50%_45%,rgba(253,224,71,0.7),rgba(245,158,11,0.35)_45%,transparent_75%)]'
+                : 'bg-[radial-gradient(circle_at_50%_45%,rgba(248,113,113,0.65),rgba(239,68,68,0.3)_45%,transparent_75%)]'
             }`}
           />
-          {/* Full-screen light slash sweeping across. */}
-          <div className="absolute inset-0 flex items-center justify-center">
+          {/* Full-screen light slash sweeping across — transform only, no blur. */}
+          <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
             <div
-              className={`reactor-slash h-24 w-[160%] -rotate-6 blur-md ${
+              className={`reactor-slash h-24 w-[160%] -rotate-6 ${
                 won
-                  ? 'bg-gradient-to-r from-transparent via-amber-200/90 to-transparent'
-                  : 'bg-gradient-to-r from-transparent via-red-300/85 to-transparent'
+                  ? 'bg-gradient-to-r from-transparent via-amber-200/80 to-transparent'
+                  : 'bg-gradient-to-r from-transparent via-red-300/75 to-transparent'
               }`}
             />
           </div>
@@ -690,7 +688,11 @@ function ReactorStyles() {
       @keyframes reactor-result-in {
         0% {
           opacity: 0;
-          transform: translateY(16px) scale(0.98);
+          transform: translateY(14px) scale(0.92);
+        }
+        60% {
+          opacity: 1;
+          transform: translateY(0) scale(1.04);
         }
         100% {
           opacity: 1;
@@ -710,15 +712,20 @@ function ReactorStyles() {
           transform: scale(1);
         }
       }
-      /* Energy build behind the core: ramps up across the 4s surge. */
+      /* Energy build behind the core: ramps opacity + scale across the 4s surge
+         (ease-in on the class => charges hardest right before RESULT OPENING). */
       @keyframes reactor-energy {
         0% {
-          opacity: 0.35;
-          transform: scale(0.85);
+          opacity: 0.3;
+          transform: scale(0.8);
+        }
+        70% {
+          opacity: 0.7;
+          transform: scale(1.15);
         }
         100% {
           opacity: 1;
-          transform: scale(1.15);
+          transform: scale(1.45);
         }
       }
       /* Core disc heartbeat: pronounced 1 -> 1.1 -> 1 charge pulse. */
@@ -745,25 +752,7 @@ function ReactorStyles() {
           transform: translate(0, 0) scale(1) rotate(0deg);
         }
       }
-      /* Clockwise charge ring fill over the full 4s surge. */
-      @keyframes reactor-charge-ring {
-        0% {
-          stroke-dasharray: 0 100;
-        }
-        100% {
-          stroke-dasharray: 100 0;
-        }
-      }
-      /* Screen-wide light pulse. */
-      @keyframes reactor-screenpulse {
-        0%,
-        100% {
-          opacity: 0;
-        }
-        50% {
-          opacity: 0.35;
-        }
-      }
+      /* Screen-wide light pulse (single, at the charge peak). */
       @keyframes reactor-screenpulse-strong {
         0%,
         100% {
@@ -799,47 +788,57 @@ function ReactorStyles() {
           opacity: 0;
         }
       }
-      /* Continuous ticket bob + gentle sway (kept small so numbers stay legible). */
+      /* Continuous elliptical drift — clearly visible (~22px x / ~16px y) but
+         numbers stay upright and legible (rotate <=3deg, scale <=1.04). */
       @keyframes reactor-orbit {
         0% {
-          transform: translateY(0) rotate(0deg);
+          transform: translate(0, 0) rotate(0deg) scale(1);
         }
         25% {
-          transform: translateY(-6px) rotate(1.5deg);
+          transform: translate(22px, -12px) rotate(3deg) scale(1.03);
         }
         50% {
-          transform: translateY(1px) rotate(0deg);
+          transform: translate(0, -16px) rotate(0deg) scale(1.01);
         }
         75% {
-          transform: translateY(-4px) rotate(-1.5deg);
+          transform: translate(-22px, -12px) rotate(-3deg) scale(1.03);
         }
         100% {
-          transform: translateY(0) rotate(0deg);
+          transform: translate(0, 0) rotate(0deg) scale(1);
         }
       }
-      /* Feed-in surge: a ticket is pulled hard toward the reactor, then snaps
-         back to its orbit — the "tickets powering the result" moment. */
+      /* Grouped surge wave: a ticket is pulled 65-85px toward the reactor, then
+         returns to its orbit — the "tickets powering the result" moment. */
       @keyframes reactor-feed {
         0% {
           transform: translate(0, 0) scale(1);
         }
-        45% {
-          transform: translate(var(--fx), var(--fy)) scale(1.22);
+        50% {
+          transform: translate(var(--fx), var(--fy)) scale(1.12);
         }
         100% {
           transform: translate(0, 0) scale(1);
         }
       }
-      /* Gold border / glow pulse on each ticket card (box-shadow only). */
-      @keyframes reactor-cardglow {
+      /* Final charge wave: ALL tickets pull gently inward together and HOLD
+         (fill forwards) right up to RESULT OPENING. */
+      @keyframes reactor-charge-pull {
+        0% {
+          transform: translate(0, 0) scale(1);
+        }
+        100% {
+          transform: translate(var(--cx), var(--cy)) scale(1.06);
+        }
+      }
+      /* Ticket card glow pulse — OPACITY ONLY on a pre-rendered glow overlay, so
+         nothing repaints box-shadow per frame. */
+      @keyframes reactor-cardpulse {
         0%,
         100% {
-          box-shadow: 0 0 12px rgba(239, 68, 68, 0.35);
-          border-color: rgba(245, 158, 11, 0.5);
+          opacity: 0.3;
         }
         50% {
-          box-shadow: 0 0 22px rgba(245, 158, 11, 0.65);
-          border-color: rgba(245, 158, 11, 0.95);
+          opacity: 1;
         }
       }
       /* Opening: rings flare outward and fade. */
@@ -867,8 +866,21 @@ function ReactorStyles() {
       .reactor-fade {
         animation: reactor-fade 0.4s ease-out both;
       }
+      /* The reactor core is the ONE promoted reactor layer. */
+      .reactor-core-wrap {
+        will-change: transform;
+      }
+      /* The ticket field is the ONE promoted layer for all tickets; none of the
+         per-card nested elements are promoted. */
+      .reactor-orbit-field {
+        will-change: transform;
+      }
       .reactor-ring {
         animation: reactor-spin 6s linear infinite;
+      }
+      /* While charging, the single conic ring spins faster. */
+      .reactor-ring.reactor-ring-charged {
+        animation-duration: 3s;
       }
       .reactor-ring-rev {
         animation: reactor-spin-rev 9s linear infinite;
@@ -881,9 +893,11 @@ function ReactorStyles() {
       }
       .reactor-result {
         animation: reactor-result-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+        will-change: transform, opacity;
       }
       .reactor-headline {
         animation: reactor-headline 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+        will-change: transform, opacity;
       }
       .reactor-energy {
         animation: reactor-energy 4s ease-in both;
@@ -891,24 +905,23 @@ function ReactorStyles() {
       .reactor-beat {
         animation: reactor-beat 1.4s ease-in-out infinite;
       }
+      /* Per-card motion layers — NOT promoted (no will-change). They paint into
+         the promoted .reactor-orbit-field layer. */
       .reactor-orbit {
-        animation: reactor-orbit 2.6s ease-in-out infinite;
+        animation: reactor-orbit 3s ease-in-out infinite;
       }
       .reactor-launch {
         animation: reactor-launch 0.55s cubic-bezier(0.18, 0.9, 0.3, 1.2) both;
       }
       .reactor-feed {
-        animation: reactor-feed 0.7s ease-in-out both;
+        animation: reactor-feed 1s ease-in-out both;
       }
-      .reactor-cardglow {
-        animation: reactor-cardglow 1.8s ease-in-out infinite;
+      .reactor-charge-pull {
+        animation: reactor-charge-pull 1s ease-in-out forwards;
       }
-      .reactor-charge-ring {
-        animation: reactor-charge-ring 4s linear both;
-        filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.7));
-      }
-      .reactor-screenpulse {
-        animation: reactor-screenpulse 1.1s ease-in-out both;
+      .reactor-cardpulse {
+        box-shadow: 0 0 16px rgba(245, 158, 11, 0.55);
+        animation: reactor-cardpulse 1.8s ease-in-out infinite;
       }
       .reactor-screenpulse-strong {
         animation: reactor-screenpulse-strong 1.1s ease-in-out both;
@@ -941,9 +954,8 @@ function ReactorStyles() {
         .reactor-orbit,
         .reactor-launch,
         .reactor-feed,
-        .reactor-cardglow,
-        .reactor-charge-ring,
-        .reactor-screenpulse,
+        .reactor-charge-pull,
+        .reactor-cardpulse,
         .reactor-screenpulse-strong,
         .reactor-flash,
         .reactor-slash,
