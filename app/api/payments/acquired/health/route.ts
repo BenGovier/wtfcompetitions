@@ -35,12 +35,16 @@ export async function POST() {
     )
   }
 
-  // Env-driven Acquired API host (trailing slash stripped). Falls back to the
-  // QA/test host when unset so we never accidentally hit LIVE. This diagnostic
-  // route stays staging/preview-only via the guard above.
-  const apiBaseUrl = (process.env.ACQUIRED_API_BASE_URL ?? '')
-    .trim()
-    .replace(/\/+$/, '') || 'https://test-api.acquired.com'
+  // Env-driven Acquired API host. Falls back to the QA/test host when unset so
+  // we never accidentally hit LIVE. Strips trailing slash(es) AND a trailing
+  // `/v1` so a value entered with or without `/v1` never yields `/v1/v1` when we
+  // append `/v1/login` below. This diagnostic route stays staging/preview-only
+  // via the guard above.
+  const apiBaseUrl =
+    ((process.env.ACQUIRED_API_BASE_URL ?? '').trim() || 'https://test-api.acquired.com')
+      .replace(/\/+$/, '')
+      .replace(/\/v1$/i, '')
+      .replace(/\/+$/, '')
 
   let res: Response
   try {

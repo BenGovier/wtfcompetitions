@@ -7,15 +7,24 @@ export const revalidate = 0
 const noStore = { 'Cache-Control': 'no-store' }
 
 /**
- * Normalise an Acquired base URL from env. Trims whitespace, falls back to the
- * QA/test host when unset (so we can never accidentally hit LIVE without
- * explicit configuration), and strips any trailing slash(es) so that
- * `${base}/v1/...` is never malformed (e.g. no `//v1`).
+ * Normalise an Acquired base URL from env so callers can always append
+ * `/v1/...` safely. It:
+ *   - trims whitespace,
+ *   - falls back to the QA/test host when unset (so we never accidentally hit
+ *     LIVE without explicit configuration),
+ *   - strips any trailing slash(es) (so we never produce `//v1`), and
+ *   - strips a trailing `/v1` segment (so env values entered WITH `/v1`, e.g.
+ *     `https://api.acquired.com/v1`, never produce `/v1/v1`).
+ * Both `https://api.acquired.com` and `https://api.acquired.com/v1` therefore
+ * normalise to `https://api.acquired.com`.
  */
 function normalizeBaseUrl(value: string | undefined, fallback: string): string {
   const raw = (value ?? '').trim()
   const base = raw || fallback
-  return base.replace(/\/+$/, '')
+  return base
+    .replace(/\/+$/, '') // drop trailing slash(es)
+    .replace(/\/v1$/i, '') // drop a trailing /v1 if the env already included it
+    .replace(/\/+$/, '') // drop any slash exposed by removing /v1
 }
 
 function getServiceSupabase() {
