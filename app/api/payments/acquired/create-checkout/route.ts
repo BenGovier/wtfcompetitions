@@ -352,15 +352,16 @@ export async function POST(request: Request) {
   // provider=acquired so the success page can never fall back to its unverified
   // "debug" provider default. Both URLs are built from the current request
   // origin so they follow whichever staging/preview host served this request.
-  // Still no template_id/tds/is_recurring/MID/public key/signing key in the body.
+  // Still no template_id/MID/public key/signing key in the body.
   const origin = new URL(request.url).origin
   const webhookUrl = `${origin}/api/webhooks/acquired`
   const redirectUrl = `${origin}/checkout/success?ref=${encodeURIComponent(intent.ref)}&provider=acquired`
   // is_recurring:true instructs Acquired Hosted Checkout to store the card
   // credential against the customer (returning a card_id via the card_new
-  // webhook) so it can be reused for QA. Still no MID header / public key /
-  // signing key / tds / template_id / payment_methods / address / postcode /
-  // phone in the body.
+  // webhook) so it can be reused for QA. tds.is_active:true enables 3-D Secure
+  // (PSD2/SCA) on the Hosted Checkout as required by Acquired QA. Still no MID
+  // header / public key / signing key / template_id / payment_methods /
+  // address / postcode / phone in the body.
   const linkPayload = {
     transaction: {
       order_id: intent.ref,
@@ -369,6 +370,10 @@ export async function POST(request: Request) {
     },
     customer: {
       customer_id: customerId,
+    },
+    tds: {
+      is_active: true,
+      challenge_preference: 'no_preference',
     },
     is_recurring: true,
     webhook_url: webhookUrl,
@@ -531,6 +536,13 @@ export async function POST(request: Request) {
         redirect_url_provider: redirectUrlProvider,
         is_recurring_was_sent:
           (linkPayload as Record<string, unknown>).is_recurring === true,
+        tds_was_sent:
+          typeof (linkPayload as Record<string, unknown>).tds === 'object' &&
+          (linkPayload as Record<string, unknown>).tds !== null,
+        tds_is_active_was_sent: linkPayload.tds?.is_active === true,
+        tds_challenge_preference_was_sent:
+          typeof linkPayload.tds?.challenge_preference === 'string' &&
+          linkPayload.tds.challenge_preference.length > 0,
         customer_id_was_sent: Boolean(customerId),
         customer_id_source: customerSource,
         customer_payload_keys: customerPayloadKeys,
