@@ -8,7 +8,6 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 const NO_STORE = { headers: { 'Cache-Control': 'no-store' } }
-const STAGING_BYPASS_USER_ID = '00000000-0000-0000-0000-000000000000'
 
 async function sendResendEmail(args: {
   apiKey: string
@@ -297,29 +296,21 @@ function getServiceSupabase() {
 }
 
 export async function POST(request: Request) {
-  // 1) Auth
+  // 1) Auth — a real authenticated Supabase user is REQUIRED in every
+  //    environment (local, preview/staging, and production). There is no
+  //    bypass/fallback/fixed user_id.
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
-  const allowStagingCheckoutBypass =
-    process.env.VERCEL_ENV === 'preview' &&
-    process.env.ALLOW_STAGING_CHECKOUT_BYPASS === 'true'
-
-  const resolvedUser = user ?? (allowStagingCheckoutBypass ? { id: STAGING_BYPASS_USER_ID } : null)
-
-  console.log('[checkout/confirm] caller user:', resolvedUser?.id ?? null)
-
-  if (!resolvedUser) {
-    return NextResponse.json({ ok: false, error: 'Not authenticated' }, { status: 401, ...NO_STORE })
+  if (!user) {
+    return NextResponse.json({ ok: false, error: 'auth_required' }, { status: 401, ...NO_STORE })
   }
 
-  if (!user && allowStagingCheckoutBypass) {
-    console.warn('[checkout/confirm] using staging auth bypass', {
-      bypassUserId: STAGING_BYPASS_USER_ID,
-    })
-  }
+  const resolvedUser = user
+
+  console.log('[checkout/confirm] caller user:', resolvedUser.id)
 
   // 2) Parse body
   let body: Record<string, unknown>
@@ -336,8 +327,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: 'Missing or invalid ref' }, { status: 400, ...NO_STORE })
   }
 
-  if (provider !== 'sumup' && provider !== 'paypal' && provider !== 'debug') {
+  // 'acquired' is accepted so the browser can poll this route after returning
+  // from Acquired Hosted Checkout, but confirmPaymentAndAward NEVER verifies or
+  // fulfils Acquired from the browser — it only reads an already-confirmed
+  // intent (confirmed by the verified Acquired webhook) or returns the 409
+  // awaiting_provider_confirmation poll state.
+  if (
+    provider !== 'sumup' &&
+    provider !== 'paypal' &&
+    provider !== 'debug' &&
+    provider !== 'acquired'
+  ) {
     return NextResponse.json({ ok: false, error: 'Missing or invalid provider' }, { status: 400, ...NO_STORE })
+  }
+
+  // Safety: the unverified 'debug' provider (which awards without any external
+  // payment verification) is only permitted outside production. In production
+  // we refuse before confirmPaymentAndAward / the award RPC can ever run.
+  // VERCEL_ENV is server-only; when it's unset (local dev) debug stays allowed.
+  if (provider === 'debug' && process.env.VERCEL_ENV === 'production') {
+    return NextResponse.json({ ok: false, error: 'debug_provider_disabled' }, { status: 403, ...NO_STORE })
   }
 
   // 3) Call confirmPaymentAndAward
@@ -345,7 +354,6 @@ export async function POST(request: Request) {
     ref,
     provider,
     callerUserId: resolvedUser.id,
-    bypassedAuth: !user && allowStagingCheckoutBypass,
   })
 
   try {
@@ -511,7 +519,6 @@ export async function POST(request: Request) {
       ref,
       provider,
       callerUserId: resolvedUser.id,
-      bypassedAuth: !user && allowStagingCheckoutBypass,
     })
     return NextResponse.json({ ok: false, error: 'Internal server error' }, { status: 500, ...NO_STORE })
   }

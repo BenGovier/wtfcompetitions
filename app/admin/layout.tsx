@@ -1,5 +1,6 @@
 import React from "react"
 import { AdminShell } from "@/components/admin/AdminShell"
+import { Toaster } from "@/components/ui/toaster"
 import { requireAdmin } from "@/lib/admin/auth"
 
 export default async function AdminLayout({
@@ -15,6 +16,7 @@ export default async function AdminLayout({
   return (
     <AdminShell user={user} role={role}>
       {children}
+      <Toaster />
     </AdminShell>
   )
 }

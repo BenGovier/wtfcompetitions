@@ -21,6 +21,13 @@ const rightItems = [
 export function MobileNav() {
   const pathname = usePathname()
 
+  // On individual giveaway detail pages (/giveaways/[slug]) the mobile sticky
+  // purchase bar becomes the primary bottom action, so the normal bottom nav is
+  // suppressed there to avoid two stacked fixed bars. The /giveaways index and
+  // all other pages keep the nav. Scoped here so nothing global changes.
+  const isGiveawayDetail = pathname.startsWith("/giveaways/") && pathname !== "/giveaways"
+  if (isGiveawayDetail) return null
+
   const renderNavItem = (item: typeof leftItems[0], isCenter = false) => {
     const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href))
     const Icon = item.icon

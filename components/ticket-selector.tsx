@@ -1,10 +1,10 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Clock, CalendarClock, Lock, Flame, Zap, Crown } from "lucide-react"
+import { Clock, CalendarClock, Flame, Zap, Crown } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { FreeEntryInfo } from "@/components/free-entry-info"
 
@@ -80,10 +80,6 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
   // Live sold count from API polling
   const [liveSoldCount, setLiveSoldCount] = useState<number | null>(null)
 
-  // Sticky CTA visibility
-  const qtyRef = useRef<HTMLDivElement>(null)
-  const [showStickyCta, setShowStickyCta] = useState(false)
-
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
@@ -116,17 +112,6 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
     const interval = setInterval(fetchLiveCount, 15000)
     return () => clearInterval(interval)
   }, [campaignId])
-
-  // IntersectionObserver for sticky CTA
-  useEffect(() => {
-    if (!qtyRef.current) return
-    const observer = new IntersectionObserver(
-      ([entry]) => setShowStickyCta(!entry.isIntersecting),
-      { threshold: 0 }
-    )
-    observer.observe(qtyRef.current)
-    return () => observer.disconnect()
-  }, [])
 
   // Auto-select default bundle (highest quantity) when bundles are available
   useEffect(() => {
@@ -265,6 +250,48 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
       }
 
       if (res.ok && json.ok && json.ref) {
+        // Staging/preview only: route the customer through Acquired Hosted
+        // Checkout instead of SumUp. Production continues to use SumUp exactly
+        // as before. Detection is client-side and origin-based only (no
+        // secrets): the staging domain or Vercel preview (*.vercel.app) hosts.
+        const host = window.location.hostname
+        const useAcquired =
+          host === 'staging.wtf-giveaways.co.uk' || host.endsWith('.vercel.app')
+
+        if (useAcquired) {
+          const acquiredRes = await fetch('/api/payments/acquired/create-checkout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ref: json.ref }),
+          })
+
+          if (acquiredRes.status === 401) {
+            const returnTo = window.location.pathname + window.location.search
+            window.location.href = `/auth/login?redirect=${encodeURIComponent(returnTo)}`
+            return
+          }
+
+          let acquiredJson: Record<string, unknown>
+          try {
+            acquiredJson = await acquiredRes.json()
+          } catch {
+            setError('Something went wrong. Please try again.')
+            return
+          }
+
+          if (acquiredRes.ok && acquiredJson.ok && acquiredJson.checkout_url) {
+            const checkoutUrl = acquiredJson.checkout_url as string
+            if (!checkoutUrl || typeof checkoutUrl !== 'string') {
+              throw new Error('Missing checkout_url')
+            }
+            window.location.assign(checkoutUrl)
+            return
+          }
+
+          setError((acquiredJson.error as string) || 'Something went wrong. Please try again.')
+          return
+        }
+
         const sumupRes = await fetch('/api/payments/sumup/create-checkout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -316,34 +343,127 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
     }
   }
 
+  /* ---- Compact custom quantity control ----
+        A compact slider + / - stepper that shares the same qty state as the
+        bundles, restoring fast quantity changes without the old full-height
+        slider. Used directly under the bundle cards (and as the primary picker
+        when there are no bundles). Respects min (1) and max (maxQty) via
+        handleQuantityChange and the range input bounds. Moving the slider or
+        +/- deselects any bundle (custom per-ticket pricing). */
+  const customQuantity = (
+    <div className="space-y-2 rounded-xl border border-purple-500/25 bg-white/[0.04] px-4 py-3">
+      <span className="text-sm font-medium text-purple-200">
+        {hasBundles ? "Need a different amount?" : "How many tickets?"}
+      </span>
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => handleQuantityChange(-1)}
+          disabled={qty <= 1}
+          aria-label="Decrease tickets"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-900/60 text-2xl font-bold leading-none text-purple-200 transition-all hover:bg-purple-800/80 hover:text-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-purple-900/60 disabled:hover:text-purple-200"
+        >
+          &minus;
+        </button>
+
+        <input
+          type="range"
+          min={1}
+          max={maxQty}
+          value={qty}
+          onChange={(e) => {
+            const newQty = Number(e.target.value)
+            setQty(newQty)
+            setSelectedBundle(null)
+            setQtyBump(true)
+            setTimeout(() => setQtyBump(false), 200)
+          }}
+          aria-label={`Select quantity: ${qty} tickets`}
+          className={cn(
+            "h-3 flex-1 cursor-pointer appearance-none rounded-full bg-purple-900/50",
+            "[&::-webkit-slider-thumb]:appearance-none",
+            "[&::-webkit-slider-thumb]:h-8",
+            "[&::-webkit-slider-thumb]:w-8",
+            "[&::-webkit-slider-thumb]:rounded-full",
+            "[&::-webkit-slider-thumb]:bg-gradient-to-b",
+            "[&::-webkit-slider-thumb]:from-[#FFD46A]",
+            "[&::-webkit-slider-thumb]:to-[#F7A600]",
+            "[&::-webkit-slider-thumb]:border-2",
+            "[&::-webkit-slider-thumb]:border-white/40",
+            "[&::-webkit-slider-thumb]:cursor-grab",
+            "[&::-webkit-slider-thumb]:shadow-[0_0_14px_rgba(247,166,0,0.55)]",
+            "[&::-webkit-slider-thumb]:transition-transform",
+            "[&::-webkit-slider-thumb]:active:scale-110",
+            "[&::-webkit-slider-thumb]:active:cursor-grabbing",
+            "[&::-moz-range-thumb]:h-8",
+            "[&::-moz-range-thumb]:w-8",
+            "[&::-moz-range-thumb]:rounded-full",
+            "[&::-moz-range-thumb]:bg-gradient-to-b",
+            "[&::-moz-range-thumb]:from-[#FFD46A]",
+            "[&::-moz-range-thumb]:to-[#F7A600]",
+            "[&::-moz-range-thumb]:border-2",
+            "[&::-moz-range-thumb]:border-white/40",
+            "[&::-moz-range-thumb]:cursor-grab",
+            "[&::-moz-range-thumb]:shadow-[0_0_14px_rgba(247,166,0,0.55)]",
+          )}
+        />
+
+        <button
+          type="button"
+          onClick={() => handleQuantityChange(1)}
+          disabled={qty >= maxQty}
+          aria-label="Increase tickets"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-900/60 text-2xl font-bold leading-none text-purple-200 transition-all hover:bg-purple-800/80 hover:text-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-purple-900/60 disabled:hover:text-purple-200"
+        >
+          +
+        </button>
+      </div>
+      <p
+        className={cn(
+          "text-center text-sm font-semibold tabular-nums text-purple-100 transition-transform duration-200",
+          qtyBump && "scale-105",
+        )}
+        aria-live="polite"
+      >
+        {qty} {qty === 1 ? "ticket" : "tickets"} selected
+      </p>
+    </div>
+  )
+
   return (
     <div className="space-y-4">
 
       {/* ---- Countdown Timer ---- */}
       {endsAtMs && msRemaining > 0 && (
         <>
-          {/* Mobile: compressed grid */}
-          <div className="rounded-xl border border-purple-500/30 bg-[#160a26] px-3 py-3 shadow-[0_0_20px_rgba(168,85,247,0.2)] md:hidden" role="timer" aria-label={`Draw ends in ${days} days, ${hours} hours, ${minutes} minutes, ${seconds} seconds`}>
-            <div className="mb-1.5 text-center">
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-purple-300">Draw ends in</span>
+          {/* Mobile: compact urgency row + thin progress bar (much shorter than
+              the four-box grid, so the buying controls surface sooner). */}
+          <div className="rounded-xl border border-purple-500/30 bg-[#160a26] px-3 py-2.5 shadow-[0_0_20px_rgba(168,85,247,0.2)] md:hidden" role="timer" aria-label={`Draw ends in ${days} days, ${hours} hours, ${minutes} minutes`}>
+            <div className="flex items-center justify-between gap-2 text-sm">
+              <span className="font-semibold text-purple-100">
+                Draw ends in{" "}
+                <span className="tabular-nums text-amber-400">{days}d {hours}h</span>
+              </span>
+              {hasCapInfo && (
+                <span className="font-semibold tabular-nums text-amber-400">{Math.round(soldPct)}% sold</span>
+              )}
             </div>
-            <div className="grid grid-cols-4 gap-1.5">
-              {[
-                { value: days, label: "Days" },
-                { value: hours, label: "Hrs" },
-                { value: minutes, label: "Min" },
-                { value: seconds, label: "Sec" },
-              ].map(({ value, label }) => (
-                <div key={label} className="flex flex-col items-center">
-                  <div className="flex h-10 w-full items-center justify-center rounded-lg border border-purple-600/30 bg-[#1f1033] shadow-inner">
-                    <span className="bg-gradient-to-b from-[#FFD46A] to-[#F7A600] bg-clip-text text-xl font-bold tabular-nums text-transparent">
-                      {String(value).padStart(2, "0")}
-                    </span>
-                  </div>
-                  <span className="mt-1 text-[9px] font-medium uppercase tracking-wider text-purple-400">{label}</span>
-                </div>
-              ))}
-            </div>
+            {hasCapInfo && (
+              <div
+                className="mt-2 h-1.5 w-full overflow-hidden rounded-full"
+                style={{ backgroundColor: "rgba(255,255,255,0.1)" }}
+                role="progressbar"
+                aria-valuenow={Math.round(soldPct)}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label={`${Math.round(soldPct)}% sold`}
+              >
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-500 transition-all duration-700 ease-out"
+                  style={{ width: mounted ? `${soldPct}%` : "0%" }}
+                />
+              </div>
+            )}
           </div>
 
           {/* Desktop: 4-block countdown */}
@@ -385,9 +505,10 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
         </div>
       )}
 
-      {/* ---- Progress Bar (percentage only) ---- */}
+      {/* ---- Progress Bar (percentage only) — desktop only; mobile shows the
+              compact bar inside the urgency row above. ---- */}
       {hasCapInfo && (
-        <div className="space-y-2">
+        <div className="hidden space-y-2 md:block">
           <div className="flex items-center justify-between text-sm">
             <span className="font-semibold text-amber-400">{Math.round(soldPct)}% sold</span>
             {remaining === 0 && (
@@ -416,7 +537,7 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
       {/* ---- Bundle tiles (only when bundles exist) ---- */}
       {hasBundles && (
         <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-purple-200">Choose your play</h3>
+          <h3 className="text-sm font-semibold text-purple-200">Choose your tickets</h3>
           <div className="grid grid-cols-3 gap-2 md:gap-3">
             {normBundles.map((bundle, i) => {
               const isActive = selectedBundle?.quantity === bundle.quantity && selectedBundle?.price_pence === bundle.price_pence
@@ -484,122 +605,21 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
               )
             })}
           </div>
+
+          {/* Compact custom amount, directly under the bundle cards.
+              Desktop only — on mobile the slider lives in the sticky bar. */}
+          <div className="hidden md:block">{customQuantity}</div>
         </div>
       )}
 
-      {/* ---- Quantity selector (slider-based) ---- */}
-      <div ref={qtyRef} className="space-y-3">
-        <label className="text-sm font-medium text-purple-200">
-          {hasBundles ? "Or choose your own" : "Pick your entries"}
-        </label>
-        
-        {/* Central quantity display */}
-        <div className={cn(
-          "text-center transition-transform duration-200",
-          qtyBump && "scale-110"
-        )}>
-          <div className="bg-gradient-to-b from-[#FFD46A] to-[#F7A600] bg-clip-text text-5xl font-bold text-transparent drop-shadow-[0_0_10px_rgba(247,166,0,0.4)]">{qty}</div>
-          <div className="text-xs text-purple-300">{qty === 1 ? "entry" : "entries"}</div>
-          {selectedBundle && (
-            <div className="mt-0.5 text-[10px] text-pink-300">Bundle selected</div>
-          )}
-        </div>
+      {/* When there are NO bundles, the compact stepper is the primary picker
+          (desktop only — mobile uses the sticky bar slider). */}
+      {!hasBundles && <div className="hidden md:block">{customQuantity}</div>}
 
-        {/* Helper text with drag cue */}
-        <p className="text-center text-sm font-medium text-purple-300">Slide me to choose your tickets</p>
-
-        {/* ---- Mobile-friendly quantity slider with wiggle animation ---- */}
-        <div className="space-y-3 py-4">
-          {/* Animated drag hint */}
-          <div className="flex items-center justify-center gap-1.5 text-xs text-purple-400 animate-pulse">
-            <span className="inline-block animate-[bounce_1s_ease-in-out_infinite]">&#8592;</span>
-            <span>Drag or tap +/-</span>
-            <span className="inline-block animate-[bounce_1s_ease-in-out_infinite_0.5s]">&#8594;</span>
-          </div>
-
-          <div className="relative flex items-center gap-3 px-2 py-2">
-            {/* Minus button */}
-            <button
-              type="button"
-              onClick={() => handleQuantityChange(-1)}
-              disabled={qty <= 1}
-              aria-label="Decrease tickets"
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-purple-900/60 text-2xl font-bold text-purple-200 transition-all hover:bg-purple-800/80 hover:text-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-purple-900/60 disabled:hover:text-purple-200"
-            >
-              &minus;
-            </button>
-
-            {/* Slider */}
-            <input
-              type="range"
-              min={1}
-              max={maxQty}
-              value={qty}
-              onChange={(e) => {
-                const newQty = Number(e.target.value)
-                setQty(newQty)
-                setSelectedBundle(null)
-                setQtyBump(true)
-                setTimeout(() => setQtyBump(false), 200)
-              }}
-              className={cn(
-                "flex-1 h-4 appearance-none cursor-pointer rounded-full bg-purple-900/50",
-                "[&::-webkit-slider-thumb]:appearance-none",
-                "[&::-webkit-slider-thumb]:h-12",
-                "[&::-webkit-slider-thumb]:w-12",
-                "[&::-webkit-slider-thumb]:rounded-full",
-                "[&::-webkit-slider-thumb]:bg-gradient-to-b",
-                "[&::-webkit-slider-thumb]:from-[#FFD46A]",
-                "[&::-webkit-slider-thumb]:to-[#F7A600]",
-                "[&::-webkit-slider-thumb]:border-2",
-                "[&::-webkit-slider-thumb]:border-white/40",
-                "[&::-webkit-slider-thumb]:cursor-grab",
-                "[&::-webkit-slider-thumb]:shadow-[0_0_20px_rgba(247,166,0,0.6)]",
-                "[&::-webkit-slider-thumb]:transition-all",
-                "[&::-webkit-slider-thumb]:duration-150",
-                "[&::-webkit-slider-thumb]:active:scale-110",
-                "[&::-webkit-slider-thumb]:active:cursor-grabbing",
-                "[&::-webkit-slider-thumb]:animate-[wiggle_2s_ease-in-out_infinite]",
-                "[&::-webkit-slider-thumb]:active:animate-none",
-                "[&::-moz-range-thumb]:h-12",
-                "[&::-moz-range-thumb]:w-12",
-                "[&::-moz-range-thumb]:rounded-full",
-                "[&::-moz-range-thumb]:bg-gradient-to-b",
-                "[&::-moz-range-thumb]:from-[#FFD46A]",
-                "[&::-moz-range-thumb]:to-[#F7A600]",
-                "[&::-moz-range-thumb]:border-2",
-                "[&::-moz-range-thumb]:border-white/40",
-                "[&::-moz-range-thumb]:cursor-grab",
-                "[&::-moz-range-thumb]:shadow-[0_0_20px_rgba(247,166,0,0.6)]",
-                "[&::-moz-range-thumb]:active:cursor-grabbing"
-              )}
-              aria-label={`Select quantity: ${qty} tickets`}
-            />
-
-            {/* Plus button */}
-            <button
-              type="button"
-              onClick={() => handleQuantityChange(1)}
-              disabled={qty >= maxQty}
-              aria-label="Increase tickets"
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-purple-900/60 text-2xl font-bold text-purple-200 transition-all hover:bg-purple-800/80 hover:text-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-purple-900/60 disabled:hover:text-purple-200"
-            >
-              +
-            </button>
-          </div>
-
-          {/* Range labels */}
-          <div className="flex justify-between px-4 text-xs text-purple-400">
-            <span>1 ticket</span>
-            <span>{maxQty} tickets</span>
-          </div>
-        </div>
-
-        <p className="text-center text-[11px] text-purple-400">More entries = more chances to win</p>
-      </div>
-
-      {/* ---- Total and CTA ---- */}
-      <div className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-5 shadow-2xl backdrop-blur-lg">
+      {/* ---- Total and CTA (desktop only) ----
+          On mobile the sticky purchase bar below is the single checkout action,
+          so this larger card is hidden to avoid duplication. */}
+      <div className="hidden space-y-3 rounded-2xl border border-white/10 bg-white/5 p-5 shadow-2xl backdrop-blur-lg md:block">
         <div className="flex items-baseline justify-between">
           <span className="text-sm text-purple-200">Total</span>
           <div className="text-right">
@@ -644,35 +664,139 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
           {isProcessing ? "Starting checkout..." : "Enter Now"}
         </Button>
 
-        <p className="flex items-center justify-center gap-1.5 text-center text-xs text-purple-200">
-          <Lock className="h-3 w-3" aria-hidden="true" />
-          Instant confirmation &bull; Secure checkout
-        </p>
-
         <div className="text-center">
           <FreeEntryInfo />
         </div>
       </div>
 
-      {/* ---- Sticky bottom CTA (mobile only, after scrolling past qty) ---- */}
-      {showStickyCta && !isEnded && !isNotStarted && remaining !== 0 && (
-        <div className="fixed inset-x-0 bottom-0 z-50 border-t border-purple-500/30 bg-[#0e0618]/95 px-4 py-3 shadow-[0_-4px_30px_rgba(168,85,247,0.3)] backdrop-blur-xl md:hidden">
-          <div className="flex items-center gap-3">
-            <div className="shrink-0">
-              <div className="text-[10px] font-medium uppercase text-purple-400">Total</div>
-              <div className="bg-gradient-to-r from-[#FFD46A] to-[#F7A600] bg-clip-text text-xl font-bold text-transparent">{formatGBP(totalGBP)}</div>
-            </div>
-            <Button
-              size="lg"
-              className="flex-1 rounded-xl bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] py-3.5 text-sm font-bold text-black shadow-[0_8px_30px_rgba(255,180,0,0.4)] transition-all active:scale-[0.98] disabled:opacity-60"
-              disabled={isProcessing || qty < 1 || !hasAcceptedTerms || totalPence < 100}
-              onClick={handleEnter}
-            >
-              {isProcessing ? "Checking out..." : totalPence < 100 ? "Minimum order £1" : hasAcceptedTerms ? "Enter Now" : "Accept T&Cs above"}
-            </Button>
-          </div>
+      {/* ---- Mobile sticky purchase bar (mobile only) ----
+          The single, always-visible checkout surface on giveaway detail pages.
+          Mirrors the same qty / selectedBundle / hasAcceptedTerms state as the
+          bundles and desktop card, so picking a bundle above instantly updates
+          the slider, quantity and total here. The normal mobile bottom nav is
+          suppressed on these pages (see MobileNav). */}
+      <div className="fixed inset-x-0 bottom-0 z-50 border-t border-purple-500/30 bg-[#0e0618]/95 px-4 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2.5 shadow-[0_-4px_30px_rgba(168,85,247,0.3)] backdrop-blur-xl md:hidden">
+        {/* Quantity + total summary */}
+        <div className="flex items-center justify-between gap-3">
+          <span
+            className={cn(
+              "text-sm font-semibold tabular-nums text-white transition-transform duration-200",
+              qtyBump && "scale-105",
+            )}
+            aria-live="polite"
+          >
+            {qty} {qty === 1 ? "ticket" : "tickets"}
+          </span>
+          <span className="bg-gradient-to-r from-[#FFD46A] to-[#F7A600] bg-clip-text text-xl font-bold text-transparent">
+            {formatGBP(totalGBP)}
+          </span>
         </div>
-      )}
+
+        {/* Compact [-] [slider] [+] control */}
+        <div className="mt-2 flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => handleQuantityChange(-1)}
+            disabled={qty <= 1}
+            aria-label="Decrease tickets"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-purple-900/60 text-2xl font-bold leading-none text-purple-200 transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            &minus;
+          </button>
+          <input
+            type="range"
+            min={1}
+            max={maxQty}
+            value={qty}
+            onChange={(e) => {
+              const newQty = Number(e.target.value)
+              setQty(newQty)
+              setSelectedBundle(null)
+              setQtyBump(true)
+              setTimeout(() => setQtyBump(false), 200)
+            }}
+            aria-label={`Select quantity: ${qty} tickets`}
+            className={cn(
+              "h-2.5 flex-1 cursor-pointer appearance-none rounded-full bg-purple-900/50",
+              "[&::-webkit-slider-thumb]:appearance-none",
+              "[&::-webkit-slider-thumb]:h-7",
+              "[&::-webkit-slider-thumb]:w-7",
+              "[&::-webkit-slider-thumb]:rounded-full",
+              "[&::-webkit-slider-thumb]:bg-gradient-to-b",
+              "[&::-webkit-slider-thumb]:from-[#FFD46A]",
+              "[&::-webkit-slider-thumb]:to-[#F7A600]",
+              "[&::-webkit-slider-thumb]:border-2",
+              "[&::-webkit-slider-thumb]:border-white/40",
+              "[&::-webkit-slider-thumb]:shadow-[0_0_12px_rgba(247,166,0,0.55)]",
+              "[&::-moz-range-thumb]:h-7",
+              "[&::-moz-range-thumb]:w-7",
+              "[&::-moz-range-thumb]:rounded-full",
+              "[&::-moz-range-thumb]:bg-gradient-to-b",
+              "[&::-moz-range-thumb]:from-[#FFD46A]",
+              "[&::-moz-range-thumb]:to-[#F7A600]",
+              "[&::-moz-range-thumb]:border-2",
+              "[&::-moz-range-thumb]:border-white/40",
+              "[&::-moz-range-thumb]:shadow-[0_0_12px_rgba(247,166,0,0.55)]",
+            )}
+          />
+          <button
+            type="button"
+            onClick={() => handleQuantityChange(1)}
+            disabled={qty >= maxQty}
+            aria-label="Increase tickets"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-purple-900/60 text-2xl font-bold leading-none text-purple-200 transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            +
+          </button>
+        </div>
+
+        {error && <div className="mt-2 rounded-md bg-red-500/20 p-2 text-xs text-red-300">{error}</div>}
+        {totalPence < 100 && (
+          <p className="mt-2 text-center text-xs font-medium text-amber-400">Minimum order is £1.00</p>
+        )}
+
+        {/* Compact 18+ / T&Cs row — explicit, never pre-ticked, blocks checkout */}
+        <label className="mt-2 flex cursor-pointer select-none items-center gap-2">
+          <input
+            type="checkbox"
+            checked={hasAcceptedTerms}
+            onChange={(e) => setHasAcceptedTerms(e.target.checked)}
+            className="h-4 w-4 shrink-0 rounded border-purple-500/50 bg-white/10 accent-amber-500 focus:ring-2 focus:ring-amber-400 focus:ring-offset-0"
+          />
+          <span className="text-xs text-purple-200">
+            I am 18+ and agree to the{" "}
+            <a
+              href="/terms"
+              className="text-amber-400 underline underline-offset-2 hover:text-amber-300"
+              onClick={(e) => e.stopPropagation()}
+            >
+              T&Cs
+            </a>
+          </span>
+        </label>
+
+        <Button
+          size="lg"
+          className="mt-2 w-full rounded-xl bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] py-3.5 text-sm font-bold text-black shadow-[0_8px_30px_rgba(255,180,0,0.4)] transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={isProcessing || qty < 1 || remaining === 0 || !hasAcceptedTerms || totalPence < 100}
+          onClick={handleEnter}
+        >
+          {isProcessing
+            ? "Starting checkout..."
+            : remaining === 0
+              ? "Sold out"
+              : totalPence < 100
+                ? "Minimum order £1"
+                : !hasAcceptedTerms
+                  ? "Accept T&Cs to enter"
+                  : "Enter Now"}
+        </Button>
+
+        {/* Free postal entry kept accessible right inside the purchase area */}
+        <div className="text-center leading-none">
+          <FreeEntryInfo />
+        </div>
+      </div>
     </div>
   )
 }

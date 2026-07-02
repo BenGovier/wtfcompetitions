@@ -22,7 +22,7 @@ export type AwardPayload = {
 export type ConfirmArgs = {
   ref: string
   userId: string
-  provider: 'sumup' | 'paypal' | 'debug'
+  provider: 'sumup' | 'paypal' | 'debug' | 'acquired'
 }
 
 // ---------------------------------------------------------------------------
@@ -62,8 +62,24 @@ export async function confirmPaymentAndAward(args: ConfirmArgs): Promise<AwardPa
 
   // 3) If not yet confirmed, try SumUp confirm-on-return; otherwise reject
   if (intent.state !== 'confirmed') {
-    // Debug provider: skip external verification for staging load tests
+    // Acquired: the browser NEVER confirms or fulfils. The verified Acquired
+    // webhook is the only path that runs the RPC and flips state to
+    // 'confirmed'. Until it does, we return the pending poll state so the
+    // success page keeps polling. (If state were already 'confirmed' we would
+    // not be inside this block — we'd fall straight through to the RPC read
+    // below, exactly like the SumUp already-confirmed path.)
+    if (args.provider === 'acquired') {
+      throw new Error('awaiting_provider_confirmation')
+    }
+
+    // Debug provider: skip external verification for staging load tests.
+    // Defense-in-depth — even if a caller reaches here, the unverified debug
+    // award path must never run in production (the confirm route also blocks it
+    // earlier with a 403). VERCEL_ENV is server-only; unset locally = allowed.
     if (args.provider === 'debug') {
+      if (process.env.VERCEL_ENV === 'production') {
+        throw new Error('debug_provider_disabled')
+      }
       const { data: rpcData, error: rpcErr } = await supabase.rpc('confirm_payment_and_award', {
         p_ref: ref,
         p_user_id: userId,
