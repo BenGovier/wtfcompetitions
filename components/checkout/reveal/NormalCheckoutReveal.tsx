@@ -261,7 +261,9 @@ function ResultPanel({
 
         <div className="flex flex-col items-center gap-1">
           <p className="arena-shimmer text-sm font-extrabold uppercase tracking-[0.3em]">INSTANT WIN</p>
-          <p className="text-base font-semibold text-white">You&apos;ve won</p>
+          <p className="text-base font-semibold text-white">
+            You&apos;ve won an instant prize!
+          </p>
         </div>
 
         <div className="w-full rounded-2xl border-2 border-amber-400/50 bg-gradient-to-b from-zinc-900 to-black p-4 shadow-[0_0_30px_rgba(239,68,68,0.3)]">
@@ -281,6 +283,16 @@ function ResultPanel({
           {prize.value_text && (
             <p className="mt-1 text-base font-semibold text-amber-300">{prize.value_text}</p>
           )}
+        </div>
+
+        {/* Reassurance: the win is recorded and where to find it. */}
+        <div className="flex w-full items-start gap-2.5 rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-left">
+          <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-400" />
+          <p className="text-sm font-medium text-emerald-100">
+            {prizes.length > 1 ? 'Your wins have' : 'Your win has'} been saved to your account. View{' '}
+            {prizes.length > 1 ? 'them' : 'it'} anytime in{' '}
+            <span className="font-bold text-white">My Account</span>.
+          </p>
         </div>
 
         {prizes.length > 1 && (
