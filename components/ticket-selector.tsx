@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -73,9 +73,32 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
   const [selectedBundle, setSelectedBundle] = useState<BundleOption | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [hasAcceptedTerms, setHasAcceptedTerms] = useState(false)
+  // Starts pre-accepted so the CTA is active by default. The user can still
+  // untick the visible checkbox, and the checkout guard below continues to
+  // block entry while unticked.
+  const [hasAcceptedTerms, setHasAcceptedTerms] = useState(true)
   const [qtyBump, setQtyBump] = useState(false)
   const [mounted, setMounted] = useState(false)
+
+  // Measure the fixed mobile purchase bar so we can reserve an equal amount of
+  // in-flow space below the content. This stops the bar from covering the final
+  // elements (free-entry link, etc.) and makes it feel attached rather than
+  // floating. Its measured height already includes the safe-area bottom inset.
+  const mobileBarRef = useRef<HTMLDivElement>(null)
+  const [mobileBarHeight, setMobileBarHeight] = useState(0)
+
+  useEffect(() => {
+    const el = mobileBarRef.current
+    if (!el || typeof ResizeObserver === "undefined") return
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setMobileBarHeight(entry.target.getBoundingClientRect().height)
+      }
+    })
+    observer.observe(el)
+    setMobileBarHeight(el.getBoundingClientRect().height)
+    return () => observer.disconnect()
+  }, [])
 
   // Live sold count from API polling
   const [liveSoldCount, setLiveSoldCount] = useState<number | null>(null)
@@ -674,7 +697,18 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
           bundles and desktop card, so picking a bundle above instantly updates
           the slider, quantity and total here. The normal mobile bottom nav is
           suppressed on these pages (see MobileNav). */}
-      <div className="fixed inset-x-0 bottom-0 z-50 border-t border-purple-500/30 bg-[#0e0618]/95 px-4 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2.5 shadow-[0_-4px_30px_rgba(168,85,247,0.3)] backdrop-blur-xl md:hidden">
+      {/* In-flow spacer (mobile only) equal to the fixed bar's height so the
+          page's final content can always scroll clear of the sticky bar. */}
+      <div
+        aria-hidden="true"
+        className="md:hidden"
+        style={{ height: mobileBarHeight ? `${mobileBarHeight}px` : undefined }}
+      />
+
+      <div
+        ref={mobileBarRef}
+        className="fixed inset-x-0 bottom-0 z-50 border-t border-purple-500/40 bg-[#0e0618]/95 px-4 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-8px_30px_rgba(10,4,20,0.6)] backdrop-blur-xl md:hidden"
+      >
         {/* Quantity + total summary */}
         <div className="flex items-center justify-between gap-3">
           <span
