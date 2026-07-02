@@ -33,6 +33,8 @@ export type LiveBoardError =
   | 'item_already_zero'
   | 'item_already_at_starting'
   | 'nothing_to_undo'
+  | 'invalid_takeover'
+  | 'invalid_takeover_url'
   | 'live_board_action_failed'
 
 export const NO_STORE = { headers: { 'Cache-Control': 'private, no-cache, no-store' } }
