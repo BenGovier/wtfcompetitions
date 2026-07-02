@@ -66,7 +66,9 @@ export async function GET(
 
     const { data: boardRow, error: boardErr } = await svc
       .from('campaign_live_boards')
-      .select('id, enabled, items, last_event_label, last_event_at, updated_at')
+      .select(
+        'id, enabled, items, last_event_label, last_event_at, updated_at, site_takeover_enabled, site_takeover_headline, site_takeover_subtext, site_takeover_primary_label, site_takeover_watch_url, site_takeover_updated_at',
+      )
       .eq('campaign_id', campaignId)
       .maybeSingle()
 
