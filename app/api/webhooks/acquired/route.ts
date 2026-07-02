@@ -182,9 +182,26 @@ export async function POST(request: Request) {
 
   // 7) Capture-only update. Deliberately does NOT touch state, confirmed_at,
   //    tickets, or instant wins.
+  //
+  //    provider_payload is MERGED, never overwritten. We preserve every
+  //    existing key (especially acquired_payment_link_request_debug and any
+  //    acquired_card_new_webhook already stored) and record this webhook under
+  //    acquired_status_update_webhook. Only merge when the existing payload is
+  //    a plain object; otherwise start fresh.
+  const existingStatusPayload = intent.provider_payload
+  const mergedStatusPayload =
+    existingStatusPayload &&
+    typeof existingStatusPayload === 'object' &&
+    !Array.isArray(existingStatusPayload)
+      ? {
+          ...(existingStatusPayload as Record<string, unknown>),
+          acquired_status_update_webhook: parsedBody,
+        }
+      : { acquired_status_update_webhook: parsedBody }
+
   const updatePatch: Record<string, unknown> = {
     provider: 'acquired',
-    provider_payload: parsedBody,
+    provider_payload: mergedStatusPayload,
     updated_at: new Date().toISOString(),
   }
   if (transactionId) updatePatch.provider_transaction_id = transactionId
