@@ -113,7 +113,10 @@ export function NormalCheckoutReveal({ award }: { award: NormalRevealAward }) {
   const ticketCount = tickets.length > 0 ? tickets.length : award.qty
 
   return (
-    <div className="reactor-root relative min-h-screen w-full overflow-hidden bg-black text-white">
+    <div
+      data-reactor="root"
+      className="reactor-root relative min-h-screen w-full overflow-hidden bg-black text-white"
+    >
       <ReactorStyles />
       <ResultReactorBackground stage={stage} won={won} />
       <ReactorFlashes stage={stage} won={won} />
@@ -131,7 +134,7 @@ export function NormalCheckoutReveal({ award }: { award: NormalRevealAward }) {
             </span>
           </>
         ) : (
-          <div className="reactor-result flex flex-1 flex-col gap-5 pt-2">
+          <div data-reactor="result" className="reactor-result flex flex-1 flex-col gap-5 pt-2">
             <ResultImpactPanel won={won} prizes={prizes} qty={ticketCount} />
             <TicketDrawer tickets={tickets} qty={ticketCount} />
             <ReactorActions campaignSlug={award.campaign_slug} />
@@ -174,6 +177,7 @@ function ReactorCore({ stage, won }: { stage: Stage; won: boolean }) {
 
   return (
     <div
+      data-reactor="core"
       className={`reactor-core-wrap relative flex items-center justify-center transition-transform duration-500 ${
         opening ? 'scale-[1.4]' : 'scale-100'
       }`}
@@ -200,6 +204,7 @@ function ReactorCore({ stage, won }: { stage: Stage; won: boolean }) {
       {/* Single conic charge ring (the only conic+mask ring). It spins faster
           while the reactor is charging. Transform-only, no drop-shadow filter. */}
       <div
+        data-reactor="ring"
         className={`reactor-ring absolute size-56 rounded-full ${surging ? 'reactor-ring-charged' : ''}`}
         style={{
           background:
@@ -325,6 +330,7 @@ function TicketOrbit({ stage, tickets }: { stage: Stage; tickets: number[] }) {
             style={{ transform: `translate(${slot.x}px, ${slot.y}px) rotate(${slot.r}deg)` }}
           >
             <div
+              data-reactor="launch"
               className="reactor-launch"
               style={
                 {
@@ -336,6 +342,7 @@ function TicketOrbit({ stage, tickets }: { stage: Stage; tickets: number[] }) {
               }
             >
               <div
+                data-reactor="charge-pull"
                 className="reactor-charge-pull"
                 style={
                   {
@@ -346,6 +353,7 @@ function TicketOrbit({ stage, tickets }: { stage: Stage; tickets: number[] }) {
                 }
               >
                 <div
+                  data-reactor="feed"
                   className="reactor-feed"
                   style={
                     {
@@ -355,11 +363,18 @@ function TicketOrbit({ stage, tickets }: { stage: Stage; tickets: number[] }) {
                     } as CSSProperties
                   }
                 >
-                  <div className="reactor-orbit" style={{ animationDelay: `${i * 220}ms` }}>
+                  <div
+                    data-reactor="orbit"
+                    className="reactor-orbit"
+                    style={{ animationDelay: `${i * 220}ms` }}
+                  >
                     {/* Solid card: no backdrop-filter, no animated box-shadow,
                         no filter blur. Moves via transform only; the glow is a
                         separate overlay whose OPACITY animates. */}
-                    <div className="relative flex flex-col items-center rounded-lg border border-amber-400/60 bg-zinc-950/90 px-2.5 py-1 shadow-[0_0_12px_rgba(239,68,68,0.35)]">
+                    <div
+                      data-reactor="ticket"
+                      className="relative flex flex-col items-center rounded-lg border border-amber-400/60 bg-zinc-950/90 px-2.5 py-1 shadow-[0_0_12px_rgba(239,68,68,0.35)]"
+                    >
                       <div
                         className="reactor-cardpulse pointer-events-none absolute inset-0 rounded-lg"
                         aria-hidden="true"
@@ -639,8 +654,15 @@ function ReactorFlashes({ stage, won }: { stage: Stage; won: boolean }) {
 // ---------------------------------------------------------------------------
 
 function ReactorStyles() {
+  // NOTE: `global` is REQUIRED. styled-jsx normally scopes CSS by adding a
+  // generated attribute (e.g. `jsx-xxxx`) to both the rules AND the elements
+  // rendered by THIS component. ReactorStyles renders no elements, so a scoped
+  // block would attach that attribute to nothing — meaning the .reactor-*
+  // selectors never match the ticket/core elements (which live in sibling
+  // components) and no animations run. `global` emits the keyframes and class
+  // selectors unscoped so they apply to the real animated elements.
   return (
-    <style jsx>{`
+    <style jsx global>{`
       @keyframes reactor-fade {
         0% {
           opacity: 0;
