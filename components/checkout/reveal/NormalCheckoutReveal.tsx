@@ -7,8 +7,8 @@
  * that the server already decided (via /api/checkout/confirm →
  * confirmPaymentAndAward → the confirm_payment_and_award RPC). This component
  * never decides win/loss, never picks a prize, never allocates tickets, never
- * calls an API/Supabase, and never mutates the award. It only stages a short,
- * cosmetic ~2.5s reveal before showing the already-known result.
+ * calls an API/Supabase, and never mutates the award. It only stages a
+ * cosmetic ~5.6s reveal before showing the already-known result.
  *
  * The scratch-card path is handled elsewhere (ScratchCardReveal); this file is
  * only rendered for reveal_type === 'normal'.
@@ -39,10 +39,16 @@ export type NormalRevealAward = {
 
 type Stage = 'locked' | 'surge' | 'opening' | 'result'
 
-// Cosmetic reveal timeline. Final result appears at ~2.5s (never beyond 3s).
-const T_SURGE = 700
-const T_OPENING = 1700
-const T_RESULT = 2500
+// Cosmetic reveal timeline. The animated "TICKETS ACTIVE" surge is the valuable
+// part of the experience, so it runs a full 4 seconds. Final result appears at
+// ~5.6s total:
+//   Stage 1 ENTRY LOCKED    0ms   – 800ms
+//   Stage 2 TICKETS ACTIVE  800ms – 4800ms  (4s surge)
+//   Stage 3 RESULT OPENING  4800ms – 5600ms
+//   Stage 4 FINAL RESULT    after 5600ms
+const T_SURGE = 800
+const T_OPENING = 4800
+const T_RESULT = 5600
 
 // Individual ticket numbers shown before the drawer collapses the rest.
 const TICKET_PREVIEW_COUNT = 10
