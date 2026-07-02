@@ -204,18 +204,24 @@ function CheckoutSuccessClient() {
     confirm()
   }
 
+  // The normal reveal (WTF Result Reactor) is a full-screen experience, so it
+  // renders OUTSIDE the centered white card. The scratch-card path and all
+  // other states remain inside the card exactly as before. The reveal_type
+  // branch is unchanged — scratch_card still renders ScratchCardReveal.
+  if (
+    state.kind === 'confirmed' &&
+    normalizeRevealType(state.award.reveal_type) !== 'scratch_card'
+  ) {
+    return <NormalCheckoutReveal award={state.award} />
+  }
+
   return (
     <main className="flex min-h-[60vh] items-center justify-center px-4 py-16">
       <Card className="w-full max-w-md border-0 shadow-lg">
         <CardContent className="flex flex-col items-center gap-6 p-8 text-center">
           {state.kind === 'missing_ref' && <MissingRefState />}
           {state.kind === 'confirming' && <ConfirmingState attempt={state.attempt} />}
-          {state.kind === 'confirmed' &&
-            (normalizeRevealType(state.award.reveal_type) === 'scratch_card' ? (
-              <ScratchCardReveal award={state.award} />
-            ) : (
-              <NormalCheckoutReveal award={state.award} />
-            ))}
+          {state.kind === 'confirmed' && <ScratchCardReveal award={state.award} />}
           {state.kind === 'failed' && <FailedState error={state.error} onRetry={handleRetry} />}
         </CardContent>
       </Card>
