@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Crown, ChevronRight } from "lucide-react"
+import { Crown } from "lucide-react"
 
 /**
  * PUBLIC, customer-facing Live Balloon Board.
@@ -149,15 +149,6 @@ export function PublicLiveBalloonBoard({ campaignId }: { campaignId: string }) {
       <p className="mt-3 text-sm font-medium text-purple-100">
         {summaryParts.join(" · ")}
       </p>
-
-      {/* Conversion CTA — scrolls to the ticket selector (#choose-tickets). */}
-      <a
-        href="#choose-tickets"
-        className="mt-3 flex w-full items-center justify-center gap-1 rounded-lg bg-brand px-4 py-3 text-sm font-bold text-white shadow-[0_0_18px_rgba(255,0,200,0.35)] transition-colors hover:bg-brand/90"
-      >
-        Get tickets
-        <ChevronRight className="size-4" aria-hidden="true" />
-      </a>
 
       {/* Grouped prize values (tight list; never individual balloons). */}
       {visibleItems.length > 0 ? (
