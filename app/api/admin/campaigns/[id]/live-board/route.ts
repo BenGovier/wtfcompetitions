@@ -111,6 +111,14 @@ export async function GET(
               lastEventLabel: boardRow.last_event_label ?? null,
               lastEventAt: boardRow.last_event_at ?? null,
               updatedAt: boardRow.updated_at,
+              siteTakeover: {
+                enabled: boardRow.site_takeover_enabled === true,
+                headline: boardRow.site_takeover_headline ?? null,
+                subtext: boardRow.site_takeover_subtext ?? null,
+                primaryLabel: boardRow.site_takeover_primary_label ?? null,
+                watchUrl: boardRow.site_takeover_watch_url ?? null,
+                updatedAt: boardRow.site_takeover_updated_at ?? null,
+              },
             }
           : null,
         recentEvents,
@@ -235,6 +243,118 @@ async function saveBoard(request: NextRequest, campaignId: string, userId: strin
   }
 }
 
+/**
+ * Update ONLY the "Live site takeover" fields for a campaign's board.
+ *
+ * Admin-only. Does NOT touch board items, so hosts can edit takeover text or
+ * flip it off without affecting mark-popped / add-back / undo state. The board
+ * row must already exist (the takeover columns live on it). Takeover is
+ * globally exclusive: enabling one campaign first disables every other one.
+ */
+async function saveTakeover(request: NextRequest, campaignId: string) {
+  let body: Record<string, any>
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ ok: false, error: 'invalid_takeover' }, { status: 400, ...NO_STORE })
+  }
+
+  const enabled = body.enabled === true
+  const clean = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '')
+  const headline = clean(body.headline, 200)
+  const subtext = clean(body.subtext, 300)
+  const primaryLabel = clean(body.primaryLabel, 60)
+  const watchUrlRaw = clean(body.watchUrl, 500)
+
+  // Optional watch URL — only accept absolute http(s) URLs so we never render a
+  // javascript: or otherwise unsafe link on the public site.
+  let watchUrl: string | null = null
+  if (watchUrlRaw) {
+    try {
+      const u = new URL(watchUrlRaw)
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+        return NextResponse.json({ ok: false, error: 'invalid_takeover_url' }, { status: 400, ...NO_STORE })
+      }
+      watchUrl = u.toString()
+    } catch {
+      return NextResponse.json({ ok: false, error: 'invalid_takeover_url' }, { status: 400, ...NO_STORE })
+    }
+  }
+
+  // A headline is required when the takeover is turned on (it is the banner's
+  // main line on the public site).
+  if (enabled && !headline) {
+    return NextResponse.json({ ok: false, error: 'invalid_takeover' }, { status: 400, ...NO_STORE })
+  }
+
+  try {
+    const svc = getServiceSupabase()
+
+    const { data: existing, error: existingErr } = await svc
+      .from('campaign_live_boards')
+      .select('id')
+      .eq('campaign_id', campaignId)
+      .maybeSingle()
+    if (existingErr) {
+      console.error('[admin/live-board] takeover existing query error:', existingErr.message)
+      return NextResponse.json({ ok: false, error: 'live_board_action_failed' }, { status: 500, ...NO_STORE })
+    }
+    if (!existing) {
+      return NextResponse.json({ ok: false, error: 'board_not_found' }, { status: 404, ...NO_STORE })
+    }
+
+    const nowIso = new Date().toISOString()
+
+    // Enforce a single active takeover across the whole site: when enabling this
+    // campaign, disable any others that are currently enabled first.
+    if (enabled) {
+      const { error: offErr } = await svc
+        .from('campaign_live_boards')
+        .update({ site_takeover_enabled: false, site_takeover_updated_at: nowIso })
+        .eq('site_takeover_enabled', true)
+        .neq('campaign_id', campaignId)
+      if (offErr) {
+        console.error('[admin/live-board] takeover exclusivity update error:', offErr.message)
+        return NextResponse.json({ ok: false, error: 'live_board_action_failed' }, { status: 500, ...NO_STORE })
+      }
+    }
+
+    const { error: updErr } = await svc
+      .from('campaign_live_boards')
+      .update({
+        site_takeover_enabled: enabled,
+        site_takeover_headline: headline || null,
+        site_takeover_subtext: subtext || null,
+        site_takeover_primary_label: primaryLabel || null,
+        site_takeover_watch_url: watchUrl,
+        site_takeover_updated_at: nowIso,
+      })
+      .eq('id', existing.id)
+    if (updErr) {
+      console.error('[admin/live-board] takeover update error:', updErr.message)
+      return NextResponse.json({ ok: false, error: 'live_board_action_failed' }, { status: 500, ...NO_STORE })
+    }
+
+    return NextResponse.json(
+      {
+        ok: true,
+        siteTakeover: {
+          enabled,
+          headline: headline || null,
+          subtext: subtext || null,
+          primaryLabel: primaryLabel || null,
+          watchUrl,
+          updatedAt: nowIso,
+        },
+      },
+      NO_STORE,
+    )
+  } catch (err: any) {
+    console.error('[admin/live-board] takeover unexpected error:', err?.message)
+    return NextResponse.json({ ok: false, error: 'live_board_action_failed' }, { status: 500, ...NO_STORE })
+  }
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -252,6 +372,25 @@ export async function POST(
     return NextResponse.json({ ok: false, error: 'campaign_not_found' }, { status: 400, ...NO_STORE })
   }
   return saveBoard(request, campaignId, user.id)
+}
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const supabase = await createClient()
+  const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin', 'ops'] })
+  if (!user) {
+    return NextResponse.json(
+      { ok: false, error: authError },
+      { status: authError === 'Not authenticated' ? 401 : 403, ...NO_STORE },
+    )
+  }
+  const { id: campaignId } = await params
+  if (!campaignId) {
+    return NextResponse.json({ ok: false, error: 'campaign_not_found' }, { status: 400, ...NO_STORE })
+  }
+  return saveTakeover(request, campaignId)
 }
 
 export async function PUT(
