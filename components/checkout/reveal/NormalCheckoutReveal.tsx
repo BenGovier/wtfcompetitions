@@ -14,7 +14,7 @@
  * only rendered for reveal_type === 'normal'.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import Link from 'next/link'
 import { ChevronDown } from 'lucide-react'
 
@@ -181,6 +181,14 @@ function ReactorCore({ stage, won }: { stage: Stage; won: boolean }) {
           surging ? 'size-72 opacity-90' : 'size-56 opacity-60'
         }`}
       />
+      {/* Energy build: ramps opacity + scale over the 4s surge so the screen
+          intensifies toward the result. Transform/opacity only. */}
+      {stage === 'surge' && (
+        <div
+          className="reactor-energy absolute size-72 rounded-full bg-[radial-gradient(circle,rgba(239,68,68,0.55),rgba(245,158,11,0.3)_45%,transparent_70%)] blur-2xl"
+          aria-hidden="true"
+        />
+      )}
       {/* Gold halo */}
       <div className="absolute size-60 rounded-full bg-amber-400/15 blur-2xl" />
 
@@ -203,13 +211,31 @@ function ReactorCore({ stage, won }: { stage: Stage; won: boolean }) {
       />
 
       {/* Core disc */}
-      <div className="relative flex size-36 items-center justify-center rounded-full bg-[radial-gradient(circle_at_50%_30%,#2a2a2e,#0a0a0b_70%)] shadow-[0_0_50px_rgba(239,68,68,0.45),inset_0_0_30px_rgba(0,0,0,0.9)] ring-2 ring-amber-400/60">
+      <div
+        className={`relative flex size-36 items-center justify-center rounded-full bg-[radial-gradient(circle_at_50%_30%,#2a2a2e,#0a0a0b_70%)] shadow-[0_0_50px_rgba(239,68,68,0.45),inset_0_0_30px_rgba(0,0,0,0.9)] ring-2 ring-amber-400/60 ${
+          stage === 'surge' ? 'reactor-beat' : ''
+        }`}
+      >
         {/* Glossy top highlight */}
         <div className="pointer-events-none absolute inset-x-4 top-3 h-10 rounded-full bg-white/10 blur-md" />
         <span className="reactor-pulse relative bg-gradient-to-b from-amber-200 to-amber-500 bg-clip-text text-4xl font-black tracking-tighter text-transparent drop-shadow-[0_0_14px_rgba(245,158,11,0.6)]">
           WTF
         </span>
       </div>
+
+      {/* Result-opening flare rings: expand outward + fade as the result opens. */}
+      {opening && (
+        <>
+          <div
+            className="reactor-flare pointer-events-none absolute size-56 rounded-full border-2 border-amber-300/70"
+            aria-hidden="true"
+          />
+          <div
+            className="reactor-flare-late pointer-events-none absolute size-44 rounded-full border border-red-400/60"
+            aria-hidden="true"
+          />
+        </>
+      )}
 
       {/* Result-opening light wipe */}
       {opening && (
@@ -231,33 +257,62 @@ function ReactorCore({ stage, won }: { stage: Stage; won: boolean }) {
 // Ticket orbit: individual ticket "passes" surging around the reactor
 // ---------------------------------------------------------------------------
 
+// Tickets that briefly "feed" toward the reactor (index -> delay in seconds,
+// relative to the surge mount at 800ms => ~1.4s / 2.4s / 3.4s of the reveal).
+const FEED_DELAYS: Record<number, number> = { 0: 0.6, 2: 1.6, 4: 2.6 }
+// How far a feeding ticket moves toward the reactor centre (fraction of its
+// resting offset). Transform-only; the ticket always returns to its slot.
+const FEED_PULL = 0.42
+
 function TicketOrbit({ stage, tickets }: { stage: Stage; tickets: number[] }) {
   if (stage !== 'surge' && stage !== 'opening') return null
   const passes = tickets.slice(0, ORBIT_COUNT)
   if (passes.length === 0) return null
+  const opening = stage === 'opening'
 
   return (
-    <div className="pointer-events-none absolute inset-0 flex items-center justify-center" aria-hidden="true">
+    <div
+      className={`pointer-events-none absolute inset-0 flex items-center justify-center ${
+        opening ? 'reactor-passes-out' : ''
+      }`}
+      aria-hidden="true"
+    >
       {passes.map((n, i) => {
         const slot = ORBIT_SLOTS[i % ORBIT_SLOTS.length]
-        const fading = stage === 'opening'
+        const feedDelay = FEED_DELAYS[i]
+        // Nested transform layers never fight each other:
+        //  - wrapper: static resting slot position (translate + rotate)
+        //  - feed:    occasional pull toward the reactor centre (feed indices)
+        //  - orbit:   continuous bob + subtle sway for the whole surge
+        //  - pass:    one-shot entrance (fade + lift)
         return (
-          // Wrapper holds the resting slot position (translate + rotate). The
-          // inner element runs the entrance animation (fade + lift), so the
-          // animation's transform never fights the slot transform.
           <div
             key={n}
             className="absolute"
-            style={{
-              transform: `translate(${slot.x}px, ${slot.y}px) rotate(${slot.r}deg)`,
-              opacity: fading ? 0 : undefined,
-              transition: fading ? 'opacity 0.4s ease-out' : undefined,
-            }}
+            style={{ transform: `translate(${slot.x}px, ${slot.y}px) rotate(${slot.r}deg)` }}
           >
-            <div className="reactor-pass" style={{ animationDelay: `${i * 90}ms` }}>
-              <div className="flex flex-col items-center rounded-lg border border-amber-400/50 bg-black/70 px-2.5 py-1 shadow-[0_0_18px_rgba(239,68,68,0.4)] backdrop-blur-sm">
-                <span className="text-[8px] font-bold uppercase tracking-[0.2em] text-amber-400/70">Ticket</span>
-                <span className="font-mono text-sm font-bold text-amber-200">#{n}</span>
+            <div
+              className={feedDelay !== undefined ? 'reactor-feed' : undefined}
+              style={
+                feedDelay !== undefined
+                  ? ({
+                      // Direction back toward the reactor centre.
+                      '--fx': `${-slot.x * FEED_PULL}px`,
+                      '--fy': `${-slot.y * FEED_PULL}px`,
+                      animationDelay: `${feedDelay}s`,
+                    } as CSSProperties)
+                  : undefined
+              }
+            >
+              <div className="reactor-orbit" style={{ animationDelay: `${i * 140}ms` }}>
+                <div className="reactor-pass" style={{ animationDelay: `${i * 90}ms` }}>
+                  <div className="reactor-cardglow flex flex-col items-center rounded-lg border border-amber-400/50 bg-black/70 px-2.5 py-1 backdrop-blur-sm">
+                    <span className="text-[8px] font-bold uppercase tracking-[0.2em] text-amber-400/70">
+                      Ticket
+                    </span>
+                    <span className="font-mono text-sm font-bold text-amber-200">#{n}</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -559,6 +614,93 @@ function ReactorStyles() {
           transform: scale(1);
         }
       }
+      /* Energy build behind the core: ramps up across the 4s surge. */
+      @keyframes reactor-energy {
+        0% {
+          opacity: 0.35;
+          transform: scale(0.85);
+        }
+        100% {
+          opacity: 1;
+          transform: scale(1.15);
+        }
+      }
+      /* Core disc heartbeat: 1 -> 1.04 -> 1. */
+      @keyframes reactor-beat {
+        0%,
+        100% {
+          transform: scale(1);
+        }
+        50% {
+          transform: scale(1.04);
+        }
+      }
+      /* Continuous ticket bob + gentle sway (kept small so numbers stay legible). */
+      @keyframes reactor-orbit {
+        0% {
+          transform: translateY(0) rotate(0deg);
+        }
+        25% {
+          transform: translateY(-6px) rotate(1.5deg);
+        }
+        50% {
+          transform: translateY(1px) rotate(0deg);
+        }
+        75% {
+          transform: translateY(-4px) rotate(-1.5deg);
+        }
+        100% {
+          transform: translateY(0) rotate(0deg);
+        }
+      }
+      /* Feed-in: a ticket is briefly pulled toward the reactor, then returns. */
+      @keyframes reactor-feed {
+        0%,
+        14% {
+          transform: translate(0, 0) scale(1);
+        }
+        26% {
+          transform: translate(var(--fx), var(--fy)) scale(1.1);
+        }
+        44%,
+        100% {
+          transform: translate(0, 0) scale(1);
+        }
+      }
+      /* Gold border / glow pulse on each ticket card (box-shadow only). */
+      @keyframes reactor-cardglow {
+        0%,
+        100% {
+          box-shadow: 0 0 12px rgba(239, 68, 68, 0.35);
+          border-color: rgba(245, 158, 11, 0.5);
+        }
+        50% {
+          box-shadow: 0 0 22px rgba(245, 158, 11, 0.65);
+          border-color: rgba(245, 158, 11, 0.95);
+        }
+      }
+      /* Opening: rings flare outward and fade. */
+      @keyframes reactor-flare {
+        0% {
+          opacity: 0.9;
+          transform: scale(1);
+        }
+        100% {
+          opacity: 0;
+          transform: scale(2);
+        }
+      }
+      /* Opening: ticket passes push back + fade out. */
+      @keyframes reactor-passes-out {
+        0% {
+          opacity: 1;
+          transform: scale(1);
+        }
+        100% {
+          opacity: 0;
+          transform: scale(1.25);
+        }
+      }
       .reactor-fade {
         animation: reactor-fade 0.4s ease-out both;
       }
@@ -586,6 +728,30 @@ function ReactorStyles() {
       .reactor-headline {
         animation: reactor-headline 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
       }
+      .reactor-energy {
+        animation: reactor-energy 4s ease-in both;
+      }
+      .reactor-beat {
+        animation: reactor-beat 1.4s ease-in-out infinite;
+      }
+      .reactor-orbit {
+        animation: reactor-orbit 2.6s ease-in-out infinite;
+      }
+      .reactor-feed {
+        animation: reactor-feed 2.6s ease-in-out infinite;
+      }
+      .reactor-cardglow {
+        animation: reactor-cardglow 1.8s ease-in-out infinite;
+      }
+      .reactor-flare {
+        animation: reactor-flare 0.7s ease-out both;
+      }
+      .reactor-flare-late {
+        animation: reactor-flare 0.7s ease-out 0.12s both;
+      }
+      .reactor-passes-out {
+        animation: reactor-passes-out 0.6s ease-out both;
+      }
       @media (prefers-reduced-motion: reduce) {
         .reactor-fade,
         .reactor-ring,
@@ -594,7 +760,15 @@ function ReactorStyles() {
         .reactor-pass,
         .reactor-wipe,
         .reactor-result,
-        .reactor-headline {
+        .reactor-headline,
+        .reactor-energy,
+        .reactor-beat,
+        .reactor-orbit,
+        .reactor-feed,
+        .reactor-cardglow,
+        .reactor-flare,
+        .reactor-flare-late,
+        .reactor-passes-out {
           animation: none !important;
         }
       }
