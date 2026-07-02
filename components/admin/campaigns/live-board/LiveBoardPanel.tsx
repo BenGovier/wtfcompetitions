@@ -18,7 +18,8 @@ import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/components/ui/spinner"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
-import { Crown, Plus, RotateCcw, Power, AlertTriangle, History } from "lucide-react"
+import { Crown, Plus, RotateCcw, Power, AlertTriangle, History, Settings } from "lucide-react"
+import { LiveBoardSetup } from "./LiveBoardSetup"
 
 type ItemType = "standard" | "vip"
 
@@ -131,6 +132,9 @@ export function LiveBoardPanel({ campaignId }: { campaignId: string }) {
 
   const [confirmUndo, setConfirmUndo] = useState(false)
   const [confirmDisable, setConfirmDisable] = useState(false)
+
+  // When true, the setup/configure editor replaces the operational view.
+  const [setupMode, setSetupMode] = useState(false)
 
   const fetchBoard = useCallback(async () => {
     try {
@@ -356,13 +360,44 @@ export function LiveBoardPanel({ campaignId }: { campaignId: string }) {
     )
   }
 
+  const isBalloonPop = campaign?.presentationType === "balloon_pop"
+
+  const handleSetupSaved = () => {
+    setSetupMode(false)
+    setLoading(true)
+    fetchBoard()
+  }
+
+  // Setup/configure editor (create when no board exists, or edit an existing
+  // board). Saves via the existing POST/PUT live-board route.
+  if (setupMode) {
+    return (
+      <LiveBoardSetup
+        campaignId={campaignId}
+        initialItems={board?.items ?? null}
+        initialEnabled={board?.enabled ?? false}
+        boardExists={!!board}
+        onCancel={() => setSetupMode(false)}
+        onSaved={handleSetupSaved}
+      />
+    )
+  }
+
   if (!board) {
     return (
       <Card className="p-6">
         <p className="font-medium">No live board set up yet</p>
         <p className="mt-1 text-sm text-muted-foreground">
-          This campaign does not have a Balloon Pop board configured. Set one up before the live event.
+          {isBalloonPop
+            ? "This campaign does not have a Balloon Pop board configured. Set one up before the live event."
+            : "This campaign is not a TikTok Live Balloon Pop campaign, so it does not use a live board."}
         </p>
+        {isBalloonPop ? (
+          <Button className="mt-4 gap-2" onClick={() => setSetupMode(true)}>
+            <Settings className="size-4" />
+            Set up live board
+          </Button>
+        ) : null}
       </Card>
     )
   }
@@ -377,9 +412,20 @@ export function LiveBoardPanel({ campaignId }: { campaignId: string }) {
       <Card className="sticky top-0 z-30 p-4 shadow-sm sm:p-6">
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <Badge variant={campaign?.status === "live" ? "default" : "secondary"}>
-              {campaign?.status ?? "unknown"}
-            </Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant={campaign?.status === "live" ? "default" : "secondary"}>
+                {campaign?.status ?? "unknown"}
+              </Badge>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 gap-1.5 text-muted-foreground"
+                onClick={() => setSetupMode(true)}
+              >
+                <Settings className="size-3.5" />
+                Edit board setup
+              </Button>
+            </div>
 
             {/* Public board toggle — intentionally secondary/subtle. Hosts rarely
                 touch this during a live, so it is a small control, not the
