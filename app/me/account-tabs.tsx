@@ -6,8 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { SignOutButton } from './sign-out-button'
 import { createClient } from '@/lib/supabase/client'
-
-import Image from 'next/image'
+import { Ticket } from 'lucide-react'
 
 interface UserPreferences {
   instant_win_notifications: boolean
@@ -24,7 +23,7 @@ type EntryRow = {
 }
 
 type AllocationInfo = { start_ticket: number; end_ticket: number }
-type CampaignInfo = { title: string; status: string; heroImageUrl: string | null; endAt: string | null }
+type CampaignInfo = { title: string; status: string; slug: string | null }
 type WinInfo = { prizeTitle: string; awardedAt: string }
 
 interface AccountTabsProps {
@@ -230,21 +229,9 @@ export function AccountTabs({ email, entries, entriesError, allocationMap, campa
                     key={entry.id}
                     className="flex gap-3 rounded-xl border border-white/10 bg-white/5 p-3 transition-all duration-300 hover:bg-white/[0.07]"
                   >
-                    {/* Thumbnail */}
-                    <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-purple-500/20">
-                      {campaign?.heroImageUrl ? (
-                        <Image
-                          src={campaign.heroImageUrl}
-                          alt={title}
-                          fill
-                          sizes="64px"
-                          className="object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center text-2xl text-purple-400/60">
-                          🎁
-                        </div>
-                      )}
+                    {/* Lightweight CSS icon tile — no remote images are loaded. */}
+                    <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-gradient-to-br from-purple-500/20 to-yellow-500/10">
+                      <Ticket className="h-7 w-7 text-yellow-400/80" aria-hidden="true" />
                     </div>
 
                     {/* Content */}
