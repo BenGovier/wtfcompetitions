@@ -35,14 +35,10 @@ export async function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-3">
-          {/* Mobile-only: burger menu for signed-out, Account button for signed-in */}
-          {user ? (
-            <Button variant="outline" size="sm" asChild className="sm:hidden border-white/20 bg-black/50 text-white hover:bg-black/70 text-xs px-3">
-              <Link href="/me">Account</Link>
-            </Button>
-          ) : (
-            <MobileAuthMenu />
-          )}
+          {/* Mobile-only: burger menu for both signed-in and signed-out users.
+              The signed-in state opens a polished account menu with a Sign out
+              action; signed-out keeps Create account / Log in. */}
+          <MobileAuthMenu isSignedIn={!!user} />
 
           {/* Desktop buttons */}
           {user ? (
