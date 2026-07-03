@@ -9,8 +9,8 @@ export function SiteFooter() {
       
       {/* Main footer content with purple background */}
       <div className="bg-[#1a0a2e]">
-        <div className="container px-4 py-12">
-          <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="container px-4 py-8 md:py-12">
+          <div className="grid gap-6 sm:grid-cols-2 sm:gap-10 lg:grid-cols-5">
             {/* Logo section */}
             <div className="lg:col-span-1">
               <Link href="/" className="inline-block">
@@ -77,7 +77,10 @@ export function SiteFooter() {
               </ul>
             </div>
 
-            <div>
+            {/* Follow Us + Payment Types: heavier content (incl. a remote image)
+                hidden on mobile to lighten the footer. Legal/support/contact
+                links above remain visible on all screen sizes. */}
+            <div className="hidden md:block">
               <h3 className="mb-4 text-xs font-semibold uppercase tracking-wider text-amber-400">Follow Us</h3>
               <p className="text-sm leading-relaxed text-white/80">Stay updated with our latest giveaways and winners.</p>
               
