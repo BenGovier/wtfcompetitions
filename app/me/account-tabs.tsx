@@ -20,6 +20,7 @@ type EntryRow = {
   campaign_id: string
   qty: number
   created_at: string
+  checkout_intent_id: string | null
 }
 
 type AllocationInfo = { start_ticket: number; end_ticket: number }
@@ -69,8 +70,36 @@ function resolveCampaignTitle(campaign: CampaignInfo | undefined, entryId?: stri
   return 'Competition'
 }
 
+// A campaign is a "past draw" only once it has ended. Everything else
+// (live/paused/sold_out/draft) is a current entry, never labelled ENDED.
+function isEndedStatus(status: string | undefined): boolean {
+  return status === 'ended'
+}
+
+// Accurate, non-misleading status badge for each entry.
+function getStatusBadge(status: string): { label: string; live: boolean } {
+  switch (status) {
+    case 'live':
+      return { label: 'LIVE', live: true }
+    case 'paused':
+      return { label: 'PAUSED', live: false }
+    case 'sold_out':
+      return { label: 'DRAW PENDING', live: false }
+    case 'ended':
+      return { label: 'ENDED', live: false }
+    default:
+      return { label: 'ACTIVE', live: false }
+  }
+}
+
 export function AccountTabs({ email, entries, entriesError, allocationMap, campaignMap, winsMap }: AccountTabsProps) {
   const [prefs, setPrefs] = useState<UserPreferences | null>(null)
+  // Past draws collapse: default collapsed when there are current entries,
+  // open when every entry is a past (ended) draw.
+  const [pastOpen, setPastOpen] = useState<boolean>(() => {
+    const hasCurrent = entries.some((e) => !isEndedStatus(campaignMap[e.campaign_id]?.status))
+    return !hasCurrent
+  })
   const [prefsLoading, setPrefsLoading] = useState(true)
   const [prefsError, setPrefsError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -174,28 +203,26 @@ export function AccountTabs({ email, entries, entriesError, allocationMap, campa
             </div>
           ) : (
             (() => {
-              // Split entries into live and ended (client-side filter only)
-              const liveEntries = entries.filter((e) => {
-                const status = campaignMap[e.campaign_id]?.status
-                return status === 'live' || status === 'active'
-              })
-              const endedEntries = entries.filter((e) => {
-                const status = campaignMap[e.campaign_id]?.status
-                return status !== 'live' && status !== 'active'
-              })
+              // Current = not ended (live/paused/sold_out/draft).
+              // Past draws = ended only. No bogus 'active' status is used.
+              const currentEntries = entries.filter(
+                (e) => !isEndedStatus(campaignMap[e.campaign_id]?.status),
+              )
+              const endedEntries = entries.filter((e) =>
+                isEndedStatus(campaignMap[e.campaign_id]?.status),
+              )
 
               const renderEntryCard = (entry: EntryRow) => {
                 const campaign = campaignMap[entry.campaign_id]
                 const allocation = allocationMap[entry.id]
-                // SAFETY PATCH (display-only): the previous mapping keyed wins by
-                // campaign_id, which incorrectly showed "Instant Winner" on every
-                // entry in a campaign. Force wins to empty so the badge cannot render
-                // until the data mapping is fixed. `winsMap` is intentionally left
-                // referenced but unused; no queries or awarding logic are touched.
-                void winsMap
-                const wins: WinInfo[] = []
+                // Instant wins are attributed to the exact checkout that won.
+                // Only show a badge when this entry's checkout_intent_id has a
+                // matching award — never by campaign.
+                const wins: WinInfo[] = entry.checkout_intent_id
+                  ? winsMap[entry.checkout_intent_id] || []
+                  : []
                 const status = campaign?.status || 'unknown'
-                const isLive = status === 'live' || status === 'active'
+                const badge = getStatusBadge(status)
                 const title = resolveCampaignTitle(campaign, entry.id, entry.campaign_id)
 
                 return (
@@ -229,12 +256,12 @@ export function AccountTabs({ email, entries, entriesError, allocationMap, campa
                         </h3>
                         <span
                           className={
-                            isLive
+                            badge.live
                               ? 'shrink-0 rounded-full border border-green-400/30 bg-green-400/10 px-2 py-0.5 text-xs font-medium text-green-300'
                               : 'shrink-0 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-xs font-medium text-white/60'
                           }
                         >
-                          {isLive ? 'LIVE' : 'ENDED'}
+                          {badge.label}
                         </span>
                       </div>
 
@@ -251,14 +278,24 @@ export function AccountTabs({ email, entries, entriesError, allocationMap, campa
                         Bought {formatDateUK(entry.created_at)}
                       </p>
 
-                      {/* Win status */}
+                      {/* Win status — safe, non-misleading wording.
+                          Only claims a win when a checkout-level award exists;
+                          otherwise shows neutral status, never implying loss. */}
                       {wins.length > 0 ? (
                         <div className="mt-1 flex items-center gap-1.5 rounded-md bg-yellow-500/15 px-2 py-1 text-xs font-medium text-yellow-300">
                           <span>🎁</span>
                           <span>Instant Winner: {wins.map((w) => w.prizeTitle).join(', ')}</span>
                         </div>
                       ) : (
-                        <p className="mt-1 text-xs text-white/40">No win yet</p>
+                        <p className="mt-1 text-xs text-white/40">
+                          {status === 'ended'
+                            ? 'Draw complete \u2014 see Winners'
+                            : status === 'sold_out'
+                              ? 'Draw pending'
+                              : status === 'paused'
+                                ? 'Entry active \u2014 draw paused'
+                                : 'Entry active'}
+                        </p>
                       )}
                     </div>
                   </div>
@@ -267,29 +304,51 @@ export function AccountTabs({ email, entries, entriesError, allocationMap, campa
 
               return (
                 <div className="space-y-6">
-                  {/* Live Entries Section */}
+                  {/* Current Entries Section */}
                   <div>
                     <h3 className="mb-3 text-sm font-semibold text-green-400">
-                      Live entries ({liveEntries.length})
+                      Current entries ({currentEntries.length})
                     </h3>
-                    {liveEntries.length === 0 ? (
-                      <p className="py-4 text-sm text-white/50">No live entries right now.</p>
+                    {currentEntries.length === 0 ? (
+                      <p className="py-4 text-sm text-white/50">No current entries right now.</p>
                     ) : (
                       <div className="grid gap-3 sm:grid-cols-2">
-                        {liveEntries.map(renderEntryCard)}
+                        {currentEntries.map(renderEntryCard)}
                       </div>
                     )}
                   </div>
 
-                  {/* Past Entries Section */}
+                  {/* Past Draws Section (collapsible) */}
                   {endedEntries.length > 0 && (
                     <div>
-                      <h3 className="mb-3 text-sm font-semibold text-white/70">
-                        Past entries ({endedEntries.length})
-                      </h3>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        {endedEntries.map(renderEntryCard)}
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setPastOpen((v) => !v)}
+                        aria-expanded={pastOpen}
+                        className="flex w-full items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-left text-sm font-semibold text-white/70 transition-colors hover:bg-white/[0.08]"
+                      >
+                        <span>Past draws ({endedEntries.length})</span>
+                        <svg
+                          className={
+                            'h-4 w-4 shrink-0 transition-transform duration-200 ' +
+                            (pastOpen ? 'rotate-180' : '')
+                          }
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        >
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                      </button>
+                      {pastOpen && (
+                        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                          {endedEntries.map(renderEntryCard)}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
