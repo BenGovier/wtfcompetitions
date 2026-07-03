@@ -107,41 +107,6 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
   const displayImages = images
   const isLive = status === "live"
 
-  // Lightweight, snapshot-derived stats for the mobile "LIVE NOW" block.
-  // These come purely from the already-fetched server payload (revalidated every
-  // 60s) — NOT from any new client poll — so they degrade gracefully when a
-  // value isn't present. VIP data isn't in the snapshot, so it's simply omitted.
-  const extractCashPence = (t: unknown): number => {
-    const m = String(t ?? "").match(/£([\d,]+(?:\.\d{1,2})?)/)
-    if (!m) return 0
-    const v = parseFloat(m[1].replace(/,/g, ""))
-    return Number.isFinite(v) ? Math.round(v * 100) : 0
-  }
-  const chancesStillHidden = instantWins.reduce((sum: number, w: any) => {
-    const q = w?.quantity ?? 1
-    const rem = w?.remaining_count ?? (w?.is_won ? 0 : q)
-    return sum + Math.max(0, Number(rem) || 0)
-  }, 0)
-  const topPrizePence = instantWins.reduce((max: number, w: any) => {
-    const rem = w?.remaining_count ?? (w?.is_won ? 0 : (w?.quantity ?? 1))
-    if ((Number(rem) || 0) <= 0) return max
-    const v = extractCashPence(w?.title)
-    return v > max ? v : max
-  }, 0)
-  const formatPence = (pence: number): string =>
-    new Intl.NumberFormat("en-GB", {
-      style: "currency",
-      currency: "GBP",
-      minimumFractionDigits: Number.isInteger(pence / 100) ? 0 : 2,
-      maximumFractionDigits: 2,
-    }).format(pence / 100)
-  const liveStatParts: string[] = [
-    chancesStillHidden > 0
-      ? `${chancesStillHidden} chance${chancesStillHidden === 1 ? "" : "s"} still hidden`
-      : null,
-    topPrizePence > 0 ? `Top prize ${formatPence(topPrizePence)}` : null,
-  ].filter(Boolean) as string[]
-
   return (
   <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#3a0f4f_0%,_#1b0b2b_40%,_#0e0618_100%)] pb-8 text-white">
   <ScrollToTopOnMount />
@@ -211,31 +176,10 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
                 )}
               </div>
 
-              {/* LIVE NOW sales block (Balloon Pop, while live) — a high-impact,
-                  glassy hero CTA placed above ticket selection to drive entries.
-                  Stats are snapshot-derived (see above); no new polling is added.
-                  CTA anchors to the existing #choose-tickets section. */}
-              {isBalloonPop && isLive && (
-                <div className="rounded-2xl border border-amber-400/30 bg-gradient-to-br from-[#2a0f3f]/90 to-[#0e0618]/90 p-4 shadow-[0_0_30px_rgba(255,180,0,0.15)] backdrop-blur-md">
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-white shadow-[0_0_12px_rgba(255,0,0,0.5)]">
-                    <span className="relative flex h-2 w-2" aria-hidden="true">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
-                      <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
-                    </span>
-                    Live Now
-                  </span>
-                  <p className="mt-2 text-lg font-bold leading-tight text-white">{title}</p>
-                  {liveStatParts.length > 0 && (
-                    <p className="mt-1 text-sm font-medium text-purple-100">{liveStatParts.join(" • ")}</p>
-                  )}
-                  <a
-                    href="#choose-tickets"
-                    className="mt-3 inline-flex w-full items-center justify-center rounded-xl bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] px-4 py-3 text-base font-bold text-black shadow-[0_10px_40px_rgba(255,180,0,0.4)] transition-transform active:scale-[0.98]"
-                  >
-                    Enter Now
-                  </a>
-                </div>
-              )}
+              {/* NOTE: No default "LIVE NOW" block here. Hosts are not live 24/7,
+                  so the giveaway detail page must never imply the host is live.
+                  Any "LIVE NOW" state belongs only to the separate, host-controlled
+                  Live Site Takeover feature. This page stays focused on entering. */}
 
               <Separator />
 
@@ -261,15 +205,12 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
                 </span>
               </div>
 
-              {/* Live Balloon Board (Balloon Pop campaigns, while live) — moved
-                  BELOW ticket selection so the buying journey leads, with the
-                  live mechanic reinforcing it just after. Compact on mobile,
-                  full on desktop. Renders nothing until the host enables it. */}
+              {/* Remaining Balloon Board (Balloon Pop) — sits directly under the
+                  trust row so the flow stays tight: tickets → trust → board.
+                  It shows remaining prize values only and renders nothing until
+                  the host enables it. It does NOT imply the host is live. */}
               {isBalloonPop && isLive && (
-                <>
-                  <Separator />
-                  <PublicLiveBalloonBoard campaignId={campaignId} />
-                </>
+                <PublicLiveBalloonBoard campaignId={campaignId} />
               )}
             </div>
           </div>
