@@ -80,25 +80,10 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
   const [qtyBump, setQtyBump] = useState(false)
   const [mounted, setMounted] = useState(false)
 
-  // Measure the fixed mobile purchase bar so we can reserve an equal amount of
-  // in-flow space below the content. This stops the bar from covering the final
-  // elements (free-entry link, etc.) and makes it feel attached rather than
-  // floating. Its measured height already includes the safe-area bottom inset.
+  // Ref retained on the fixed mobile purchase bar (used only as an anchor; the
+  // previous height-measuring spacer was removed because page-level bottom
+  // clearance already keeps the last content clear of the fixed bar).
   const mobileBarRef = useRef<HTMLDivElement>(null)
-  const [mobileBarHeight, setMobileBarHeight] = useState(0)
-
-  useEffect(() => {
-    const el = mobileBarRef.current
-    if (!el || typeof ResizeObserver === "undefined") return
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        setMobileBarHeight(entry.target.getBoundingClientRect().height)
-      }
-    })
-    observer.observe(el)
-    setMobileBarHeight(el.getBoundingClientRect().height)
-    return () => observer.disconnect()
-  }, [])
 
   // Live sold count from API polling
   const [liveSoldCount, setLiveSoldCount] = useState<number | null>(null)
@@ -726,16 +711,10 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
           The single, always-visible checkout surface on giveaway detail pages.
           Mirrors the same qty / selectedBundle / hasAcceptedTerms state as the
           bundles and desktop card, so picking a bundle above instantly updates
-          the slider, quantity and total here. The normal mobile bottom nav is
-          suppressed on these pages (see MobileNav). */}
-      {/* In-flow spacer (mobile only) equal to the fixed bar's height so the
-          page's final content can always scroll clear of the sticky bar. */}
-      <div
-        aria-hidden="true"
-        className="md:hidden"
-        style={{ height: mobileBarHeight ? `${mobileBarHeight}px` : undefined }}
-      />
-
+          the slider, quantity and total here.           The normal mobile bottom nav is
+          suppressed on these pages (see MobileNav).
+          Bottom clearance so the last content scrolls clear of this fixed bar is
+          provided by the page-level `h-52 md:hidden` spacer near the footer. */}
       <div
         ref={mobileBarRef}
         className="fixed inset-x-0 bottom-0 z-50 border-t border-purple-500/40 bg-[#0e0618]/95 px-4 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-8px_30px_rgba(10,4,20,0.6)] backdrop-blur-xl md:hidden"
