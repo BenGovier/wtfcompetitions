@@ -47,23 +47,33 @@ export default async function AccountPage() {
     }
   }
 
-  // Step 3: Fetch campaigns (extended with image and end date)
-  const campaignMap: Record<string, { title: string; status: string; heroImageUrl: string | null; endAt: string | null }> = {}
+  // Step 3: Fetch campaign metadata from the PUBLIC giveaway_snapshots table.
+  // The `campaigns` table is RLS-locked for the authenticated role, so reading it
+  // here returns no rows (causing the "Competition" fallback). The public list
+  // snapshots (one per campaign, keyed by giveaway_id, any status) are the same
+  // source the public giveaway pages use and expose title + status + slug.
+  // Only lightweight fields are read — no hero_image_url / remote images.
+  const campaignMap: Record<string, { title: string; status: string; slug: string | null }> = {}
 
   if (entries.length > 0) {
     const campaignIds = [...new Set(entries.map((e) => e.campaign_id))]
-    const { data: campaigns } = await supabase
-      .from('campaigns')
-      .select('id, title, status, hero_image_url, end_at')
-      .in('id', campaignIds)
+    const { data: snapshots, error: snapshotsErr } = await supabase
+      .from('giveaway_snapshots')
+      .select('giveaway_id, payload')
+      .eq('kind', 'list')
+      .in('giveaway_id', campaignIds)
 
-    if (campaigns) {
-      for (const c of campaigns) {
-        campaignMap[c.id] = {
-          title: c.title || 'Giveaway',
-          status: c.status || 'unknown',
-          heroImageUrl: c.hero_image_url || null,
-          endAt: c.end_at || null,
+    if (snapshotsErr) {
+      // Fail safe: leave campaignMap empty so cards degrade gracefully rather
+      // than crashing /me. Cards will show their neutral fallback wording.
+      console.error('[me] giveaway_snapshots lookup failed:', snapshotsErr.message)
+    } else if (snapshots) {
+      for (const s of snapshots) {
+        const payload = (s as any).payload || {}
+        campaignMap[(s as any).giveaway_id] = {
+          title: payload.title || 'Giveaway',
+          status: payload.status || 'unknown',
+          slug: payload.slug || null,
         }
       }
     }
