@@ -137,18 +137,13 @@ export function PublicLiveBalloonBoard({ campaignId }: { campaignId: string }) {
 
   return (
     <section
-      aria-label="Live Balloon Board"
+      aria-label="Remaining Balloon Board"
       className="rounded-xl border border-purple-500/20 bg-white/5 p-4 backdrop-blur-sm"
     >
-      {/* Heading with a small, subtle live dot (no large duplicate LIVE badge —
-          the campaign title area already shows LIVE + countdown). */}
-      <div className="flex items-center gap-2">
-        <span className="relative flex h-2 w-2" aria-hidden="true">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-          <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
-        </span>
-        <h2 className="text-lg font-semibold">Live Balloon Board</h2>
-      </div>
+      {/* Neutral heading — no live dot or "live" wording. Hosts are not live
+          24/7, so this board only communicates what balloons are still hidden,
+          never that the host is currently streaming. */}
+      <h2 className="text-lg font-semibold">Remaining Balloon Board</h2>
       <p className="mt-0.5 text-sm text-purple-200">Cash balloons still hidden</p>
 
       {/* Compact horizontal summary line (wraps on mobile, no large cards). */}
@@ -201,7 +196,7 @@ export function PublicLiveBalloonBoard({ campaignId }: { campaignId: string }) {
         </button>
       )}
 
-      <p className="mt-3 text-center text-xs text-purple-300/70">Updated during the live</p>
+      <p className="mt-3 text-center text-xs text-purple-300/70">Updates automatically</p>
     </section>
   )
 }

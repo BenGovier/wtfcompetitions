@@ -584,20 +584,46 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
               const iconDef = bundleIcons[i % bundleIcons.length]
               const Icon = iconDef.icon
               const isPopular = bundle.label?.toLowerCase().includes('popular') || (i === 1 && normBundles.length >= 2)
+              // Single top ribbon label (display only): Popular wins over Best Value.
+              const ribbon: { text: string; className: string } | null = isPopular
+                ? { text: "Most Popular", className: "from-yellow-400 to-yellow-600" }
+                : i === bestValueIdx && savingsPercent > 0
+                  ? { text: "Best Value", className: "from-emerald-400 to-emerald-600" }
+                  : null
 
               return (
                 <button
                   key={`${bundle.quantity}-${bundle.price_pence}`}
                   onClick={() => handleSelectBundle(bundle)}
                   className={cn(
-                    "relative flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl border-2 px-2 py-2.5 transition-all duration-200 active:scale-[0.98]",
-                    "md:gap-2 md:px-4 md:py-4",
+                    "relative flex min-w-0 flex-col items-center justify-center gap-2 rounded-xl border-2 px-2 py-4 transition-all duration-200 active:scale-[0.98]",
+                    "md:gap-3 md:px-4 md:py-5",
                     isActive
                       ? "scale-[1.03] border-yellow-400 bg-yellow-500/15 shadow-[0_0_35px_rgba(255,215,0,0.4)] ring-2 ring-yellow-300/40"
                       : "border-purple-500/25 bg-white/[0.04] hover:border-purple-400/50 hover:bg-white/[0.07]",
                     isPopular && !isActive && "border-amber-500/50 animate-[bundle-popular-glow_2.5s_ease-in-out_infinite]"
                   )}
                 >
+                  {/* Single top ribbon — Popular / Best Value (hidden when selected
+                      so it never collides with the "Selected" pill). */}
+                  {!isActive && ribbon && (
+                    <div
+                      className={cn(
+                        "absolute -top-2.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-gradient-to-r px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-black shadow md:text-[10px] md:px-2.5",
+                        ribbon.className
+                      )}
+                    >
+                      {ribbon.text}
+                    </div>
+                  )}
+
+                  {/* Selected indicator */}
+                  {isActive && (
+                    <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-yellow-500 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-black shadow md:text-[10px] md:px-2.5">
+                      Selected
+                    </div>
+                  )}
+
                   {/* Icon - hidden on mobile, visible on desktop */}
                   <div className={cn(
                     "hidden md:flex h-10 w-10 items-center justify-center rounded-lg",
@@ -606,45 +632,27 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
                     <Icon className={cn("h-5 w-5", isActive ? "text-yellow-400" : iconDef.color)} aria-hidden="true" />
                   </div>
 
-                  {/* Quantity + Popular / Best Value badge - centered on both mobile and desktop */}
-                  <div className="flex flex-col items-center gap-0.5">
-                    <span className="text-sm font-extrabold leading-none text-white md:text-lg">{bundle.quantity}</span>
-                    <span className="text-[10px] font-medium uppercase tracking-wide text-purple-200 md:text-xs">Tickets</span>
-                    {isPopular ? (
-                      <span className="mt-0.5 text-[9px] font-semibold bg-gradient-to-r from-yellow-400 to-yellow-600 text-black px-1.5 py-0.5 rounded-full md:text-[11px] md:px-2">
-                        Most Popular
-                      </span>
-                    ) : (
-                      i === bestValueIdx &&
-                      savingsPercent > 0 && (
-                        <span className="mt-0.5 text-[9px] font-semibold bg-gradient-to-r from-emerald-400 to-emerald-600 text-black px-1.5 py-0.5 rounded-full md:text-[11px] md:px-2">
-                          Best Value
-                        </span>
-                      )
-                    )}
+                  {/* Big ticket count */}
+                  <div className="flex flex-col items-center leading-none">
+                    <span className="text-2xl font-black text-white md:text-4xl">{bundle.quantity}</span>
+                    <span className="mt-1 text-[10px] font-medium uppercase tracking-wider text-purple-200 md:text-xs">Tickets</span>
                   </div>
 
-                  {/* Save % + Price - centered on both mobile and desktop */}
-                  <div className="flex flex-col items-center gap-0.5">
+                  {/* Clear price + single save pill (strikethrough desktop-only to
+                      keep mobile uncluttered). */}
+                  <div className="flex flex-col items-center gap-1">
+                    <div className="flex items-baseline gap-1">
+                      {savingsPercent > 0 && (
+                        <span className="hidden text-xs text-white/40 line-through md:inline">{formatGBP(fullPricePence / 100)}</span>
+                      )}
+                      <span className="text-base font-black text-white md:text-2xl">{formatGBP(bundle.price_pence / 100)}</span>
+                    </div>
                     {savingsPercent > 0 && (
-                      <span className="inline-flex items-center rounded-full bg-emerald-500/15 border border-emerald-400/30 px-1.5 py-0.5 text-[9px] font-bold text-emerald-300 md:px-2 md:text-xs">
+                      <span className="inline-flex items-center rounded-full border border-emerald-400/30 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-300 md:text-xs">
                         Save {savingsPercent}%
                       </span>
                     )}
-                    <div className="flex items-baseline gap-1">
-                      {savingsPercent > 0 && (
-                        <span className="text-[9px] text-white/40 line-through md:text-xs">{formatGBP(fullPricePence / 100)}</span>
-                      )}
-                      <span className="text-sm font-extrabold text-white md:text-xl">{formatGBP(bundle.price_pence / 100)}</span>
-                    </div>
                   </div>
-
-                  {/* Selected indicator */}
-                  {isActive && (
-                    <div className="absolute -top-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-yellow-500 px-1.5 py-0.5 text-[9px] font-bold text-black shadow md:px-2 md:text-[10px]">
-                      Selected
-                    </div>
-                  )}
                 </button>
               )
               })
