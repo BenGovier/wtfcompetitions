@@ -4,15 +4,19 @@ import { authorizeAdminApi } from '@/lib/admin/auth'
 import { getServiceSupabase } from '@/lib/admin/live-board'
 
 const NO_STORE = { headers: { 'Cache-Control': 'private, no-cache, no-store' } }
-const FEED_LIMIT = 20
+const FEED_LIMIT = 10
 
 /**
  * GET /api/admin/live-feed/[id]
  *
  * Admin + Host (ops) only. Returns the most recent instant wins for ONE
- * campaign. Deliberately lightweight and privacy-safe: it returns only a
- * public display name and the prize title. It NEVER returns real names,
- * mobile numbers, checkout ids, payment data, or raw entry/ticket ids.
+ * campaign so hosts can see who won and what during a live.
+ *
+ * PRIVACY: This route DOES return sensitive PII — the winner's real name and
+ * mobile number (from profiles_private) — in addition to the public display
+ * name and prize title. It is therefore admin/ops ONLY, always served with
+ * no-store, and must NEVER be exposed to public pages. It still does NOT
+ * return checkout ids, payment data, or raw entry/ticket ids.
  */
 export async function GET(
   _request: NextRequest,
@@ -102,7 +106,7 @@ export async function GET(
 
     const userIdByIntent = new Map((entries ?? []).map((e) => [e.checkout_intent_id, e.user_id]))
 
-    // Resolve public display names only (no private profile data).
+    // Resolve public display names (no private data) for all winners.
     const userIds = [...new Set((entries ?? []).map((e) => e.user_id).filter(Boolean))]
     let displayNameByUser = new Map<string, string | null>()
     if (userIds.length > 0) {
@@ -113,14 +117,38 @@ export async function GET(
       displayNameByUser = new Map((profiles ?? []).map((p) => [p.user_id, p.display_name ?? null]))
     }
 
+    // Single bulk PII lookup (admin/ops only): real name + mobile per winner.
+    // Reuses the userIds already derived from entries — no N+1, no per-row calls.
+    // Fail-soft: any error/missing row leaves realName/mobile null.
+    const privateByUser = new Map<string, { realName: string | null; mobile: string | null }>()
+    if (userIds.length > 0) {
+      const { data: privateProfiles, error: privateErr } = await svc
+        .from('profiles_private')
+        .select('user_id, real_name, mobile')
+        .in('user_id', userIds)
+      if (privateErr) {
+        console.error('[admin/live-feed/[id]] profiles_private query error:', privateErr.message)
+      } else {
+        for (const p of privateProfiles ?? []) {
+          privateByUser.set(p.user_id, {
+            realName: (p.real_name ?? null) as string | null,
+            mobile: (p.mobile ?? null) as string | null,
+          })
+        }
+      }
+    }
+
     const items = awardRows.map((award, i) => {
       const userId = award.checkout_intent_id ? userIdByIntent.get(award.checkout_intent_id) : null
       const displayName = userId ? (displayNameByUser.get(userId) ?? null) : null
+      const priv = userId ? privateByUser.get(userId) : undefined
       return {
         // Synthetic, stable id — contains no checkout/entry/customer identifiers.
         id: `${award.awarded_at}-${award.prize_id}-${i}`,
         createdAt: award.awarded_at as string,
         displayName,
+        realName: priv?.realName ?? null,
+        mobile: priv?.mobile ?? null,
         prizeTitle: prizeMap.get(award.prize_id) ?? 'Instant win',
       }
     })
