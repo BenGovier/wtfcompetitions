@@ -121,11 +121,11 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
     return () => clearInterval(interval)
   }, [campaignId])
 
-  // Auto-select default bundle (highest quantity) when bundles are available
+  // Auto-select default bundle (smallest quantity) when bundles are available
   useEffect(() => {
     if (hasBundles && selectedBundle === null && normBundles.length > 0) {
-      // Select the bundle with the highest quantity
-      const defaultBundle = normBundles.reduce((max, b) => b.quantity > max.quantity ? b : max, normBundles[0])
+      // Select the smallest bundle (normBundles is sorted ascending by quantity)
+      const defaultBundle = normBundles[0]
       setSelectedBundle(defaultBundle)
       setQty(defaultBundle.quantity)
     }
