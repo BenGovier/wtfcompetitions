@@ -11,12 +11,12 @@ export default async function AccountPage() {
   }
 
   // Step 1: Fetch entries
-  let entries: { id: string; campaign_id: string; qty: number; created_at: string }[] = []
+  let entries: { id: string; campaign_id: string; qty: number; created_at: string; checkout_intent_id: string | null }[] = []
   let entriesError: string | null = null
 
   const { data: entriesData, error: entriesErr } = await supabase
     .from('entries')
-    .select('id, campaign_id, qty, created_at')
+    .select('id, campaign_id, qty, created_at, checkout_intent_id')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
     .limit(100)
@@ -69,46 +69,54 @@ export default async function AccountPage() {
     }
   }
 
-  // Step 4: Fetch user's instant wins via checkout_intents
+  // Step 4: Fetch user's instant wins, keyed by checkout_intent_id.
+  // An instant win belongs to the exact checkout that won, so we key by
+  // checkout_intent_id (NOT campaign_id) to avoid showing a win on every entry
+  // in a campaign. Prize titles are deduplicated per checkout.
   const winsMap: Record<string, { prizeTitle: string; awardedAt: string }[]> = {}
 
   if (entries.length > 0) {
-    // Get checkout_intent_ids for this user
-    const { data: checkouts } = await supabase
-      .from('checkout_intents')
-      .select('id')
-      .eq('user_id', user.id)
+    // Only look up awards for checkouts that actually belong to this user's entries.
+    const checkoutIds = [
+      ...new Set(
+        entries
+          .map((e) => e.checkout_intent_id)
+          .filter((id): id is string => typeof id === 'string' && id.length > 0),
+      ),
+    ]
 
-    if (checkouts && checkouts.length > 0) {
-      const checkoutIds = checkouts.map((c) => c.id)
-
-      // Get instant_win_awards for those checkout_intents
-      // Use campaign_id from instant_win_awards as the source of truth
+    if (checkoutIds.length > 0) {
+      // Join instant_win_prizes only to get the prize title for display.
       const { data: awards } = await supabase
         .from('instant_win_awards')
-        .select('checkout_intent_id, campaign_id, prize_id, awarded_at, instant_win_prizes(prize_title)')
+        .select('checkout_intent_id, prize_id, awarded_at, instant_win_prizes(prize_title)')
         .in('checkout_intent_id', checkoutIds)
 
-      console.log('[me-wins] awards =', JSON.stringify(awards))
-
       if (awards) {
+        // Track seen prize titles per checkout so repeated titles are not
+        // shown as "Balloon Pop, Balloon Pop, Balloon Pop".
+        const seenTitles: Record<string, Set<string>> = {}
+
         for (const a of awards) {
-          // Use award.campaign_id directly, not from checkout_intents
-          const campaignId = (a as any).campaign_id
-          if (campaignId) {
-            if (!winsMap[campaignId]) {
-              winsMap[campaignId] = []
-            }
-            const prizeTitle = (a.instant_win_prizes as any)?.prize_title || 'Prize'
-            winsMap[campaignId].push({
-              prizeTitle,
-              awardedAt: a.awarded_at,
-            })
+          const checkoutIntentId = (a as any).checkout_intent_id as string | null
+          // Skip awards with no checkout linkage — cannot be safely attributed.
+          if (!checkoutIntentId) continue
+
+          const prizeTitle = (a.instant_win_prizes as any)?.prize_title || 'Prize'
+
+          if (!winsMap[checkoutIntentId]) {
+            winsMap[checkoutIntentId] = []
+            seenTitles[checkoutIntentId] = new Set()
           }
+          if (seenTitles[checkoutIntentId].has(prizeTitle)) continue
+          seenTitles[checkoutIntentId].add(prizeTitle)
+
+          winsMap[checkoutIntentId].push({
+            prizeTitle,
+            awardedAt: a.awarded_at,
+          })
         }
       }
-
-      console.log('[me-wins] winsMap =', JSON.stringify(winsMap))
     }
   }
 
