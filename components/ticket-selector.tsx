@@ -561,7 +561,21 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
         <div className="space-y-3">
           <h3 className="text-sm font-semibold text-purple-200">Choose your tickets</h3>
           <div className="grid grid-cols-3 gap-2 md:gap-3">
-            {normBundles.map((bundle, i) => {
+            {(() => {
+              // Display-only: which bundle offers the biggest saving. Used purely
+              // to render a "Best Value" badge — does not affect selection,
+              // pricing, totals, or checkout state.
+              let bestValueIdx = -1
+              let bestSavings = 0
+              normBundles.forEach((b, idx) => {
+                const fp = b.quantity * basePricePence
+                const sp = b.quantity > 1 && fp > 0 ? 1 - b.price_pence / fp : 0
+                if (sp > bestSavings) {
+                  bestSavings = sp
+                  bestValueIdx = idx
+                }
+              })
+              return normBundles.map((bundle, i) => {
               const isActive = selectedBundle?.quantity === bundle.quantity && selectedBundle?.price_pence === bundle.price_pence
               const fullPricePence = bundle.quantity * basePricePence
               const savingsPercent = bundle.quantity > 1
@@ -579,7 +593,7 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
                     "relative flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl border-2 px-2 py-2.5 transition-all duration-200 active:scale-[0.98]",
                     "md:gap-2 md:px-4 md:py-4",
                     isActive
-                      ? "scale-[1.02] border-yellow-400 bg-yellow-500/10 shadow-[0_0_30px_rgba(255,215,0,0.25)]"
+                      ? "scale-[1.03] border-yellow-400 bg-yellow-500/15 shadow-[0_0_35px_rgba(255,215,0,0.4)] ring-2 ring-yellow-300/40"
                       : "border-purple-500/25 bg-white/[0.04] hover:border-purple-400/50 hover:bg-white/[0.07]",
                     isPopular && !isActive && "border-amber-500/50 animate-[bundle-popular-glow_2.5s_ease-in-out_infinite]"
                   )}
@@ -592,13 +606,21 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
                     <Icon className={cn("h-5 w-5", isActive ? "text-yellow-400" : iconDef.color)} aria-hidden="true" />
                   </div>
 
-                  {/* Quantity + Popular badge - centered on both mobile and desktop */}
+                  {/* Quantity + Popular / Best Value badge - centered on both mobile and desktop */}
                   <div className="flex flex-col items-center gap-0.5">
-                    <span className="text-xs font-bold text-white md:text-base">{bundle.quantity} Tickets</span>
-                    {isPopular && (
-                      <span className="text-[9px] font-semibold bg-gradient-to-r from-yellow-400 to-yellow-600 text-black px-1.5 py-0.5 rounded-full md:text-[11px] md:px-2">
+                    <span className="text-sm font-extrabold leading-none text-white md:text-lg">{bundle.quantity}</span>
+                    <span className="text-[10px] font-medium uppercase tracking-wide text-purple-200 md:text-xs">Tickets</span>
+                    {isPopular ? (
+                      <span className="mt-0.5 text-[9px] font-semibold bg-gradient-to-r from-yellow-400 to-yellow-600 text-black px-1.5 py-0.5 rounded-full md:text-[11px] md:px-2">
                         Most Popular
                       </span>
+                    ) : (
+                      i === bestValueIdx &&
+                      savingsPercent > 0 && (
+                        <span className="mt-0.5 text-[9px] font-semibold bg-gradient-to-r from-emerald-400 to-emerald-600 text-black px-1.5 py-0.5 rounded-full md:text-[11px] md:px-2">
+                          Best Value
+                        </span>
+                      )
                     )}
                   </div>
 
@@ -613,7 +635,7 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
                       {savingsPercent > 0 && (
                         <span className="text-[9px] text-white/40 line-through md:text-xs">{formatGBP(fullPricePence / 100)}</span>
                       )}
-                      <span className="text-xs font-bold text-white md:text-lg">{formatGBP(bundle.price_pence / 100)}</span>
+                      <span className="text-sm font-extrabold text-white md:text-xl">{formatGBP(bundle.price_pence / 100)}</span>
                     </div>
                   </div>
 
@@ -625,7 +647,8 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
                   )}
                 </button>
               )
-            })}
+              })
+            })()}
           </div>
 
           {/* Compact custom amount, directly under the bundle cards.
