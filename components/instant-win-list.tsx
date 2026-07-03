@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react"
 import Image from "next/image"
 import { Zap, ChevronDown, ChevronUp, Gift } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 const INITIAL_DISPLAY_COUNT = 12
 
@@ -18,6 +19,10 @@ interface InstantWin {
 
 interface InstantWinListProps {
   instantWins: InstantWin[]
+  /** Section heading. Defaults to "Instant Wins Available". */
+  heading?: string
+  /** When true, the list is collapsed by default on mobile (desktop unaffected). */
+  collapsibleOnMobile?: boolean
 }
 
 /**
@@ -119,8 +124,14 @@ function groupInstantWinsForDisplay(wins: InstantWin[]): GroupedInstantWin[] {
   return Array.from(groups.values())
 }
 
-export function InstantWinList({ instantWins }: InstantWinListProps) {
+export function InstantWinList({
+  instantWins,
+  heading = "Instant Wins Available",
+  collapsibleOnMobile = false,
+}: InstantWinListProps) {
   const [expanded, setExpanded] = useState(false)
+  // Mobile-only collapse toggle. Desktop always shows the list (md: overrides).
+  const [mobileOpen, setMobileOpen] = useState(false)
 
   // Display-only: sort first (cash prizes descending), then group by title
   const groupedInstantWins = useMemo(() => {
@@ -135,10 +146,33 @@ export function InstantWinList({ instantWins }: InstantWinListProps) {
 
   return (
     <section className="space-y-4">
-      <div className="flex items-center gap-2">
-        <Zap className="size-5 text-amber-500" aria-hidden="true" />
-        <h2 className="text-xl font-semibold">Instant Wins Available</h2>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Zap className="size-5 text-amber-500" aria-hidden="true" />
+          <h2 className="text-xl font-semibold">{heading}</h2>
+        </div>
+        {collapsibleOnMobile && (
+          <button
+            type="button"
+            onClick={() => setMobileOpen((prev) => !prev)}
+            aria-expanded={mobileOpen}
+            className="inline-flex items-center gap-1 rounded-full border border-purple-500/30 bg-white/5 px-3 py-1 text-xs font-medium text-white/80 transition-colors hover:bg-white/10 md:hidden"
+          >
+            {mobileOpen ? (
+              <>
+                Hide
+                <ChevronUp className="size-3.5" aria-hidden="true" />
+              </>
+            ) : (
+              <>
+                View
+                <ChevronDown className="size-3.5" aria-hidden="true" />
+              </>
+            )}
+          </button>
+        )}
       </div>
+      <div className={cn(collapsibleOnMobile && !mobileOpen ? "hidden md:block" : "block", "space-y-4")}>
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {visibleItems.map((prize) => {
           const allClaimed = prize.totalRemaining === 0
@@ -202,6 +236,7 @@ export function InstantWinList({ instantWins }: InstantWinListProps) {
           )}
         </button>
       )}
+      </div>
     </section>
   )
 }

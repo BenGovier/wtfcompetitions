@@ -12,7 +12,7 @@ import { PublicLiveBalloonBoard } from "@/components/giveaway/PublicLiveBalloonB
 import { TrustBadges } from "@/components/trust-badges"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { Shield, Award, ChevronRight } from "lucide-react"
+import { Shield, Award, ChevronRight, Zap } from "lucide-react"
 import { ScrollToTopOnMount } from "@/components/scroll-to-top-on-mount"
 
 export const revalidate = 60
@@ -107,6 +107,41 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
   const displayImages = images
   const isLive = status === "live"
 
+  // Lightweight, snapshot-derived stats for the mobile "LIVE NOW" block.
+  // These come purely from the already-fetched server payload (revalidated every
+  // 60s) — NOT from any new client poll — so they degrade gracefully when a
+  // value isn't present. VIP data isn't in the snapshot, so it's simply omitted.
+  const extractCashPence = (t: unknown): number => {
+    const m = String(t ?? "").match(/£([\d,]+(?:\.\d{1,2})?)/)
+    if (!m) return 0
+    const v = parseFloat(m[1].replace(/,/g, ""))
+    return Number.isFinite(v) ? Math.round(v * 100) : 0
+  }
+  const chancesStillHidden = instantWins.reduce((sum: number, w: any) => {
+    const q = w?.quantity ?? 1
+    const rem = w?.remaining_count ?? (w?.is_won ? 0 : q)
+    return sum + Math.max(0, Number(rem) || 0)
+  }, 0)
+  const topPrizePence = instantWins.reduce((max: number, w: any) => {
+    const rem = w?.remaining_count ?? (w?.is_won ? 0 : (w?.quantity ?? 1))
+    if ((Number(rem) || 0) <= 0) return max
+    const v = extractCashPence(w?.title)
+    return v > max ? v : max
+  }, 0)
+  const formatPence = (pence: number): string =>
+    new Intl.NumberFormat("en-GB", {
+      style: "currency",
+      currency: "GBP",
+      minimumFractionDigits: Number.isInteger(pence / 100) ? 0 : 2,
+      maximumFractionDigits: 2,
+    }).format(pence / 100)
+  const liveStatParts: string[] = [
+    chancesStillHidden > 0
+      ? `${chancesStillHidden} chance${chancesStillHidden === 1 ? "" : "s"} still hidden`
+      : null,
+    topPrizePence > 0 ? `Top prize ${formatPence(topPrizePence)}` : null,
+  ].filter(Boolean) as string[]
+
   return (
   <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#3a0f4f_0%,_#1b0b2b_40%,_#0e0618_100%)] pb-8 text-white">
   <ScrollToTopOnMount />
@@ -176,16 +211,30 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
                 )}
               </div>
 
-              {/* Live Balloon Board (Balloon Pop campaigns, while live) — placed
-                  high, directly under the campaign intro and above the ticket
-                  selector, so first-time visitors understand the mechanic before
-                  buying. The component re-checks the endpoint and renders nothing
-                  until the host enables the public board. */}
-              {isBalloonPop && status === "live" && (
-                <>
-                  <Separator />
-                  <PublicLiveBalloonBoard campaignId={campaignId} />
-                </>
+              {/* LIVE NOW sales block (Balloon Pop, while live) — a high-impact,
+                  glassy hero CTA placed above ticket selection to drive entries.
+                  Stats are snapshot-derived (see above); no new polling is added.
+                  CTA anchors to the existing #choose-tickets section. */}
+              {isBalloonPop && isLive && (
+                <div className="rounded-2xl border border-amber-400/30 bg-gradient-to-br from-[#2a0f3f]/90 to-[#0e0618]/90 p-4 shadow-[0_0_30px_rgba(255,180,0,0.15)] backdrop-blur-md">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-white shadow-[0_0_12px_rgba(255,0,0,0.5)]">
+                    <span className="relative flex h-2 w-2" aria-hidden="true">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
+                    </span>
+                    Live Now
+                  </span>
+                  <p className="mt-2 text-lg font-bold leading-tight text-white">{title}</p>
+                  {liveStatParts.length > 0 && (
+                    <p className="mt-1 text-sm font-medium text-purple-100">{liveStatParts.join(" • ")}</p>
+                  )}
+                  <a
+                    href="#choose-tickets"
+                    className="mt-3 inline-flex w-full items-center justify-center rounded-xl bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] px-4 py-3 text-base font-bold text-black shadow-[0_10px_40px_rgba(255,180,0,0.4)] transition-transform active:scale-[0.98]"
+                  >
+                    Enter Now
+                  </a>
+                </div>
               )}
 
               <Separator />
@@ -193,6 +242,35 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
               <div id="choose-tickets" className="scroll-mt-24">
                 <TicketSelector basePrice={ticketPrice} bundles={bundles} campaignId={campaignId} soldCount={soldCount} capTotal={capTotal} startsAt={p.starts_at ?? null} endsAt={p.ends_at ?? null} ticketsSold={p.tickets_sold != null ? Number(p.tickets_sold) : null} hardCapTotalTickets={p.hard_cap_total_tickets != null ? Number(p.hard_cap_total_tickets) : null} isFreeEntry={p.is_free_entry === true || p.is_free_entry === "true"} freeEntryLimitPerUser={p.free_entry_limit_per_user != null ? Number(p.free_entry_limit_per_user) : 1} wasPricePence={wasTicketPricePence} />
               </div>
+
+              {/* Compact trust row — short, high-converting reassurance placed
+                  directly under ticket selection. The full "Why Enter" section
+                  remains lower down. */}
+              <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-purple-200">
+                <span className="inline-flex items-center gap-1.5">
+                  <Shield className="h-3.5 w-3.5 text-emerald-400" aria-hidden="true" />
+                  Secure payments
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <Zap className="h-3.5 w-3.5 text-amber-400" aria-hidden="true" />
+                  Instant entry
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <Award className="h-3.5 w-3.5 text-pink-400" aria-hidden="true" />
+                  Winners paid fast
+                </span>
+              </div>
+
+              {/* Live Balloon Board (Balloon Pop campaigns, while live) — moved
+                  BELOW ticket selection so the buying journey leads, with the
+                  live mechanic reinforcing it just after. Compact on mobile,
+                  full on desktop. Renders nothing until the host enables it. */}
+              {isBalloonPop && isLive && (
+                <>
+                  <Separator />
+                  <PublicLiveBalloonBoard campaignId={campaignId} />
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -214,9 +292,15 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
             </details>
           )}
 
-          {/* Instant Win Prizes */}
+          {/* Instant Win Prizes — on Balloon Pop live pages this is renamed and
+              collapsed by default on mobile to avoid overlapping with the Live
+              Balloon Board above. Data/grouping logic is unchanged. */}
           <InstantWinDisclosure />
-          <InstantWinList instantWins={instantWins} />
+          <InstantWinList
+            instantWins={instantWins}
+            heading={isBalloonPop && isLive ? "What can still be won?" : undefined}
+            collapsibleOnMobile={isBalloonPop && isLive}
+          />
 
           {/* Social Proof */}
           {socialProof && (
