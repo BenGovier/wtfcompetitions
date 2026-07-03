@@ -24,13 +24,46 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { useToast } from '@/hooks/use-toast'
-import { Loader2, Trash2, UserPlus } from 'lucide-react'
+import { AlertCircle, Loader2, Trash2, UserPlus } from 'lucide-react'
 import {
   addHostByEmail,
   setHostEnabled,
   removeHost,
   type HostRow,
 } from '@/app/admin/hosts/actions'
+
+/**
+ * Map raw server-action error strings (or unexpected failures) to short,
+ * friendly, human-readable messages. Falls back to the raw message when it's
+ * safe/short, otherwise a generic message — never an ugly stack trace.
+ */
+function friendlyAddHostError(raw?: string): string {
+  const msg = (raw ?? '').trim()
+  const lower = msg.toLowerCase()
+
+  if (!msg) return 'Something went wrong. Please try again.'
+  if (lower.includes('no account found') || lower.includes('must register')) {
+    return 'This person must create an account before they can be added as a host.'
+  }
+  if (lower.includes('already') && (lower.includes('host') || lower.includes('role'))) {
+    return 'This user already has an admin role and cannot be added as a host here.'
+  }
+  if (lower.includes('not authorized') || lower.includes('permission')) {
+    return 'You do not have permission to add hosts.'
+  }
+  if (lower.includes('not authenticated')) {
+    return 'Your session has expired. Please sign in again.'
+  }
+  if (lower.includes('valid email')) {
+    return 'Please enter a valid email address.'
+  }
+  if (lower.includes('server configuration')) {
+    return 'The server is not configured correctly. Please contact support.'
+  }
+  // Prefer showing a concise raw message when it's short and clean; otherwise generic.
+  if (msg.length <= 140 && !msg.includes('\n')) return msg
+  return 'Something went wrong. Please try again.'
+}
 
 export function HostsManager({ initialHosts }: { initialHosts: HostRow[] }) {
   const { toast } = useToast()
@@ -39,15 +72,24 @@ export function HostsManager({ initialHosts }: { initialHosts: HostRow[] }) {
   const [isAdding, startAdd] = useTransition()
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [removeTarget, setRemoveTarget] = useState<HostRow | null>(null)
+  const [addError, setAddError] = useState<string | null>(null)
 
   function handleAdd(e: React.FormEvent) {
     e.preventDefault()
     const value = email.trim()
     if (!value) return
+    setAddError(null)
 
     startAdd(async () => {
-      const res = await addHostByEmail(value)
+      let res: { ok: boolean; error?: string }
+      try {
+        res = await addHostByEmail(value)
+      } catch (err) {
+        console.error('[v0] addHostByEmail threw:', err)
+        res = { ok: false, error: 'Something went wrong. Please try again.' }
+      }
       if (res.ok) {
+        setAddError(null)
         toast({ title: 'Host added', description: `${value} can now access the Live Feed.` })
         setEmail('')
         // Optimistically reflect; full data refreshes via revalidatePath on navigation.
@@ -56,7 +98,13 @@ export function HostsManager({ initialHosts }: { initialHosts: HostRow[] }) {
           return [...prev, { user_id: `temp-${value}`, email: value, is_enabled: true }]
         })
       } else {
-        toast({ title: 'Could not add host', description: res.error, variant: 'destructive' })
+        const friendly = friendlyAddHostError(res.error)
+        setAddError(friendly)
+        toast({
+          title: 'Could not add host',
+          description: <span className="block break-words">{friendly}</span>,
+          variant: 'destructive',
+        })
       }
     })
   }
@@ -98,16 +146,34 @@ export function HostsManager({ initialHosts }: { initialHosts: HostRow[] }) {
           <CardTitle className="text-lg">Add a Host</CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleAdd} className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <Input
-              type="email"
-              placeholder="host@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={isAdding}
-              className="sm:max-w-sm"
-              aria-label="Host email address"
-            />
+          <form onSubmit={handleAdd} className="flex flex-col gap-3 sm:flex-row sm:items-start">
+            <div className="flex-1">
+              <Input
+                type="email"
+                placeholder="host@example.com"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value)
+                  if (addError) setAddError(null)
+                }}
+                disabled={isAdding}
+                className="sm:max-w-sm"
+                aria-label="Host email address"
+                aria-invalid={addError ? true : undefined}
+                aria-describedby={addError ? 'add-host-error' : undefined}
+              />
+              {addError && (
+                <p
+                  id="add-host-error"
+                  role="alert"
+                  aria-live="assertive"
+                  className="mt-2 flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm font-medium leading-snug text-destructive break-words"
+                >
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                  <span>{addError}</span>
+                </p>
+              )}
+            </div>
             <Button type="submit" disabled={isAdding || !email.trim()} className="gap-2">
               {isAdding ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
               Add Host
