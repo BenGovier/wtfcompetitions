@@ -187,7 +187,13 @@ export function AccountTabs({ email, entries, entriesError, allocationMap, campa
               const renderEntryCard = (entry: EntryRow) => {
                 const campaign = campaignMap[entry.campaign_id]
                 const allocation = allocationMap[entry.id]
-                const wins = winsMap[entry.campaign_id] || []
+                // SAFETY PATCH (display-only): the previous mapping keyed wins by
+                // campaign_id, which incorrectly showed "Instant Winner" on every
+                // entry in a campaign. Force wins to empty so the badge cannot render
+                // until the data mapping is fixed. `winsMap` is intentionally left
+                // referenced but unused; no queries or awarding logic are touched.
+                void winsMap
+                const wins: WinInfo[] = []
                 const status = campaign?.status || 'unknown'
                 const isLive = status === 'live' || status === 'active'
                 const title = resolveCampaignTitle(campaign, entry.id, entry.campaign_id)
