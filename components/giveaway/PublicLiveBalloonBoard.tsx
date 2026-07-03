@@ -16,6 +16,10 @@ import { Crown } from "lucide-react"
 
 const POLL_MS = 10000
 
+// On mobile, only the top N rows show by default; the rest are behind a toggle.
+// Desktop always shows the full list (md: overrides), so nothing changes there.
+const MOBILE_TOP_COUNT = 5
+
 type PublicItem = {
   id: string
   label: string
@@ -53,6 +57,8 @@ function sortItems(items: PublicItem[]): PublicItem[] {
 
 export function PublicLiveBalloonBoard({ campaignId }: { campaignId: string }) {
   const [state, setState] = useState<BoardState | null>(null)
+  // Mobile-only "view all" toggle for the compact board. Desktop is unaffected.
+  const [showAllMobile, setShowAllMobile] = useState(false)
 
   // Tracks the latest request so out-of-order responses are ignored.
   const requestSeq = useRef(0)
@@ -122,27 +128,22 @@ export function PublicLiveBalloonBoard({ campaignId }: { campaignId: string }) {
   const topPrizePence = visibleItems.reduce((max, it) => (it.amountPence > max ? it.amountPence : max), 0)
   const hasVip = state.totals.vipRemaining > 0
 
-  // Compact summary line, e.g. "30 balloons left · Top prize £1,000 · 3 VIP left".
+  // Compact summary line, e.g. "30 balloons to be won · Top prize £1,000 · 3 VIP to be won".
   const summaryParts = [
-    `${state.totals.totalRemaining} balloon${state.totals.totalRemaining === 1 ? "" : "s"} left`,
+    `${state.totals.totalRemaining} balloon${state.totals.totalRemaining === 1 ? "" : "s"} to be won`,
     topPrizePence > 0 ? `Top prize ${formatGBP(topPrizePence)}` : null,
-    hasVip ? `${state.totals.vipRemaining} VIP left` : null,
+    hasVip ? `${state.totals.vipRemaining} VIP to be won` : null,
   ].filter(Boolean) as string[]
 
   return (
     <section
-      aria-label="Live Balloon Board"
+      aria-label="Remaining Balloon Board"
       className="rounded-xl border border-purple-500/20 bg-white/5 p-4 backdrop-blur-sm"
     >
-      {/* Heading with a small, subtle live dot (no large duplicate LIVE badge —
-          the campaign title area already shows LIVE + countdown). */}
-      <div className="flex items-center gap-2">
-        <span className="relative flex h-2 w-2" aria-hidden="true">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-          <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
-        </span>
-        <h2 className="text-lg font-semibold">Live Balloon Board</h2>
-      </div>
+      {/* Neutral heading — no live dot or "live" wording. Hosts are not live
+          24/7, so this board only communicates what balloons are still hidden,
+          never that the host is currently streaming. */}
+      <h2 className="text-lg font-semibold">Remaining Balloon Board</h2>
       <p className="mt-0.5 text-sm text-purple-200">Cash balloons still hidden</p>
 
       {/* Compact horizontal summary line (wraps on mobile, no large cards). */}
@@ -150,29 +151,54 @@ export function PublicLiveBalloonBoard({ campaignId }: { campaignId: string }) {
         {summaryParts.join(" · ")}
       </p>
 
-      {/* Grouped prize values (tight list; never individual balloons). */}
+      {/* Grouped prize values (tight list; never individual balloons).
+          On mobile only the top rows show until "View all" is tapped; desktop
+          (md:) always renders every row. */}
       {visibleItems.length > 0 ? (
         <ul className="mt-3 divide-y divide-purple-500/10 text-sm">
-          {visibleItems.map((it) => (
-            <li key={it.id} className="flex items-center justify-between gap-3 py-1.5">
-              <span className="flex items-center gap-2 font-medium">
-                {it.type === "vip" && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/15 px-1.5 py-0.5 text-xs font-bold uppercase tracking-wide text-amber-300">
-                    <Crown className="size-3" aria-hidden="true" />
-                    VIP
-                  </span>
-                )}
-                <span>{formatGBP(it.amountPence)}</span>
-              </span>
-              <span className="shrink-0 tabular-nums text-purple-200">{it.remaining} left</span>
-            </li>
-          ))}
+          {visibleItems.map((it, idx) => {
+            const hiddenOnMobile = idx >= MOBILE_TOP_COUNT && !showAllMobile
+            return (
+              <li
+                key={it.id}
+                className={
+                  (hiddenOnMobile ? "hidden md:flex" : "flex") +
+                  " items-center justify-between gap-3 py-1.5"
+                }
+              >
+                <span className="flex items-center gap-2 font-medium">
+                  {it.type === "vip" && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/15 px-1.5 py-0.5 text-xs font-bold uppercase tracking-wide text-amber-300">
+                      <Crown className="size-3" aria-hidden="true" />
+                      VIP
+                    </span>
+                  )}
+                  <span>{formatGBP(it.amountPence)}</span>
+                </span>
+                <span className="shrink-0 tabular-nums text-purple-200">
+                  {it.remaining === 1 ? "To be won" : `${it.remaining} to be won`}
+                </span>
+              </li>
+            )
+          })}
         </ul>
       ) : (
         <p className="mt-3 text-center text-sm text-purple-200">All prizes have been popped!</p>
       )}
 
-      <p className="mt-3 text-center text-xs text-purple-300/70">Updated during the live</p>
+      {/* Mobile-only expand/collapse; hidden on desktop where all rows show. */}
+      {visibleItems.length > MOBILE_TOP_COUNT && (
+        <button
+          type="button"
+          onClick={() => setShowAllMobile((prev) => !prev)}
+          aria-expanded={showAllMobile}
+          className="mt-3 flex w-full items-center justify-center rounded-lg border border-purple-500/30 bg-white/5 px-4 py-2 text-sm font-medium text-white/80 transition-colors hover:bg-white/10 md:hidden"
+        >
+          {showAllMobile ? "Show less" : "View all remaining prizes"}
+        </button>
+      )}
+
+      <p className="mt-3 text-center text-xs text-purple-300/70">Updates automatically</p>
     </section>
   )
 }

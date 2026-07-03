@@ -80,25 +80,10 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
   const [qtyBump, setQtyBump] = useState(false)
   const [mounted, setMounted] = useState(false)
 
-  // Measure the fixed mobile purchase bar so we can reserve an equal amount of
-  // in-flow space below the content. This stops the bar from covering the final
-  // elements (free-entry link, etc.) and makes it feel attached rather than
-  // floating. Its measured height already includes the safe-area bottom inset.
+  // Ref retained on the fixed mobile purchase bar (used only as an anchor; the
+  // previous height-measuring spacer was removed because page-level bottom
+  // clearance already keeps the last content clear of the fixed bar).
   const mobileBarRef = useRef<HTMLDivElement>(null)
-  const [mobileBarHeight, setMobileBarHeight] = useState(0)
-
-  useEffect(() => {
-    const el = mobileBarRef.current
-    if (!el || typeof ResizeObserver === "undefined") return
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        setMobileBarHeight(entry.target.getBoundingClientRect().height)
-      }
-    })
-    observer.observe(el)
-    setMobileBarHeight(el.getBoundingClientRect().height)
-    return () => observer.disconnect()
-  }, [])
 
   // Live sold count from API polling
   const [liveSoldCount, setLiveSoldCount] = useState<number | null>(null)
@@ -136,11 +121,11 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
     return () => clearInterval(interval)
   }, [campaignId])
 
-  // Auto-select default bundle (highest quantity) when bundles are available
+  // Auto-select default bundle (smallest quantity) when bundles are available
   useEffect(() => {
     if (hasBundles && selectedBundle === null && normBundles.length > 0) {
-      // Select the bundle with the highest quantity
-      const defaultBundle = normBundles.reduce((max, b) => b.quantity > max.quantity ? b : max, normBundles[0])
+      // Select the smallest bundle (normBundles is sorted ascending by quantity)
+      const defaultBundle = normBundles[0]
       setSelectedBundle(defaultBundle)
       setQty(defaultBundle.quantity)
     }
@@ -561,7 +546,21 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
         <div className="space-y-3">
           <h3 className="text-sm font-semibold text-purple-200">Choose your tickets</h3>
           <div className="grid grid-cols-3 gap-2 md:gap-3">
-            {normBundles.map((bundle, i) => {
+            {(() => {
+              // Display-only: which bundle offers the biggest saving. Used purely
+              // to render a "Best Value" badge — does not affect selection,
+              // pricing, totals, or checkout state.
+              let bestValueIdx = -1
+              let bestSavings = 0
+              normBundles.forEach((b, idx) => {
+                const fp = b.quantity * basePricePence
+                const sp = b.quantity > 1 && fp > 0 ? 1 - b.price_pence / fp : 0
+                if (sp > bestSavings) {
+                  bestSavings = sp
+                  bestValueIdx = idx
+                }
+              })
+              return normBundles.map((bundle, i) => {
               const isActive = selectedBundle?.quantity === bundle.quantity && selectedBundle?.price_pence === bundle.price_pence
               const fullPricePence = bundle.quantity * basePricePence
               const savingsPercent = bundle.quantity > 1
@@ -570,20 +569,46 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
               const iconDef = bundleIcons[i % bundleIcons.length]
               const Icon = iconDef.icon
               const isPopular = bundle.label?.toLowerCase().includes('popular') || (i === 1 && normBundles.length >= 2)
+              // Single top ribbon label (display only): Popular wins over Best Value.
+              const ribbon: { text: string; className: string } | null = isPopular
+                ? { text: "Most Popular", className: "from-yellow-400 to-yellow-600" }
+                : i === bestValueIdx && savingsPercent > 0
+                  ? { text: "Best Value", className: "from-emerald-400 to-emerald-600" }
+                  : null
 
               return (
                 <button
                   key={`${bundle.quantity}-${bundle.price_pence}`}
                   onClick={() => handleSelectBundle(bundle)}
                   className={cn(
-                    "relative flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl border-2 px-2 py-2.5 transition-all duration-200 active:scale-[0.98]",
-                    "md:gap-2 md:px-4 md:py-4",
+                    "relative flex min-w-0 flex-col items-center justify-center gap-2 rounded-xl border-2 px-2 py-4 transition-all duration-200 active:scale-[0.98]",
+                    "md:gap-3 md:px-4 md:py-5",
                     isActive
-                      ? "scale-[1.02] border-yellow-400 bg-yellow-500/10 shadow-[0_0_30px_rgba(255,215,0,0.25)]"
+                      ? "scale-[1.03] border-yellow-400 bg-yellow-500/15 shadow-[0_0_35px_rgba(255,215,0,0.4)] ring-2 ring-yellow-300/40"
                       : "border-purple-500/25 bg-white/[0.04] hover:border-purple-400/50 hover:bg-white/[0.07]",
                     isPopular && !isActive && "border-amber-500/50 animate-[bundle-popular-glow_2.5s_ease-in-out_infinite]"
                   )}
                 >
+                  {/* Single top ribbon — Popular / Best Value (hidden when selected
+                      so it never collides with the "Selected" pill). */}
+                  {!isActive && ribbon && (
+                    <div
+                      className={cn(
+                        "absolute -top-2.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-gradient-to-r px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-black shadow md:text-[10px] md:px-2.5",
+                        ribbon.className
+                      )}
+                    >
+                      {ribbon.text}
+                    </div>
+                  )}
+
+                  {/* Selected indicator */}
+                  {isActive && (
+                    <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-yellow-500 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-black shadow md:text-[10px] md:px-2.5">
+                      Selected
+                    </div>
+                  )}
+
                   {/* Icon - hidden on mobile, visible on desktop */}
                   <div className={cn(
                     "hidden md:flex h-10 w-10 items-center justify-center rounded-lg",
@@ -592,40 +617,31 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
                     <Icon className={cn("h-5 w-5", isActive ? "text-yellow-400" : iconDef.color)} aria-hidden="true" />
                   </div>
 
-                  {/* Quantity + Popular badge - centered on both mobile and desktop */}
-                  <div className="flex flex-col items-center gap-0.5">
-                    <span className="text-xs font-bold text-white md:text-base">{bundle.quantity} Tickets</span>
-                    {isPopular && (
-                      <span className="text-[9px] font-semibold bg-gradient-to-r from-yellow-400 to-yellow-600 text-black px-1.5 py-0.5 rounded-full md:text-[11px] md:px-2">
-                        Most Popular
-                      </span>
-                    )}
+                  {/* Big ticket count */}
+                  <div className="flex flex-col items-center leading-none">
+                    <span className="text-2xl font-black text-white md:text-4xl">{bundle.quantity}</span>
+                    <span className="mt-1 text-[10px] font-medium uppercase tracking-wider text-purple-200 md:text-xs">Tickets</span>
                   </div>
 
-                  {/* Save % + Price - centered on both mobile and desktop */}
-                  <div className="flex flex-col items-center gap-0.5">
+                  {/* Clear price + single save pill (strikethrough desktop-only to
+                      keep mobile uncluttered). */}
+                  <div className="flex flex-col items-center gap-1">
+                    <div className="flex items-baseline gap-1">
+                      {savingsPercent > 0 && (
+                        <span className="hidden text-xs text-white/40 line-through md:inline">{formatGBP(fullPricePence / 100)}</span>
+                      )}
+                      <span className="text-base font-black text-white md:text-2xl">{formatGBP(bundle.price_pence / 100)}</span>
+                    </div>
                     {savingsPercent > 0 && (
-                      <span className="inline-flex items-center rounded-full bg-emerald-500/15 border border-emerald-400/30 px-1.5 py-0.5 text-[9px] font-bold text-emerald-300 md:px-2 md:text-xs">
+                      <span className="inline-flex items-center rounded-full border border-emerald-400/30 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-300 md:text-xs">
                         Save {savingsPercent}%
                       </span>
                     )}
-                    <div className="flex items-baseline gap-1">
-                      {savingsPercent > 0 && (
-                        <span className="text-[9px] text-white/40 line-through md:text-xs">{formatGBP(fullPricePence / 100)}</span>
-                      )}
-                      <span className="text-xs font-bold text-white md:text-lg">{formatGBP(bundle.price_pence / 100)}</span>
-                    </div>
                   </div>
-
-                  {/* Selected indicator */}
-                  {isActive && (
-                    <div className="absolute -top-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-yellow-500 px-1.5 py-0.5 text-[9px] font-bold text-black shadow md:px-2 md:text-[10px]">
-                      Selected
-                    </div>
-                  )}
                 </button>
               )
-            })}
+              })
+            })()}
           </div>
 
           {/* Compact custom amount, directly under the bundle cards.
@@ -695,16 +711,10 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
           The single, always-visible checkout surface on giveaway detail pages.
           Mirrors the same qty / selectedBundle / hasAcceptedTerms state as the
           bundles and desktop card, so picking a bundle above instantly updates
-          the slider, quantity and total here. The normal mobile bottom nav is
-          suppressed on these pages (see MobileNav). */}
-      {/* In-flow spacer (mobile only) equal to the fixed bar's height so the
-          page's final content can always scroll clear of the sticky bar. */}
-      <div
-        aria-hidden="true"
-        className="md:hidden"
-        style={{ height: mobileBarHeight ? `${mobileBarHeight}px` : undefined }}
-      />
-
+          the slider, quantity and total here.           The normal mobile bottom nav is
+          suppressed on these pages (see MobileNav).
+          Bottom clearance so the last content scrolls clear of this fixed bar is
+          provided by the page-level `h-52 md:hidden` spacer near the footer. */}
       <div
         ref={mobileBarRef}
         className="fixed inset-x-0 bottom-0 z-50 border-t border-purple-500/40 bg-[#0e0618]/95 px-4 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-8px_30px_rgba(10,4,20,0.6)] backdrop-blur-xl md:hidden"

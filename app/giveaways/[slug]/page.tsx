@@ -12,7 +12,7 @@ import { PublicLiveBalloonBoard } from "@/components/giveaway/PublicLiveBalloonB
 import { TrustBadges } from "@/components/trust-badges"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { Shield, Award, ChevronRight } from "lucide-react"
+import { Shield, Award, ChevronRight, Zap } from "lucide-react"
 import { ScrollToTopOnMount } from "@/components/scroll-to-top-on-mount"
 
 export const revalidate = 60
@@ -176,23 +176,42 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
                 )}
               </div>
 
-              {/* Live Balloon Board (Balloon Pop campaigns, while live) — placed
-                  high, directly under the campaign intro and above the ticket
-                  selector, so first-time visitors understand the mechanic before
-                  buying. The component re-checks the endpoint and renders nothing
-                  until the host enables the public board. */}
-              {isBalloonPop && status === "live" && (
-                <>
-                  <Separator />
-                  <PublicLiveBalloonBoard campaignId={campaignId} />
-                </>
-              )}
+              {/* NOTE: No default "LIVE NOW" block here. Hosts are not live 24/7,
+                  so the giveaway detail page must never imply the host is live.
+                  Any "LIVE NOW" state belongs only to the separate, host-controlled
+                  Live Site Takeover feature. This page stays focused on entering. */}
 
               <Separator />
 
               <div id="choose-tickets" className="scroll-mt-24">
                 <TicketSelector basePrice={ticketPrice} bundles={bundles} campaignId={campaignId} soldCount={soldCount} capTotal={capTotal} startsAt={p.starts_at ?? null} endsAt={p.ends_at ?? null} ticketsSold={p.tickets_sold != null ? Number(p.tickets_sold) : null} hardCapTotalTickets={p.hard_cap_total_tickets != null ? Number(p.hard_cap_total_tickets) : null} isFreeEntry={p.is_free_entry === true || p.is_free_entry === "true"} freeEntryLimitPerUser={p.free_entry_limit_per_user != null ? Number(p.free_entry_limit_per_user) : 1} wasPricePence={wasTicketPricePence} />
               </div>
+
+              {/* Compact trust row — short, high-converting reassurance placed
+                  directly under ticket selection. The full "Why Enter" section
+                  remains lower down. */}
+              <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-purple-200">
+                <span className="inline-flex items-center gap-1.5">
+                  <Shield className="h-3.5 w-3.5 text-emerald-400" aria-hidden="true" />
+                  Secure payments
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <Zap className="h-3.5 w-3.5 text-amber-400" aria-hidden="true" />
+                  Instant entry
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <Award className="h-3.5 w-3.5 text-pink-400" aria-hidden="true" />
+                  Winners paid fast
+                </span>
+              </div>
+
+              {/* Remaining Balloon Board (Balloon Pop) — sits directly under the
+                  trust row so the flow stays tight: tickets → trust → board.
+                  It shows remaining prize values only and renders nothing until
+                  the host enables it. It does NOT imply the host is live. */}
+              {isBalloonPop && isLive && (
+                <PublicLiveBalloonBoard campaignId={campaignId} />
+              )}
             </div>
           </div>
         </div>
@@ -214,9 +233,15 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
             </details>
           )}
 
-          {/* Instant Win Prizes */}
+          {/* Instant Win Prizes — on Balloon Pop live pages this is renamed and
+              collapsed by default on mobile to avoid overlapping with the Live
+              Balloon Board above. Data/grouping logic is unchanged. */}
           <InstantWinDisclosure />
-          <InstantWinList instantWins={instantWins} />
+          <InstantWinList
+            instantWins={instantWins}
+            heading={isBalloonPop && isLive ? "What can still be won?" : undefined}
+            collapsibleOnMobile={isBalloonPop && isLive}
+          />
 
           {/* Social Proof */}
           {socialProof && (
