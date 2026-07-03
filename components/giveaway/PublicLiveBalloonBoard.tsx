@@ -128,11 +128,11 @@ export function PublicLiveBalloonBoard({ campaignId }: { campaignId: string }) {
   const topPrizePence = visibleItems.reduce((max, it) => (it.amountPence > max ? it.amountPence : max), 0)
   const hasVip = state.totals.vipRemaining > 0
 
-  // Compact summary line, e.g. "30 balloons left · Top prize £1,000 · 3 VIP left".
+  // Compact summary line, e.g. "30 balloons to be won · Top prize £1,000 · 3 VIP to be won".
   const summaryParts = [
-    `${state.totals.totalRemaining} balloon${state.totals.totalRemaining === 1 ? "" : "s"} left`,
+    `${state.totals.totalRemaining} balloon${state.totals.totalRemaining === 1 ? "" : "s"} to be won`,
     topPrizePence > 0 ? `Top prize ${formatGBP(topPrizePence)}` : null,
-    hasVip ? `${state.totals.vipRemaining} VIP left` : null,
+    hasVip ? `${state.totals.vipRemaining} VIP to be won` : null,
   ].filter(Boolean) as string[]
 
   return (
@@ -175,7 +175,9 @@ export function PublicLiveBalloonBoard({ campaignId }: { campaignId: string }) {
                   )}
                   <span>{formatGBP(it.amountPence)}</span>
                 </span>
-                <span className="shrink-0 tabular-nums text-purple-200">{it.remaining} left</span>
+                <span className="shrink-0 tabular-nums text-purple-200">
+                  {it.remaining === 1 ? "To be won" : `${it.remaining} to be won`}
+                </span>
               </li>
             )
           })}
