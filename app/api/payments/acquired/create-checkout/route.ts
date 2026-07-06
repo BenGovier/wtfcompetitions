@@ -325,13 +325,34 @@ export async function POST(request: Request) {
           if (value) correlationHeaders[name] = value
         }
 
+        // Fully serialise nested objects so Vercel logs don't collapse them to
+        // "[Object]". Guards against circular refs and caps length. This body is
+        // Acquired's own error response — it contains no secrets or our PII.
+        const safeStringify = (value: unknown): string => {
+          try {
+            return JSON.stringify(value)
+          } catch {
+            return '[unserializable]'
+          }
+        }
+        // Acquired 409 conflicts return an `invalid_parameters` array describing
+        // which field/value conflicted; extract it explicitly so it is visible.
+        const invalidParameters = errorObj ? (errorObj.invalid_parameters ?? null) : null
+
         console.error('[payments/acquired] customer creation failed', {
           status: customerRes.status,
           // Parsed JSON body when Acquired returned JSON; otherwise null (the raw
           // text is surfaced separately, already truncated to 1000 chars above).
           acquired_response_body: errorObj ?? null,
+          // Flattened JSON string of the full parsed body so nested structures
+          // (e.g. invalid_parameters) are printed rather than shown as [Object].
+          acquired_response_body_json: errorObj ? safeStringify(errorObj).slice(0, 4000) : null,
           acquired_response_text: errorObj ? null : acquiredError,
           acquired_error_fields: acquiredErrorFields,
+          // Explicit nested detail for 409 conflicts, both raw and stringified.
+          acquired_invalid_parameters: invalidParameters,
+          acquired_invalid_parameters_json:
+            invalidParameters != null ? safeStringify(invalidParameters).slice(0, 2000) : null,
           correlation_headers:
             Object.keys(correlationHeaders).length > 0 ? correlationHeaders : null,
           request_debug: {
