@@ -675,16 +675,50 @@ export async function POST(request: Request) {
         if (value) correlationHeaders[name] = value
       }
 
+      // Fully serialise nested objects so Vercel logs don't collapse them to
+      // "[Object]". Guards against circular refs and caps length. This body is
+      // Acquired's own error response — it contains no secrets or our PII.
+      const safeStringify = (value: unknown): string => {
+        try {
+          return JSON.stringify(value)
+        } catch {
+          return '[unserializable]'
+        }
+      }
+      // Acquired validation errors return an `invalid_parameters` array naming
+      // which payment-link field/value was rejected; extract it explicitly so it
+      // is visible rather than collapsed to [Object].
+      const invalidParameters = errorObj ? (errorObj.invalid_parameters ?? null) : null
+
+      // Safe company-id diagnostics: length and first-8-char prefix only, plus a
+      // match check against the known support value (declared above). Never logs
+      // the full value.
+      const rawCompanyId = process.env.ACQUIRED_COMPANY_ID ?? ''
+      const companyIdDebug = {
+        hasCompanyId: Boolean(rawCompanyId),
+        companyIdLength: rawCompanyId.length,
+        companyIdPrefix: rawCompanyId.slice(0, 8),
+        company_id_matches_support_value: rawCompanyId === ACQUIRED_SUPPORT_COMPANY_ID,
+      }
+
       console.error('[payments/acquired] payment-link creation failed', {
         status: linkRes.status,
         // Parsed JSON body when Acquired returned JSON; otherwise this is the
         // truncated raw text (see acquiredError construction above).
         acquired_response_body: errorObj ?? null,
+        // Flattened JSON string of the full parsed body so nested structures
+        // (e.g. invalid_parameters) are printed rather than shown as [Object].
+        acquired_response_body_json: errorObj ? safeStringify(errorObj).slice(0, 4000) : null,
         acquired_response_text: errorObj ? null : acquiredError,
         acquired_error_fields: acquiredErrorFields,
+        // Explicit nested detail for validation failures, both raw and stringified.
+        acquired_invalid_parameters: invalidParameters,
+        acquired_invalid_parameters_json:
+          invalidParameters != null ? safeStringify(invalidParameters).slice(0, 2000) : null,
         correlation_headers:
           Object.keys(correlationHeaders).length > 0 ? correlationHeaders : null,
         request_debug: requestDebug,
+        company_id_debug: companyIdDebug,
       })
 
       return NextResponse.json(
