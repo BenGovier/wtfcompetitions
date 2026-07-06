@@ -181,7 +181,7 @@ export async function POST(request: Request) {
   //     requirement. No secrets, email, name, mobile, or user_id are ever
   //     returned to the client.
   let customerId = ''
-  let customerSource: 'reused' | 'created' | 'none' = 'none'
+  let customerSource: 'reused' | 'created' | 'recovered_by_reference' | 'none' = 'none'
   let customerPayloadKeys: string[] = []
 
   // A) Reuse the most recent acquired customer_id for this user, if any.
@@ -251,11 +251,15 @@ export async function POST(request: Request) {
       }
     }
 
+    // Deterministic per-user reference. Acquired enforces uniqueness on this, so
+    // it is also the key we use to recover an already-existing customer on 409.
+    const customerReference = `wtf_user_${intent.user_id ?? intent.id}`
+
     // Build the customer payload. `reference` is always present; everything
     // else is included only when non-empty. No address/postcode/phone is sent
     // in this first QA pass.
     const customerPayload: Record<string, unknown> = {
-      reference: `wtf_user_${intent.user_id ?? intent.id}`,
+      reference: customerReference,
     }
     if (firstName) customerPayload.first_name = firstName
     if (lastName) customerPayload.last_name = lastName
@@ -370,25 +374,118 @@ export async function POST(request: Request) {
           },
         })
 
-        return NextResponse.json(
-          {
-            ok: false,
-            error: 'acquired_customer_create_failed',
-            status: customerRes.status,
-            acquired_error: acquiredError,
-          },
-          { status: 502, headers: noStore },
-        )
+        // Idempotent recovery: a 409 whose invalid_parameters names `reference`
+        // means the customer already exists in Acquired but our DB had no
+        // provider_customer_id saved. Do ONE lookup by reference, reuse the
+        // existing customer_id, and continue — never create a second customer.
+        const isReferenceConflict =
+          customerRes.status === 409 &&
+          Array.isArray(invalidParameters) &&
+          invalidParameters.some(
+            (p) => p && typeof p === 'object' && (p as Record<string, unknown>).parameter === 'reference',
+          )
+
+        if (isReferenceConflict) {
+          console.log('[payments/acquired] attempting customer recovery by reference')
+          let recoveredCustomerId = ''
+          try {
+            // Single request only — no loops, no pagination, no N+1.
+            const lookupUrl = `${apiBaseUrl}/v1/customers?reference=${encodeURIComponent(
+              customerReference,
+            )}&limit=1&filter=customer_id,reference`
+            const lookupRes = await fetch(lookupUrl, {
+              method: 'GET',
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+                'Company-Id': companyId,
+              },
+            })
+            const lookupRaw = await lookupRes.text().catch(() => '')
+            if (lookupRes.ok) {
+              let parsed: unknown = {}
+              try {
+                parsed = JSON.parse(lookupRaw || '{}')
+              } catch {
+                parsed = {}
+              }
+              // Acquired list responses commonly wrap rows in `data`; also handle
+              // a `customers` array or a bare array, defensively.
+              const p = parsed as Record<string, unknown>
+              const rows: unknown[] = Array.isArray(parsed)
+                ? (parsed as unknown[])
+                : Array.isArray(p?.data)
+                  ? (p.data as unknown[])
+                  : Array.isArray(p?.customers)
+                    ? (p.customers as unknown[])
+                    : []
+              // Require an EXACT reference match before trusting the row.
+              const match = rows.find(
+                (r) =>
+                  r &&
+                  typeof r === 'object' &&
+                  (r as Record<string, unknown>).reference === customerReference,
+              ) as Record<string, unknown> | undefined
+              const foundId = match && typeof match.customer_id === 'string' ? match.customer_id : ''
+              if (foundId) recoveredCustomerId = foundId
+            } else {
+              console.error('[payments/acquired] customer lookup-by-reference non-ok', {
+                status: lookupRes.status,
+              })
+            }
+          } catch (lookupErr: unknown) {
+            console.error(
+              '[payments/acquired] customer lookup-by-reference error',
+              String((lookupErr as { message?: string })?.message || lookupErr),
+            )
+          }
+
+          if (recoveredCustomerId) {
+            customerId = recoveredCustomerId
+            customerSource = 'recovered_by_reference'
+            console.log('[payments/acquired] customer recovery by reference succeeded', {
+              customerSource,
+            })
+          } else {
+            console.error('[payments/acquired] customer recovery by reference failed', {
+              status: customerRes.status,
+            })
+            return NextResponse.json(
+              {
+                ok: false,
+                error: 'acquired_customer_create_failed',
+                status: customerRes.status,
+                acquired_error: acquiredError,
+              },
+              { status: 502, headers: noStore },
+            )
+          }
+        } else {
+          return NextResponse.json(
+            {
+              ok: false,
+              error: 'acquired_customer_create_failed',
+              status: customerRes.status,
+              acquired_error: acquiredError,
+            },
+            { status: 502, headers: noStore },
+          )
+        }
       }
 
-      let customerData: Record<string, any> = {}
-      try {
-        customerData = JSON.parse(customerRaw || '{}')
-      } catch {
-        customerData = {}
+      // Only parse the create response body as success when the create call
+      // actually succeeded. On a recovered 409 we already have customerId and
+      // must NOT overwrite it with the (error) response body.
+      if (customerRes.ok) {
+        let customerData: Record<string, any> = {}
+        try {
+          customerData = JSON.parse(customerRaw || '{}')
+        } catch {
+          customerData = {}
+        }
+        customerId = (customerData.customer_id as string) || ''
+        customerSource = 'created'
       }
-      customerId = (customerData.customer_id as string) || ''
-      customerSource = 'created'
     } catch (err: any) {
       console.error('[payments/acquired] customer fetch error', String(err?.message || err))
       return NextResponse.json(
