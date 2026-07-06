@@ -595,6 +595,9 @@ export async function POST(request: Request) {
     },
     tds: {
       is_active: true,
+      // Required by Acquired whenever tds.is_active is true. Must be a full
+      // absolute HTTPS URL (Acquired rejects relative paths / localhost).
+      contact_url: 'https://www.wtf-giveaways.co.uk/contact',
       challenge_preference: 'no_preference',
     },
     is_recurring: true,
