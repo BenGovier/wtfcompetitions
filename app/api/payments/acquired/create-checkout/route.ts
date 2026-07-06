@@ -282,7 +282,73 @@ export async function POST(request: Request) {
         } catch {
           acquiredError = (customerRaw || '').slice(0, 1000)
         }
-        console.error('[payments/acquired] customer creation failed', customerRes.status)
+
+        // Safe, structured server-side diagnostic for customer-creation failures
+        // (e.g. 409 conflicts). Logs ONLY what Acquired returned (status, parsed
+        // body or truncated text, common error fields, correlation headers) plus
+        // non-sensitive request debug. It NEVER logs the access token, Company-Id
+        // value, app_key/signing keys, cookies, card data, the outgoing customer
+        // payload, the raw email/name, or the full user id / customer reference.
+        const errorObj =
+          acquiredError && typeof acquiredError === 'object'
+            ? (acquiredError as Record<string, unknown>)
+            : null
+        // Acquired error bodies vary; surface the common fields when present.
+        const acquiredErrorFields = errorObj
+          ? {
+              status: errorObj.status ?? null,
+              error_code: errorObj.error_code ?? null,
+              code: errorObj.code ?? null,
+              title: errorObj.title ?? null,
+              message: errorObj.message ?? null,
+              detail: errorObj.detail ?? null,
+              error: errorObj.error ?? null,
+              error_description: errorObj.error_description ?? null,
+              errors: errorObj.errors ?? null,
+              error_codes: errorObj.error_codes ?? null,
+              data: errorObj.data ?? null,
+            }
+          : null
+        // Correlation / request id response headers (safe to log). Only include
+        // those actually present.
+        const correlationHeaderNames = [
+          'x-request-id',
+          'request-id',
+          'x-correlation-id',
+          'correlation-id',
+          'x-amzn-requestid',
+          'cf-ray',
+        ]
+        const correlationHeaders: Record<string, string> = {}
+        for (const name of correlationHeaderNames) {
+          const value = customerRes.headers.get(name)
+          if (value) correlationHeaders[name] = value
+        }
+
+        console.error('[payments/acquired] customer creation failed', {
+          status: customerRes.status,
+          // Parsed JSON body when Acquired returned JSON; otherwise null (the raw
+          // text is surfaced separately, already truncated to 1000 chars above).
+          acquired_response_body: errorObj ?? null,
+          acquired_response_text: errorObj ? null : acquiredError,
+          acquired_error_fields: acquiredErrorFields,
+          correlation_headers:
+            Object.keys(correlationHeaders).length > 0 ? correlationHeaders : null,
+          request_debug: {
+            hasCompanyId: Boolean(companyId),
+            hasAuthToken: Boolean(accessToken),
+            // Endpoint path only — no secrets, no query string.
+            endpointPath: '/v1/customers',
+            customerSource,
+            // Non-identifying: confirms a reference was sent and its safe prefix,
+            // without logging the full reference (which embeds the user id).
+            hasReference: customerPayloadKeys.includes('reference'),
+            referencePrefix: 'wtf_user_',
+            // Key names only — never the values (no email/name/PII).
+            customerPayloadKeys,
+          },
+        })
+
         return NextResponse.json(
           {
             ok: false,
