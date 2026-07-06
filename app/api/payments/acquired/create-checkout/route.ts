@@ -454,7 +454,55 @@ export async function POST(request: Request) {
         transaction_keys: Object.keys(linkPayload.transaction),
       }
 
-      console.error('[payments/acquired] payment-link creation failed', linkRes.status)
+      // Safe, structured server-side diagnostic. This logs ONLY what Acquired
+      // returned to us (status, response body/text, any error code/message/
+      // details/validation array, and correlation/request id response headers).
+      // It never logs our app_key, app_id, access token, Authorization header,
+      // Company-Id value, cookies, the outgoing customer payload, or card data.
+      const errorObj =
+        acquiredError && typeof acquiredError === 'object'
+          ? (acquiredError as Record<string, unknown>)
+          : null
+      // Acquired error bodies vary; surface the common fields when present.
+      const acquiredErrorFields = errorObj
+        ? {
+            status: errorObj.status ?? null,
+            error_code: errorObj.error_code ?? errorObj.code ?? null,
+            title: errorObj.title ?? null,
+            message: errorObj.message ?? errorObj.detail ?? errorObj.error ?? null,
+            error_description: errorObj.error_description ?? null,
+            // Validation arrays are commonly named `errors`, `error_codes`, or `data`.
+            errors: errorObj.errors ?? errorObj.error_codes ?? errorObj.data ?? null,
+          }
+        : null
+      // Correlation / request id response headers (safe to log). Try a few
+      // common names; only include those actually present.
+      const correlationHeaderNames = [
+        'x-request-id',
+        'request-id',
+        'x-correlation-id',
+        'correlation-id',
+        'x-amzn-requestid',
+        'cf-ray',
+      ]
+      const correlationHeaders: Record<string, string> = {}
+      for (const name of correlationHeaderNames) {
+        const value = linkRes.headers.get(name)
+        if (value) correlationHeaders[name] = value
+      }
+
+      console.error('[payments/acquired] payment-link creation failed', {
+        status: linkRes.status,
+        // Parsed JSON body when Acquired returned JSON; otherwise this is the
+        // truncated raw text (see acquiredError construction above).
+        acquired_response_body: errorObj ?? null,
+        acquired_response_text: errorObj ? null : acquiredError,
+        acquired_error_fields: acquiredErrorFields,
+        correlation_headers:
+          Object.keys(correlationHeaders).length > 0 ? correlationHeaders : null,
+        request_debug: requestDebug,
+      })
+
       return NextResponse.json(
         {
           ok: false,
