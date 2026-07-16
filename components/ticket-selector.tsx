@@ -338,8 +338,6 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
         setSelectedBundle(null)
       } else if (json.error === 'sold_out') {
         setError('This giveaway is sold out!')
-      } else if (json.error === 'minimum_total_not_met') {
-        setError('Minimum order is £1.00')
       } else {
         setError((json.error as string) || 'Something went wrong. Please try again.')
       }
@@ -689,14 +687,10 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
           </span>
         </label>
 
-        {totalPence < 100 && (
-          <p className="text-sm text-amber-400 text-center font-medium">Minimum order is £1.00</p>
-        )}
-
         <Button
           size="lg"
           className="w-full rounded-xl bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] py-4 text-base font-bold text-black shadow-[0_10px_40px_rgba(255,180,0,0.4)] transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_15px_60px_rgba(255,180,0,0.6)] active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
-          disabled={isProcessing || qty < 1 || remaining === 0 || !hasAcceptedTerms || totalPence < 100}
+          disabled={isProcessing || qty < 1 || remaining === 0 || !hasAcceptedTerms}
           onClick={handleEnter}
         >
           {isProcessing ? "Starting checkout..." : "Enter Now"}
@@ -794,9 +788,6 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
         </div>
 
         {error && <div className="mt-2 rounded-md bg-red-500/20 p-2 text-xs text-red-300">{error}</div>}
-        {totalPence < 100 && (
-          <p className="mt-2 text-center text-xs font-medium text-amber-400">Minimum order is £1.00</p>
-        )}
 
         {/* Compact 18+ / T&Cs row — explicit, never pre-ticked, blocks checkout */}
         <label className="mt-2 flex cursor-pointer select-none items-center gap-2">
@@ -821,18 +812,16 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
         <Button
           size="lg"
           className="mt-2 w-full rounded-xl bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] py-3.5 text-sm font-bold text-black shadow-[0_8px_30px_rgba(255,180,0,0.4)] transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={isProcessing || qty < 1 || remaining === 0 || !hasAcceptedTerms || totalPence < 100}
+          disabled={isProcessing || qty < 1 || remaining === 0 || !hasAcceptedTerms}
           onClick={handleEnter}
         >
           {isProcessing
             ? "Starting checkout..."
             : remaining === 0
               ? "Sold out"
-              : totalPence < 100
-                ? "Minimum order £1"
-                : !hasAcceptedTerms
-                  ? "Accept T&Cs to enter"
-                  : "Enter Now"}
+              : !hasAcceptedTerms
+                ? "Accept T&Cs to enter"
+                : "Enter Now"}
         </Button>
 
         {/* Free postal entry kept accessible right inside the purchase area */}
