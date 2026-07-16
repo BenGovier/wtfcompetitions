@@ -115,14 +115,6 @@ export async function POST(request: Request) {
     totalPence = qty * (campaign.ticket_price_pence ?? 0)
   }
 
-  // Minimum £1 total enforcement
-  if (totalPence < 100) {
-    return NextResponse.json(
-      { ok: false, error: 'minimum_total_not_met' },
-      { status: 400, ...NO_STORE }
-    )
-  }
-
   const ref = `CHK-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   const providerSessionId = randomUUID()
 
