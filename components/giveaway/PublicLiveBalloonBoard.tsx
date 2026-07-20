@@ -7,14 +7,20 @@ import { Crown } from "lucide-react"
  * PUBLIC, customer-facing Live Balloon Board.
  *
  * Extremely lightweight: it polls a CDN-cached public endpoint
- * (`/api/giveaways/[campaignId]/live-board`) every 10s, pauses while the tab is
- * hidden, and shows only grouped prize values still left to pop. No Supabase
- * client, no Realtime, no admin APIs. It NEVER permanently stops polling — a
- * disabled board renders nothing but keeps polling so it can appear the moment
- * the host enables it mid-stream.
+ * (`/api/giveaways/[campaignId]/live-board`) every 30s (production hotfix
+ * rate), pauses while the tab is hidden, and shows only grouped prize values
+ * still left to pop. No Supabase client, no Realtime, no admin APIs. It NEVER
+ * permanently stops polling — a disabled board renders nothing but keeps
+ * polling so it can appear the moment the host enables it mid-stream.
+ *
+ * Startup is staggered by 10s so this board's requests do not fire at the same
+ * instant as the ticket-selector's live-count poll (both now on a 30s cycle).
  */
 
-const POLL_MS = 10000
+const POLL_MS = 30000
+// Delay the first live-board fetch so it interleaves with the live-count poll
+// (which fires immediately) rather than firing simultaneously every cycle.
+const START_STAGGER_MS = 10000
 
 // On mobile, only the top N rows show by default; the rest are behind a toggle.
 // Desktop always shows the full list (md: overrides), so nothing changes there.
@@ -65,12 +71,17 @@ export function PublicLiveBalloonBoard({ campaignId }: { campaignId: string }) {
 
   useEffect(() => {
     let intervalId: ReturnType<typeof setInterval> | null = null
+    let startTimeoutId: ReturnType<typeof setTimeout> | null = null
     let activeController: AbortController | null = null
     let stopped = false
+    let inFlight = false
 
     const fetchBoard = async () => {
       // Don't fetch while hidden — the visibility handler refetches on resume.
       if (typeof document !== "undefined" && document.hidden) return
+      // Never overlap requests.
+      if (inFlight) return
+      inFlight = true
 
       activeController?.abort()
       const controller = new AbortController()
@@ -99,6 +110,8 @@ export function PublicLiveBalloonBoard({ campaignId }: { campaignId: string }) {
         }
       } catch {
         // Network error / abort: keep last known state, keep polling.
+      } finally {
+        inFlight = false
       }
     }
 
@@ -106,13 +119,19 @@ export function PublicLiveBalloonBoard({ campaignId }: { campaignId: string }) {
       if (!document.hidden) void fetchBoard()
     }
 
-    // Initial fetch + steady 10s poll (single interval).
-    void fetchBoard()
-    intervalId = setInterval(() => void fetchBoard(), POLL_MS)
+    // Staggered start: first fetch after 10s, then a steady 30s poll. This
+    // interleaves with the live-count poll (which fires immediately) so the two
+    // 30s timers never fire at the same instant.
+    startTimeoutId = setTimeout(() => {
+      if (stopped) return
+      void fetchBoard()
+      intervalId = setInterval(() => void fetchBoard(), POLL_MS)
+    }, START_STAGGER_MS)
     document.addEventListener("visibilitychange", onVisibility)
 
     return () => {
       stopped = true
+      if (startTimeoutId) clearTimeout(startTimeoutId)
       if (intervalId) clearInterval(intervalId)
       activeController?.abort()
       document.removeEventListener("visibilitychange", onVisibility)

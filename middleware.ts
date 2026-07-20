@@ -52,9 +52,23 @@ function shouldBypassSession(pathname: string): boolean {
     pathname.startsWith('/auth/forgot-password') ||
     pathname.startsWith('/api/checkout/create') ||
     pathname.startsWith('/api/checkout/confirm') ||
-    pathname.startsWith('/api/admin/live-feed')
+    pathname.startsWith('/api/admin/live-feed') ||
+    // Public, read-only live endpoints (service-role, no auth). Bypass ONLY the
+    // two exact shapes below, with campaignId occupying exactly one path
+    // segment. Any other /api/giveaways/* route (admin, create, future
+    // protected routes) still runs the normal session refresh.
+    PUBLIC_LIVE_ROUTE.test(pathname)
   )
 }
+
+/**
+ * Matches exactly:
+ *   /api/giveaways/<single-segment-campaignId>/live-count
+ *   /api/giveaways/<single-segment-campaignId>/live-board
+ * (optional trailing slash). The campaignId segment may not contain a slash,
+ * so nested paths like /api/giveaways/anything/other-action never match.
+ */
+const PUBLIC_LIVE_ROUTE = /^\/api\/giveaways\/[^/]+\/(?:live-count|live-board)\/?$/
 
 /* ------------------------------------------------------------------ */
 /*  Middleware                                                         */
@@ -145,9 +159,11 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
-     * - images - .svg, .png, .jpg, .jpeg, .gif, .webp
+     * - static assets: images, fonts, CSS, JS, icons, and text/xml
+     *   (e.g. .svg .png .jpg .jpeg .gif .webp .ico .css .js .woff .woff2
+     *   .ttf .otf .txt .xml .map) — these must never run auth middleware.
      * Feel free to modify this pattern to include more paths.
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|woff|woff2|ttf|otf|txt|xml|map)$).*)',
   ],
 }
