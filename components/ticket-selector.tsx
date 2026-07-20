@@ -95,10 +95,11 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
 
   useEffect(() => { setMounted(true) }, [])
 
-  // Poll live sold count every 15 seconds.
+  // Poll live sold count every 30 seconds (production hotfix rate).
   // Hardened for production load: never overlaps requests, pauses while the
   // tab is hidden, aborts in-flight fetches on unmount, and keeps the last
-  // known value on any failure. Interval unchanged (15s). No router.refresh.
+  // known value on any failure. Fires immediately (initial display is not
+  // delayed), then every 30s. No router.refresh, no page reload.
   useEffect(() => {
     if (!campaignId) return
 
@@ -137,9 +138,9 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
       if (!document.hidden) void fetchLiveCount()
     }
 
-    // Initial fetch + steady 15s poll.
+    // Initial fetch immediately (no delay), then steady 30s poll.
     void fetchLiveCount()
-    const interval = setInterval(() => void fetchLiveCount(), 15000)
+    const interval = setInterval(() => void fetchLiveCount(), 30000)
     document.addEventListener('visibilitychange', onVisibility)
 
     return () => {

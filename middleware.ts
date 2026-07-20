@@ -53,12 +53,22 @@ function shouldBypassSession(pathname: string): boolean {
     pathname.startsWith('/api/checkout/create') ||
     pathname.startsWith('/api/checkout/confirm') ||
     pathname.startsWith('/api/admin/live-feed') ||
-    // Public, read-only live endpoints (service-role, no auth): the only two
-    // routes under /api/giveaways are live-count and live-board. They never
-    // read the session, so skip the expensive/erroring session refresh.
-    pathname.startsWith('/api/giveaways/')
+    // Public, read-only live endpoints (service-role, no auth). Bypass ONLY the
+    // two exact shapes below, with campaignId occupying exactly one path
+    // segment. Any other /api/giveaways/* route (admin, create, future
+    // protected routes) still runs the normal session refresh.
+    PUBLIC_LIVE_ROUTE.test(pathname)
   )
 }
+
+/**
+ * Matches exactly:
+ *   /api/giveaways/<single-segment-campaignId>/live-count
+ *   /api/giveaways/<single-segment-campaignId>/live-board
+ * (optional trailing slash). The campaignId segment may not contain a slash,
+ * so nested paths like /api/giveaways/anything/other-action never match.
+ */
+const PUBLIC_LIVE_ROUTE = /^\/api\/giveaways\/[^/]+\/(?:live-count|live-board)\/?$/
 
 /* ------------------------------------------------------------------ */
 /*  Middleware                                                         */
