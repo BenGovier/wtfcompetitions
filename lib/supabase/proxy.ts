@@ -1,6 +1,40 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+/**
+ * True only for the expected stale-refresh-token conditions:
+ *   - refresh_token_not_found  ("Invalid Refresh Token: Refresh Token Not Found")
+ *   - refresh_token_already_used ("Invalid Refresh Token: Already Used")
+ * These are normal after a deploy or a duplicate refresh and must be handled
+ * silently. All other auth errors are intentionally excluded.
+ */
+function isStaleRefreshTokenError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  const code = (err as { code?: string }).code
+  if (code === 'refresh_token_not_found' || code === 'refresh_token_already_used') {
+    return true
+  }
+  const message = String((err as { message?: string }).message ?? '')
+  return (
+    /refresh token not found/i.test(message) ||
+    /invalid refresh token: already used/i.test(message)
+  )
+}
+
+/**
+ * Expire the Supabase auth cookies (default naming: `sb-<ref>-auth-token`,
+ * optionally chunked `.0`, `.1`, …) on the outgoing response, using the same
+ * cookie names present on the request. This stops the browser from replaying
+ * a stale token without triggering another refresh attempt.
+ */
+function clearStaleAuthCookies(request: NextRequest, response: NextResponse) {
+  for (const cookie of request.cookies.getAll()) {
+    if (/^sb-.*-auth-token(\.\d+)?$/.test(cookie.name)) {
+      response.cookies.set(cookie.name, '', { maxAge: 0, path: '/' })
+    }
+  }
+}
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
@@ -37,9 +71,27 @@ export async function updateSession(request: NextRequest) {
 
   // IMPORTANT: If you remove getUser() and you use server-side rendering
   // with the Supabase client, your users may be randomly logged out.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  try {
+    const { error } = await supabase.auth.getUser()
+    if (error && isStaleRefreshTokenError(error)) {
+      // Expected condition: the browser holds a rotated/expired refresh token
+      // (e.g. after a deploy or a duplicate refresh). Treat the request as
+      // logged out and clear the stale Supabase auth cookies so the client
+      // stops replaying them. Do NOT retry the refresh, throw, or log as an
+      // error. Public routes then continue as logged out; protected routes
+      // (/me, /admin) still redirect via their own server-side getUser().
+      clearStaleAuthCookies(request, supabaseResponse)
+    }
+    // All other auth errors preserve the previous behaviour (ignored here;
+    // the session cookie is simply left as-is).
+  } catch (err) {
+    // getUser() can reject on a stale refresh token depending on the client
+    // internals. Handle the same expected condition safely; never 500.
+    if (isStaleRefreshTokenError(err)) {
+      clearStaleAuthCookies(request, supabaseResponse)
+    }
+    // Non-stale-token failures: swallow so middleware never breaks the request.
+  }
 
   // IMPORTANT: You *must* return the supabaseResponse object as it is.
   // If you're creating a new response object with NextResponse.next() make sure to:

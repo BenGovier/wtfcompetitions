@@ -52,7 +52,11 @@ function shouldBypassSession(pathname: string): boolean {
     pathname.startsWith('/auth/forgot-password') ||
     pathname.startsWith('/api/checkout/create') ||
     pathname.startsWith('/api/checkout/confirm') ||
-    pathname.startsWith('/api/admin/live-feed')
+    pathname.startsWith('/api/admin/live-feed') ||
+    // Public, read-only live endpoints (service-role, no auth): the only two
+    // routes under /api/giveaways are live-count and live-board. They never
+    // read the session, so skip the expensive/erroring session refresh.
+    pathname.startsWith('/api/giveaways/')
   )
 }
 
@@ -145,9 +149,11 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
-     * - images - .svg, .png, .jpg, .jpeg, .gif, .webp
+     * - static assets: images, fonts, CSS, JS, icons, and text/xml
+     *   (e.g. .svg .png .jpg .jpeg .gif .webp .ico .css .js .woff .woff2
+     *   .ttf .otf .txt .xml .map) — these must never run auth middleware.
      * Feel free to modify this pattern to include more paths.
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|woff|woff2|ttf|otf|txt|xml|map)$).*)',
   ],
 }
