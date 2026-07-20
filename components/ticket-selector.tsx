@@ -95,30 +95,60 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
 
   useEffect(() => { setMounted(true) }, [])
 
-  // Poll live sold count every 15 seconds
+  // Poll live sold count every 30 seconds (production hotfix rate).
+  // Hardened for production load: never overlaps requests, pauses while the
+  // tab is hidden, aborts in-flight fetches on unmount, and keeps the last
+  // known value on any failure. Fires immediately (initial display is not
+  // delayed), then every 30s. No router.refresh, no page reload.
   useEffect(() => {
     if (!campaignId) return
 
+    let stopped = false
+    let inFlight = false
+    let activeController: AbortController | null = null
+
     const fetchLiveCount = async () => {
+      // Skip if the tab is hidden or a previous request is still running.
+      if (typeof document !== 'undefined' && document.hidden) return
+      if (inFlight) return
+      inFlight = true
+
+      activeController?.abort()
+      const controller = new AbortController()
+      activeController = controller
+
       try {
-        const res = await fetch(`/api/giveaways/${campaignId}/live-count`)
+        const res = await fetch(`/api/giveaways/${campaignId}/live-count`, {
+          signal: controller.signal,
+        })
         if (res.ok) {
           const json = await res.json()
-          if (json.ok && typeof json.soldCount === 'number') {
+          if (!stopped && json.ok && typeof json.soldCount === 'number') {
             setLiveSoldCount(json.soldCount)
           }
         }
       } catch {
-        // Silently keep last known count
+        // Network error / abort: silently keep the last known count.
+      } finally {
+        inFlight = false
       }
     }
 
-    // Initial fetch
-    fetchLiveCount()
+    const onVisibility = () => {
+      if (!document.hidden) void fetchLiveCount()
+    }
 
-    // Poll every 15 seconds
-    const interval = setInterval(fetchLiveCount, 15000)
-    return () => clearInterval(interval)
+    // Initial fetch immediately (no delay), then steady 30s poll.
+    void fetchLiveCount()
+    const interval = setInterval(() => void fetchLiveCount(), 30000)
+    document.addEventListener('visibilitychange', onVisibility)
+
+    return () => {
+      stopped = true
+      clearInterval(interval)
+      activeController?.abort()
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [campaignId])
 
   // Auto-select default bundle (smallest quantity) when bundles are available
