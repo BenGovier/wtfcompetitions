@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { randomUUID } from 'crypto'
 
@@ -7,18 +8,60 @@ export const revalidate = 0
 
 const NO_STORE = { headers: { 'Cache-Control': 'no-store' } }
 
+/**
+ * True ONLY for the two expected stale-refresh-token conditions:
+ *   - refresh_token_not_found    ("Invalid Refresh Token: Refresh Token Not Found")
+ *   - refresh_token_already_used ("Invalid Refresh Token: Already Used")
+ * Every other auth error (network, config, invalid key, outage, DB, unexpected
+ * auth failure) is intentionally excluded and must NOT trigger cookie clearing.
+ */
+function isStaleRefreshTokenError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  const code = (err as { code?: string }).code
+  if (code === 'refresh_token_not_found' || code === 'refresh_token_already_used') {
+    return true
+  }
+  const message = String((err as { message?: string }).message ?? '')
+  return /refresh token not found/i.test(message) || /invalid refresh token: already used/i.test(message)
+}
+
 export async function POST(request: Request) {
   // 1) Auth — a real authenticated Supabase user is REQUIRED in every
   //    environment (local, preview/staging, and production). There is no
   //    bypass/fallback/fixed user_id: unauthenticated checkout is rejected so a
   //    checkout_intent can never be attributed to a shared placeholder user.
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+
+  // Keep the SINGLE existing getUser() call; capture both the user and the auth
+  // error (getUser may also reject on some client internals, so guard it).
+  let user: Awaited<ReturnType<typeof supabase.auth.getUser>>['data']['user'] = null
+  let authError: unknown = null
+  try {
+    const result = await supabase.auth.getUser()
+    user = result.data.user
+    authError = result.error
+  } catch (err) {
+    authError = err
+  }
 
   if (!user) {
-    return NextResponse.json({ ok: false, error: 'auth_required' }, { status: 401, ...NO_STORE })
+    // Preserve the exact existing 401 body, status, and Cache-Control.
+    const res = NextResponse.json({ ok: false, error: 'auth_required' }, { status: 401, ...NO_STORE })
+
+    // Only on the expected stale-refresh-token conditions, expire the browser's
+    // Supabase auth-token cookies so it stops replaying a dead token. This adds
+    // NO extra Supabase/DB/network call — just a local cookie-name loop. It is
+    // idempotent, so concurrent stale requests are safe (no throw, no 500).
+    if (isStaleRefreshTokenError(authError)) {
+      const cookieStore = await cookies()
+      for (const cookie of cookieStore.getAll()) {
+        if (/^sb-.*-auth-token(\.\d+)?$/.test(cookie.name)) {
+          res.cookies.set(cookie.name, '', { maxAge: 0, expires: new Date(0), path: '/' })
+        }
+      }
+    }
+
+    return res
   }
 
   const resolvedUser = user
