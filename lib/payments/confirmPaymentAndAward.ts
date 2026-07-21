@@ -2,21 +2,108 @@ import 'server-only'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 
 // ---------------------------------------------------------------------------
-// Types
+// Canonical result types (shared across every confirmation entry point)
 // ---------------------------------------------------------------------------
 
+/**
+ * A single instant-win prize awarded to a checkout. `title` is the only
+ * guaranteed field; every other field is optional so this stays compatible
+ * with both the current singular RPC response and the upcoming multi-award
+ * RPC response.
+ */
+export type InstantWinResult = {
+  award_id?: string | null
+  slot_id?: string | null
+  prize_id?: string | null
+  winning_ticket?: number | null
+  title: string
+  value_text?: string | null
+  image_url?: string | null
+}
+
+/**
+ * The normalised payment-confirmation payload. `prize` remains the FIRST prize
+ * for backward compatibility; `prizes` always contains every prize awarded to
+ * the checkout (empty array for a no-win order).
+ */
 export type AwardPayload = {
   confirmed: boolean
   checkout_ref: string
   qty: number
+  ticket_start: number | null
+  ticket_end: number | null
   won: boolean
-  /** @deprecated Use `prizes` array instead. Kept for backward compatibility. */
-  prize: null | { title: string; value_text: string | null; image_url: string | null }
-  /** Future: array of all prizes won in this checkout */
-  prizes?: Array<{ title: string; value_text: string | null; image_url: string | null }>
-  /** Future: count of prizes won */
+  /** @deprecated Use `prizes` instead. Kept as the first prize for compatibility. */
+  prize: InstantWinResult | null
+  prizes: InstantWinResult[]
+  /** Convenience count of prizes won (always mirrors prizes.length). */
   prize_count?: number
   campaign_slug?: string | null
+}
+
+// ---------------------------------------------------------------------------
+// Backward-compatible normalisation
+// ---------------------------------------------------------------------------
+
+/**
+ * Coerce a raw prize-like value into a defensive InstantWinResult. Returns null
+ * for anything that cannot be represented as a prize (non-object, or missing a
+ * usable title), so malformed rows are dropped rather than rendered as blanks.
+ */
+function coercePrize(raw: unknown): InstantWinResult | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const title =
+    typeof r.title === 'string' && r.title.trim().length > 0 ? r.title : null
+  if (!title) return null
+
+  const asStringOrNull = (v: unknown): string | null =>
+    typeof v === 'string' && v.trim().length > 0 ? v : null
+  const asNumberOrNull = (v: unknown): number | null =>
+    typeof v === 'number' && Number.isFinite(v) ? v : null
+
+  return {
+    award_id: asStringOrNull(r.award_id),
+    slot_id: asStringOrNull(r.slot_id),
+    prize_id: asStringOrNull(r.prize_id),
+    winning_ticket: asNumberOrNull(r.winning_ticket),
+    title,
+    value_text: asStringOrNull(r.value_text),
+    image_url: asStringOrNull(r.image_url),
+  }
+}
+
+/**
+ * The single source of truth for turning ANY raw confirmation RPC response
+ * (old singular `prize`, new `prizes` array, no-win, or malformed) into a
+ * consistent, fully-typed AwardPayload. Every confirmation entry point MUST
+ * route the raw RPC result through here so the fallback logic is never
+ * duplicated.
+ */
+export function normalizeAwardPayload(raw: unknown): AwardPayload {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+
+  // Prefer the new `prizes` array; fall back to the singular `prize`.
+  const rawList = Array.isArray(r.prizes) && r.prizes.length > 0 ? r.prizes : r.prize ? [r.prize] : []
+  const prizes = rawList
+    .map(coercePrize)
+    .filter((p): p is InstantWinResult => p !== null)
+
+  const asNumberOrNull = (v: unknown): number | null =>
+    typeof v === 'number' && Number.isFinite(v) ? v : null
+
+  return {
+    confirmed: r.confirmed === true,
+    checkout_ref: typeof r.checkout_ref === 'string' ? r.checkout_ref : '',
+    qty: typeof r.qty === 'number' && Number.isFinite(r.qty) ? r.qty : 0,
+    ticket_start: asNumberOrNull(r.ticket_start),
+    ticket_end: asNumberOrNull(r.ticket_end),
+    won: prizes.length > 0 || r.won === true,
+    prize: prizes[0] ?? null,
+    prizes,
+    prize_count: prizes.length,
+    campaign_slug: typeof r.campaign_slug === 'string' ? r.campaign_slug : null,
+  }
 }
 
 export type ConfirmArgs = {
@@ -90,7 +177,7 @@ export async function confirmPaymentAndAward(args: ConfirmArgs): Promise<AwardPa
       if (!rpcData || typeof rpcData !== 'object') {
         throw new Error('invalid_rpc_payload')
       }
-      return rpcData as AwardPayload
+      return normalizeAwardPayload(rpcData)
     }
 
     if (args.provider !== 'sumup') throw new Error('awaiting_provider_confirmation')
@@ -124,10 +211,12 @@ export async function confirmPaymentAndAward(args: ConfirmArgs): Promise<AwardPa
     throw new Error(`RPC confirm_payment_and_award failed: ${rpcErr.message}`)
   }
 
-  // 5) Return RPC result directly as AwardPayload (Postgres returns jsonb)
+  // 5) Normalise the RPC result into a canonical AwardPayload (Postgres returns
+  //    jsonb). This guarantees a `prizes` array while preserving the singular
+  //    `prize` for backward compatibility.
   if (!rpcData || typeof rpcData !== 'object') {
     throw new Error('invalid_rpc_payload')
   }
 
-  return rpcData as AwardPayload
+  return normalizeAwardPayload(rpcData)
 }

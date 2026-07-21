@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { randomUUID } from 'crypto'
+import { normalizeAwardPayload } from '@/lib/payments/confirmPaymentAndAward'
 
 const VERSION = 'simulate-confirmed-v3'
 
@@ -83,10 +84,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'RPC failed', details: rpcErr.message }, { status: 500 })
     }
 
+    // Normalise through the shared normaliser so the debug payload always
+    // exposes a `prizes` array (backward compatible with the singular `prize`).
+    const award = normalizeAwardPayload(rpcData)
+
     return NextResponse.json({
       version: VERSION,
       ok: true,
-      ...((rpcData && typeof rpcData === 'object') ? rpcData : {}),
+      ...award,
     })
   } catch (err: any) {
     console.error('[simulate-confirmed] Unexpected error:', err)
