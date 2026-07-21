@@ -183,6 +183,35 @@ export function InstantWinList({ instantWins, collapsibleOnMobile = false }: Ins
     return { availablePrizeCount: count, availableCashTotal: cash }
   }, [groupedInstantWins])
 
+  // Emphasis line ("3 VIP prizes + 77 balloon prizes"), derived only from the
+  // existing grouped remaining counts. No invented values. The standard noun is
+  // taken from the shared non-VIP title when there is exactly one and it is a
+  // plain word (never a cash/number token); otherwise falls back to "instant".
+  const emphasisLine = useMemo(() => {
+    let vip = 0
+    let standard = 0
+    const standardTitles = new Set<string>()
+    for (const g of groupedInstantWins) {
+      if (g.totalRemaining <= 0) continue
+      if (g.isVIP) {
+        vip += g.totalRemaining
+      } else {
+        standard += g.totalRemaining
+        standardTitles.add(g.title.toLowerCase().trim())
+      }
+    }
+    let noun = "instant"
+    if (standardTitles.size === 1) {
+      const only = Array.from(standardTitles)[0]
+      if (only.length > 0 && !/[£\d]/.test(only)) noun = only
+    }
+    const parts: string[] = []
+    if (vip > 0) parts.push(`${vip} VIP ${vip === 1 ? "prize" : "prizes"}`)
+    if (standard > 0) parts.push(`${standard} ${noun} ${standard === 1 ? "prize" : "prizes"}`)
+    // Only show when both categories are present (matches the intended format).
+    return parts.length > 1 ? parts.join(" + ") : ""
+  }, [groupedInstantWins])
+
   if (!groupedInstantWins || groupedInstantWins.length === 0) return null
 
   const hasMore = groupedInstantWins.length > INITIAL_DISPLAY_COUNT
@@ -190,253 +219,227 @@ export function InstantWinList({ instantWins, collapsibleOnMobile = false }: Ins
   const showCashHeadline = availableCashTotal > 0
 
   return (
-    <section className="space-y-4">
-      {/* Value-led header */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+    <section className="relative overflow-hidden rounded-2xl border border-purple-500/20 bg-[#170a29] p-4 shadow-[0_8px_40px_rgba(0,0,0,0.35)] sm:p-5">
+      {/* Subtle premium ambience — light gold glow near the VIP hero (top) and a
+          faint magenta wash. No heavy gradients, no particles. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-amber-500/10 blur-3xl"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -left-20 bottom-0 h-48 w-48 rounded-full bg-fuchsia-600/10 blur-3xl"
+      />
+
+      <div className="relative">
+        {/* ----- Structured marketing header ----- */}
+        <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-1.5">
             <Zap className="size-4 text-amber-400" aria-hidden="true" />
-            <span className="text-xs font-bold uppercase tracking-[0.18em] text-amber-400">Instant Wins</span>
+            <span className="text-xs font-bold uppercase tracking-[0.2em] text-amber-400">Instant Wins</span>
           </div>
-          <h2 className="mt-1 text-balance text-2xl font-extrabold leading-tight text-white">
-            {availablePrizeCount > 0 ? (
-              <>
-                {availablePrizeCount} Instant {availablePrizeCount === 1 ? "Prize" : "Prizes"} To Be Won
-              </>
-            ) : (
-              "All Instant Prizes Won"
+
+          <div className="flex items-center gap-2">
+            {availablePrizeCount > 0 && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-300">
+                <span className="size-1.5 animate-pulse rounded-full bg-emerald-400" aria-hidden="true" />
+                {availablePrizeCount} To Be Won
+              </span>
             )}
-          </h2>
-          {showCashHeadline && (
-            <p className="mt-1 text-sm font-semibold text-amber-300">
-              {formatCurrency(availableCashTotal)} instant cash to be won
-            </p>
-          )}
+
+            {collapsibleOnMobile && (
+              <button
+                type="button"
+                onClick={() => setMobileOpen((prev) => !prev)}
+                aria-expanded={mobileOpen}
+                className="inline-flex shrink-0 items-center gap-1 rounded-full border border-purple-500/30 bg-white/5 px-3 py-1 text-xs font-medium text-white/80 transition-colors hover:bg-white/10 md:hidden"
+              >
+                {mobileOpen ? (
+                  <>
+                    Hide
+                    <ChevronUp className="size-3.5" aria-hidden="true" />
+                  </>
+                ) : (
+                  <>
+                    View
+                    <ChevronDown className="size-3.5" aria-hidden="true" />
+                  </>
+                )}
+              </button>
+            )}
+          </div>
         </div>
 
-        {collapsibleOnMobile && (
-          <button
-            type="button"
-            onClick={() => setMobileOpen((prev) => !prev)}
-            aria-expanded={mobileOpen}
-            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-purple-500/30 bg-white/5 px-3 py-1 text-xs font-medium text-white/80 transition-colors hover:bg-white/10 md:hidden"
-          >
-            {mobileOpen ? (
-              <>
-                Hide
-                <ChevronUp className="size-3.5" aria-hidden="true" />
-              </>
-            ) : (
-              <>
-                View
-                <ChevronDown className="size-3.5" aria-hidden="true" />
-              </>
-            )}
-          </button>
+        <h2 className="mt-3 text-pretty text-[26px] font-extrabold leading-[1.1] text-white sm:text-3xl">
+          {availablePrizeCount > 0 ? (
+            <>
+              {availablePrizeCount} Instant {availablePrizeCount === 1 ? "Prize" : "Prizes"} To Be Won
+            </>
+          ) : (
+            "All Instant Prizes Won"
+          )}
+        </h2>
+
+        <p className="mt-1.5 text-sm leading-snug text-purple-200/70">
+          Winning tickets reveal a prize instantly after entry.
+        </p>
+
+        {showCashHeadline && (
+          <p className="mt-1.5 text-sm font-semibold text-amber-300">
+            {formatCurrency(availableCashTotal)} instant cash to be won
+          </p>
         )}
-      </div>
 
-      <div className={cn(collapsibleOnMobile && !mobileOpen ? "hidden md:block" : "block", "space-y-4")}>
-        {/*
-          Mobile (< md): single-column vertical list of full-width horizontal
-          cards (image left, content right).
-          Desktop (md+): existing multi-column layout, preserved unchanged.
-        */}
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3 md:gap-2.5 lg:grid-cols-4">
-          {visibleItems.map((prize) => {
-            const claimed = prize.isFullyClaimed
+        {emphasisLine && <p className="mt-2 text-xs font-semibold text-amber-200/90">{emphasisLine}</p>}
 
-            return (
-              <div
-                key={prize.id}
-                className={cn(
-                  "relative overflow-hidden rounded-xl border transition-colors",
-                  // Mobile card sizing: full width, min height, no outer padding
-                  // (image reaches the rounded left edge). Desktop restores p-3.
-                  "min-h-[105px] p-0 md:min-h-0 md:p-3",
-                  prize.isVIP
-                    ? "border-amber-400/50 bg-gradient-to-b from-amber-500/15 to-purple-900/30 shadow-[0_0_18px_rgba(245,180,0,0.18)]"
-                    : "border-purple-500/25 bg-white/5",
-                  claimed && "opacity-60",
-                )}
-              >
-                {/* ----- MOBILE LAYOUT (horizontal: image left, content right) ----- */}
-                <div className="flex min-h-[105px] items-stretch md:hidden">
-                  {/* Prize image — ~38% of card width, full card height */}
-                  <div className="relative w-[38%] shrink-0 self-stretch overflow-hidden rounded-l-xl bg-purple-500/10">
+        {/* ----- Prize cards ----- */}
+        <div className={cn(collapsibleOnMobile && !mobileOpen ? "hidden md:block" : "block")}>
+          {/*
+            One premium card language across breakpoints: full-width horizontal
+            cards (image left ~40%, content right). Mobile = single column;
+            desktop = two columns. Never side-by-side on mobile, no carousel.
+          */}
+          <div className="mt-4 grid grid-cols-1 gap-2.5 md:grid-cols-2">
+            {visibleItems.map((prize) => {
+              const claimed = prize.isFullyClaimed
+
+              return (
+                <div
+                  key={prize.id}
+                  className={cn(
+                    "group relative flex min-h-[116px] items-stretch overflow-hidden rounded-[14px] transition-colors",
+                    prize.isVIP
+                      ? "border border-amber-400/40 bg-amber-500/[0.07] shadow-[0_0_24px_rgba(245,180,0,0.16)] ring-1 ring-inset ring-amber-300/10"
+                      : "border border-purple-500/20 bg-purple-900/25",
+                    claimed && "opacity-55 saturate-50",
+                  )}
+                >
+                  {/* Prize image — full-height left panel with edge fade so the
+                      artwork reads as part of the card, not a pasted thumbnail. */}
+                  <div className="relative w-[40%] shrink-0 self-stretch overflow-hidden bg-purple-950/40">
                     {prize.image_url ? (
                       <Image
                         src={prize.image_url || "/placeholder.svg"}
                         alt={prize.title}
                         fill
-                        sizes="40vw"
+                        sizes="(max-width: 768px) 40vw, 20vw"
                         className="object-cover"
                         loading="lazy"
                       />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center">
                         <Gift
-                          className={cn("size-8", prize.isVIP ? "text-amber-300/80" : "text-purple-300/70")}
+                          className={cn("size-9", prize.isVIP ? "text-amber-300/80" : "text-purple-300/70")}
                           aria-hidden="true"
                         />
                       </div>
                     )}
+                    {/* Edge fade toward the content side */}
+                    <div className="pointer-events-none absolute inset-y-0 right-0 w-2/5 bg-gradient-to-r from-transparent to-[#170a29]/80" />
                   </div>
 
-                  {/* Content — badge, title, status pill (left-aligned) */}
-                  <div className="flex min-w-0 flex-1 flex-col justify-center gap-1.5 px-3 py-2.5">
-                    {/* Badge */}
-                    <div>
-                      {prize.isVIP ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300">
-                          <Crown className="size-3" aria-hidden="true" />
-                          VIP
-                        </span>
-                      ) : (
-                        <span className="inline-flex rounded-full bg-purple-400/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-purple-200">
-                          Instant
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Title (cash value leads when present, else prize title) */}
-                    {prize.cashValue !== null ? (
-                      <div className="min-w-0">
-                        <p
-                          className={cn(
-                            "text-xl font-extrabold leading-tight",
-                            prize.isVIP ? "text-amber-300" : "text-white",
-                          )}
-                        >
-                          {formatCurrency(prize.cashValue)}
-                        </p>
-                        <p className="truncate text-xs font-medium text-purple-100/90">{prize.typeLabel}</p>
-                      </div>
+                  {/* Content — category, title, microcopy, availability */}
+                  <div
+                    className={cn(
+                      "flex min-w-0 flex-1 flex-col justify-center gap-1 border-l px-3.5 py-3",
+                      prize.isVIP ? "border-amber-400/25" : "border-fuchsia-500/40",
+                    )}
+                  >
+                    {/* 1. Category label */}
+                    {prize.isVIP ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.15em] text-amber-300">
+                        <Crown className="size-3" aria-hidden="true" />
+                        VIP Prize
+                      </span>
                     ) : (
-                      <p className="text-base font-bold leading-tight text-white">{prize.title}</p>
+                      <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-fuchsia-300/90">
+                        Instant Prize
+                      </span>
                     )}
 
-                    {/* Status pill */}
-                    <div>
+                    {/* 2. Prize title (cash value leads when genuinely present) */}
+                    {prize.cashValue !== null ? (
+                      <p
+                        className={cn(
+                          "truncate text-2xl font-extrabold leading-none",
+                          prize.isVIP ? "text-amber-300" : "text-white",
+                        )}
+                      >
+                        {formatCurrency(prize.cashValue)}
+                      </p>
+                    ) : (
+                      <p
+                        className={cn(
+                          "truncate leading-tight text-white",
+                          prize.isVIP ? "text-lg font-extrabold" : "text-base font-bold",
+                        )}
+                      >
+                        {prize.title}
+                      </p>
+                    )}
+
+                    {/* 3. Supporting microcopy */}
+                    <p className="truncate text-[11px] font-medium text-purple-200/70">
+                      {prize.cashValue !== null
+                        ? prize.typeLabel
+                        : prize.isVIP
+                          ? "Premium instant prize"
+                          : "Instant prize reveal"}
+                    </p>
+
+                    {/* 4. Availability status — strong, high-contrast block */}
+                    <div className="mt-0.5">
                       {claimed ? (
-                        <span className="inline-flex rounded-full bg-white/15 px-2 py-0.5 text-[11px] font-bold text-white/80">
+                        <span className="text-xs font-bold uppercase tracking-wide text-white/45">
                           Won {prize.totalAwarded} / {prize.totalQuantity}
                         </span>
                       ) : (
-                        <span
-                          className={cn(
-                            "inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold",
-                            prize.isVIP ? "bg-amber-400/20 text-amber-300" : "bg-emerald-500/20 text-emerald-300",
-                          )}
-                        >
-                          {prize.totalRemaining} to be won
+                        <span className="flex items-baseline gap-1.5">
+                          <span
+                            className={cn(
+                              "text-base font-extrabold leading-none",
+                              prize.isVIP ? "text-amber-300" : "text-emerald-300",
+                            )}
+                          >
+                            {prize.totalRemaining} / {prize.totalQuantity}
+                          </span>
+                          <span
+                            className={cn(
+                              "text-[10px] font-bold uppercase tracking-[0.12em]",
+                              prize.isVIP ? "text-amber-200/80" : "text-emerald-200/80",
+                            )}
+                          >
+                            To Be Won
+                          </span>
                         </span>
                       )}
                     </div>
                   </div>
                 </div>
+              )
+            })}
+          </div>
 
-                {/* ----- DESKTOP LAYOUT (unchanged) ----- */}
-                <div className="hidden h-full flex-col justify-between md:flex">
-                  {/* Top row: badge */}
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    {prize.isVIP ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300">
-                        <Crown className="size-3" aria-hidden="true" />
-                        VIP
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-bold uppercase tracking-wide text-purple-300/70">Instant</span>
-                    )}
-                    {claimed && (
-                      <span className="inline-flex rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white/80">
-                        Won
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Cash value — the largest element in the card */}
-                  {prize.cashValue !== null ? (
-                    <p
-                      className={cn(
-                        "text-2xl font-extrabold leading-none sm:text-3xl",
-                        prize.isVIP ? "text-amber-300" : "text-white",
-                      )}
-                    >
-                      {formatCurrency(prize.cashValue)}
-                    </p>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      {prize.image_url ? (
-                        <div className="relative size-8 shrink-0 overflow-hidden rounded-md bg-purple-500/10">
-                          <Image
-                            src={prize.image_url || "/placeholder.svg"}
-                            alt={prize.title}
-                            fill
-                            sizes="32px"
-                            className="object-cover"
-                            loading="lazy"
-                          />
-                        </div>
-                      ) : (
-                        <Gift className="size-5 shrink-0 text-purple-300/70" aria-hidden="true" />
-                      )}
-                      <p className="text-base font-bold leading-tight text-white">{prize.title}</p>
-                    </div>
-                  )}
-
-                  {/* Type label */}
-                  {prize.cashValue !== null && (
-                    <p className="mt-1 truncate text-xs font-medium text-purple-100/90">{prize.typeLabel}</p>
-                  )}
-
-                  {/* Availability / claimed status */}
-                  <div className="mt-2">
-                    {claimed ? (
-                      <span className="text-[11px] font-semibold text-white/70">
-                        Won {prize.totalAwarded} / {prize.totalQuantity}
-                      </span>
-                    ) : (
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                        <span
-                          className={cn(
-                            "inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold",
-                            prize.isVIP ? "bg-amber-400/20 text-amber-300" : "bg-emerald-500/20 text-emerald-300",
-                          )}
-                        >
-                          {prize.totalRemaining} to be won
-                        </span>
-                        {prize.totalAwarded > 0 && (
-                          <span className="text-[10px] font-medium text-white/50">{prize.totalAwarded} won</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )
-          })}
+          {hasMore && (
+            <button
+              type="button"
+              onClick={() => setExpanded((prev) => !prev)}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-purple-500/30 bg-white/5 px-4 py-2.5 text-sm font-medium text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              {expanded ? (
+                <>
+                  Show less
+                  <ChevronUp className="size-4" aria-hidden="true" />
+                </>
+              ) : (
+                <>
+                  View all instant prizes
+                  <ChevronDown className="size-4" aria-hidden="true" />
+                </>
+              )}
+            </button>
+          )}
         </div>
-
-        {hasMore && (
-          <button
-            type="button"
-            onClick={() => setExpanded((prev) => !prev)}
-            className="flex w-full items-center justify-center gap-2 rounded-lg border border-purple-500/30 bg-white/5 px-4 py-2.5 text-sm font-medium text-white/80 transition-colors hover:bg-white/10 hover:text-white"
-          >
-            {expanded ? (
-              <>
-                Show less
-                <ChevronUp className="size-4" aria-hidden="true" />
-              </>
-            ) : (
-              <>
-                View all instant prizes
-                <ChevronDown className="size-4" aria-hidden="true" />
-              </>
-            )}
-          </button>
-        )}
       </div>
     </section>
   )
