@@ -251,8 +251,10 @@ export default async function GiveawayPage({ params }: GiveawayPageProps) {
             />
           )}
 
-          {/* Trust & Reassurance */}
-          <section className="space-y-4">
+          {/* Trust & Reassurance — hidden on mobile (the compact trust strip
+              directly beneath the ticket bundles already covers this). Desktop
+              keeps the full section unchanged. */}
+          <section className="hidden space-y-4 md:block">
             <h2 className="text-xl font-semibold">Why Enter with WTF Giveaways?</h2>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="flex gap-3 rounded-lg border border-purple-500/20 bg-white/5 p-4 backdrop-blur-sm">
