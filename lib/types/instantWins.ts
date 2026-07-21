@@ -76,6 +76,7 @@ export type AdminInstantWinAward = {
   customer_mobile: string
   start_ticket: number | null
   end_ticket: number | null
+  winning_ticket: number | null
   payout_amount_pence: number | null
   is_paid: boolean
   paid_at: string | null
