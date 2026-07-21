@@ -30,6 +30,7 @@ const ScratchCardReveal = dynamic(
 )
 
 type Prize = {
+  award_id?: string | null
   title: string
   value_text?: string | null
   image_url?: string | null

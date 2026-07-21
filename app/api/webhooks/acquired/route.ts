@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import crypto from 'node:crypto'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
+import { normalizeAwardPayload } from '@/lib/payments/confirmPaymentAndAward'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -275,9 +276,20 @@ export async function POST(request: Request) {
     )
   }
 
-  // 8d) Fulfilled. Echo the RPC result (ticket/instant-win allocation summary).
+  // 8d) Fulfilled. Normalise the RPC result through the shared normaliser so a
+  //     multi-prize response is never reduced to only the first prize, then
+  //     echo the full ticket/instant-win allocation summary.
+  const fulfilment = normalizeAwardPayload(rpcData)
+
+  // Safe metadata only — no customer PII, no provider secrets/payloads.
+  console.log('[webhooks/acquired] fulfilled:', {
+    order_id: orderId,
+    won: fulfilment.won,
+    prize_count: fulfilment.prizes.length,
+  })
+
   return NextResponse.json(
-    { ...ackBase, fulfilment_status: 'fulfilled', fulfilment: rpcData ?? null },
+    { ...ackBase, fulfilment_status: 'fulfilled', fulfilment },
     { status: 200, headers: noStore },
   )
 }

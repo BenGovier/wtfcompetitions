@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
       // Query awards filtered by checkout_intent_ids
       let awardsQuery = svc
         .from('instant_win_awards')
-        .select('id, awarded_at, campaign_id, giveaway_id, prize_id, checkout_intent_id, payout_amount_pence, is_paid, paid_at, payout_notes')
+        .select('id, awarded_at, campaign_id, giveaway_id, prize_id, instant_win_slot_id, checkout_intent_id, payout_amount_pence, is_paid, paid_at, payout_notes')
         .in('checkout_intent_id', matchingCheckoutIds)
         .order('awarded_at', { ascending: false })
 
@@ -134,7 +134,7 @@ export async function GET(request: NextRequest) {
       // No search filter - direct awards query
       let awardsQuery = svc
         .from('instant_win_awards')
-        .select('id, awarded_at, campaign_id, giveaway_id, prize_id, checkout_intent_id, payout_amount_pence, is_paid, paid_at, payout_notes')
+        .select('id, awarded_at, campaign_id, giveaway_id, prize_id, instant_win_slot_id, checkout_intent_id, payout_amount_pence, is_paid, paid_at, payout_notes')
         .order('awarded_at', { ascending: false })
 
       if (campaignId) {
@@ -178,6 +178,25 @@ export async function GET(request: NextRequest) {
     // === Batch fetch related data ===
     const prizeIds = [...new Set(awards.map((a) => a.prize_id).filter(Boolean))]
     const checkoutIntentIds = [...new Set(awards.map((a) => a.checkout_intent_id).filter(Boolean))]
+    const slotIds = [...new Set(awards.map((a) => a.instant_win_slot_id).filter(Boolean))]
+
+    // Fetch instant_win_slots for the exact winning ticket per award.
+    // Single batched query keyed by slot id (no per-award query -> avoids N+1).
+    let slotsData: Record<string, { winning_ticket: number | null }> = {}
+    if (slotIds.length > 0) {
+      const { data: slots, error: slotsError } = await svc
+        .from('instant_win_slots')
+        .select('id, winning_ticket')
+        .in('id', slotIds)
+
+      if (slotsError) {
+        console.error('[admin/instant-winners] Slots fetch error (non-fatal):', slotsError.message)
+      } else {
+        slotsData = Object.fromEntries(
+          (slots ?? []).map((s) => [s.id, { winning_ticket: s.winning_ticket ?? null }])
+        )
+      }
+    }
 
     // Fetch prizes
     let prizesData: Record<string, { prize_title: string }> = {}
@@ -312,6 +331,7 @@ export async function GET(request: NextRequest) {
       const userId = checkout?.user_id
       const profile = userId ? profilesData[userId] : null
       const email = userId ? emailsData[userId] : null
+      const slot = award.instant_win_slot_id ? slotsData[award.instant_win_slot_id] : null
 
       return {
         award_id: award.id,
@@ -328,6 +348,7 @@ export async function GET(request: NextRequest) {
         customer_mobile: profile?.mobile || '-',
         start_ticket: allocation?.start_ticket ?? null,
         end_ticket: allocation?.end_ticket ?? null,
+        winning_ticket: slot?.winning_ticket ?? null,
         payout_amount_pence: award.payout_amount_pence,
         is_paid: award.is_paid ?? false,
         paid_at: award.paid_at,

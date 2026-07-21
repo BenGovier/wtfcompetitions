@@ -363,6 +363,13 @@ export async function POST(request: Request) {
       provider,
     })
 
+    // Safe confirmation metadata only — no PII, no provider secrets.
+    console.log('[checkout/confirm] confirmed:', {
+      checkout_ref: award.checkout_ref || ref,
+      won: award.won,
+      prize_count: award.prizes.length,
+    })
+
     // Lightweight lookup to get campaign_slug for "Buy More Tickets" button
     // Uses service client to avoid auth issues, single indexed query
     let campaignSlug: string | null = null
