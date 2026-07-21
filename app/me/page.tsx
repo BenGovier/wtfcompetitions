@@ -1,14 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
-import { Wallet } from "lucide-react"
 import { AccountTabs } from "./account-tabs"
-
-// Format an integer pence amount as GBP (e.g. 2000 -> "£20.00").
-// Clamps malformed/negative values to 0 so the balance can never render negative.
-function formatGBP(pence: number) {
-  const safe = Number.isFinite(pence) ? Math.max(pence, 0) : 0
-  return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(safe / 100)
-}
 
 export default async function AccountPage() {
   const supabase = await createClient()
@@ -16,35 +8,6 @@ export default async function AccountPage() {
 
   if (error || !user) {
     redirect('/auth/login?redirect=/me')
-  }
-
-  // Step 0: Fetch the authenticated user's WTF Credit wallet summary.
-  // wallet_accounts enforces RLS (SELECT only, restricted to user_id = auth.uid()),
-  // so this uses the RLS-scoped client and reads only this user's row. A missing
-  // row or any read error degrades gracefully to a zeroed balance — it must never
-  // hard-fail the account page. No transactions/reservations are queried.
-  let wallet: { balancePence: number; reservedPence: number; availablePence: number } = {
-    balancePence: 0,
-    reservedPence: 0,
-    availablePence: 0,
-  }
-
-  const { data: walletRow, error: walletErr } = await supabase
-    .from('wallet_accounts')
-    .select('balance_pence, reserved_pence')
-    .eq('user_id', user.id)
-    .maybeSingle()
-
-  if (walletErr) {
-    console.error('[me] wallet_accounts lookup failed:', walletErr.message)
-  } else if (walletRow) {
-    const balancePence = typeof walletRow.balance_pence === 'number' ? walletRow.balance_pence : 0
-    const reservedPence = typeof walletRow.reserved_pence === 'number' ? walletRow.reserved_pence : 0
-    wallet = {
-      balancePence,
-      reservedPence,
-      availablePence: Math.max(balancePence - reservedPence, 0),
-    }
   }
 
   // Step 1: Fetch entries
@@ -169,30 +132,9 @@ export default async function AccountPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#1a002b] via-[#2d0050] to-[#0a0014]">
       <div className="container px-4 py-8">
-        <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-white md:text-3xl">My Account</h1>
-            <p className="mt-1 text-white/70">Manage your entries and profile</p>
-          </div>
-
-          {/* WTF Credit wallet balance. Below the title on mobile (full width),
-              compact card on the top-right on desktop. Read-only, no spending. */}
-          <div className="flex items-center gap-3 rounded-xl border border-yellow-500/30 bg-gradient-to-br from-yellow-500/10 to-purple-500/10 px-4 py-3 shadow-[0_0_20px_rgba(255,215,0,0.08)] md:min-w-[200px]">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-yellow-500/20 bg-yellow-500/10">
-              <Wallet className="h-5 w-5 text-yellow-400" aria-hidden="true" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs font-medium uppercase tracking-wide text-white/60">WTF Credit</p>
-              <p className="text-lg font-bold leading-tight text-yellow-300">
-                {formatGBP(wallet.availablePence) + ' available'}
-              </p>
-              {wallet.reservedPence > 0 && (
-                <p className="mt-0.5 text-xs text-white/50">
-                  {formatGBP(wallet.balancePence) + ' balance \u2013 ' + formatGBP(wallet.reservedPence) + ' reserved'}
-                </p>
-              )}
-            </div>
-          </div>
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold tracking-tight text-white md:text-3xl">My Account</h1>
+          <p className="mt-1 text-white/70">Manage your entries and profile</p>
         </div>
 
         <AccountTabs
