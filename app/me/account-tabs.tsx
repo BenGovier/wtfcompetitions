@@ -26,15 +26,8 @@ type AllocationInfo = { start_ticket: number; end_ticket: number }
 type CampaignInfo = { title: string; status: string; slug: string | null }
 type WinInfo = { awardId: string; prizeTitle: string; awardedAt: string }
 
-type WalletSummary = {
-  balancePence: number
-  reservedPence: number
-  availablePence: number
-}
-
 interface AccountTabsProps {
   email: string
-  wallet: WalletSummary
   entries: EntryRow[]
   entriesError: string | null
   allocationMap: Record<string, AllocationInfo>
@@ -45,12 +38,6 @@ interface AccountTabsProps {
 function formatDateUK(dateStr: string) {
   const d = new Date(dateStr)
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
-}
-
-// Format an integer pence amount as GBP (e.g. 2000 -> "£20.00").
-function formatGBP(pence: number) {
-  const safe = Number.isFinite(pence) ? Math.max(pence, 0) : 0
-  return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(safe / 100)
 }
 
 function TicketDisplay({ start, end }: { start?: number | null; end?: number | null }) {
@@ -104,7 +91,7 @@ function getStatusBadge(status: string): { label: string; live: boolean } {
   }
 }
 
-export function AccountTabs({ email, wallet, entries, entriesError, allocationMap, campaignMap, winsMap }: AccountTabsProps) {
+export function AccountTabs({ email, entries, entriesError, allocationMap, campaignMap, winsMap }: AccountTabsProps) {
   const [prefs, setPrefs] = useState<UserPreferences | null>(null)
   // Past draws collapse: default collapsed when there are current entries,
   // open when every entry is a past (ended) draw.
@@ -377,23 +364,10 @@ export function AccountTabs({ email, wallet, entries, entriesError, allocationMa
             <p className="text-sm text-white/70">Your account information</p>
           </div>
           
-          <div className="space-y-4">
+          <div className="space-y-2">
             <div>
               <p className="text-sm font-medium text-white/60">Email</p>
               <p className="text-sm text-white">{email}</p>
-            </div>
-
-            {/* WTF Credit balance (read-only). Available = balance - reserved. */}
-            <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/5 p-4">
-              <p className="text-sm font-medium text-white/60">WTF Credit</p>
-              <p className="mt-1 text-2xl font-bold text-yellow-300">
-                {formatGBP(wallet.availablePence) + ' available'}
-              </p>
-              {wallet.reservedPence > 0 && (
-                <p className="mt-1 text-xs text-white/50">
-                  {formatGBP(wallet.balancePence) + ' balance \u2013 ' + formatGBP(wallet.reservedPence) + ' reserved'}
-                </p>
-              )}
             </div>
           </div>
         </div>
