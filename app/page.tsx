@@ -1,28 +1,84 @@
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import Image from "next/image"
-import { ArrowRight, Clock } from "lucide-react"
+import { ArrowRight, Zap } from "lucide-react"
 import { createClient } from "@/lib/supabase/server"
 import { LiveNowTakeover } from "@/components/live/LiveNowTakeover"
+import { TikTokIcon } from "@/components/icons/tiktok-icon"
 
-// Helper to format countdown from ends_at
-function formatTimeLeft(endsAt: string | null | undefined): string | null {
+// --- Card display helpers (shared logic, duplicated intentionally per page) ---
+
+type UrgencyTone = "ended" | "urgent" | "normal"
+
+// Calendar day (Y-M-D) for a date evaluated in Europe/London.
+function londonYMD(d: Date): { y: number; m: number; day: number } {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d)
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value)
+  return { y: get("year"), m: get("month"), day: get("day") }
+}
+
+// Whole-calendar-day difference (to - from) using Europe/London dates.
+function londonCalendarDayDiff(from: Date, to: Date): number {
+  const a = londonYMD(from)
+  const b = londonYMD(to)
+  const aUTC = Date.UTC(a.y, a.m - 1, a.day)
+  const bUTC = Date.UTC(b.y, b.m - 1, b.day)
+  return Math.round((bUTC - aUTC) / (1000 * 60 * 60 * 24))
+}
+
+// Urgency badge derived only from status + ends_at. Returns null when nothing
+// can be shown safely (e.g. no ends_at and not sold out/ended).
+function getUrgency(giveaway: any): { label: string; tone: UrgencyTone } | null {
+  const status = giveaway?.status
+  const sold = Number(giveaway?.tickets_sold ?? 0)
+  const cap = Number(giveaway?.hard_cap_total_tickets ?? 0)
+
+  // 1. Sold out
+  if (status === "sold_out" || (cap > 0 && sold >= cap)) return { label: "SOLD OUT", tone: "ended" }
+  // 2. Ended
+  if (status === "ended" || status === "closed") return { label: "ENDED", tone: "ended" }
+
+  const endsAt = giveaway?.ends_at
   if (!endsAt) return null
-  const now = new Date()
   const end = new Date(endsAt)
-  const diff = end.getTime() - now.getTime()
-  if (diff <= 0) return 'Ended'
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
-  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
-  // 24 hours or more: show days and hours
-  if (days > 0) return `${days}d ${hours}h left`
-  // Under 24 hours: show hours, minutes, seconds with padding
-  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
-  const seconds = Math.floor((diff % (1000 * 60)) / 1000)
-  const hh = String(hours).padStart(2, '0')
-  const mm = String(minutes).padStart(2, '0')
-  const ss = String(seconds).padStart(2, '0')
-  return `${hh}h ${mm}m ${ss}s`
+  if (Number.isNaN(end.getTime())) return null
+
+  const now = new Date()
+  if (end.getTime() <= now.getTime()) return { label: "ENDED", tone: "ended" }
+
+  const days = londonCalendarDayDiff(now, end)
+  // 3. Ends today / 4. Ends tomorrow
+  if (days <= 0) return { label: "ENDS TODAY", tone: "urgent" }
+  if (days === 1) return { label: "ENDS TOMORROW", tone: "urgent" }
+  // 5. X days left
+  return { label: `${days} DAYS LEFT`, tone: "normal" }
+}
+
+// Customer-friendly price: below £1 -> "49P", £1+ -> "£1.50".
+function priceText(pence: number): string {
+  if (pence < 100) return `${Math.round(pence)}P`
+  return `£${(pence / 100).toFixed(2)}`
+}
+
+// Prize/benefit line. Meaningful prize_title always wins; otherwise fall back
+// to format-specific copy driven by the admin-managed presentation_type.
+function benefitLine(giveaway: any): string {
+  const title = String(giveaway?.title ?? "").trim().toLowerCase()
+  const prize = String(giveaway?.prize_title ?? "").trim()
+  if (prize && prize.toLowerCase() !== title) return prize
+  switch (giveaway?.presentation_type) {
+    case "balloon_pop":
+      return "Big prizes revealed live"
+    case "instant_cash":
+      return "Your prize is revealed instantly"
+    default:
+      return "One ticket could change everything"
+  }
 }
 
 // Emergency fallback data - used if snapshot query fails
@@ -74,7 +130,7 @@ export default async function HomePage() {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-balance text-2xl font-bold tracking-tight text-white md:text-3xl">Featured Giveaways</h2>
-              <p className="mt-1 text-pretty bg-gradient-to-r from-[#FFD700] to-[#FFA500] bg-clip-text text-transparent">Enter now for your chance to win</p>
+              <p className="mt-1 text-pretty bg-gradient-to-r from-[#FFD700] to-[#FFA500] bg-clip-text text-transparent">Big prizes. Small ticket prices. Pick your winner.</p>
             </div>
             <Button variant="ghost" className="text-white/80 hover:text-white hover:bg-white/10" asChild>
               <Link href="/giveaways">
@@ -85,118 +141,122 @@ export default async function HomePage() {
         </div>
 
         {/* Giveaway cards */}
-        <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-6 grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 md:grid-cols-2 md:gap-5 lg:grid-cols-3">
           {giveaways.length > 0 ? (
             giveaways.map((giveaway: any) => {
-              const timeLeft = formatTimeLeft(giveaway.ends_at)
+              const urgency = getUrgency(giveaway)
               const sold = Number(giveaway.tickets_sold ?? 0)
               const cap = Number(giveaway.hard_cap_total_tickets ?? 0)
               const percentSold = cap > 0 ? Math.min(100, Math.floor((sold / cap) * 100)) : null
+              const base = giveaway.base_ticket_price_pence
+              const was = giveaway.was_ticket_price_pence
+              const onSale = base != null && was != null && was > base
 
               return (
                 <Link
                   key={giveaway.slug}
                   href={`/giveaways/${giveaway.slug}`}
-                  className="group relative flex flex-col overflow-visible rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm transition-all duration-300 hover:border-amber-400/50 hover:shadow-lg hover:shadow-amber-500/10 hover:-translate-y-1"
+                  className="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#1c0b30] transition-all duration-300 hover:border-amber-400/50 hover:shadow-lg hover:shadow-amber-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0014]"
                 >
-                  {/* Countdown - jackpot tab overlapping top edge */}
-                  {timeLeft && (
-                    <div className="absolute left-1/2 -translate-x-1/2 -top-3 z-20">
-                      <span className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-red-700 to-red-900 px-4 py-1.5 text-sm font-bold text-white shadow-lg border border-[#FFD700]/50 shadow-red-900/50">
-                        <Clock className="h-4 w-4" />
-                        {timeLeft}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Hero image */}
-                  {giveaway.hero_image_url && (
-                    <div className="relative aspect-[16/10] w-full overflow-hidden rounded-t-2xl">
+                  {/* Artwork with overlays */}
+                  <div className="relative aspect-[4/3] w-full overflow-hidden">
+                    {giveaway.hero_image_url ? (
                       <Image
                         src={giveaway.hero_image_url}
-                        alt={giveaway.title || 'Giveaway'}
+                        alt={giveaway.title || "Giveaway"}
                         fill
                         className="object-cover transition-transform duration-300 group-hover:scale-105"
-                        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                        sizes="(max-width: 359px) 100vw, (max-width: 768px) 50vw, (max-width: 1023px) 50vw, 33vw"
                       />
-                    </div>
-                  )}
+                    ) : (
+                      <div className="h-full w-full bg-gradient-to-br from-[#2a0040] to-[#1a0b2e]" />
+                    )}
+                    {/* Bottom fade so the price badge stays legible */}
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#1c0b30] to-transparent" />
+
+                    {/* 1. Urgency badge */}
+                    {urgency && (
+                      <span
+                        className={
+                          "absolute left-2 top-2 z-10 inline-flex items-center rounded-md px-2 py-1 text-[10px] font-extrabold uppercase tracking-wide shadow-md " +
+                          (urgency.tone === "ended"
+                            ? "bg-black/75 text-white/90 backdrop-blur-sm"
+                            : urgency.tone === "urgent"
+                              ? "bg-gradient-to-r from-red-600 to-red-800 text-white"
+                              : "bg-black/60 text-white backdrop-blur-sm")
+                        }
+                      >
+                        {urgency.label}
+                      </span>
+                    )}
+
+                    {/* 2. Format badge, top-right — driven by presentation_type.
+                        Nothing renders for null / unknown values. */}
+                    {giveaway.presentation_type === "balloon_pop" && (
+                      <span className="absolute right-2 top-2 z-10 inline-flex items-center gap-1 rounded-md bg-black/70 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-white shadow-md backdrop-blur-sm sm:text-[10px]">
+                        <TikTokIcon className="h-3 w-3 shrink-0" />
+                        TikTok Live
+                      </span>
+                    )}
+                    {giveaway.presentation_type === "instant_cash" && (
+                      <span className="absolute right-2 top-2 z-10 inline-flex items-center gap-1 rounded-md bg-gradient-to-r from-[#FFD700] to-[#FFA500] px-2 py-1 text-[9px] font-extrabold uppercase tracking-wide text-black shadow-md sm:text-[10px]">
+                        <Zap className="h-3 w-3 shrink-0" fill="currentColor" />
+                        Instant Cash
+                      </span>
+                    )}
+                  </div>
 
                   {/* Content */}
-                  <div className="flex flex-1 flex-col p-5">
-                    <h3 className="text-lg font-bold text-white line-clamp-2 group-hover:text-amber-400 transition-colors">
+                  <div className="flex flex-1 flex-col p-3">
+                    {/* 3. Ticket-price badge, overlapping the artwork bottom */}
+                    {base != null && (
+                      <div className="relative z-10 -mt-7 mb-4 flex items-end gap-2">
+                        {onSale ? (
+                          <>
+                            <span className="inline-flex items-center rounded-full bg-gradient-to-r from-green-500 to-emerald-600 px-3 py-1 text-xs font-extrabold text-white shadow-md">
+                              NOW {priceText(base)}
+                            </span>
+                            <span className="text-[10px] font-semibold uppercase text-white/60 line-through">
+                              Was {priceText(was)}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="inline-flex items-center rounded-full bg-gradient-to-r from-[#FFD700] to-[#FFA500] px-3 py-1 text-xs font-extrabold text-black shadow-md">
+                            {priceText(base)} A TICKET
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* 4. Title */}
+                    <h3 className="min-h-[2.5rem] text-pretty text-sm font-bold leading-tight text-white line-clamp-2 transition-colors group-hover:text-amber-400 md:text-base">
                       {giveaway.title}
                     </h3>
-                    {giveaway.prize_title && (
-                      <p className="mt-1 text-sm text-white/60 line-clamp-1">{giveaway.prize_title}</p>
-                    )}
 
-                    {/* Presentation type - compact casino strip */}
-                    {giveaway.presentation_type === 'balloon_pop' && (
-                      <div className="mt-3 rounded-lg bg-gradient-to-r from-[#1a0025] to-[#2a0040] border-l-4 border-[#FFD700] px-3 py-2 shadow-[0_0_12px_rgba(236,72,153,0.3)]">
-                        <div className="text-[10px] font-bold uppercase tracking-wider text-pink-400">
-                          {"🎈 LIVE BALLOON POP"}
-                        </div>
-                        <div className="text-sm font-bold text-white">
-                          ON TIKTOK + FACEBOOK
-                        </div>
-                        <div className="text-[10px] text-pink-300/70">Watch live • Pop balloons • Win cash</div>
-                      </div>
-                    )}
-                    {giveaway.presentation_type === 'instant_cash' && (
-                      <div className="mt-3 rounded-lg bg-gradient-to-r from-[#1a1500] to-[#2a2000] border-l-4 border-[#FFD700] px-3 py-2 shadow-[0_0_12px_rgba(251,191,36,0.3)]">
-                        <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400">
-                          {"⚡ INSTANT WIN"}
-                        </div>
-                        <div className="text-sm font-bold text-white">
-                          WIN CASH NOW
-                        </div>
-                        <div className="text-[10px] text-amber-300/70">Buy tickets • Reveal instantly</div>
-                      </div>
-                    )}
+                    {/* 5. Prize / customer-benefit line */}
+                    <p className="mt-1.5 min-h-[2rem] text-xs leading-snug text-amber-100/70 line-clamp-2 md:text-sm">
+                      {benefitLine(giveaway)}
+                    </p>
 
-                    {/* Progress bar - percentage only */}
+                    {/* 6. Percentage sold + progress bar */}
                     {percentSold !== null && (
                       <div className="mt-3">
-                        <div className="flex items-center justify-between text-xs mb-1">
-                          <span className="font-medium text-amber-400">{percentSold}% sold</span>
+                        <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-amber-400">
+                          {percentSold}% Sold
                         </div>
                         <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
                           <div
-                            className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-500 transition-all duration-300"
+                            className="h-full rounded-full bg-gradient-to-r from-amber-400 to-fuchsia-500"
                             style={{ width: `${percentSold}%` }}
                           />
                         </div>
                       </div>
                     )}
 
-                    {/* Ticket price - casino chip badge with sale display */}
-                    {giveaway.base_ticket_price_pence != null && (
-                      <div className="mt-3">
-                        {giveaway.was_ticket_price_pence != null && giveaway.was_ticket_price_pence > giveaway.base_ticket_price_pence ? (
-                          <div className="flex flex-col gap-1">
-                            <span className="text-xs text-white/50 line-through">
-                              Was {giveaway.was_ticket_price_pence}p
-                            </span>
-                            <span className="inline-flex items-center rounded-full bg-gradient-to-r from-green-500 to-emerald-600 px-3 py-1 text-xs font-bold text-white shadow-md animate-pulse">
-                              Tonight {giveaway.base_ticket_price_pence}p
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="inline-flex items-center rounded-full bg-gradient-to-r from-[#FFD700] to-[#FFA500] px-3 py-1 text-xs font-bold text-black shadow-md">
-                            £{(giveaway.base_ticket_price_pence / 100).toFixed(2)} per ticket
-                          </span>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Enter button */}
-                    <div className="mt-auto pt-4">
-                      <div className="rounded-xl bg-gradient-to-r from-[#FFD700] to-[#FFA500] p-[1px]">
-                        <div className="flex items-center justify-center rounded-xl bg-gradient-to-r from-[#FFD700] to-[#FFA500] px-4 py-2.5 text-sm font-bold text-black transition-all group-hover:shadow-lg">
-                          Enter Now
-                          <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
-                        </div>
+                    {/* 7. Enter now CTA (styled non-button; whole card is the link) */}
+                    <div className="mt-auto pt-3">
+                      <div className="flex min-h-[44px] items-center justify-center rounded-xl bg-gradient-to-r from-[#FFD700] to-[#FFA500] px-4 py-3 text-sm font-bold text-black transition-all group-hover:shadow-lg">
+                        Enter now
                       </div>
                     </div>
                   </div>
