@@ -65,20 +65,14 @@ function priceText(pence: number): string {
   return `£${(pence / 100).toFixed(2)}`
 }
 
-// Prize/benefit line. Meaningful prize_title always wins; otherwise fall back
-// to format-specific copy driven by the admin-managed presentation_type.
-function benefitLine(giveaway: any): string {
+// Genuine prize subtitle only. Returns the prize_title when it is present,
+// non-empty after trimming, and not a case-insensitive duplicate of the
+// campaign title; otherwise null (no synthesized/generic marketing copy).
+function prizeSubtitle(giveaway: any): string | null {
   const title = String(giveaway?.title ?? "").trim().toLowerCase()
   const prize = String(giveaway?.prize_title ?? "").trim()
   if (prize && prize.toLowerCase() !== title) return prize
-  switch (giveaway?.presentation_type) {
-    case "balloon_pop":
-      return "Big prizes revealed live"
-    case "instant_cash":
-      return "Your prize is revealed instantly"
-    default:
-      return "One ticket could change everything"
-  }
+  return null
 }
 
 // Emergency fallback data - used if snapshot query fails
@@ -189,28 +183,13 @@ export default async function HomePage() {
                         {urgency.label}
                       </span>
                     )}
-
-                    {/* 2. Format badge, top-right — driven by presentation_type.
-                        Nothing renders for null / unknown values. */}
-                    {giveaway.presentation_type === "balloon_pop" && (
-                      <span className="absolute right-2 top-2 z-10 inline-flex items-center gap-1 rounded-md bg-black/70 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-white shadow-md backdrop-blur-sm sm:text-[10px]">
-                        <TikTokIcon className="h-3 w-3 shrink-0" />
-                        TikTok Live
-                      </span>
-                    )}
-                    {giveaway.presentation_type === "instant_cash" && (
-                      <span className="absolute right-2 top-2 z-10 inline-flex items-center gap-1 rounded-md bg-gradient-to-r from-[#FFD700] to-[#FFA500] px-2 py-1 text-[9px] font-extrabold uppercase tracking-wide text-black shadow-md sm:text-[10px]">
-                        <Zap className="h-3 w-3 shrink-0" fill="currentColor" />
-                        Instant Cash
-                      </span>
-                    )}
                   </div>
 
                   {/* Content */}
                   <div className="flex flex-1 flex-col p-3">
-                    {/* 3. Ticket-price badge, overlapping the artwork bottom */}
+                    {/* 2. Ticket-price badge, overlapping the artwork bottom */}
                     {base != null && (
-                      <div className="relative z-10 -mt-7 mb-4 flex items-end gap-2">
+                      <div className="relative z-10 -mt-7 mb-3 flex items-end gap-2">
                         {onSale ? (
                           <>
                             <span className="inline-flex items-center rounded-full bg-gradient-to-r from-green-500 to-emerald-600 px-3 py-1 text-xs font-extrabold text-white shadow-md">
@@ -228,15 +207,33 @@ export default async function HomePage() {
                       </div>
                     )}
 
+                    {/* 3. Format row — driven only by presentation_type.
+                        Nothing renders (and no space is reserved) for null/unknown. */}
+                    {giveaway.presentation_type === "balloon_pop" && (
+                      <div className="mb-2 inline-flex w-fit items-center gap-1.5 rounded-md bg-black px-2 py-1 text-[11px] font-extrabold uppercase tracking-wide text-white shadow-sm">
+                        <TikTokIcon className="h-[18px] w-[18px] shrink-0" />
+                        TikTok Live
+                      </div>
+                    )}
+                    {giveaway.presentation_type === "instant_cash" && (
+                      <div className="mb-2 inline-flex w-fit items-center gap-1.5 rounded-md bg-amber-400/10 px-2 py-1 text-[11px] font-extrabold uppercase tracking-wide text-[#FFD700] ring-1 ring-inset ring-amber-400/40">
+                        <Zap className="h-[18px] w-[18px] shrink-0" fill="currentColor" />
+                        Instant Cash
+                      </div>
+                    )}
+
                     {/* 4. Title */}
                     <h3 className="min-h-[2.5rem] text-pretty text-sm font-bold leading-tight text-white line-clamp-2 transition-colors group-hover:text-amber-400 md:text-base">
                       {giveaway.title}
                     </h3>
 
-                    {/* 5. Prize / customer-benefit line */}
-                    <p className="mt-1.5 min-h-[2rem] text-xs leading-snug text-amber-100/70 line-clamp-2 md:text-sm">
-                      {benefitLine(giveaway)}
-                    </p>
+                    {/* 5. Genuine prize title — only when meaningful and not a
+                        duplicate of the campaign title. No generic fallback. */}
+                    {prizeSubtitle(giveaway) && (
+                      <p className="mt-1.5 text-xs leading-snug text-amber-100/70 line-clamp-2 md:text-sm">
+                        {prizeSubtitle(giveaway)}
+                      </p>
+                    )}
 
                     {/* 6. Percentage sold + progress bar */}
                     {percentSold !== null && (
