@@ -24,7 +24,7 @@ type EntryRow = {
 
 type AllocationInfo = { start_ticket: number; end_ticket: number }
 type CampaignInfo = { title: string; status: string; slug: string | null }
-type WinInfo = { prizeTitle: string; awardedAt: string }
+type WinInfo = { awardId: string; prizeTitle: string; awardedAt: string }
 
 interface AccountTabsProps {
   email: string
@@ -269,9 +269,20 @@ export function AccountTabs({ email, entries, entriesError, allocationMap, campa
                           Only claims a win when a checkout-level award exists;
                           otherwise shows neutral status, never implying loss. */}
                       {wins.length > 0 ? (
-                        <div className="mt-1 flex items-center gap-1.5 rounded-md bg-yellow-500/15 px-2 py-1 text-xs font-medium text-yellow-300">
-                          <span>🎁</span>
-                          <span>Instant Winner: {wins.map((w) => w.prizeTitle).join(', ')}</span>
+                        <div className="mt-1 rounded-md bg-yellow-500/15 px-2 py-1 text-xs font-medium text-yellow-300">
+                          <span className="font-semibold">
+                            {wins.length > 1 ? `Instant Winner \u2014 ${wins.length} prizes` : 'Instant Winner'}
+                          </span>
+                          {/* Each award is listed on its own line so two prizes
+                              with the same title still show as two wins. */}
+                          <ul className="mt-1 space-y-0.5">
+                            {wins.map((w, i) => (
+                              <li key={w.awardId ?? `${w.prizeTitle}-${i}`} className="flex items-center gap-1.5">
+                                <span aria-hidden="true">{'\u{1F381}'}</span>
+                                <span>{w.prizeTitle}</span>
+                              </li>
+                            ))}
+                          </ul>
                         </div>
                       ) : (
                         <p className="mt-1 text-xs text-white/40">

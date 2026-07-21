@@ -424,7 +424,9 @@ export default function InstantWinsPage() {
                           {award.prize_title}
                         </TableCell>
                         <TableCell className="text-sm whitespace-nowrap">
-                          {formatTicketRange(award.start_ticket, award.end_ticket)}
+                          {award.winning_ticket != null
+                            ? `#${award.winning_ticket}`
+                            : formatTicketRange(award.start_ticket, award.end_ticket)}
                         </TableCell>
                         <TableCell className="font-mono text-xs">
                           {award.checkout_ref}

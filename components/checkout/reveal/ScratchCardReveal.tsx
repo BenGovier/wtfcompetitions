@@ -7,6 +7,7 @@ import { ScratchCard, type ScratchCardHandle } from "./ScratchCard"
 import { Confetti } from "./Confetti"
 
 type Prize = {
+  award_id?: string | null
   title: string
   value_text?: string | null
   image_url?: string | null
@@ -140,6 +141,48 @@ export function ScratchCardReveal({ award }: { award: RevealAward }) {
           </div>
         </div>
       </div>
+
+      {/* Full prize list — shown after the scratch is complete when more than
+          one prize was won. The scratch card itself keeps the first prize as
+          the primary visual; this accessible list guarantees every prize is
+          shown and never collapsed into a single line. */}
+      {revealed && isWin && prizes.length > 1 && (
+        <div className="mt-6 w-full max-w-[300px]">
+          <p className="mb-2 text-center text-xs font-bold uppercase tracking-[0.2em] text-amber-500">
+            You won {prizes.length} prizes
+          </p>
+          <ul className="space-y-2">
+            {prizes.map((p, i) => (
+              <li
+                key={p.award_id ?? `${p.title}-${i}`}
+                className="flex items-center gap-3 rounded-xl border border-border bg-muted/50 px-3 py-2 text-left"
+              >
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-amber-400 text-xs font-black text-black">
+                  {i + 1}
+                </span>
+                {p.image_url ? (
+                  <span className="h-10 w-10 shrink-0 overflow-hidden rounded-lg ring-1 ring-amber-300/50">
+                    <Image
+                      src={p.image_url || "/placeholder.svg"}
+                      alt={p.title}
+                      width={40}
+                      height={40}
+                      className="h-full w-full object-cover"
+                      crossOrigin="anonymous"
+                    />
+                  </span>
+                ) : null}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold text-foreground">{p.title}</span>
+                  {p.value_text ? (
+                    <span className="block text-xs text-muted-foreground">{p.value_text}</span>
+                  ) : null}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Ticket numbers (from the fixed award) */}
       {ticketLabel && (
