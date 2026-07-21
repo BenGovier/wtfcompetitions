@@ -49,7 +49,7 @@ function formatDateUK(dateStr: string) {
 
 // Format an integer pence amount as GBP (e.g. 2000 -> "£20.00").
 function formatGBP(pence: number) {
-  const safe = Number.isFinite(pence) ? pence : 0
+  const safe = Number.isFinite(pence) ? Math.max(pence, 0) : 0
   return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(safe / 100)
 }
 
@@ -387,7 +387,7 @@ export function AccountTabs({ email, wallet, entries, entriesError, allocationMa
             <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/5 p-4">
               <p className="text-sm font-medium text-white/60">WTF Credit</p>
               <p className="mt-1 text-2xl font-bold text-yellow-300">
-                {formatGBP(wallet.availablePence)}
+                {formatGBP(wallet.availablePence) + ' available'}
               </p>
               {wallet.reservedPence > 0 && (
                 <p className="mt-1 text-xs text-white/50">
