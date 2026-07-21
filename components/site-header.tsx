@@ -1,8 +1,17 @@
 import Link from "next/link"
 import Image from "next/image"
+import { Wallet } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { createClient } from "@/lib/supabase/server"
 import { MobileAuthMenu } from "@/components/mobile-auth-menu"
+
+// Format an integer pence amount as GBP (e.g. 2000 -> "£20.00").
+// Clamps malformed/negative values to 0 so the balance can never render negative
+// and never exposes raw pence.
+function formatGBP(pence: number) {
+  const safe = Number.isFinite(pence) ? Math.max(pence, 0) : 0
+  return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(safe / 100)
+}
 
 /**
  * True ONLY for the two expected stale-refresh-token conditions:
@@ -54,6 +63,29 @@ export async function SiteHeader() {
     user = null
   }
 
+  // WTF Credit balance for the header control. This query runs ONLY for an
+  // authenticated user — anonymous visitors never touch wallet_accounts. It uses
+  // the existing RLS-scoped server client (never service role), reads a single
+  // row and exactly two columns, and degrades to £0.00 on a missing row or any
+  // read error so the header can never break. No transactions/reservations are
+  // queried, and raw pence is never rendered.
+  let walletAvailablePence = 0
+  if (user) {
+    const { data: walletRow, error: walletErr } = await supabase
+      .from("wallet_accounts")
+      .select("balance_pence, reserved_pence")
+      .eq("user_id", user.id)
+      .maybeSingle()
+
+    if (walletErr) {
+      console.error("[site-header] wallet_accounts lookup failed:", walletErr.message)
+    } else if (walletRow) {
+      const balancePence = typeof walletRow.balance_pence === "number" ? walletRow.balance_pence : 0
+      const reservedPence = typeof walletRow.reserved_pence === "number" ? walletRow.reserved_pence : 0
+      walletAvailablePence = Math.max(balancePence - reservedPence, 0)
+    }
+  }
+
   return (
     <header className="sticky top-0 z-50 border-b bg-background/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-16 items-center justify-between">
@@ -80,7 +112,22 @@ export async function SiteHeader() {
           </Link>
         </nav>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* WTF Credit balance control. Visible ONLY for authenticated users
+              (hidden entirely for anonymous visitors), on both mobile and
+              desktop. Compact icon + balance that links to /me. No spending or
+              checkout controls, no client-side polling. */}
+          {user && (
+            <Link
+              href="/me"
+              aria-label={`WTF Credit balance ${formatGBP(walletAvailablePence)}. View account.`}
+              className="flex shrink-0 items-center gap-1.5 rounded-full border border-yellow-500/30 bg-yellow-500/10 px-2.5 py-1.5 text-sm font-semibold text-yellow-300 transition-colors hover:bg-yellow-500/20"
+            >
+              <Wallet className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <span className="tabular-nums">{formatGBP(walletAvailablePence)}</span>
+            </Link>
+          )}
+
           {/* Mobile-only: burger menu for both signed-in and signed-out users.
               The signed-in state opens a polished account menu with a Sign out
               action; signed-out keeps Create account / Log in. */}
