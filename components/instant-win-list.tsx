@@ -201,10 +201,10 @@ export function InstantWinList({ instantWins, collapsibleOnMobile = false }: Ins
           <h2 className="mt-1 text-balance text-2xl font-extrabold leading-tight text-white">
             {availablePrizeCount > 0 ? (
               <>
-                {availablePrizeCount} Cash {availablePrizeCount === 1 ? "Prize" : "Prizes"} To Be Won
+                {availablePrizeCount} Instant {availablePrizeCount === 1 ? "Prize" : "Prizes"} To Be Won
               </>
             ) : (
-              "All Instant Cash Prizes Won"
+              "All Instant Prizes Won"
             )}
           </h2>
           {showCashHeadline && (
