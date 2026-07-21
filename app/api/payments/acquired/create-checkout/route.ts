@@ -184,8 +184,20 @@ export async function POST(request: Request) {
   let customerSource: 'reused' | 'created' | 'recovered_by_reference' | 'none' = 'none'
   let customerPayloadKeys: string[] = []
 
+  // Staging/preview detector. The restored staging database contains Acquired
+  // `provider_customer_id` values issued by the LIVE Acquired tenant; those IDs
+  // do not exist in the QA/test tenant and are rejected by the QA payment-link
+  // endpoint ("customer.customer_id — Customer is invalid"). On staging/preview
+  // we therefore SKIP reuse of persisted customer IDs and always create/recover
+  // a customer against the currently-configured QA host. Production is never
+  // classified as staging, so its reuse behaviour is unchanged.
+  const isStagingOrPreview =
+    process.env.VERCEL_ENV === 'preview' ||
+    (process.env.NEXT_PUBLIC_SITE_URL ?? '').includes('staging.wtf-giveaways.co.uk')
+
   // A) Reuse the most recent acquired customer_id for this user, if any.
-  if (intent.user_id) {
+  //    Production only — see isStagingOrPreview note above.
+  if (intent.user_id && !isStagingOrPreview) {
     const { data: priorIntent } = await svc
       .from('checkout_intents')
       .select('provider_customer_id')
