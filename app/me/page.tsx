@@ -10,6 +10,35 @@ export default async function AccountPage() {
     redirect('/auth/login?redirect=/me')
   }
 
+  // Step 0: Fetch the authenticated user's WTF Credit wallet summary.
+  // wallet_accounts enforces RLS (SELECT only, restricted to user_id = auth.uid()),
+  // so this uses the RLS-scoped client and reads only this user's row. A missing
+  // row or any read error degrades gracefully to a zeroed balance — it must never
+  // hard-fail the account page. No transactions/reservations are queried.
+  let wallet: { balancePence: number; reservedPence: number; availablePence: number } = {
+    balancePence: 0,
+    reservedPence: 0,
+    availablePence: 0,
+  }
+
+  const { data: walletRow, error: walletErr } = await supabase
+    .from('wallet_accounts')
+    .select('balance_pence, reserved_pence')
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  if (walletErr) {
+    console.error('[me] wallet_accounts lookup failed:', walletErr.message)
+  } else if (walletRow) {
+    const balancePence = typeof walletRow.balance_pence === 'number' ? walletRow.balance_pence : 0
+    const reservedPence = typeof walletRow.reserved_pence === 'number' ? walletRow.reserved_pence : 0
+    wallet = {
+      balancePence,
+      reservedPence,
+      availablePence: Math.max(balancePence - reservedPence, 0),
+    }
+  }
+
   // Step 1: Fetch entries
   let entries: { id: string; campaign_id: string; qty: number; created_at: string; checkout_intent_id: string | null }[] = []
   let entriesError: string | null = null
@@ -139,6 +168,7 @@ export default async function AccountPage() {
 
         <AccountTabs
           email={user.email || ''}
+          wallet={wallet}
           entries={entries}
           entriesError={entriesError}
           allocationMap={allocationMap}
