@@ -1,6 +1,14 @@
 import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
+import { Wallet } from "lucide-react"
 import { AccountTabs } from "./account-tabs"
+
+// Format an integer pence amount as GBP (e.g. 2000 -> "£20.00").
+// Clamps malformed/negative values to 0 so the balance can never render negative.
+function formatGBP(pence: number) {
+  const safe = Number.isFinite(pence) ? Math.max(pence, 0) : 0
+  return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(safe / 100)
+}
 
 export default async function AccountPage() {
   const supabase = await createClient()
@@ -161,14 +169,34 @@ export default async function AccountPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#1a002b] via-[#2d0050] to-[#0a0014]">
       <div className="container px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold tracking-tight text-white md:text-3xl">My Account</h1>
-          <p className="mt-1 text-white/70">Manage your entries and profile</p>
+        <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-white md:text-3xl">My Account</h1>
+            <p className="mt-1 text-white/70">Manage your entries and profile</p>
+          </div>
+
+          {/* WTF Credit wallet balance. Below the title on mobile (full width),
+              compact card on the top-right on desktop. Read-only, no spending. */}
+          <div className="flex items-center gap-3 rounded-xl border border-yellow-500/30 bg-gradient-to-br from-yellow-500/10 to-purple-500/10 px-4 py-3 shadow-[0_0_20px_rgba(255,215,0,0.08)] md:min-w-[200px]">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-yellow-500/20 bg-yellow-500/10">
+              <Wallet className="h-5 w-5 text-yellow-400" aria-hidden="true" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-medium uppercase tracking-wide text-white/60">WTF Credit</p>
+              <p className="text-lg font-bold leading-tight text-yellow-300">
+                {formatGBP(wallet.availablePence) + ' available'}
+              </p>
+              {wallet.reservedPence > 0 && (
+                <p className="mt-0.5 text-xs text-white/50">
+                  {formatGBP(wallet.balancePence) + ' balance \u2013 ' + formatGBP(wallet.reservedPence) + ' reserved'}
+                </p>
+              )}
+            </div>
+          </div>
         </div>
 
         <AccountTabs
           email={user.email || ''}
-          wallet={wallet}
           entries={entries}
           entriesError={entriesError}
           allocationMap={allocationMap}
