@@ -1,9 +1,10 @@
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import Image from "next/image"
-import { ArrowRight } from "lucide-react"
+import { ArrowRight, Zap } from "lucide-react"
 import { createClient } from "@/lib/supabase/server"
 import { LiveNowTakeover } from "@/components/live/LiveNowTakeover"
+import { TikTokIcon } from "@/components/icons/tiktok-icon"
 
 // --- Card display helpers (shared logic, duplicated intentionally per page) ---
 
@@ -64,12 +65,20 @@ function priceText(pence: number): string {
   return `£${(pence / 100).toFixed(2)}`
 }
 
-// Prize/benefit line; neutral fallback when empty or a duplicate of the title.
+// Prize/benefit line. Meaningful prize_title always wins; otherwise fall back
+// to format-specific copy driven by the admin-managed presentation_type.
 function benefitLine(giveaway: any): string {
   const title = String(giveaway?.title ?? "").trim().toLowerCase()
   const prize = String(giveaway?.prize_title ?? "").trim()
-  if (!prize || prize.toLowerCase() === title) return "Enter now for your chance to win"
-  return prize
+  if (prize && prize.toLowerCase() !== title) return prize
+  switch (giveaway?.presentation_type) {
+    case "balloon_pop":
+      return "Big prizes revealed live"
+    case "instant_cash":
+      return "Your prize is revealed instantly"
+    default:
+      return "One ticket could change everything"
+  }
 }
 
 // Emergency fallback data - used if snapshot query fails
@@ -121,7 +130,7 @@ export default async function HomePage() {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-balance text-2xl font-bold tracking-tight text-white md:text-3xl">Featured Giveaways</h2>
-              <p className="mt-1 text-pretty bg-gradient-to-r from-[#FFD700] to-[#FFA500] bg-clip-text text-transparent">Enter now for your chance to win</p>
+              <p className="mt-1 text-pretty bg-gradient-to-r from-[#FFD700] to-[#FFA500] bg-clip-text text-transparent">Big prizes. Small ticket prices. Pick your winner.</p>
             </div>
             <Button variant="ghost" className="text-white/80 hover:text-white hover:bg-white/10" asChild>
               <Link href="/giveaways">
@@ -178,6 +187,21 @@ export default async function HomePage() {
                         }
                       >
                         {urgency.label}
+                      </span>
+                    )}
+
+                    {/* 2. Format badge, top-right — driven by presentation_type.
+                        Nothing renders for null / unknown values. */}
+                    {giveaway.presentation_type === "balloon_pop" && (
+                      <span className="absolute right-2 top-2 z-10 inline-flex items-center gap-1 rounded-md bg-black/70 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-white shadow-md backdrop-blur-sm sm:text-[10px]">
+                        <TikTokIcon className="h-3 w-3 shrink-0" />
+                        TikTok Live
+                      </span>
+                    )}
+                    {giveaway.presentation_type === "instant_cash" && (
+                      <span className="absolute right-2 top-2 z-10 inline-flex items-center gap-1 rounded-md bg-gradient-to-r from-[#FFD700] to-[#FFA500] px-2 py-1 text-[9px] font-extrabold uppercase tracking-wide text-black shadow-md sm:text-[10px]">
+                        <Zap className="h-3 w-3 shrink-0" fill="currentColor" />
+                        Instant Cash
                       </span>
                     )}
                   </div>
