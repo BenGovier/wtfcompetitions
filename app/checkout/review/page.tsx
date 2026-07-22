@@ -2,7 +2,8 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { AlertCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
-import { CheckoutReviewClient } from '@/components/checkout/checkout-review-client'
+import { createPublicClient } from '@/lib/supabase/public'
+import { CheckoutReviewClient, type ReviewOption } from '@/components/checkout/checkout-review-client'
 
 export const dynamic = 'force-dynamic'
 
@@ -120,14 +121,15 @@ export default async function CheckoutReviewPage({ searchParams }: ReviewPagePro
   const ticketPricePence = isNonNegInt(campaign.ticket_price_pence) ? campaign.ticket_price_pence : null
 
   // ---- 4) Derive the authoritative display total (server-side) ----
+  const rawBundles = Array.isArray(campaign.bundles) ? campaign.bundles : []
+
   let validatedBundlePricePence: number | null = null
   let displayTotalPence: number
 
   if (requestedBundlePence != null) {
     // Accept the bundle ONLY when it exactly matches a configured bundle for the
     // selected quantity — the same rule the checkout-create route enforces.
-    const bundles = Array.isArray(campaign.bundles) ? campaign.bundles : []
-    const matched = (bundles as { quantity?: unknown; price_pence?: unknown }[]).find(
+    const matched = (rawBundles as { quantity?: unknown; price_pence?: unknown }[]).find(
       (b) => Number(b.quantity) === qty && Number(b.price_pence) === requestedBundlePence,
     )
     if (!matched) {
@@ -147,6 +149,51 @@ export default async function CheckoutReviewPage({ searchParams }: ReviewPagePro
     return <InvalidState />
   }
 
+  // ---- 4b) Build the selectable ticket options from CONFIGURED bundles only ----
+  // Every option here is server-authoritative. The client uses these purely to
+  // let the customer switch selection and preview totals; the create API still
+  // re-validates the chosen qty + bundlePricePence.
+  const options: ReviewOption[] = []
+  const seenKeys = new Set<string>()
+
+  const pushOption = (opt: ReviewOption) => {
+    if (seenKeys.has(opt.key)) return
+    seenKeys.add(opt.key)
+    options.push(opt)
+  }
+
+  for (const b of rawBundles as { quantity?: unknown; price_pence?: unknown }[]) {
+    const bq = Number(b.quantity)
+    const bp = Number(b.price_pence)
+    if (!Number.isSafeInteger(bq) || bq < 1 || bq > 500) continue
+    if (!Number.isSafeInteger(bp) || bp < 0) continue
+    const savings = ticketPricePence != null ? Math.max(bq * ticketPricePence - bp, 0) : 0
+    pushOption({
+      key: `bundle:${bq}:${bp}`,
+      qty: bq,
+      bundlePricePence: bp,
+      totalPence: bp,
+      savingsPence: savings,
+    })
+  }
+
+  // The current selection. When it is a per-ticket order (no bundle) it may not
+  // exist among configured bundles, so add it explicitly.
+  const initialKey =
+    validatedBundlePricePence != null ? `bundle:${qty}:${validatedBundlePricePence}` : `single:${qty}`
+
+  if (validatedBundlePricePence == null) {
+    pushOption({
+      key: initialKey,
+      qty,
+      bundlePricePence: null,
+      totalPence: displayTotalPence,
+      savingsPence: 0,
+    })
+  }
+
+  options.sort((a, b) => a.qty - b.qty || a.totalPence - b.totalPence)
+
   // ---- 5) Wallet balance (authenticated, RLS-scoped, never service role) ----
   let availableWalletPence = 0
   const { data: walletRow, error: walletErr } = await supabase
@@ -163,16 +210,59 @@ export default async function CheckoutReviewPage({ searchParams }: ReviewPagePro
     availableWalletPence = Math.max(balancePence - reservedPence, 0)
   }
 
+  // ---- 6) Prize imagery/copy from the SAME trusted snapshot source as the
+  // giveaway detail page (read-only, best-effort; never blocks checkout) ----
+  let heroImageUrl: string | null = null
+  let prizeTitle: string | null = null
+  let prizeValueText: string | null = null
+
+  const campaignSlug = typeof campaign.slug === 'string' && campaign.slug.length > 0 ? campaign.slug : null
+  if (campaignSlug) {
+    try {
+      const publicClient = createPublicClient()
+      const { data: snapRows } = await publicClient
+        .from('giveaway_snapshots')
+        .select('kind, payload')
+        .in('kind', ['detail', 'list'])
+        .eq('payload->>slug', campaignSlug)
+        .order('generated_at', { ascending: false })
+        .limit(2)
+
+      const rows = snapRows ?? []
+      const snap = (rows.find((x) => x.kind === 'detail') ?? rows[0])?.payload as
+        | Record<string, unknown>
+        | undefined
+
+      if (snap) {
+        const hero = snap.hero_image_url
+        const imagesArr = Array.isArray(snap.images) ? (snap.images as unknown[]) : []
+        const firstImage = typeof imagesArr[0] === 'string' ? (imagesArr[0] as string) : null
+        heroImageUrl =
+          (typeof hero === 'string' && hero.length > 0 ? hero : null) ?? firstImage ?? null
+        prizeTitle = typeof snap.prize_title === 'string' && snap.prize_title.length > 0 ? snap.prize_title : null
+        prizeValueText =
+          typeof snap.prize_value_text === 'string' && snap.prize_value_text.length > 0
+            ? snap.prize_value_text
+            : null
+      }
+    } catch (e) {
+      // Imagery is decorative — never fail checkout because of it.
+      console.error('[checkout/review] snapshot imagery lookup failed:', (e as Error).message)
+    }
+  }
+
   return (
     <div className={PAGE_BG}>
       <CheckoutReviewClient
         campaignId={campaign.id}
-        slug={typeof campaign.slug === 'string' ? campaign.slug : null}
+        slug={campaignSlug}
         title={typeof campaign.title === 'string' && campaign.title.length > 0 ? campaign.title : 'Your entry'}
-        qty={qty}
+        prizeTitle={prizeTitle}
+        prizeValueText={prizeValueText}
+        heroImageUrl={heroImageUrl}
         ticketPricePence={ticketPricePence ?? 0}
-        validatedBundlePricePence={validatedBundlePricePence}
-        displayTotalPence={displayTotalPence}
+        options={options}
+        initialKey={initialKey}
         availableWalletPence={availableWalletPence}
       />
     </div>
