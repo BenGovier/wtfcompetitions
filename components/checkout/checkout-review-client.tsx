@@ -517,9 +517,9 @@ export function CheckoutReviewClient({
         Back to giveaway
       </Link>
 
-      <div className="grid gap-6 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
         {/* LEFT — campaign excitement */}
-        <section className="space-y-4 lg:col-span-3">
+        <section className="min-w-0 space-y-4 lg:col-span-3">
           <div className="overflow-hidden rounded-2xl border border-purple-500/20 bg-[#160a26] shadow-[0_0_40px_rgba(168,85,247,0.15)]">
             {heroImageUrl && (
               <div className="aspect-[16/9] w-full overflow-hidden bg-white/5">
@@ -538,7 +538,9 @@ export function CheckoutReviewClient({
                 <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
                 You&apos;re one step away from your tickets
               </span>
-              <h1 className="text-balance text-xl font-extrabold leading-tight sm:text-2xl">{title}</h1>
+              <h1 className="text-balance break-words text-xl font-extrabold leading-tight sm:text-2xl">
+                {title}
+              </h1>
               {prizeTitle && prizeTitle !== title && (
                 <p className="flex items-center gap-2 text-sm text-purple-200">
                   <Trophy className="h-4 w-4 shrink-0 text-yellow-300" aria-hidden="true" />
@@ -558,12 +560,12 @@ export function CheckoutReviewClient({
         </section>
 
         {/* RIGHT — checkout summary */}
-        <section className="space-y-4 lg:col-span-2">
+        <section className="min-w-0 space-y-4 lg:col-span-2">
           <div className="rounded-2xl border border-purple-500/20 bg-[#160a26] p-5 shadow-[0_0_40px_rgba(168,85,247,0.15)]">
             {/* Chances headline (moved in from the left column) */}
             <div className="text-center">
               <p className="text-xs font-medium text-purple-200">You&apos;re entering with</p>
-              <p className="mt-0.5 text-3xl font-extrabold leading-none text-white drop-shadow-[0_0_18px_rgba(255,0,200,0.35)]">
+              <p className="mt-0.5 text-balance break-words text-2xl font-extrabold leading-tight text-white drop-shadow-[0_0_18px_rgba(255,0,200,0.35)] sm:text-3xl">
                 {qty} {qty === 1 ? 'chance' : 'chances'} to win
               </p>
               {selected.savingsPence > 0 && (
@@ -614,11 +616,11 @@ export function CheckoutReviewClient({
               {walletVisible ? (
                 <div className="rounded-2xl border border-yellow-500/40 bg-gradient-to-br from-yellow-500/15 to-amber-500/5 p-4 shadow-[0_0_30px_rgba(247,166,0,0.15)]">
                   <div className="flex items-start justify-between gap-4">
-                    <label htmlFor="use-credit" className="flex cursor-pointer items-center gap-2.5">
+                    <label htmlFor="use-credit" className="flex min-w-0 cursor-pointer items-center gap-2.5">
                       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-yellow-500/20">
                         <Wallet className="h-5 w-5 text-yellow-300" aria-hidden="true" />
                       </span>
-                      <span className="text-sm font-semibold text-yellow-100">
+                      <span className="min-w-0 text-sm font-semibold text-yellow-100">
                         Use WTF Credit
                         <span className="block text-xs font-normal text-yellow-200/80">
                           Available:{' '}
