@@ -120,10 +120,20 @@ export async function POST(request: Request) {
   //     reservation has been validated in step 5b. releaseWalletReservation()
   //     is a best-effort, idempotent no-op for every normal (non-wallet) order
   //     — it never touches wallet_reservations unless a reservation was actually
-  //     held. It is called before each failure exit that occurs AFTER the
-  //     reservation was validated, so reserved WTF Credit is never stranded when
-  //     Acquired checkout creation fails. The RPC is service-role callable and
-  //     idempotent; a release failure is logged and never alters the response.
+  //     held. The RPC is service-role callable and idempotent; a release failure
+  //     is logged and never alters the response.
+  //
+  //     Release policy (deliberately NOT "release on every post-validation
+  //     failure"):
+  //       - Release ONLY on terminal failures that occur BEFORE the payment-link
+  //         POST is attempted (missing config, login failures, customer failures),
+  //         plus the one case where Acquired returns an explicit non-2xx response
+  //         to POST /v1/payment-links (no usable link was created).
+  //       - Once the POST has been attempted and the outcome is ambiguous or
+  //         successful (network/parse error after 2xx, 2xx with missing link_id,
+  //         or a local DB-update failure after the link exists) we do NOT release,
+  //         because a payment link may already be usable. Those reservations are
+  //         reclaimed solely by the 15-minute expiry engine.
   let walletReservationActive = false
   let walletReservationReleased = false
   // Captured from the (non-null) intent so the hoisted helper closure has
@@ -881,7 +891,12 @@ export async function POST(request: Request) {
     linkData = JSON.parse(raw || '{}')
   } catch (err: any) {
     console.error('[payments/acquired] payment-link fetch error', String(err?.message || err))
-    await releaseWalletReservation('acquired_payment_link_failed')
+    // Do NOT release the reservation here. This catch covers both a genuine
+    // network exception AND a JSON parse failure that follows an HTTP 2xx
+    // response, so Acquired may already have created a payment link. Releasing
+    // now could let a late external payment succeed after the WTF Credit became
+    // spendable again. The 15-minute expiry engine reclaims any truly-unused
+    // reservation instead.
     return NextResponse.json(
       { ok: false, error: 'acquired_payment_link_failed' },
       { status: 502, headers: noStore },
@@ -892,7 +907,10 @@ export async function POST(request: Request) {
   const linkId = (linkData.link_id as string) || ''
   if (!linkId) {
     console.error('[payments/acquired] missing link_id in response')
-    await releaseWalletReservation('acquired_missing_link_id')
+    // Do NOT release the reservation here. Acquired already returned HTTP 2xx,
+    // so a payment-link resource may exist server-side even though we cannot
+    // derive its URL. The 15-minute expiry engine reclaims the reservation if
+    // it truly went unused.
     return NextResponse.json(
       { ok: false, error: 'acquired_missing_link_id' },
       { status: 502, headers: noStore },
@@ -1000,7 +1018,10 @@ export async function POST(request: Request) {
 
   if (updateErr || !updated?.provider_session_id) {
     console.error('[payments/acquired] DB update failed', updateErr?.message)
-    await releaseWalletReservation('acquired_update_failed')
+    // Do NOT release the reservation here. A usable payment link and checkout
+    // URL already exist at this point, so releasing would allow a late external
+    // payment after the WTF Credit became spendable again. Only the 15-minute
+    // expiry engine may reclaim this reservation.
     return NextResponse.json(
       { ok: false, error: 'Failed to update intent' },
       { status: 500, headers: noStore },
