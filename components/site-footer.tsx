@@ -1,7 +1,16 @@
+"use client"
+
 import Link from "next/link"
 import Image from "next/image"
+import { usePathname } from "next/navigation"
 
 export function SiteFooter() {
+  // The checkout review screen is a focused conversion flow, so the full
+  // marketing footer is suppressed there (mirrors MobileNav's per-route
+  // self-suppression). Every other page keeps the footer unchanged.
+  const pathname = usePathname()
+  if (pathname === "/checkout/review") return null
+
   return (
     <footer className="pb-20 md:pb-0">
       {/* Gold separator bar */}

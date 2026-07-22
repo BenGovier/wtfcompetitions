@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, type CSSProperties } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -466,9 +466,12 @@ export function CheckoutReviewClient({
   )
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-6 pb-32 lg:py-10 lg:pb-10">
-      {/* Progress indicator */}
-      <ol className="mx-auto mb-6 flex max-w-md items-center justify-center gap-2 text-xs font-semibold">
+    <div
+      className="mx-auto w-full max-w-5xl px-4 py-5 pb-[var(--checkout-pad)] lg:py-10 lg:pb-10"
+      style={{ '--checkout-pad': 'calc(17rem + env(safe-area-inset-bottom))' } as CSSProperties}
+    >
+      {/* Progress indicator — compact on mobile */}
+      <ol className="mx-auto mb-5 flex max-w-md items-center justify-center gap-1.5 text-[11px] font-semibold sm:gap-2 sm:text-xs">
         {[
           { n: 1, label: 'Review', active: true },
           { n: 2, label: 'Secure payment', active: false },
@@ -477,7 +480,7 @@ export function CheckoutReviewClient({
           <li key={step.n} className="flex items-center gap-2">
             <span
               className={
-                'inline-flex items-center gap-1.5 rounded-full px-3 py-1 ' +
+                'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 sm:px-3 sm:py-1 ' +
                 (step.active
                   ? 'bg-gradient-to-r from-[#F7A600] to-[#FFD46A] text-black shadow-[0_0_16px_rgba(255,180,0,0.5)]'
                   : 'bg-white/5 text-purple-300')
@@ -530,12 +533,12 @@ export function CheckoutReviewClient({
                 />
               </div>
             )}
-            <div className="space-y-3 p-5 sm:p-6">
+            <div className="space-y-2 p-4 sm:p-5">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-pink-500/15 px-3 py-1 text-xs font-bold uppercase tracking-wide text-pink-300">
                 <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
                 You&apos;re one step away from your tickets
               </span>
-              <h1 className="text-balance text-2xl font-extrabold leading-tight sm:text-3xl">{title}</h1>
+              <h1 className="text-balance text-xl font-extrabold leading-tight sm:text-2xl">{title}</h1>
               {prizeTitle && prizeTitle !== title && (
                 <p className="flex items-center gap-2 text-sm text-purple-200">
                   <Trophy className="h-4 w-4 shrink-0 text-yellow-300" aria-hidden="true" />
@@ -552,32 +555,26 @@ export function CheckoutReviewClient({
               )}
             </div>
           </div>
-
-          {/* Chances headline */}
-          <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-[#2a1140] to-[#160a26] p-5 text-center sm:p-6">
-            <p className="text-sm font-medium text-purple-200">You&apos;re entering with</p>
-            <p className="mt-1 text-4xl font-extrabold leading-none text-white drop-shadow-[0_0_18px_rgba(255,0,200,0.35)] sm:text-5xl">
-              {qty} {qty === 1 ? 'chance' : 'chances'} to win
-            </p>
-            {selected.savingsPence > 0 && (
-              <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-bold text-emerald-300">
-                <Check className="h-3.5 w-3.5" aria-hidden="true" />
-                You&apos;re saving {formatGBP(selected.savingsPence)}
-              </p>
-            )}
-          </div>
         </section>
 
         {/* RIGHT — checkout summary */}
         <section className="space-y-4 lg:col-span-2">
-          <div className="rounded-2xl border border-purple-500/20 bg-[#160a26] p-5 shadow-[0_0_40px_rgba(168,85,247,0.15)] sm:p-6">
-            <h2 className="text-lg font-bold">Order summary</h2>
+          <div className="rounded-2xl border border-purple-500/20 bg-[#160a26] p-5 shadow-[0_0_40px_rgba(168,85,247,0.15)]">
+            {/* Chances headline (moved in from the left column) */}
+            <div className="text-center">
+              <p className="text-xs font-medium text-purple-200">You&apos;re entering with</p>
+              <p className="mt-0.5 text-3xl font-extrabold leading-none text-white drop-shadow-[0_0_18px_rgba(255,0,200,0.35)]">
+                {qty} {qty === 1 ? 'chance' : 'chances'} to win
+              </p>
+              {selected.savingsPence > 0 && (
+                <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-bold text-emerald-300">
+                  <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                  You&apos;re saving {formatGBP(selected.savingsPence)}
+                </p>
+              )}
+            </div>
 
-            <dl className="mt-4 space-y-3 text-sm">
-              <div className="flex items-center justify-between gap-4">
-                <dt className="text-purple-200">Chances to win</dt>
-                <dd className="font-semibold tabular-nums">{qty}</dd>
-              </div>
+            <dl className="mt-4 space-y-2.5 border-t border-purple-500/15 pt-4 text-sm">
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-purple-200">{hasBundle ? 'Bundle price' : 'Price per ticket'}</dt>
                 <dd className="font-semibold tabular-nums">
@@ -592,7 +589,7 @@ export function CheckoutReviewClient({
               )}
             </dl>
 
-            <div className="mt-4 flex items-center justify-between gap-4 rounded-xl bg-white/5 p-4">
+            <div className="mt-3 flex items-center justify-between gap-4 rounded-xl bg-white/5 p-4">
               <span className="text-sm font-semibold text-purple-100">Order total</span>
               <span className="text-2xl font-extrabold tabular-nums text-yellow-300">
                 {formatGBP(displayTotalPence)}
@@ -609,6 +606,86 @@ export function CheckoutReviewClient({
                 Back to {initialOption.qty} {initialOption.qty === 1 ? 'chance' : 'chances'}
               </button>
             )}
+
+            {/* WTF Credit — ALWAYS rendered for authenticated users, directly
+                below the order total. Premium panel when credit is available;
+                a compact, disabled row when the balance is £0. */}
+            <div className="mt-4 border-t border-purple-500/15 pt-4">
+              {walletVisible ? (
+                <div className="rounded-2xl border border-yellow-500/40 bg-gradient-to-br from-yellow-500/15 to-amber-500/5 p-4 shadow-[0_0_30px_rgba(247,166,0,0.15)]">
+                  <div className="flex items-start justify-between gap-4">
+                    <label htmlFor="use-credit" className="flex cursor-pointer items-center gap-2.5">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-yellow-500/20">
+                        <Wallet className="h-5 w-5 text-yellow-300" aria-hidden="true" />
+                      </span>
+                      <span className="text-sm font-semibold text-yellow-100">
+                        Use WTF Credit
+                        <span className="block text-xs font-normal text-yellow-200/80">
+                          Available:{' '}
+                          <span className="font-bold tabular-nums text-yellow-200">
+                            {formatGBP(availableWalletPence)}
+                          </span>
+                        </span>
+                      </span>
+                    </label>
+                    <Switch
+                      id="use-credit"
+                      checked={useCredit}
+                      onCheckedChange={setUseCredit}
+                      disabled={walletDisabled || submitting}
+                      aria-label="Use WTF Credit for this order"
+                    />
+                  </div>
+
+                  <div
+                    className={
+                      'grid overflow-hidden transition-all duration-300 ease-out ' +
+                      (useCredit ? 'mt-4 grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0')
+                    }
+                  >
+                    <div className="min-h-0">
+                      <div className="space-y-2 border-t border-yellow-500/20 pt-3 text-sm">
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="text-yellow-200/90">WTF Credit applied</span>
+                          <span className="font-semibold tabular-nums text-yellow-100">
+                            −{formatGBP(previewCreditPence)}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="text-yellow-200/90">
+                            {fullyFunded ? 'Nothing to pay by card' : 'To pay by card'}
+                          </span>
+                          <span className="font-semibold tabular-nums text-yellow-100">
+                            {fullyFunded ? '£0.00' : formatGBP(previewExternalPence)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-purple-500/20 bg-white/5 px-3 py-2.5">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10">
+                      <Wallet className="h-4 w-4 text-purple-200" aria-hidden="true" />
+                    </span>
+                    <span className="min-w-0 text-sm font-semibold text-white">
+                      WTF Credit
+                      <span className="block truncate text-xs font-normal text-purple-300">
+                        Balance <span className="font-bold tabular-nums">{formatGBP(0)}</span> · Win credit in
+                        selected instant-win competitions
+                      </span>
+                    </span>
+                  </div>
+                  <Switch
+                    id="use-credit"
+                    checked={false}
+                    disabled
+                    aria-label="WTF Credit unavailable — no balance"
+                  />
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Smart upsell */}
@@ -639,14 +716,15 @@ export function CheckoutReviewClient({
             </div>
           )}
 
-          {/* Other options */}
+          {/* Other ticket options — a small text link, not another large card */}
           {otherOptions.length > 0 && (
-            <div className="rounded-2xl border border-purple-500/20 bg-[#160a26] p-4">
+            <div className="text-center">
               <button
                 type="button"
                 onClick={() => setShowAllOptions((s) => !s)}
                 aria-expanded={showAllOptions}
-                className="flex w-full items-center justify-between gap-2 text-sm font-semibold text-purple-200 transition-colors hover:text-white"
+                disabled={submitting}
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-purple-300 underline underline-offset-2 transition-colors hover:text-white disabled:opacity-50"
               >
                 See other ticket options
                 <ChevronDown
@@ -655,7 +733,7 @@ export function CheckoutReviewClient({
                 />
               </button>
               {showAllOptions && (
-                <ul className="mt-3 space-y-2">
+                <ul className="mt-3 space-y-2 text-left">
                   {options.map((o) => {
                     const isSel = o.key === selected.key
                     return (
@@ -694,61 +772,6 @@ export function CheckoutReviewClient({
             </div>
           )}
 
-          {/* WTF Credit — only when the customer actually has credit available */}
-          {walletVisible && (
-            <div className="rounded-2xl border border-yellow-500/40 bg-gradient-to-br from-yellow-500/15 to-amber-500/5 p-4 shadow-[0_0_30px_rgba(247,166,0,0.15)]">
-              <div className="flex items-start justify-between gap-4">
-                <label htmlFor="use-credit" className="flex cursor-pointer items-center gap-2.5">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-yellow-500/20">
-                    <Wallet className="h-5 w-5 text-yellow-300" aria-hidden="true" />
-                  </span>
-                  <span className="text-sm font-semibold text-yellow-100">
-                    Use WTF Credit
-                    <span className="block text-xs font-normal text-yellow-200/80">
-                      Available:{' '}
-                      <span className="font-bold tabular-nums text-yellow-200">
-                        {formatGBP(availableWalletPence)}
-                      </span>
-                    </span>
-                  </span>
-                </label>
-                <Switch
-                  id="use-credit"
-                  checked={useCredit}
-                  onCheckedChange={setUseCredit}
-                  disabled={walletDisabled || submitting}
-                  aria-label="Use WTF Credit for this order"
-                />
-              </div>
-
-              <div
-                className={
-                  'grid overflow-hidden transition-all duration-300 ease-out ' +
-                  (useCredit ? 'mt-4 grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0')
-                }
-              >
-                <div className="min-h-0">
-                  <div className="space-y-2 border-t border-yellow-500/20 pt-3 text-sm">
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="text-yellow-200/90">WTF Credit applied</span>
-                      <span className="font-semibold tabular-nums text-yellow-100">
-                        −{formatGBP(previewCreditPence)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="text-yellow-200/90">
-                        {fullyFunded ? 'Nothing to pay by card' : 'To pay by card'}
-                      </span>
-                      <span className="font-semibold tabular-nums text-yellow-100">
-                        {fullyFunded ? '£0.00' : formatGBP(previewExternalPence)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
           {error && (
             <div
               role="alert"
@@ -771,9 +794,14 @@ export function CheckoutReviewClient({
         </section>
       </div>
 
-      {/* Mobile sticky CTA */}
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-purple-500/20 bg-[#0e0618]/95 px-4 py-3 backdrop-blur lg:hidden">
-        <div className="mx-auto max-w-5xl space-y-2">
+      {/* Mobile sticky CTA — sits fully ABOVE the bottom nav (h-20 = 80px) and
+          its elevated centre button (-mt-6 = 24px protrusion), plus the device
+          safe-area inset. Never bottom:0. */}
+      <div
+        className="fixed inset-x-0 z-40 px-3 lg:hidden"
+        style={{ bottom: 'calc(5rem + 2rem + env(safe-area-inset-bottom))' }}
+      >
+        <div className="mx-auto max-w-5xl space-y-2 rounded-2xl border border-purple-500/30 bg-[#0e0618]/95 p-3 shadow-[0_-4px_30px_rgba(0,0,0,0.5)] backdrop-blur">
           {primaryButton}
           {trustRow}
         </div>
