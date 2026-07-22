@@ -76,6 +76,11 @@ export async function POST(request: Request) {
 
   const campaignId = body.campaignId as string | undefined
   const qty = typeof body.qty === 'number' ? body.qty : parseInt(String(body.qty || ''), 10)
+  // Optional WTF Credit opt-in. ONLY the literal boolean `true` counts as opting
+  // in; missing/false/string/numeric/malformed values all behave as false. No
+  // client currently sends this field, so existing checkouts are unaffected. A
+  // wallet AMOUNT is never accepted from the client — the DB function computes it.
+  const useCredit = body.useCredit === true
   const bundlePricePenceRaw = (body as any).bundlePricePence
   const bundlePricePenceParsed = typeof bundlePricePenceRaw === 'number' ? bundlePricePenceRaw : parseInt(String(bundlePricePenceRaw ?? ''), 10)
   const bundlePricePence = Number.isFinite(bundlePricePenceParsed) && bundlePricePenceParsed > 0 ? bundlePricePenceParsed : undefined
@@ -162,7 +167,8 @@ export async function POST(request: Request) {
   const providerSessionId = randomUUID()
 
   // 4) Insert checkout_intent as the authenticated user (RLS-scoped client).
-  const { error: insertErr } = await supabase
+  //    Select the new row's id so the wallet prepare RPC (below) can reference it.
+  const { data: checkoutIntent, error: insertErr } = await supabase
     .from('checkout_intents')
     .insert({
       ref,
@@ -177,10 +183,31 @@ export async function POST(request: Request) {
       provider_session_id: providerSessionId,
       state: 'pending',
     })
+    .select('id')
+    .single()
 
-  if (insertErr) {
+  if (insertErr || !checkoutIntent) {
     console.error('[checkout/create] Insert error:', insertErr)
     return NextResponse.json({ ok: false, error: 'Failed to create checkout intent' }, { status: 500, ...NO_STORE })
+  }
+
+  // 4b) WTF Credit prepare — ONLY when the user explicitly opted in.
+  //     When useCredit === false we never touch the wallet and the response is
+  //     byte-for-byte identical to before. The RPC is authenticated-user
+  //     callable, ownership-checked, atomic, and idempotent for the same
+  //     checkout intent, so retries/double-submits are safe. It is called
+  //     through the same RLS-scoped client (never service role). A failure here
+  //     must NOT roll back or fail the already-created checkout intent; it is
+  //     logged and the standard response is still returned.
+  if (useCredit) {
+    const { error: walletErr } = await supabase.rpc('wallet_prepare_checkout', {
+      p_checkout_intent_id: checkoutIntent.id,
+      p_user_id: resolvedUser.id,
+      p_use_credit: true,
+    })
+    if (walletErr) {
+      console.error('[checkout/create] wallet_prepare_checkout failed:', walletErr.message)
+    }
   }
 
   console.log('[checkout/create] created intent', {
