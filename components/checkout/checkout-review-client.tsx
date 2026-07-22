@@ -19,8 +19,9 @@ function formatGBP(pence: number): string {
   return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(safe / 100)
 }
 
+// Non-negative SAFE integer guard (also rejects values above MAX_SAFE_INTEGER).
 const isNonNegInt = (v: unknown): v is number =>
-  typeof v === 'number' && Number.isFinite(v) && Number.isInteger(v) && v >= 0
+  typeof v === 'number' && Number.isSafeInteger(v) && v >= 0
 
 /**
  * Friendly, non-technical copy for every known failure code. Raw API/database/
@@ -165,35 +166,60 @@ export function CheckoutReviewClient({
 
       const wallet = createJson.wallet as Record<string, unknown> | undefined
 
-      // Validate the wallet object when present. Bad counters/flags => malformed.
-      if (wallet !== undefined) {
-        const walletCreditPence = wallet.walletCreditPence
-        const externalPaymentPence = wallet.externalPaymentPence
-        const providerPaymentRequired = wallet.providerPaymentRequired
-        const validWallet =
-          wallet.useCredit === true &&
-          isNonNegInt(walletCreditPence) &&
-          isNonNegInt(externalPaymentPence) &&
-          typeof providerPaymentRequired === 'boolean' &&
-          walletCreditPence + externalPaymentPence === displayTotalPence
-        if (!validWallet) {
+      // The wallet object must be consistent with what the user actually
+      // submitted (state captured at submit time):
+      //   - useCredit === false -> a wallet object must NOT control routing;
+      //   - useCredit === true  -> a valid wallet object is REQUIRED.
+      const submittedUseCredit = useCredit
+
+      if (!submittedUseCredit) {
+        // A wallet object here is contradictory — never let it route payment.
+        if (wallet !== undefined) {
           releaseForRetry()
           return
         }
-      }
-
-      // Branch A — no wallet in the response (useCredit was false): preserve the
-      // existing provider behaviour exactly.
-      if (wallet === undefined) {
+        // Branch A — plain, non-wallet provider flow (unchanged behaviour).
         await goToProvider(ref)
         return
       }
 
-      const externalPaymentPence = wallet.externalPaymentPence as number
-      const providerPaymentRequired = wallet.providerPaymentRequired as boolean
+      // submittedUseCredit === true from here.
+      if (wallet === undefined) {
+        releaseForRetry()
+        return
+      }
+
+      // Validate the wallet split. Bad counters/flags, an unsafe sum, or a sum
+      // that does not equal the server-rendered display total => malformed.
+      const walletCreditPence = wallet.walletCreditPence
+      const externalPaymentPence = wallet.externalPaymentPence
+      const providerPaymentRequired = wallet.providerPaymentRequired
+      const sum =
+        isNonNegInt(walletCreditPence) && isNonNegInt(externalPaymentPence)
+          ? walletCreditPence + externalPaymentPence
+          : Number.NaN
+      const validWallet =
+        wallet.useCredit === true &&
+        isNonNegInt(walletCreditPence) &&
+        isNonNegInt(externalPaymentPence) &&
+        typeof providerPaymentRequired === 'boolean' &&
+        Number.isSafeInteger(sum) &&
+        sum === displayTotalPence
+      if (!validWallet) {
+        releaseForRetry()
+        return
+      }
+
+      const externalPence = externalPaymentPence as number
+      const providerRequired = providerPaymentRequired as boolean
+
+      // Only two consistent combinations are permitted; every other pairing is
+      // contradictory and must call NO payment provider.
+      const isFullyFunded = externalPence === 0 && providerRequired === false
+      const isPartial = externalPence > 0 && providerRequired === true
 
       // Branch C — fully WTF Credit-funded: never call a PSP. Confirm directly.
-      if (externalPaymentPence === 0 && providerPaymentRequired === false) {
+      if (isFullyFunded) {
         setStatus('Confirming your entry…')
         const confirmRes = await fetch('/api/checkout/confirm', {
           method: 'POST',
@@ -219,7 +245,10 @@ export function CheckoutReviewClient({
           return
         }
 
-        if (typeof confirmJson.award !== 'object' || confirmJson.award === null) {
+        // Award must be a NON-NULL, NON-ARRAY object. Arrays, primitives and
+        // null are malformed and must NOT navigate to success.
+        const award = confirmJson.award
+        if (typeof award !== 'object' || award === null || Array.isArray(award)) {
           releaseForRetry()
           return
         }
@@ -231,8 +260,16 @@ export function CheckoutReviewClient({
 
       // Branch B — partial WTF Credit (external payment still due). Wallet
       // partial payments ALWAYS use the implemented Acquired route (never SumUp).
-      setStatus('Taking you to secure payment…')
-      await goToAcquired(ref)
+      if (isPartial) {
+        setStatus('Taking you to secure payment…')
+        await goToAcquired(ref)
+        return
+      }
+
+      // Contradictory split (external 0 + providerPaymentRequired true, or
+      // external > 0 + providerPaymentRequired false). Fail locally; call no PSP.
+      releaseForRetry()
+      return
     } catch {
       releaseForRetry()
     }

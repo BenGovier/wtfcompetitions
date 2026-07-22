@@ -13,8 +13,15 @@ export const metadata = {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+// Strict decimal-integer syntax for query params. These reject whitespace
+// padding, exponent notation (1e2), decimals, signs, empty strings and arrays
+// because Number(...) is only ever applied AFTER a successful regex match.
+const QTY_RE = /^[1-9]\d{0,2}$/ // 1–999 by syntax; range re-checked to 1–500
+const BUNDLE_PENCE_RE = /^\d+$/ // non-negative integer, no sign/decimal/exponent
+
+// Non-negative SAFE integer guard (also rejects values above MAX_SAFE_INTEGER).
 const isNonNegInt = (v: unknown): v is number =>
-  typeof v === 'number' && Number.isFinite(v) && Number.isInteger(v) && v >= 0
+  typeof v === 'number' && Number.isSafeInteger(v) && v >= 0
 
 const PAGE_BG =
   'min-h-[calc(100vh-4rem)] bg-[radial-gradient(circle_at_top,_#3a0f4f_0%,_#1b0b2b_40%,_#0e0618_100%)] text-white'
@@ -61,13 +68,22 @@ export default async function CheckoutReviewPage({ searchParams }: ReviewPagePro
     return <InvalidState />
   }
 
+  // qty must match strict integer syntax, THEN be within 1–500.
+  if (!QTY_RE.test(qtyRaw)) {
+    return <InvalidState />
+  }
   const qty = Number(qtyRaw)
-  if (!Number.isInteger(qty) || qty < 1 || qty > 500) {
+  if (!Number.isSafeInteger(qty) || qty < 1 || qty > 500) {
     return <InvalidState />
   }
 
   let requestedBundlePence: number | null = null
   if (bundleRaw !== undefined) {
+    // Optional bundle price: strict non-negative integer syntax, THEN a finite
+    // safe non-negative integer value.
+    if (!BUNDLE_PENCE_RE.test(bundleRaw)) {
+      return <InvalidState />
+    }
     const parsed = Number(bundleRaw)
     if (!isNonNegInt(parsed)) {
       return <InvalidState />

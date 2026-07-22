@@ -83,6 +83,10 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
 
   const router = useRouter()
 
+  // Synchronous navigation latch. Prevents a rapid double-click from pushing the
+  // review route twice, while remaining recoverable if navigation fails.
+  const navLatch = useRef(false)
+
   // Ref retained on the fixed mobile purchase bar (used only as an anchor; the
   // previous height-measuring spacer was removed because page-level bottom
   // clearance already keeps the last content clear of the fixed bar).
@@ -266,6 +270,9 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
       return
     }
 
+    // Ignore a rapid second click while a navigation is already in flight.
+    if (navLatch.current) return
+    navLatch.current = true
     setIsProcessing(true)
     setError(null)
 
@@ -276,7 +283,16 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
       params.set("bundlePricePence", String(selectedBundle.price_pence))
     }
 
-    router.push(`/checkout/review?${params.toString()}`)
+    try {
+      router.push(`/checkout/review?${params.toString()}`)
+    } catch {
+      // A synchronous navigation failure is recoverable: reset the latch/state
+      // so the customer can retry. Successful navigation unmounts the component
+      // and keeps the latch set.
+      navLatch.current = false
+      setIsProcessing(false)
+      setError("Something went wrong. Please try again.")
+    }
   }
 
   /* ---- Compact custom quantity control ----
