@@ -99,7 +99,7 @@ export async function POST(request: Request) {
   const { data: intent, error: lookupErr } = await svc
     .from('checkout_intents')
     .select(
-      'id, ref, user_id, state, total_pence, provider_transaction_id, provider_status, provider_payload',
+      'id, ref, user_id, state, total_pence, provider_transaction_id, provider_status, provider_payload, wallet_credit_requested, wallet_credit_pence, external_payment_pence',
     )
     .eq('ref', orderId)
     .maybeSingle()
@@ -248,8 +248,93 @@ export async function POST(request: Request) {
     webhookType === 'status_update' && status === 'success' && Boolean(transactionId)
 
   if (!eligibleToFulfil) {
+    // 8b-i) Terminal-failure wallet release.
+    //   Reached ONLY after the signature is verified, the body is parsed, and
+    //   the matching intent is found. The already-confirmed guard (8a) runs
+    //   first, so a confirmed/fulfilled order can never release. card_new is
+    //   handled and returned earlier, so it can never release either.
+    //
+    //   We release a held WTF Credit reservation only when ALL hold:
+    //     - this is a status_update webhook,
+    //     - the normalised status is on a STRICT terminal-failure allowlist
+    //       (the external payment definitively failed and cannot proceed —
+    //       success and non-terminal/unknown statuses are never released),
+    //     - the intent is a wallet order with a well-formed split that sums to
+    //       total_pence, and
+    //     - a reservation was actually held (wallet_credit_pence > 0).
+    //
+    //   The release RPC is service-role callable and idempotent; any error is
+    //   logged and never changes the webhook acknowledgement (still HTTP 200).
+    const normalizedStatus =
+      typeof status === 'string' ? status.trim().toLowerCase() : ''
+
+    // Strict allowlist of Acquired statuses that represent a terminal FAILURE
+    // of the payment attempt (never a success, never a still-in-flight state).
+    const TERMINAL_FAILURE_STATUSES = new Set<string>([
+      'declined',
+      'cancelled',
+      'canceled',
+      'error',
+      'blocked',
+      'expired',
+      'tds_expired',
+      'tds_failed',
+      'fraud',
+      'failed',
+      'void',
+      'voided',
+    ])
+
+    let walletReservationReleased = false
+
+    if (
+      webhookType === 'status_update' &&
+      TERMINAL_FAILURE_STATUSES.has(normalizedStatus)
+    ) {
+      const walletCreditRequested = intent.wallet_credit_requested === true
+      const walletCreditPence = intent.wallet_credit_pence
+      const externalPaymentPence = intent.external_payment_pence
+
+      const isNonNegInt = (v: unknown): v is number =>
+        typeof v === 'number' && Number.isFinite(v) && Number.isInteger(v) && v >= 0
+
+      const validSplit =
+        walletCreditRequested &&
+        isNonNegInt(walletCreditPence) &&
+        isNonNegInt(externalPaymentPence) &&
+        walletCreditPence + externalPaymentPence === intent.total_pence
+
+      // Only orders that actually reserved WTF Credit can be released.
+      if (validSplit && (walletCreditPence as number) > 0) {
+        try {
+          const { error: releaseErr } = await svc.rpc('wallet_release_checkout_reservation', {
+            p_checkout_intent_id: intent.id,
+            p_user_id: intent.user_id,
+            p_reason: `acquired_webhook_${normalizedStatus}`,
+          })
+          if (releaseErr) {
+            console.error(
+              `[webhooks/acquired] wallet_release_checkout_reservation failed for ref ${orderId}:`,
+              releaseErr.message,
+            )
+          } else {
+            walletReservationReleased = true
+          }
+        } catch (err: any) {
+          console.error(
+            `[webhooks/acquired] wallet_release_checkout_reservation threw for ref ${orderId}:`,
+            String(err?.message || err),
+          )
+        }
+      }
+    }
+
     return NextResponse.json(
-      { ...ackBase, fulfilment_status: 'not_success_status' },
+      {
+        ...ackBase,
+        fulfilment_status: 'not_success_status',
+        ...(walletReservationReleased ? { wallet_reservation_released: true } : {}),
+      },
       { status: 200, headers: noStore },
     )
   }
