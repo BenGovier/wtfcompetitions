@@ -76,7 +76,9 @@ export async function POST(request: Request) {
   // 4) Fetch the matching checkout_intents row.
   const { data: intent, error: intentErr } = await svc
     .from('checkout_intents')
-    .select('id, ref, user_id, total_pence, currency, state, campaign_id, provider_customer_id')
+    .select(
+      'id, ref, user_id, total_pence, currency, state, campaign_id, provider_customer_id, wallet_credit_requested, wallet_credit_pence, external_payment_pence',
+    )
     .eq('ref', ref)
     .single()
 
@@ -111,6 +113,81 @@ export async function POST(request: Request) {
       { ok: false, error: 'Missing campaign' },
       { status: 422, headers: noStore },
     )
+  }
+
+  // 5b) Determine the AUTHORITATIVE provider amount (WTF Credit aware).
+  //     The amount charged by Acquired is derived entirely from the persisted
+  //     checkout_intents row — a client-supplied amount is NEVER read here.
+  //     - Normal (non-wallet) order: preserve existing behaviour → charge
+  //       total_pence, and never touch wallet_reservations.
+  //     - Wallet order: require a well-formed split that sums exactly to
+  //       total_pence, charge only the external remainder, and (for partial
+  //       orders) require a valid, active, unexpired reservation.
+  const totalPence = intent.total_pence as number
+  const walletCreditRequested = intent.wallet_credit_requested === true
+  let providerAmountPence = totalPence
+
+  if (walletCreditRequested) {
+    const walletCreditPence = intent.wallet_credit_pence
+    const externalPaymentPence = intent.external_payment_pence
+
+    const isNonNegInt = (v: unknown): v is number =>
+      typeof v === 'number' && Number.isFinite(v) && Number.isInteger(v) && v >= 0
+
+    const validSplit =
+      isNonNegInt(walletCreditPence) &&
+      isNonNegInt(externalPaymentPence) &&
+      walletCreditPence + externalPaymentPence === totalPence
+
+    if (!validSplit) {
+      // Log safely with the checkout reference only — never raw amounts beyond
+      // the expected total (which is already server-derived, not client data).
+      console.error(
+        `[payments/acquired] invalid wallet split for ref ${ref} (expected total ${totalPence})`,
+      )
+      return NextResponse.json(
+        { ok: false, error: 'invalid_wallet_split' },
+        { status: 409, headers: noStore },
+      )
+    }
+
+    // Fully wallet-funded: no external payment is required, so Acquired must not
+    // be called. This route does not confirm or fulfil the checkout.
+    if (externalPaymentPence === 0) {
+      return NextResponse.json(
+        { ok: false, error: 'provider_payment_not_required' },
+        { status: 409, headers: noStore },
+      )
+    }
+
+    // Partial-wallet order: verify the reservation in a single batched row query.
+    // Normal non-wallet checkouts never reach this branch, so they never query
+    // wallet_reservations.
+    if (walletCreditPence > 0) {
+      const { data: reservation, error: reservationErr } = await svc
+        .from('wallet_reservations')
+        .select('id, checkout_intent_id, user_id, amount_pence, status, expires_at')
+        .eq('checkout_intent_id', intent.id)
+        .eq('user_id', intent.user_id)
+        .eq('amount_pence', walletCreditPence)
+        .eq('status', 'active')
+        .gt('expires_at', new Date().toISOString())
+        .maybeSingle()
+
+      if (reservationErr || !reservation) {
+        console.error(
+          `[payments/acquired] wallet reservation invalid for ref ${ref}`,
+          reservationErr?.message ?? '(no active reservation)',
+        )
+        return NextResponse.json(
+          { ok: false, error: 'wallet_reservation_invalid' },
+          { status: 409, headers: noStore },
+        )
+      }
+    }
+
+    // Charge only the external remainder.
+    providerAmountPence = externalPaymentPence
   }
 
   // 6) Env vars. Per Acquired support, Hosted Checkout payment-links must NOT
@@ -557,8 +634,10 @@ export async function POST(request: Request) {
     }
   }
 
-  // 8) Create Acquired payment link.
-  const amountDecimal = parseFloat((intent.total_pence / 100).toFixed(2))
+  // 8) Create Acquired payment link. The amount is the authoritative,
+  //    server-derived provider amount: total_pence for a normal order, or the
+  //    external remainder for a wallet order (see step 5b). Never client input.
+  const amountDecimal = parseFloat((providerAmountPence / 100).toFixed(2))
 
   // Minimum Hosted Checkout request per Acquired support: Company-Id only,
   // no MID/public key/signing keys, and only the transaction object (no
