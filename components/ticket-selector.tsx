@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -79,6 +80,8 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
   const [hasAcceptedTerms, setHasAcceptedTerms] = useState(true)
   const [qtyBump, setQtyBump] = useState(false)
   const [mounted, setMounted] = useState(false)
+
+  const router = useRouter()
 
   // Ref retained on the fixed mobile purchase bar (used only as an anchor; the
   // previous height-measuring spacer was removed because page-level bottom
@@ -250,132 +253,30 @@ export function TicketSelector({ basePrice, bundles: rawBundles, campaignId, sol
     setTimeout(() => setQtyBump(false), 200)
   }
 
-  const handleEnter = async () => {
+  // The campaign selector no longer creates a checkout intent or opens the
+  // payment provider. It validates locally (terms + quantity) and hands off to
+  // the dedicated review route, which is the ONLY place a checkout is created.
+  const handleEnter = () => {
     if (!hasAcceptedTerms) {
       setError("Please confirm you are 18+ and agree to the T&Cs before entering.")
       return
     }
+    if (!Number.isFinite(qty) || qty < 1 || remaining === 0) {
+      setError("Please choose a valid ticket quantity.")
+      return
+    }
+
     setIsProcessing(true)
     setError(null)
 
-    try {
-      const payload: { campaignId: string; qty: number; bundlePricePence?: number } = {
-        campaignId,
-        qty,
-      }
-      if (selectedBundle) {
-        payload.bundlePricePence = selectedBundle.price_pence
-      }
-
-      const res = await fetch('/api/checkout/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-
-      if (res.status === 401) {
-        const returnTo = window.location.pathname + window.location.search
-        window.location.href = `/auth/login?redirect=${encodeURIComponent(returnTo)}`
-        return
-      }
-
-      let json: Record<string, unknown>
-      try {
-        json = await res.json()
-      } catch {
-        setError('Something went wrong. Please try again.')
-        return
-      }
-
-      if (res.ok && json.ok && json.ref) {
-        // Provider routing is controlled by NEXT_PUBLIC_CHECKOUT_PROVIDER, which
-        // gives us a production rollback switch (no hostname logic):
-        //   "acquired"    -> Acquired Hosted Checkout (live in production)
-        //   "sumup"/unset -> SumUp (fallback / rollback)
-        const useAcquired =
-          (process.env.NEXT_PUBLIC_CHECKOUT_PROVIDER ?? '').trim().toLowerCase() === 'acquired'
-
-        if (useAcquired) {
-          const acquiredRes = await fetch('/api/payments/acquired/create-checkout', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ref: json.ref }),
-          })
-
-          if (acquiredRes.status === 401) {
-            const returnTo = window.location.pathname + window.location.search
-            window.location.href = `/auth/login?redirect=${encodeURIComponent(returnTo)}`
-            return
-          }
-
-          let acquiredJson: Record<string, unknown>
-          try {
-            acquiredJson = await acquiredRes.json()
-          } catch {
-            setError('Something went wrong. Please try again.')
-            return
-          }
-
-          if (acquiredRes.ok && acquiredJson.ok && acquiredJson.checkout_url) {
-            const checkoutUrl = acquiredJson.checkout_url as string
-            if (!checkoutUrl || typeof checkoutUrl !== 'string') {
-              throw new Error('Missing checkout_url')
-            }
-            window.location.assign(checkoutUrl)
-            return
-          }
-
-          setError((acquiredJson.error as string) || 'Something went wrong. Please try again.')
-          return
-        }
-
-        const sumupRes = await fetch('/api/payments/sumup/create-checkout', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ref: json.ref }),
-        })
-
-        if (sumupRes.status === 401) {
-          const returnTo = window.location.pathname + window.location.search
-          window.location.href = `/auth/login?redirect=${encodeURIComponent(returnTo)}`
-          return
-        }
-
-        let sumupJson: Record<string, unknown>
-        try {
-          sumupJson = await sumupRes.json()
-        } catch {
-          setError('Something went wrong. Please try again.')
-          return
-        }
-
-        if (sumupRes.ok && sumupJson.ok && sumupJson.checkoutUrl) {
-          const checkoutUrl = sumupJson.checkoutUrl as string
-          if (!checkoutUrl || typeof checkoutUrl !== 'string') {
-            throw new Error('Missing checkoutUrl')
-          }
-          window.location.assign(checkoutUrl)
-          return
-        }
-
-        setError((sumupJson.error as string) || 'Something went wrong. Please try again.')
-        return
-      }
-
-      if (json.error === 'sold_out' && remaining !== null && remaining > 0) {
-        setError(`Only ${remaining} ticket${remaining === 1 ? '' : 's'} left!`)
-        setQty(Math.min(qty, remaining))
-        setSelectedBundle(null)
-      } else if (json.error === 'sold_out') {
-        setError('This giveaway is sold out!')
-      } else {
-        setError((json.error as string) || 'Something went wrong. Please try again.')
-      }
-    } catch {
-      setError("We couldn't start checkout. Please try again.")
-    } finally {
-      setIsProcessing(false)
+    const params = new URLSearchParams()
+    params.set("campaignId", campaignId)
+    params.set("qty", String(qty))
+    if (selectedBundle) {
+      params.set("bundlePricePence", String(selectedBundle.price_pence))
     }
+
+    router.push(`/checkout/review?${params.toString()}`)
   }
 
   /* ---- Compact custom quantity control ----
