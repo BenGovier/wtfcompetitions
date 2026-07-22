@@ -72,11 +72,29 @@ async function handleJobProcessing(request: NextRequest) {
     if (expireError) {
       console.error('[jobs/run] wallet_expire_due_reservations error=', expireError.message)
     } else {
-      const expiredReservations = (expireData as any)?.expired_reservations ?? 0
-      const releasedPence = (expireData as any)?.released_pence ?? 0
-      console.log(
-        `[jobs/run] wallet_expire_due_reservations expired=${expiredReservations} released_pence=${releasedPence}`,
-      )
+      // Treat the RPC payload as untrusted. Accept a numeric counter only when
+      // it is a finite, non-negative integer — never coerce strings, nulls,
+      // floats, negatives, arrays or objects.
+      const toNonNegativeInteger = (value: unknown): number | null =>
+        typeof value === 'number' &&
+        Number.isFinite(value) &&
+        Number.isInteger(value) &&
+        value >= 0
+          ? value
+          : null
+
+      const payload = (expireData ?? null) as Record<string, unknown> | null
+      const expiredReservations = toNonNegativeInteger(payload?.expired_reservations)
+      const releasedPence = toNonNegativeInteger(payload?.released_pence)
+
+      // Only log when the sweep actually did something. A zero-result (or
+      // unparseable) sweep stays silent so the every-minute cron does not emit
+      // noise. Never log raw payloads or any per-user/reservation identifiers.
+      if ((expiredReservations ?? 0) > 0 || (releasedPence ?? 0) > 0) {
+        console.log(
+          `[jobs/run] wallet_expire_due_reservations expired=${expiredReservations ?? 0} released_pence=${releasedPence ?? 0}`,
+        )
+      }
     }
   } catch (expireErr) {
     console.error(
