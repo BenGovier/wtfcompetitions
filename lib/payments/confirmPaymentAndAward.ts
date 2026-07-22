@@ -109,7 +109,7 @@ export function normalizeAwardPayload(raw: unknown): AwardPayload {
 export type ConfirmArgs = {
   ref: string
   userId: string
-  provider: 'sumup' | 'paypal' | 'debug' | 'acquired'
+  provider: 'sumup' | 'paypal' | 'debug' | 'acquired' | 'wallet'
 }
 
 // ---------------------------------------------------------------------------
@@ -134,7 +134,9 @@ export async function confirmPaymentAndAward(args: ConfirmArgs): Promise<AwardPa
   // 1) Load checkout_intent by ref
   const { data: intent, error: intentErr } = await supabase
     .from('checkout_intents')
-    .select('id, ref, user_id, state, provider_session_id, currency, total_pence')
+    .select(
+      'id, ref, user_id, state, provider_session_id, currency, total_pence, wallet_credit_requested, wallet_credit_pence, external_payment_pence',
+    )
     .eq('ref', ref)
     .single()
 
@@ -149,6 +151,112 @@ export async function confirmPaymentAndAward(args: ConfirmArgs): Promise<AwardPa
 
   // 3) If not yet confirmed, try SumUp confirm-on-return; otherwise reject
   if (intent.state !== 'confirmed') {
+    // Wallet: fully WTF-credit-funded order (external payment of £0). No
+    // external PSP is involved, so the browser is allowed to confirm directly.
+    // Before running the award RPC we prove, from the persisted
+    // checkout_intents split (never a client-supplied amount), that the order
+    // is genuinely 100% wallet-funded and that a matching active, unexpired
+    // reservation exists. These are fail-fast application guards only — the DB
+    // confirm transaction (BEFORE UPDATE trigger
+    // trg_wallet_capture_on_checkout_confirm → wallet_capture_checkout_reservation)
+    // remains authoritative for races and atomic capture, rolling the entire
+    // confirmation back if capture fails.
+    if (args.provider === 'wallet') {
+      // Wallet state allowlist. 'confirmed' never reaches here — it falls
+      // through to the idempotent RPC read below (no reservation required, no
+      // new debit/allocation). Only 'pending' may proceed; any other state is
+      // rejected with a fixed internal code and never calls the award RPC.
+      if (intent.state !== 'pending') {
+        throw new Error('wallet_confirmation_invalid_state')
+      }
+
+      const isNonNegInt = (v: unknown): v is number =>
+        typeof v === 'number' && Number.isFinite(v) && Number.isInteger(v) && v >= 0
+      const isPositiveInt = (v: unknown): v is number =>
+        typeof v === 'number' && Number.isFinite(v) && Number.isInteger(v) && v > 0
+
+      const walletCreditRequested = intent.wallet_credit_requested === true
+      const walletCreditPence = intent.wallet_credit_pence
+      const externalPaymentPence = intent.external_payment_pence
+      const totalPence = intent.total_pence
+
+      const validSplit =
+        isPositiveInt(totalPence) &&
+        walletCreditRequested &&
+        isNonNegInt(walletCreditPence) &&
+        isNonNegInt(externalPaymentPence) &&
+        walletCreditPence + externalPaymentPence === totalPence &&
+        externalPaymentPence === 0 &&
+        walletCreditPence === totalPence &&
+        walletCreditPence > 0
+
+      if (!validSplit) {
+        throw new Error('invalid_wallet_split')
+      }
+
+      // Explicit active/unexpired reservation precheck (service-role client).
+      const nowIso = new Date().toISOString()
+      const { data: reservation, error: reservationErr } = await supabase
+        .from('wallet_reservations')
+        .select('id, checkout_intent_id, user_id, amount_pence, status, expires_at')
+        .eq('checkout_intent_id', intent.id)
+        .eq('user_id', userId)
+        .eq('amount_pence', walletCreditPence)
+        .eq('status', 'active')
+        .gt('expires_at', nowIso)
+        .maybeSingle()
+
+      const reservationValid =
+        !reservationErr &&
+        !!reservation &&
+        reservation.checkout_intent_id === intent.id &&
+        reservation.user_id === userId &&
+        reservation.amount_pence === walletCreditPence &&
+        reservation.status === 'active' &&
+        typeof reservation.expires_at === 'string' &&
+        new Date(reservation.expires_at).getTime() > Date.now()
+
+      if (!reservationValid) {
+        // Never expose the raw query error or database details.
+        throw new Error('wallet_reservation_invalid')
+      }
+
+      const { data: rpcData, error: rpcErr } = await supabase.rpc('confirm_payment_and_award', {
+        p_ref: intent.ref,
+        p_user_id: userId,
+      })
+      if (rpcErr) {
+        // Map known server-side wallet capture/balance conditions to a single
+        // safe client-facing code. The raw DB message is logged (ref only) and
+        // never thrown to the client.
+        const KNOWN_WALLET_RPC_CONDITIONS = [
+          'wallet_reservation_missing',
+          'wallet_reservation_not_active',
+          'wallet_reservation_owner_mismatch',
+          'wallet_reservation_amount_mismatch',
+          'wallet_reserved_balance_mismatch',
+          'wallet_insufficient_balance',
+          'wallet_existing_spend_mismatch',
+          'wallet_checkout_not_found',
+          'wallet_checkout_owner_mismatch',
+        ]
+        const rpcMessage = rpcErr.message || ''
+        if (KNOWN_WALLET_RPC_CONDITIONS.some((code) => rpcMessage.includes(code))) {
+          console.error(
+            `[confirmPaymentAndAward][wallet] reservation unavailable for ref=${intent.ref}`,
+          )
+          throw new Error('wallet_reservation_unavailable')
+        }
+        // Unrelated RPC failure: preserve existing behaviour (route maps this to
+        // a generic 500; the raw DB detail never reaches the client).
+        throw new Error(`RPC confirm_payment_and_award failed: ${rpcMessage}`)
+      }
+      if (!rpcData || typeof rpcData !== 'object') {
+        throw new Error('invalid_rpc_payload')
+      }
+      return normalizeAwardPayload(rpcData)
+    }
+
     // Acquired: the browser NEVER confirms or fulfils. The verified Acquired
     // webhook is the only path that runs the RPC and flips state to
     // 'confirmed'. Until it does, we return the pending poll state so the

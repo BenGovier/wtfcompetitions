@@ -320,10 +320,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: 'Invalid JSON body' }, { status: 400, ...NO_STORE })
   }
 
-  const ref = body.ref as string | undefined
+  // Treat the raw body value as untrusted. Require a string that is non-empty
+  // after trimming and bounded to 128 chars; reject whitespace-only/unbounded
+  // refs. All subsequent processing uses the trimmed value.
+  const rawRef: unknown = body.ref
   const provider = body.provider as string | undefined
 
-  if (!ref || typeof ref !== 'string') {
+  if (typeof rawRef !== 'string') {
+    return NextResponse.json({ ok: false, error: 'Missing or invalid ref' }, { status: 400, ...NO_STORE })
+  }
+  const ref = rawRef.trim()
+  if (ref.length === 0 || ref.length > 128) {
     return NextResponse.json({ ok: false, error: 'Missing or invalid ref' }, { status: 400, ...NO_STORE })
   }
 
@@ -332,11 +339,19 @@ export async function POST(request: Request) {
   // fulfils Acquired from the browser — it only reads an already-confirmed
   // intent (confirmed by the verified Acquired webhook) or returns the 409
   // awaiting_provider_confirmation poll state.
+  //
+  // 'wallet' is accepted for fully WTF-credit-funded orders (external payment
+  // of £0). No external PSP is involved, so the browser confirms directly.
+  // confirmPaymentAndAward enforces that the intent is genuinely 100%
+  // wallet-funded before it may run the award RPC, and the DB confirm
+  // transaction captures the wallet reservation atomically (rolling everything
+  // back if capture fails).
   if (
     provider !== 'sumup' &&
     provider !== 'paypal' &&
     provider !== 'debug' &&
-    provider !== 'acquired'
+    provider !== 'acquired' &&
+    provider !== 'wallet'
   ) {
     return NextResponse.json({ ok: false, error: 'Missing or invalid provider' }, { status: 400, ...NO_STORE })
   }
@@ -519,6 +534,21 @@ export async function POST(request: Request) {
 
     if (message.includes('user_id mismatch') || message.includes('caller does not own')) {
       return NextResponse.json({ ok: false, error: 'forbidden_checkout_intent_owner' }, { status: 403, ...NO_STORE })
+    }
+
+    // Wallet-only fixed error → HTTP mapping. Applied ONLY for the wallet
+    // provider so Acquired/SumUp/PayPal/debug error handling is unchanged. Each
+    // fixed internal code maps to a 409 with the same code as the client error.
+    if (provider === 'wallet') {
+      const WALLET_409_ERRORS = new Set([
+        'invalid_wallet_split',
+        'wallet_reservation_invalid',
+        'wallet_reservation_unavailable',
+        'wallet_confirmation_invalid_state',
+      ])
+      if (WALLET_409_ERRORS.has(message)) {
+        return NextResponse.json({ ok: false, error: message }, { status: 409, ...NO_STORE })
+      }
     }
 
     console.error('[checkout/confirm] Error detail:', {
