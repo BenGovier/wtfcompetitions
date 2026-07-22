@@ -248,93 +248,87 @@ export async function POST(request: Request) {
     webhookType === 'status_update' && status === 'success' && Boolean(transactionId)
 
   if (!eligibleToFulfil) {
-    // 8b-i) Terminal-failure wallet release.
+    // 8b-i) Terminal-failure wallet release (best-effort, internal only).
     //   Reached ONLY after the signature is verified, the body is parsed, and
     //   the matching intent is found. The already-confirmed guard (8a) runs
-    //   first, so a confirmed/fulfilled order can never release. card_new is
-    //   handled and returned earlier, so it can never release either.
+    //   first, and card_new is handled/returned earlier, so neither a confirmed
+    //   order nor card_new can ever reach this release path.
     //
-    //   We release a held WTF Credit reservation only when ALL hold:
+    //   A held WTF Credit reservation is released ONLY when EVERY condition
+    //   holds:
     //     - this is a status_update webhook,
-    //     - the normalised status is on a STRICT terminal-failure allowlist
-    //       (the external payment definitively failed and cannot proceed —
-    //       success and non-terminal/unknown statuses are never released),
+    //     - the normalised status is exactly one of the strict five-status
+    //       terminal-failure allowlist below (the external payment definitively
+    //       failed — success, pending/processing, authorised and any unknown or
+    //       ambiguous status are never released and stay reserved until the
+    //       15-minute expiry engine handles them),
+    //     - the intent is NOT already confirmed,
     //     - the intent is a wallet order with a well-formed split that sums to
-    //       total_pence, and
-    //     - a reservation was actually held (wallet_credit_pence > 0).
+    //       total_pence,
+    //     - a reservation was actually held (wallet_credit_pence is a finite
+    //       positive integer), and
+    //     - the intent has a user_id.
     //
-    //   The release RPC is service-role callable and idempotent; any error is
-    //   logged and never changes the webhook acknowledgement (still HTTP 200).
+    //   The release RPC is service-role callable and idempotent. Any error is
+    //   logged and NEVER alters the webhook acknowledgement, which is byte-for-
+    //   byte identical to the pre-Phase-3B response.
     const normalizedStatus =
       typeof status === 'string' ? status.trim().toLowerCase() : ''
 
-    // Strict allowlist of Acquired statuses that represent a terminal FAILURE
-    // of the payment attempt (never a success, never a still-in-flight state).
-    const TERMINAL_FAILURE_STATUSES = new Set<string>([
-      'declined',
-      'cancelled',
-      'canceled',
-      'error',
-      'blocked',
-      'expired',
-      'tds_expired',
-      'tds_failed',
-      'fraud',
-      'failed',
-      'void',
-      'voided',
-    ])
+    // Strict terminal-failure allowlist → internal release reason. Raw provider
+    // status text is never persisted as the reason.
+    const TERMINAL_FAILURE_REASONS: Record<string, string> = {
+      failed: 'acquired_failed',
+      declined: 'acquired_declined',
+      cancelled: 'acquired_cancelled',
+      canceled: 'acquired_cancelled',
+      expired: 'acquired_expired',
+    }
 
-    let walletReservationReleased = false
+    const releaseReason = TERMINAL_FAILURE_REASONS[normalizedStatus]
 
-    if (
+    const walletCreditPence = intent.wallet_credit_pence
+    const externalPaymentPence = intent.external_payment_pence
+
+    const isPositiveInt = (v: unknown): v is number =>
+      typeof v === 'number' && Number.isFinite(v) && Number.isInteger(v) && v > 0
+
+    const isNonNegInt = (v: unknown): v is number =>
+      typeof v === 'number' && Number.isFinite(v) && Number.isInteger(v) && v >= 0
+
+    const releaseEligible =
       webhookType === 'status_update' &&
-      TERMINAL_FAILURE_STATUSES.has(normalizedStatus)
-    ) {
-      const walletCreditRequested = intent.wallet_credit_requested === true
-      const walletCreditPence = intent.wallet_credit_pence
-      const externalPaymentPence = intent.external_payment_pence
+      Boolean(releaseReason) &&
+      intent.state !== 'confirmed' &&
+      intent.wallet_credit_requested === true &&
+      isPositiveInt(walletCreditPence) &&
+      isNonNegInt(externalPaymentPence) &&
+      (walletCreditPence as number) + (externalPaymentPence as number) === intent.total_pence &&
+      Boolean(intent.user_id)
 
-      const isNonNegInt = (v: unknown): v is number =>
-        typeof v === 'number' && Number.isFinite(v) && Number.isInteger(v) && v >= 0
-
-      const validSplit =
-        walletCreditRequested &&
-        isNonNegInt(walletCreditPence) &&
-        isNonNegInt(externalPaymentPence) &&
-        walletCreditPence + externalPaymentPence === intent.total_pence
-
-      // Only orders that actually reserved WTF Credit can be released.
-      if (validSplit && (walletCreditPence as number) > 0) {
-        try {
-          const { error: releaseErr } = await svc.rpc('wallet_release_checkout_reservation', {
-            p_checkout_intent_id: intent.id,
-            p_user_id: intent.user_id,
-            p_reason: `acquired_webhook_${normalizedStatus}`,
-          })
-          if (releaseErr) {
-            console.error(
-              `[webhooks/acquired] wallet_release_checkout_reservation failed for ref ${orderId}:`,
-              releaseErr.message,
-            )
-          } else {
-            walletReservationReleased = true
-          }
-        } catch (err: any) {
+    if (releaseEligible) {
+      try {
+        const { error: releaseErr } = await svc.rpc('wallet_release_checkout_reservation', {
+          p_checkout_intent_id: intent.id,
+          p_user_id: intent.user_id,
+          p_reason: releaseReason,
+        })
+        if (releaseErr) {
           console.error(
-            `[webhooks/acquired] wallet_release_checkout_reservation threw for ref ${orderId}:`,
-            String(err?.message || err),
+            `[webhooks/acquired] wallet_release_checkout_reservation failed for ref ${orderId}:`,
+            releaseErr.message,
           )
         }
+      } catch (err: any) {
+        console.error(
+          `[webhooks/acquired] wallet_release_checkout_reservation threw for ref ${orderId}:`,
+          String(err?.message || err),
+        )
       }
     }
 
     return NextResponse.json(
-      {
-        ...ackBase,
-        fulfilment_status: 'not_success_status',
-        ...(walletReservationReleased ? { wallet_reservation_released: true } : {}),
-      },
+      { ...ackBase, fulfilment_status: 'not_success_status' },
       { status: 200, headers: noStore },
     )
   }
