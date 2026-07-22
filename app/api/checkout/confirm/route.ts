@@ -332,11 +332,19 @@ export async function POST(request: Request) {
   // fulfils Acquired from the browser — it only reads an already-confirmed
   // intent (confirmed by the verified Acquired webhook) or returns the 409
   // awaiting_provider_confirmation poll state.
+  //
+  // 'wallet' is accepted for fully WTF-credit-funded orders (external payment
+  // of £0). No external PSP is involved, so the browser confirms directly.
+  // confirmPaymentAndAward enforces that the intent is genuinely 100%
+  // wallet-funded before it may run the award RPC, and the DB confirm
+  // transaction captures the wallet reservation atomically (rolling everything
+  // back if capture fails).
   if (
     provider !== 'sumup' &&
     provider !== 'paypal' &&
     provider !== 'debug' &&
-    provider !== 'acquired'
+    provider !== 'acquired' &&
+    provider !== 'wallet'
   ) {
     return NextResponse.json({ ok: false, error: 'Missing or invalid provider' }, { status: 400, ...NO_STORE })
   }

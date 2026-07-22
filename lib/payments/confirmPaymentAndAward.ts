@@ -109,7 +109,7 @@ export function normalizeAwardPayload(raw: unknown): AwardPayload {
 export type ConfirmArgs = {
   ref: string
   userId: string
-  provider: 'sumup' | 'paypal' | 'debug' | 'acquired'
+  provider: 'sumup' | 'paypal' | 'debug' | 'acquired' | 'wallet'
 }
 
 // ---------------------------------------------------------------------------
@@ -134,7 +134,9 @@ export async function confirmPaymentAndAward(args: ConfirmArgs): Promise<AwardPa
   // 1) Load checkout_intent by ref
   const { data: intent, error: intentErr } = await supabase
     .from('checkout_intents')
-    .select('id, ref, user_id, state, provider_session_id, currency, total_pence')
+    .select(
+      'id, ref, user_id, state, provider_session_id, currency, total_pence, wallet_credit_requested, wallet_credit_pence, external_payment_pence',
+    )
     .eq('ref', ref)
     .single()
 
@@ -149,6 +151,57 @@ export async function confirmPaymentAndAward(args: ConfirmArgs): Promise<AwardPa
 
   // 3) If not yet confirmed, try SumUp confirm-on-return; otherwise reject
   if (intent.state !== 'confirmed') {
+    // Wallet: fully WTF-credit-funded order (external payment of £0). No
+    // external PSP is involved, so the browser is allowed to confirm directly.
+    // Before running the award RPC we MUST prove the order is genuinely 100%
+    // wallet-funded — otherwise a caller could confirm an order that still owes
+    // an external payment without ever paying it. We rely on the persisted
+    // checkout_intents split (never a client-supplied amount):
+    //   - wallet_credit_requested is true,
+    //   - wallet_credit_pence / external_payment_pence / total_pence are all
+    //     finite non-negative integers,
+    //   - external_payment_pence === 0,
+    //   - wallet_credit_pence === total_pence, and
+    //   - wallet_credit_pence > 0 (a real reservation is being captured).
+    // The DB confirm transaction (BEFORE UPDATE trigger
+    // trg_wallet_capture_on_checkout_confirm → wallet_capture_checkout_reservation)
+    // captures the reservation atomically and rolls the entire confirmation
+    // back if capture fails, so the reservation itself stays DB-authoritative.
+    if (args.provider === 'wallet') {
+      const isNonNegInt = (v: unknown): v is number =>
+        typeof v === 'number' && Number.isFinite(v) && Number.isInteger(v) && v >= 0
+
+      const walletCreditRequested = intent.wallet_credit_requested === true
+      const walletCreditPence = intent.wallet_credit_pence
+      const externalPaymentPence = intent.external_payment_pence
+      const totalPence = intent.total_pence
+
+      const fullyWalletFunded =
+        walletCreditRequested &&
+        isNonNegInt(walletCreditPence) &&
+        isNonNegInt(externalPaymentPence) &&
+        isNonNegInt(totalPence) &&
+        externalPaymentPence === 0 &&
+        walletCreditPence === totalPence &&
+        walletCreditPence > 0
+
+      if (!fullyWalletFunded) {
+        throw new Error('wallet_confirmation_not_permitted')
+      }
+
+      const { data: rpcData, error: rpcErr } = await supabase.rpc('confirm_payment_and_award', {
+        p_ref: ref,
+        p_user_id: userId,
+      })
+      if (rpcErr) {
+        throw new Error(`RPC confirm_payment_and_award failed: ${rpcErr.message}`)
+      }
+      if (!rpcData || typeof rpcData !== 'object') {
+        throw new Error('invalid_rpc_payload')
+      }
+      return normalizeAwardPayload(rpcData)
+    }
+
     // Acquired: the browser NEVER confirms or fulfils. The verified Acquired
     // webhook is the only path that runs the RPC and flips state to
     // 'confirmed'. Until it does, we return the pending poll state so the
