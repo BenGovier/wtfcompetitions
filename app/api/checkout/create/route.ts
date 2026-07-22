@@ -193,20 +193,72 @@ export async function POST(request: Request) {
 
   // 4b) WTF Credit prepare — ONLY when the user explicitly opted in.
   //     When useCredit === false we never touch the wallet and the response is
-  //     byte-for-byte identical to before. The RPC is authenticated-user
-  //     callable, ownership-checked, atomic, and idempotent for the same
-  //     checkout intent, so retries/double-submits are safe. It is called
-  //     through the same RLS-scoped client (never service role). A failure here
-  //     must NOT roll back or fail the already-created checkout intent; it is
-  //     logged and the standard response is still returned.
+  //     byte-for-byte identical to before. When useCredit === true this MUST
+  //     fail closed: any RPC error, malformed result, or split that does not add
+  //     up to the authoritative totalPence returns a 500 and prevents the client
+  //     from proceeding to a payment provider. No client-supplied wallet amount
+  //     is ever read — the DB function computes the split. The RPC is called via
+  //     the same RLS-scoped client (never service role) and is ownership-checked
+  //     and idempotent for the same checkout intent.
+  let walletResponse:
+    | {
+        useCredit: true
+        walletCreditPence: number
+        externalPaymentPence: number
+        reservationId: string | null
+        expiresAt: string | null
+        providerPaymentRequired: boolean
+        alreadyPrepared: boolean
+      }
+    | undefined
+
   if (useCredit) {
-    const { error: walletErr } = await supabase.rpc('wallet_prepare_checkout', {
+    const { data: walletData, error: walletErr } = await supabase.rpc('wallet_prepare_checkout', {
       p_checkout_intent_id: checkoutIntent.id,
       p_user_id: resolvedUser.id,
       p_use_credit: true,
     })
+
     if (walletErr) {
-      console.error('[checkout/create] wallet_prepare_checkout failed:', walletErr.message)
+      // Do not expose the raw RPC/database error to the client.
+      console.error(`[checkout/create] wallet_prepare_checkout RPC failed for ref ${ref}:`, walletErr.message)
+      return NextResponse.json({ ok: false, error: 'wallet_prepare_failed' }, { status: 500, ...NO_STORE })
+    }
+
+    // The RPC may return a single object or a single-row array; normalise it.
+    const result = (Array.isArray(walletData) ? walletData[0] : walletData) as
+      | Record<string, unknown>
+      | null
+      | undefined
+
+    const walletCreditPence = result?.wallet_credit_pence
+    const externalPaymentPence = result?.external_payment_pence
+
+    const isNonNegInt = (v: unknown): v is number =>
+      typeof v === 'number' && Number.isFinite(v) && Number.isInteger(v) && v >= 0
+
+    const validSplit =
+      !!result &&
+      isNonNegInt(walletCreditPence) &&
+      isNonNegInt(externalPaymentPence) &&
+      walletCreditPence + externalPaymentPence === totalPence
+
+    if (!validSplit) {
+      console.error(
+        `[checkout/create] wallet_prepare_checkout returned an invalid split for ref ${ref} ` +
+          `(expected total ${totalPence})`,
+      )
+      return NextResponse.json({ ok: false, error: 'wallet_prepare_failed' }, { status: 500, ...NO_STORE })
+    }
+
+    walletResponse = {
+      useCredit: true,
+      walletCreditPence,
+      externalPaymentPence,
+      reservationId: typeof result.reservation_id === 'string' ? result.reservation_id : null,
+      expiresAt: typeof result.expires_at === 'string' ? result.expires_at : null,
+      providerPaymentRequired: externalPaymentPence > 0,
+      alreadyPrepared: result.already_prepared === true,
     }
   }
 
@@ -218,5 +270,10 @@ export async function POST(request: Request) {
     userId: resolvedUser.id,
   })
 
-  return NextResponse.json({ ok: true, ref, providerSessionId }, NO_STORE)
+  return NextResponse.json(
+    walletResponse
+      ? { ok: true, ref, providerSessionId, wallet: walletResponse }
+      : { ok: true, ref, providerSessionId },
+    NO_STORE,
+  )
 }
