@@ -694,7 +694,37 @@ export function CheckoutReviewClient({
             </div>
           )}
 
-          {/* WTF Credit — only when the customer actually has credit available */}
+          {/* WTF Credit — compact zero-balance panel when no credit is available.
+              Never hidden: keeps the feature discoverable. */}
+          {!walletVisible && (
+            <div className="rounded-2xl border border-border bg-muted/30 p-3">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-2.5">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
+                    <Wallet className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                  </span>
+                  <span className="text-sm font-semibold text-foreground">
+                    WTF Credit
+                    <span className="block text-xs font-normal text-muted-foreground">
+                      Balance:{' '}
+                      <span className="font-bold tabular-nums">{formatGBP(0)}</span>
+                    </span>
+                  </span>
+                </div>
+                <Switch
+                  id="use-credit"
+                  checked={false}
+                  disabled
+                  aria-label="WTF Credit unavailable — no balance"
+                />
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Win WTF Credit in selected instant-win competitions
+              </p>
+            </div>
+          )}
+
+          {/* WTF Credit — premium gold panel when the customer has credit available */}
           {walletVisible && (
             <div className="rounded-2xl border border-yellow-500/40 bg-gradient-to-br from-yellow-500/15 to-amber-500/5 p-4 shadow-[0_0_30px_rgba(247,166,0,0.15)]">
               <div className="flex items-start justify-between gap-4">
