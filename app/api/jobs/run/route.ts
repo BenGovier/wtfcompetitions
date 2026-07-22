@@ -87,13 +87,21 @@ async function handleJobProcessing(request: NextRequest) {
       const expiredReservations = toNonNegativeInteger(payload?.expired_reservations)
       const releasedPence = toNonNegativeInteger(payload?.released_pence)
 
-      // Only log when the sweep actually did something. A zero-result (or
-      // unparseable) sweep stays silent so the every-minute cron does not emit
-      // noise. Never log raw payloads or any per-user/reservation identifiers.
-      if ((expiredReservations ?? 0) > 0 || (releasedPence ?? 0) > 0) {
-        console.log(
-          `[jobs/run] wallet_expire_due_reservations expired=${expiredReservations ?? 0} released_pence=${releasedPence ?? 0}`,
-        )
+      // Explicitly branch on validity. Both counters must validate; if either
+      // is invalid we emit a single bounded error (never the raw payload) and
+      // skip the success log. A valid zero-result sweep stays silent so the
+      // every-minute cron does not emit noise. Logs never include raw payloads
+      // or any per-user/reservation identifiers.
+      const countersValid =
+        expiredReservations !== null && releasedPence !== null
+
+      if (!countersValid) {
+        console.error('[jobs/run] wallet expiry sweep returned invalid counters')
+      } else if (expiredReservations > 0 || releasedPence > 0) {
+        console.info('[jobs/run] wallet expiry sweep completed', {
+          expiredReservations,
+          releasedPence,
+        })
       }
     }
   } catch (expireErr) {
