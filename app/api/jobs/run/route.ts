@@ -54,6 +54,63 @@ async function handleJobProcessing(request: NextRequest) {
     auth: { persistSession: false }
   })
 
+  // 2b. Expire due wallet reservations (best-effort, service-role).
+  //   Runs on every authenticated invocation of this cron/manual trigger,
+  //   BEFORE any job is locked or processed. It calls the confirmed existing
+  //   SECURITY DEFINER RPC public.wallet_expire_due_reservations, which
+  //   atomically expires only wallet_reservations rows with status='active'
+  //   AND expires_at <= now(), releasing their reserved balances. The RPC is
+  //   safe to invoke repeatedly (idempotent). Any error here is logged and
+  //   swallowed so it can never interfere with normal job processing or the
+  //   route's response — the every-minute cadence retries it next run.
+  try {
+    const { data: expireData, error: expireError } = await supabase.rpc(
+      'wallet_expire_due_reservations',
+      { p_user_limit: 500 },
+    )
+
+    if (expireError) {
+      console.error('[jobs/run] wallet_expire_due_reservations error=', expireError.message)
+    } else {
+      // Treat the RPC payload as untrusted. Accept a numeric counter only when
+      // it is a finite, non-negative integer — never coerce strings, nulls,
+      // floats, negatives, arrays or objects.
+      const toNonNegativeInteger = (value: unknown): number | null =>
+        typeof value === 'number' &&
+        Number.isFinite(value) &&
+        Number.isInteger(value) &&
+        value >= 0
+          ? value
+          : null
+
+      const payload = (expireData ?? null) as Record<string, unknown> | null
+      const expiredReservations = toNonNegativeInteger(payload?.expired_reservations)
+      const releasedPence = toNonNegativeInteger(payload?.released_pence)
+
+      // Explicitly branch on validity. Both counters must validate; if either
+      // is invalid we emit a single bounded error (never the raw payload) and
+      // skip the success log. A valid zero-result sweep stays silent so the
+      // every-minute cron does not emit noise. Logs never include raw payloads
+      // or any per-user/reservation identifiers.
+      const countersValid =
+        expiredReservations !== null && releasedPence !== null
+
+      if (!countersValid) {
+        console.error('[jobs/run] wallet expiry sweep returned invalid counters')
+      } else if (expiredReservations > 0 || releasedPence > 0) {
+        console.info('[jobs/run] wallet expiry sweep completed', {
+          expiredReservations,
+          releasedPence,
+        })
+      }
+    }
+  } catch (expireErr) {
+    console.error(
+      '[jobs/run] wallet_expire_due_reservations threw=',
+      expireErr instanceof Error ? expireErr.message : String(expireErr),
+    )
+  }
+
   try {
     // 3. Lock ONE eligible job
     const nowIso = new Date().toISOString()
