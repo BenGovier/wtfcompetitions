@@ -21,13 +21,31 @@ import {
 } from "@/components/ui/select"
 import { createClient } from "@/lib/supabase/client"
 import type { Campaign } from "@/lib/types/campaign"
-import type { InstantWinPrizeRow } from "@/lib/types/instantWins"
-import { Trash2, Save, Upload, Plus, Wand2 } from "lucide-react"
+import type { InstantWinPrizeRow, InstantWinFulfilmentType } from "@/lib/types/instantWins"
+import { Trash2, Save, Upload, Plus } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 
 interface CampaignFormProps {
   campaign: Campaign
   isNew: boolean
+}
+
+// Format integer pence into an editable GBP string (e.g. 50050 -> "500.50").
+function penceToGbpInput(pence: number | null | undefined): string {
+  if (pence == null || !Number.isFinite(pence)) return ""
+  return (pence / 100).toFixed(2)
+}
+
+// Format integer pence for display (e.g. 50050 -> "£500.00").
+function penceToDisplay(pence: number | null | undefined): string {
+  if (pence == null || !Number.isFinite(pence)) return "—"
+  return `£${(pence / 100).toFixed(2)}`
+}
+
+const FULFILMENT_LABELS: Record<InstantWinFulfilmentType, string> = {
+  cash: "Cash",
+  wallet_credit: "WTF Credit",
+  manual: "Manual",
 }
 
 export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
@@ -55,26 +73,40 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
   const [iwSaving, setIwSaving] = useState<Record<string, boolean>>({})
   const [iwUploadingId, setIwUploadingId] = useState<string | null>(null)
 
-  // Ladder generator state
-  const [ladderCount, setLadderCount] = useState(5)
-  const [ladderStart, setLadderStart] = useState(0.01)
-  const [ladderEnd, setLadderEnd] = useState(0.95)
+  // Editable GBP amount string per prize (kept separate so the server always
+  // parses the raw string into authoritative pence).
+  const [amountInputs, setAmountInputs] = useState<Record<string, string>>({})
+  // Editable quantity string per prize. Quantity is reconciled via a dedicated
+  // action/route, NOT the ordinary details Save.
+  const [qtyInputs, setQtyInputs] = useState<Record<string, string>>({})
+  const [qtySaving, setQtySaving] = useState<Record<string, boolean>>({})
 
   const campaignId = formData.id || campaign.id
 
-  // Helper to check if a prize row is dirty (changed from original)
+  // Details dirty-check EXCLUDES quantity (quantity has its own update action).
   const isPrizeDirty = useCallback((prize: InstantWinPrizeRow): boolean => {
     const orig = iwOriginal[prize.id]
     if (!orig) return true // New row, not in original = dirty
+    const amountChanged =
+      (amountInputs[prize.id] ?? "") !== penceToGbpInput(orig.prize_value_pence)
     return (
       prize.prize_title !== orig.prize_title ||
       prize.prize_value_text !== orig.prize_value_text ||
-      prize.unlock_ratio !== orig.unlock_ratio ||
       prize.image_url !== orig.image_url ||
-      prize.quantity !== orig.quantity ||
-      prize.is_high_value !== orig.is_high_value
+      prize.is_high_value !== orig.is_high_value ||
+      prize.fulfilment_type !== orig.fulfilment_type ||
+      amountChanged
     )
-  }, [iwOriginal])
+  }, [iwOriginal, amountInputs])
+
+  // Quantity dirty-check is independent of the details dirty state.
+  const isQuantityDirty = useCallback((prize: InstantWinPrizeRow): boolean => {
+    const raw = qtyInputs[prize.id]
+    if (raw === undefined) return false
+    const n = Number(raw)
+    if (!Number.isInteger(n)) return raw.trim() !== String(prize.quantity)
+    return n !== prize.quantity
+  }, [qtyInputs])
 
   // Get all dirty prizes
   const getDirtyPrizes = useCallback((): InstantWinPrizeRow[] => {
@@ -104,8 +136,16 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
       setInstantWins(items)
       // Store original values for dirty checking
       const originals: Record<string, InstantWinPrizeRow> = {}
-      items.forEach((item: InstantWinPrizeRow) => { originals[item.id] = { ...item } })
+      const amounts: Record<string, string> = {}
+      const qtys: Record<string, string> = {}
+      items.forEach((item: InstantWinPrizeRow) => {
+        originals[item.id] = { ...item }
+        amounts[item.id] = penceToGbpInput(item.prize_value_pence)
+        qtys[item.id] = String(item.quantity ?? 1)
+      })
       setIwOriginal(originals)
+      setAmountInputs(amounts)
+      setQtyInputs(qtys)
     } catch (err: any) {
       setIwError(err?.message || 'Failed to fetch instant wins')
     } finally {
@@ -180,24 +220,22 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
       const dirtyPrizes = getDirtyPrizes()
       console.log('[instant-debug][client] dirtyPrizes count=', dirtyPrizes.length)
       if (dirtyPrizes.length > 0) {
-        console.log('[instant-debug][client] dirtyPrizes details=', dirtyPrizes.map(p => ({ id: p.id, title: p.prize_title, quantity: p.quantity })))
-        // Validate all prizes upfront before any network calls
+        // Validate prize details upfront: cash / WTF Credit require a positive amount.
         for (const prize of dirtyPrizes) {
-          const ratio = Number(prize.unlock_ratio)
-          if (isNaN(ratio) || ratio < 0 || ratio > 1) {
-            console.log('[instant-debug][client] validation failed for prize=', prize.id, 'ratio=', ratio)
-            setSaveError(`Unlock ratio for "${prize.prize_title}" must be between 0 and 1`)
-            setIsSaving(false)
-            return
+          const amountStr = (amountInputs[prize.id] ?? "").trim()
+          if (prize.fulfilment_type === 'cash' || prize.fulfilment_type === 'wallet_credit') {
+            const amountNum = Number(amountStr)
+            if (amountStr === "" || !Number.isFinite(amountNum) || amountNum <= 0) {
+              setSaveError(`"${prize.prize_title}" needs a prize amount greater than £0 for ${FULFILMENT_LABELS[prize.fulfilment_type]} fulfilment`)
+              setIsSaving(false)
+              return
+            }
           }
         }
 
-        console.log('[instant-debug][client] starting parallel prize saves...')
-        // Save all prizes in parallel
+        // Save all prize DETAILS in parallel (never quantity — that is reconciled separately).
         const saveResults = await Promise.all(
           dirtyPrizes.map(async (prize) => {
-            const ratio = Number(prize.unlock_ratio)
-            console.log('[instant-debug][client] sending PUT for prize=', prize.id)
             const res = await fetch('/api/admin/instant-win-prizes', {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
@@ -206,18 +244,17 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
                 campaign_id: prize.campaign_id,
                 prize_title: prize.prize_title,
                 prize_value_text: prize.prize_value_text,
-                unlock_ratio: ratio,
+                fulfilment_type: prize.fulfilment_type,
+                prize_value_gbp: amountInputs[prize.id] ?? null,
                 image_url:
                   prize.image_url ??
                   iwOriginal[prize.id]?.image_url ??
                   null,
-                quantity: prize.quantity,
                 is_high_value: prize.is_high_value,
               }),
             })
             const json = await res.json()
-            console.log('[instant-debug][client] PUT result for prize=', prize.id, 'ok=', res.ok && json.ok, 'error=', json.error)
-            return { prize, ok: res.ok && json.ok, error: json.error }
+            return { prize, ok: res.ok && json.ok, error: json.error, updated: json.updated }
           })
         )
         console.log('[instant-debug][client] all prize saves complete, results count=', saveResults.length)
@@ -232,15 +269,23 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
           return
         }
 
-        // Update originals after successful save
-        console.log('[instant-debug][client] updating iwOriginal for dirty prizes')
+        // Sync rows + originals + amount inputs from the authoritative server rows.
+        const updatedById: Record<string, InstantWinPrizeRow> = {}
+        saveResults.forEach((r) => { if (r.updated) updatedById[r.updated.id] = r.updated })
+        setInstantWins((prev) => prev.map((p) => updatedById[p.id] ? { ...p, ...updatedById[p.id] } : p))
         setIwOriginal((prev) => {
           const updated = { ...prev }
-          dirtyPrizes.forEach((p) => { updated[p.id] = { ...p } })
+          dirtyPrizes.forEach((p) => {
+            updated[p.id] = updatedById[p.id] ? { ...updatedById[p.id] } : { ...p }
+          })
           return updated
         })
+        setAmountInputs((prev) => {
+          const next = { ...prev }
+          Object.values(updatedById).forEach((row) => { next[row.id] = penceToGbpInput(row.prize_value_pence) })
+          return next
+        })
         instantWinsSaved = true
-        console.log('[instant-debug][client] instantWinsSaved=true')
       }
 
       // 2. Save campaign
@@ -293,18 +338,41 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
 
   // --- Instant Win handlers ---
 
+  // Track a newly created prize row in local state, including its editable inputs.
+  function trackNewPrizes(newItems: InstantWinPrizeRow[]) {
+    setInstantWins((prev) => [...prev, ...newItems])
+    setIwOriginal((prev) => {
+      const updated = { ...prev }
+      newItems.forEach((item) => { updated[item.id] = { ...item } })
+      return updated
+    })
+    setAmountInputs((prev) => {
+      const next = { ...prev }
+      newItems.forEach((item) => { next[item.id] = penceToGbpInput(item.prize_value_pence) })
+      return next
+    })
+    setQtyInputs((prev) => {
+      const next = { ...prev }
+      newItems.forEach((item) => { next[item.id] = String(item.quantity ?? 1) })
+      return next
+    })
+  }
+
   async function handleAddPrize() {
     if (!campaignId) return
     setIwError(null)
     try {
+      // New prizes default to Manual fulfilment with no amount (always valid).
+      // The admin then picks the fulfilment type and amount and saves details.
       const res = await fetch('/api/admin/instant-win-prizes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           campaign_id: campaignId,
           prize_title: 'New Prize',
-          unlock_ratio: 0.5,
           quantity: 1,
+          fulfilment_type: 'manual',
+          prize_value_gbp: null,
         }),
       })
       const json = await res.json()
@@ -312,72 +380,32 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
         setIwError(json.error || 'Failed to add prize')
         return
       }
-      const newItems = json.items || []
-      setInstantWins((prev) => [...prev, ...newItems])
-      // Track new items as originals (they're already saved)
-      setIwOriginal((prev) => {
-        const updated = { ...prev }
-        newItems.forEach((item: InstantWinPrizeRow) => { updated[item.id] = { ...item } })
-        return updated
-      })
+      trackNewPrizes(json.items || [])
     } catch (err: any) {
       setIwError(err?.message || 'Failed to add prize')
     }
   }
 
-  async function handleGenerateLadder() {
-    if (!campaignId || ladderCount < 1) return
-    setIwError(null)
-    // Create a single grouped prize row with quantity = ladderCount
-    const items = [
-      {
-        campaign_id: campaignId,
-        prize_title: 'Balloon Pop',
-        unlock_ratio: ladderStart,
-        quantity: ladderCount,
-      },
-    ]
-
-    try {
-      const res = await fetch('/api/admin/instant-win-prizes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items }),
-      })
-      const json = await res.json()
-      if (!res.ok || !json.ok) {
-        setIwError(json.error || 'Failed to add prize')
-        return
-      }
-      const newItems = json.items || []
-      setInstantWins((prev) => [...prev, ...newItems])
-      // Track new items as originals (they're already saved)
-      setIwOriginal((prev) => {
-        const updated = { ...prev }
-        newItems.forEach((item: InstantWinPrizeRow) => { updated[item.id] = { ...item } })
-        return updated
-      })
-    } catch (err: any) {
-      setIwError(err?.message || 'Failed to add prize')
-    }
-  }
-
-  function handlePrizeFieldChange(id: string, field: keyof InstantWinPrizeRow, value: string | number | null) {
+  function handlePrizeFieldChange(id: string, field: keyof InstantWinPrizeRow, value: string | number | boolean | null) {
     setInstantWins((prev) =>
       prev.map((p) => (p.id === id ? { ...p, [field]: value } : p))
     )
   }
 
   async function handleSavePrize(prize: InstantWinPrizeRow) {
-    const ratio = Number(prize.unlock_ratio)
-    if (isNaN(ratio) || ratio < 0 || ratio > 1) {
-      setIwError(`Unlock ratio for "${prize.prize_title}" must be between 0 and 1`)
-      return
+    const amountStr = (amountInputs[prize.id] ?? "").trim()
+    if (prize.fulfilment_type === 'cash' || prize.fulfilment_type === 'wallet_credit') {
+      const amountNum = Number(amountStr)
+      if (amountStr === "" || !Number.isFinite(amountNum) || amountNum <= 0) {
+        setIwError(`"${prize.prize_title}" needs a prize amount greater than £0 for ${FULFILMENT_LABELS[prize.fulfilment_type]} fulfilment`)
+        return
+      }
     }
 
     setIwSaving((prev) => ({ ...prev, [prize.id]: true }))
     setIwError(null)
     try {
+      // Details save only. Quantity is reconciled via handleUpdateQuantity.
       const res = await fetch('/api/admin/instant-win-prizes', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -386,9 +414,9 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
           campaign_id: prize.campaign_id,
           prize_title: prize.prize_title,
           prize_value_text: prize.prize_value_text,
-          unlock_ratio: ratio,
+          fulfilment_type: prize.fulfilment_type,
+          prize_value_gbp: amountInputs[prize.id] ?? null,
           image_url: prize.image_url,
-          quantity: prize.quantity,
           is_high_value: prize.is_high_value,
         }),
       })
@@ -396,13 +424,55 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
       if (!res.ok || !json.ok) {
         setIwError(json.error || 'Failed to save prize')
       } else {
-        // Update original to mark as clean
-        setIwOriginal((prev) => ({ ...prev, [prize.id]: { ...prize } }))
+        const updated: InstantWinPrizeRow | undefined = json.updated
+        if (updated) {
+          setInstantWins((prev) => prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)))
+          setIwOriginal((prev) => ({ ...prev, [updated.id]: { ...updated } }))
+          setAmountInputs((prev) => ({ ...prev, [updated.id]: penceToGbpInput(updated.prize_value_pence) }))
+        } else {
+          setIwOriginal((prev) => ({ ...prev, [prize.id]: { ...prize } }))
+        }
       }
     } catch (err: any) {
       setIwError(err?.message || 'Failed to save prize')
     } finally {
       setIwSaving((prev) => ({ ...prev, [prize.id]: false }))
+    }
+  }
+
+  async function handleUpdateQuantity(prize: InstantWinPrizeRow) {
+    const raw = (qtyInputs[prize.id] ?? "").trim()
+    const n = Number(raw)
+    if (!Number.isInteger(n) || n < 1 || n > 10000) {
+      setIwError(`Quantity for "${prize.prize_title}" must be a whole number between 1 and 10,000`)
+      return
+    }
+
+    setQtySaving((prev) => ({ ...prev, [prize.id]: true }))
+    setIwError(null)
+    try {
+      const res = await fetch('/api/admin/instant-win-prizes/quantity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: prize.id, campaign_id: prize.campaign_id, quantity: n }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) {
+        setIwError(json.message || json.error || 'Failed to update quantity')
+        return
+      }
+      const confirmed = json.quantity ?? n
+      setInstantWins((prev) => prev.map((p) => (p.id === prize.id ? { ...p, quantity: confirmed } : p)))
+      setIwOriginal((prev) => prev[prize.id] ? { ...prev, [prize.id]: { ...prev[prize.id], quantity: confirmed } } : prev)
+      setQtyInputs((prev) => ({ ...prev, [prize.id]: String(confirmed) }))
+      toast({
+        title: "Quantity updated",
+        description: `${prize.prize_title} now has ${confirmed} slot${confirmed === 1 ? '' : 's'}.`,
+      })
+    } catch (err: any) {
+      setIwError(err?.message || 'Failed to update quantity')
+    } finally {
+      setQtySaving((prev) => ({ ...prev, [prize.id]: false }))
     }
   }
 
@@ -415,7 +485,11 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
       })
       const json = await res.json()
       if (!res.ok || !json.ok) {
-        setIwError(json.error || 'Failed to delete prize')
+        setIwError(
+          json.error === 'prize_cannot_be_deleted'
+            ? 'This prize cannot be deleted because some prize positions are already assigned or won.'
+            : json.error || 'Failed to delete prize',
+        )
         return
       }
       setInstantWins((prev) => prev.filter((p) => p.id !== prizeId))
@@ -423,6 +497,16 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
         const updated = { ...prev }
         delete updated[prizeId]
         return updated
+      })
+      setAmountInputs((prev) => {
+        const next = { ...prev }
+        delete next[prizeId]
+        return next
+      })
+      setQtyInputs((prev) => {
+        const next = { ...prev }
+        delete next[prizeId]
+        return next
       })
     } catch (err: any) {
       setIwError(err?.message || 'Failed to delete prize')
@@ -946,10 +1030,12 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-xs text-muted-foreground">
-            Unlock ratio = ticketsSold / maxTicketsTotal threshold when prize becomes available.
+            Each prize has an explicit fulfilment type and an authoritative amount. Quantity is the number of
+            independent, individually winnable positions and is updated with its own &quot;Update quantity&quot; action.
           </p>
           <p className="text-xs text-blue-600 dark:text-blue-400">
-            The main &quot;Save Changes&quot; button will save any edited instant win rows automatically.
+            The main &quot;Save Changes&quot; button saves edited prize details automatically. Quantity changes are
+            applied separately.
           </p>
 
           {!campaignId ? (
@@ -958,40 +1044,6 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
             </p>
           ) : (
             <>
-              {/* Quick Add Prize */}
-              <div className="rounded-md border p-4 space-y-3">
-                <p className="text-sm font-medium">Quick Add Prize</p>
-                <div className="flex flex-wrap items-end gap-3">
-                  <div className="space-y-1">
-                    <Label className="text-xs">Quantity</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={100}
-                      className="w-20"
-                      value={ladderCount}
-                      onChange={(e) => setLadderCount(Number(e.target.value))}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Unlock Ratio</Label>
-                    <Input
-                      type="number"
-                      step={0.01}
-                      min={0}
-                      max={1}
-                      className="w-24"
-                      value={ladderStart}
-                      onChange={(e) => setLadderStart(Number(e.target.value))}
-                    />
-                  </div>
-                  <Button type="button" variant="outline" size="sm" onClick={handleGenerateLadder}>
-                    <Wand2 className="mr-1 h-4 w-4" />
-                    Generate
-                  </Button>
-                </div>
-              </div>
-
               {/* Add single */}
               <Button type="button" variant="outline" size="sm" onClick={handleAddPrize}>
                 <Plus className="mr-1 h-4 w-4" />
@@ -1043,38 +1095,43 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
                                 placeholder="Prize title"
                               />
                             </div>
-                            <div className="w-32 space-y-1">
-                              <Label className="text-xs">Value Text</Label>
+                            <div className="w-28 space-y-1">
+                              <Label className="text-xs">Prize amount (£)</Label>
+                              <Input
+                                inputMode="decimal"
+                                value={amountInputs[prize.id] ?? ''}
+                                onChange={(e) =>
+                                  setAmountInputs((prev) => ({ ...prev, [prize.id]: e.target.value }))
+                                }
+                                placeholder="e.g. 500 or 500.50"
+                              />
+                            </div>
+                            <div className="w-36 space-y-1">
+                              <Label className="text-xs">Fulfilment type</Label>
+                              <Select
+                                value={prize.fulfilment_type}
+                                onValueChange={(v) =>
+                                  handlePrizeFieldChange(prize.id, 'fulfilment_type', v as InstantWinFulfilmentType)
+                                }
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="cash">Cash</SelectItem>
+                                  <SelectItem value="wallet_credit">WTF Credit</SelectItem>
+                                  <SelectItem value="manual">Manual</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="w-40 space-y-1">
+                              <Label className="text-xs">Optional display text</Label>
                               <Input
                                 value={prize.prize_value_text || ''}
                                 onChange={(e) =>
                                   handlePrizeFieldChange(prize.id, 'prize_value_text', e.target.value || null)
                                 }
-                                placeholder="e.g. £50"
-                              />
-                            </div>
-                            <div className="w-20 space-y-1">
-                              <Label className="text-xs">Quantity</Label>
-                              <Input
-                                type="number"
-                                min={1}
-                                value={prize.quantity}
-                                onChange={(e) =>
-                                  handlePrizeFieldChange(prize.id, 'quantity', Math.max(1, Number(e.target.value)))
-                                }
-                              />
-                            </div>
-                            <div className="w-28 space-y-1">
-                              <Label className="text-xs">Unlock Ratio</Label>
-                              <Input
-                                type="number"
-                                step={0.01}
-                                min={0}
-                                max={1}
-                                value={prize.unlock_ratio}
-                                onChange={(e) =>
-                                  handlePrizeFieldChange(prize.id, 'unlock_ratio', Number(e.target.value))
-                                }
+                                placeholder="e.g. Added instantly"
                               />
                             </div>
                             <div className="flex items-center gap-2 pt-5">
@@ -1089,6 +1146,72 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
                                 High Value
                               </Label>
                             </div>
+                          </div>
+
+                          {/* Summary badges */}
+                          <div className="flex flex-wrap items-center gap-2 text-xs">
+                            <span className="rounded bg-muted px-2 py-0.5 font-medium">
+                              {penceToDisplay(prize.prize_value_pence)}
+                            </span>
+                            <span
+                              className={`rounded px-2 py-0.5 font-medium ${
+                                prize.fulfilment_type === 'wallet_credit'
+                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'
+                                  : prize.fulfilment_type === 'cash'
+                                    ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300'
+                                    : 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300'
+                              }`}
+                            >
+                              {prize.fulfilment_type === 'wallet_credit'
+                                ? 'WTF Credit'
+                                : prize.fulfilment_type === 'cash'
+                                  ? 'Cash'
+                                  : 'Manual fulfilment'}
+                            </span>
+                            <span className="rounded bg-muted px-2 py-0.5 text-muted-foreground">
+                              {`Qty ${prize.quantity}`}
+                            </span>
+                            {prize.is_high_value && (
+                              <span className="rounded bg-purple-100 px-2 py-0.5 font-medium text-purple-800 dark:bg-purple-950/40 dark:text-purple-300">
+                                High value
+                              </span>
+                            )}
+                          </div>
+
+                          {prize.fulfilment_type === 'wallet_credit' && (
+                            <p className="text-xs text-emerald-700 dark:text-emerald-400">
+                              This amount will be added automatically to the winner&apos;s WTF Credit balance.
+                            </p>
+                          )}
+
+                          {/* Quantity (reconciled separately from prize details) */}
+                          <div className="flex flex-wrap items-end gap-2">
+                            <div className="w-24 space-y-1">
+                              <Label className="text-xs">Quantity</Label>
+                              <Input
+                                type="number"
+                                min={1}
+                                max={10000}
+                                value={qtyInputs[prize.id] ?? String(prize.quantity)}
+                                onChange={(e) =>
+                                  setQtyInputs((prev) => ({ ...prev, [prize.id]: e.target.value }))
+                                }
+                              />
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={!!qtySaving[prize.id] || !isQuantityDirty(prize)}
+                              onClick={() => handleUpdateQuantity(prize)}
+                            >
+                              {qtySaving[prize.id] ? 'Updating…' : 'Update quantity'}
+                            </Button>
+                            {isQuantityDirty(prize) && (
+                              <span className="text-xs text-amber-600 dark:text-amber-400 self-center">
+                                Unsaved quantity
+                              </span>
+                            )}
                           </div>
 
                           {/* Image upload */}
