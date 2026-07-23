@@ -36,6 +36,9 @@ export type ReleaseRule = {
   eligibleTiers: InstantWinTier[]
 }
 
+/** Fulfilment method for an instant-win prize. Chosen explicitly by the admin. */
+export type InstantWinFulfilmentType = 'cash' | 'wallet_credit' | 'manual'
+
 /** DB-aligned row from instant_win_prizes table */
 export type InstantWinPrizeRow = {
   id: string
@@ -47,6 +50,10 @@ export type InstantWinPrizeRow = {
   quantity: number
   is_high_value: boolean
   created_at: string
+  /** Explicit fulfilment method. cash/wallet_credit require a positive amount. */
+  fulfilment_type: InstantWinFulfilmentType
+  /** Authoritative prize value in integer pence. Never parsed from the title. */
+  prize_value_pence: number | null
 }
 
 export type InstantWinAttemptLog = {
