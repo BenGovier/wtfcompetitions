@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { Radio } from "lucide-react"
+import { Radio, Wallet } from "lucide-react"
 import { canAccessRoute, type AdminRole } from "@/lib/admin/permissions"
 
 const navItems = [
@@ -12,6 +12,7 @@ const navItems = [
   { href: "/admin/campaigns", label: "Campaigns" },
   { href: "/admin/instant-wins", label: "Instant Wins" },
   { href: "/admin/entries", label: "Entries" },
+  { href: "/admin/wallets", label: "WTF Credit" },
   { href: "/admin/payouts", label: "Payouts" },
   { href: "/admin/reports", label: "Reports" },
   { href: "/admin/audit-logs", label: "Audit Logs" },
@@ -45,6 +46,9 @@ export function AdminSidebarNav({ role }: { role: AdminRole }) {
             >
               {item.href === "/admin/live-feed" && (
                 <Radio className="mr-2 inline-block h-4 w-4" />
+              )}
+              {item.href === "/admin/wallets" && (
+                <Wallet className="mr-2 inline-block h-4 w-4" />
               )}
               {item.label}
             </Link>
