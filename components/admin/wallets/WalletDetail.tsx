@@ -1,0 +1,365 @@
+"use client"
+
+import { useState, useEffect, useCallback } from "react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import { Loader2, ChevronLeft, ChevronRight } from "lucide-react"
+import { AddCreditDialog, type CreditSuccess } from "./AddCreditDialog"
+
+type Customer = { user_id: string; name: string; email: string; mobile: string | null }
+type Balances = { balance_pence: number; reserved_pence: number; available_pence: number }
+type Transaction = {
+  id: string
+  transaction_type: string
+  amount_pence: number
+  balance_after_pence: number
+  source_award_id: string | null
+  source_checkout_intent_id: string | null
+  admin_user_id: string | null
+  admin_email: string | null
+  reason: string | null
+  idempotency_key: string | null
+  internal_reference: string | null
+  created_at: string
+}
+type Reservation = {
+  id: string
+  checkout_intent_id: string | null
+  amount_pence: number
+  status: string
+  expires_at: string | null
+  captured_at: string | null
+  released_at: string | null
+  release_reason: string | null
+  created_at: string
+}
+
+function formatPence(pence: number): string {
+  return `£${(pence / 100).toFixed(2)}`
+}
+
+function formatSignedPence(pence: number): string {
+  const sign = pence >= 0 ? "+" : "-"
+  return `${sign}£${(Math.abs(pence) / 100).toFixed(2)}`
+}
+
+function formatDateTime(iso: string | null): string {
+  if (!iso) return "-"
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return "-"
+  return d.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
+const TX_TYPE_LABELS: Record<string, string> = {
+  instant_win_credit: "Instant win credit",
+  admin_credit: "Admin credit",
+  admin_debit: "Admin debit",
+  order_spend: "Order spend",
+  refund_credit: "Refund credit",
+  reversal: "Reversal",
+}
+
+function txTypeLabel(type: string): string {
+  return TX_TYPE_LABELS[type] ?? type
+}
+
+function reservationBadgeVariant(status: string): "default" | "secondary" | "outline" | "destructive" {
+  switch (status) {
+    case "active":
+      return "default"
+    case "captured":
+      return "secondary"
+    case "released":
+      return "outline"
+    case "expired":
+      return "destructive"
+    default:
+      return "outline"
+  }
+}
+
+export function WalletDetail({ userId }: { userId: string }) {
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [customer, setCustomer] = useState<Customer | null>(null)
+  const [balances, setBalances] = useState<Balances>({ balance_pence: 0, reserved_pence: 0, available_pence: 0 })
+  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [reservations, setReservations] = useState<Reservation[]>([])
+  const [page, setPage] = useState(1)
+  const [hasNext, setHasNext] = useState(false)
+
+  const fetchDetail = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/admin/wallets/${userId}?page=${page}&limit=50`)
+      const json = await res.json()
+      if (!res.ok || !json.ok) {
+        setError(json.error === "invalid_identifier" ? "Invalid customer reference." : "Failed to load wallet.")
+        return
+      }
+      setCustomer(json.customer)
+      setBalances(json.balances)
+      setTransactions(json.transactions ?? [])
+      setHasNext(json.transactionsHasNext ?? false)
+      setReservations(json.reservations ?? [])
+    } catch {
+      setError("Network error. Please try again.")
+    } finally {
+      setLoading(false)
+    }
+  }, [userId, page])
+
+  useEffect(() => {
+    fetchDetail()
+  }, [fetchDetail])
+
+  const handleCredited = useCallback(
+    (result: CreditSuccess) => {
+      // Update visible balances immediately from the validated RPC response.
+      setBalances({
+        balance_pence: result.balancePence,
+        reserved_pence: result.reservedPence,
+        available_pence: result.availablePence,
+      })
+      // Refresh the ledger from the first page so the new entry appears.
+      if (page !== 1) {
+        setPage(1)
+      } else {
+        fetchDetail()
+      }
+    },
+    [page, fetchDetail],
+  )
+
+  if (loading && !customer) {
+    return (
+      <Card>
+        <CardContent className="flex items-center justify-center py-16">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (error && !customer) {
+    return (
+      <Card>
+        <CardContent className="py-16 text-center text-destructive">{error}</CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Identity */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Customer</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-start justify-between gap-4">
+          <dl className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
+            <div className="flex gap-2">
+              <dt className="text-muted-foreground">Name:</dt>
+              <dd className="font-medium">{customer?.name ?? "Unknown"}</dd>
+            </div>
+            <div className="flex gap-2">
+              <dt className="text-muted-foreground">Email:</dt>
+              <dd>{customer?.email ?? "-"}</dd>
+            </div>
+            <div className="flex gap-2">
+              <dt className="text-muted-foreground">Mobile:</dt>
+              <dd>{customer?.mobile ?? "-"}</dd>
+            </div>
+            <div className="flex gap-2">
+              <dt className="text-muted-foreground">User ID:</dt>
+              <dd className="font-mono text-xs">{customer?.user_id}</dd>
+            </div>
+          </dl>
+          {customer && (
+            <AddCreditDialog
+              userId={customer.user_id}
+              customerName={customer.name}
+              customerEmail={customer.email}
+              onCredited={handleCredited}
+            />
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Balance cards */}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total WTF Credit</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold tabular-nums">{formatPence(balances.balance_pence)}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Reserved</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold tabular-nums">{formatPence(balances.reserved_pence)}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Available</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold tabular-nums">{formatPence(balances.available_pence)}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Transactions */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Transactions</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {transactions.length === 0 ? (
+            <p className="py-12 text-center text-muted-foreground">No transactions yet.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Type</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead className="text-right">Balance after</TableHead>
+                  <TableHead>Reason</TableHead>
+                  <TableHead>Source</TableHead>
+                  <TableHead>Admin</TableHead>
+                  <TableHead>Date</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {transactions.map((t) => {
+                  const source = t.source_award_id
+                    ? `Award ${t.source_award_id.slice(0, 8)}`
+                    : t.source_checkout_intent_id
+                      ? `Checkout ${t.source_checkout_intent_id.slice(0, 8)}`
+                      : t.internal_reference
+                        ? t.internal_reference
+                        : "-"
+                  return (
+                    <TableRow key={t.id}>
+                      <TableCell className="whitespace-nowrap font-medium">{txTypeLabel(t.transaction_type)}</TableCell>
+                      <TableCell
+                        className={`text-right tabular-nums ${
+                          t.amount_pence >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"
+                        }`}
+                      >
+                        {formatSignedPence(t.amount_pence)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{formatPence(t.balance_after_pence)}</TableCell>
+                      <TableCell className="max-w-[220px] truncate" title={t.reason ?? undefined}>
+                        {t.reason ?? "-"}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-sm text-muted-foreground">{source}</TableCell>
+                      <TableCell className="whitespace-nowrap text-sm">{t.admin_email ?? "-"}</TableCell>
+                      <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                        {formatDateTime(t.created_at)}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Transactions pagination */}
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          Showing {transactions.length} transaction{transactions.length === 1 ? "" : "s"} (Page {page})
+        </p>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1 || loading}
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Previous
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setPage((p) => p + 1)} disabled={!hasNext || loading}>
+            Next
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Reservations (read-only) */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent reservations</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {reservations.length === 0 ? (
+            <p className="py-12 text-center text-muted-foreground">No reservations.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>Checkout</TableHead>
+                  <TableHead>Expires</TableHead>
+                  <TableHead>Captured</TableHead>
+                  <TableHead>Released</TableHead>
+                  <TableHead>Created</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {reservations.map((r) => (
+                  <TableRow key={r.id}>
+                    <TableCell>
+                      <Badge variant={reservationBadgeVariant(r.status)}>{r.status}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{formatPence(r.amount_pence)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                      {r.checkout_intent_id ? r.checkout_intent_id.slice(0, 8) : "-"}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                      {formatDateTime(r.expires_at)}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                      {formatDateTime(r.captured_at)}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                      {formatDateTime(r.released_at)}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                      {formatDateTime(r.created_at)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
