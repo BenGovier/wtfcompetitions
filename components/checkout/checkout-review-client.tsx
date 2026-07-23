@@ -623,7 +623,7 @@ export function CheckoutReviewClient({
                       <span className="min-w-0 text-sm font-semibold text-yellow-100">
                         Use WTF Credit
                         <span className="block text-xs font-normal text-yellow-200/80">
-                          Available:{' '}
+                          Available WTF Credit{' '}
                           <span className="font-bold tabular-nums text-yellow-200">
                             {formatGBP(availableWalletPence)}
                           </span>

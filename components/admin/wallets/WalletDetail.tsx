@@ -93,6 +93,31 @@ function reservationBadgeVariant(status: string): "default" | "secondary" | "out
   }
 }
 
+// Customer-friendly labels for the stored (unchanged) reservation statuses.
+// The underlying values in the database are never modified.
+function holdStatusLabel(status: string): string {
+  switch (status) {
+    case "active":
+      return "Active hold"
+    case "captured":
+      return "Used"
+    case "released":
+      return "Released"
+    case "expired":
+      return "Expired"
+    default:
+      return status
+  }
+}
+
+// Single "completed or expiry" timestamp per hold: when it was used/released we
+// show that moment; otherwise we show when the hold expires.
+function holdCompletedOrExpiry(r: Reservation): string {
+  if (r.status === "captured") return formatDateTime(r.captured_at)
+  if (r.status === "released") return formatDateTime(r.released_at)
+  return formatDateTime(r.expires_at)
+}
+
 export function WalletDetail({ userId }: { userId: string }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -310,48 +335,46 @@ export function WalletDetail({ userId }: { userId: string }) {
         </div>
       </div>
 
-      {/* Reservations (read-only) */}
+      {/* Checkout credit holds (read-only) — kept secondary, beneath the wallet
+          balance and transaction history. Displays customer-friendly labels
+          for the underlying (unchanged) reservation statuses. */}
       <Card>
         <CardHeader>
-          <CardTitle>Recent reservations</CardTitle>
+          <CardTitle>Checkout credit holds</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Credit is temporarily held when a customer starts checkout. It is either used when payment completes or
+            released automatically if checkout is abandoned.
+          </p>
         </CardHeader>
         <CardContent className="p-0">
           {reservations.length === 0 ? (
-            <p className="py-12 text-center text-muted-foreground">No reservations.</p>
+            <p className="py-12 text-center text-muted-foreground">No checkout credit holds.</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
-                  <TableHead>Checkout</TableHead>
-                  <TableHead>Expires</TableHead>
-                  <TableHead>Captured</TableHead>
-                  <TableHead>Released</TableHead>
+                  <TableHead>Checkout reference</TableHead>
                   <TableHead>Created</TableHead>
+                  <TableHead>Completed / expires</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {reservations.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell>
-                      <Badge variant={reservationBadgeVariant(r.status)}>{r.status}</Badge>
+                      <Badge variant={reservationBadgeVariant(r.status)}>{holdStatusLabel(r.status)}</Badge>
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{formatPence(r.amount_pence)}</TableCell>
                     <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
                       {r.checkout_intent_id ? r.checkout_intent_id.slice(0, 8) : "-"}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                      {formatDateTime(r.expires_at)}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                      {formatDateTime(r.captured_at)}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                      {formatDateTime(r.released_at)}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
                       {formatDateTime(r.created_at)}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                      {holdCompletedOrExpiry(r)}
                     </TableCell>
                   </TableRow>
                 ))}
