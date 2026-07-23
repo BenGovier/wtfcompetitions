@@ -26,6 +26,7 @@ import Link from 'next/link'
 import { ChevronDown } from 'lucide-react'
 
 type Prize = {
+  award_id?: string | null
   title: string
   value_text?: string | null
   image_url?: string | null
@@ -349,7 +350,6 @@ function TicketCard({ n }: { n: number }) {
 
 function ResultImpactPanel({ won, prizes, qty }: { won: boolean; prizes: Prize[]; qty: number }) {
   if (won) {
-    const prize = prizes[0]
     const multiple = prizes.length > 1
     return (
       <div className="relative flex flex-col items-center gap-4 text-center">
@@ -357,62 +357,44 @@ function ResultImpactPanel({ won, prizes, qty }: { won: boolean; prizes: Prize[]
         <div className="pointer-events-none absolute -top-6 left-1/2 h-48 w-72 -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgba(245,158,11,0.5),rgba(239,68,68,0.25)_45%,transparent_70%)] blur-2xl" />
 
         <div className="relative flex flex-col items-center">
-          <h1 className="reveal-headline text-5xl font-black uppercase leading-none tracking-tight text-white drop-shadow-[0_0_28px_rgba(245,158,11,0.8)] sm:text-6xl">
-            Instant Win
+          <h1 className="reveal-headline text-4xl font-black uppercase leading-none tracking-tight text-white drop-shadow-[0_0_28px_rgba(245,158,11,0.8)] sm:text-6xl">
+            {multiple ? 'Multiple Instant Wins' : 'Instant Win'}
           </h1>
-          <p className="mt-2 text-lg font-bold text-amber-300">You&apos;ve won</p>
+          <p className="mt-2 text-lg font-bold text-amber-300">
+            {multiple ? `You won ${prizes.length} prizes` : "You've won"}
+          </p>
         </div>
 
-        {/* Primary prize — black glass card with gold edge */}
-        <div className="relative w-full overflow-hidden rounded-2xl border-2 border-amber-400/60 bg-gradient-to-b from-zinc-900/90 to-black p-4 shadow-[0_0_40px_rgba(245,158,11,0.3)]">
-          {multiple && (
-            <span className="absolute right-3 top-3 z-10 flex size-9 items-center justify-center rounded-full bg-amber-400 text-sm font-black text-black shadow-lg">
-              x{prizes.length}
-            </span>
-          )}
-          {prize.image_url && (
-            <div className="mb-3 overflow-hidden rounded-xl border border-amber-400/30">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={prize.image_url || '/placeholder.svg'}
-                alt={prize.title}
-                className="h-48 w-full bg-black object-contain"
-              />
-            </div>
-          )}
-          <h2 className="text-2xl font-extrabold text-white text-balance">{prize.title}</h2>
-          {prize.value_text && (
-            <p className="mt-1 text-lg font-bold text-amber-300">{prize.value_text}</p>
-          )}
-        </div>
-
-        {/* Extra prizes (compact) */}
-        {multiple && (
-          <div className="w-full space-y-2">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-400/90">
-              + {prizes.length - 1} more {prizes.length === 2 ? 'prize' : 'prizes'}
-            </p>
-            {prizes.slice(1).map((p, i) => (
-              <div
-                key={i}
-                className="flex items-center gap-3 rounded-xl border border-amber-400/25 bg-zinc-900/70 px-3 py-2 text-left"
-              >
-                {p.image_url && (
-                  // eslint-disable-next-line @next/next/no-img-element
+        {/* One visually distinct card per prize. A single win keeps the strong
+            hero treatment; multiple wins each get their own full prize card. */}
+        <div className="w-full space-y-3">
+          {prizes.map((prize, i) => (
+            <div
+              key={prize.award_id ?? `${prize.title}-${i}`}
+              className="relative w-full overflow-hidden rounded-2xl border-2 border-amber-400/60 bg-gradient-to-b from-zinc-900/90 to-black p-4 shadow-[0_0_40px_rgba(245,158,11,0.3)]"
+            >
+              {multiple && (
+                <span className="absolute right-3 top-3 z-10 flex size-8 items-center justify-center rounded-full bg-amber-400 text-sm font-black text-black shadow-lg">
+                  {i + 1}
+                </span>
+              )}
+              {prize.image_url && (
+                <div className="mb-3 overflow-hidden rounded-xl border border-amber-400/30">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={p.image_url || '/placeholder.svg'}
-                    alt={p.title}
-                    className="size-10 shrink-0 rounded-lg object-cover"
+                    src={prize.image_url || '/placeholder.svg'}
+                    alt={prize.title}
+                    className="h-48 w-full bg-black object-contain"
                   />
-                )}
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-white">{p.title}</p>
-                  {p.value_text && <p className="text-xs text-zinc-400">{p.value_text}</p>}
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
+              )}
+              <h2 className="text-2xl font-extrabold text-white text-balance">{prize.title}</h2>
+              {prize.value_text && (
+                <p className="mt-1 text-lg font-bold text-amber-300">{prize.value_text}</p>
+              )}
+            </div>
+          ))}
+        </div>
 
         {/* Recorded-win reassurance */}
         <p className="text-sm font-medium text-amber-100/80">

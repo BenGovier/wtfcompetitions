@@ -82,8 +82,11 @@ export default async function AccountPage() {
   // Step 4: Fetch user's instant wins, keyed by checkout_intent_id.
   // An instant win belongs to the exact checkout that won, so we key by
   // checkout_intent_id (NOT campaign_id) to avoid showing a win on every entry
-  // in a campaign. Prize titles are deduplicated per checkout.
-  const winsMap: Record<string, { prizeTitle: string; awardedAt: string }[]> = {}
+  // in a campaign. One checkout can now win MULTIPLE prizes, so each checkout
+  // maps to an array of zero-or-more awards. Awards are NOT deduplicated by
+  // title — two identical prizes (e.g. two "Yellow Card" wins) are two distinct
+  // awards and must both be shown, each keyed by its own award id.
+  const winsMap: Record<string, { awardId: string; prizeTitle: string; awardedAt: string }[]> = {}
 
   if (entries.length > 0) {
     // Only look up awards for checkouts that actually belong to this user's entries.
@@ -99,14 +102,10 @@ export default async function AccountPage() {
       // Join instant_win_prizes only to get the prize title for display.
       const { data: awards } = await supabase
         .from('instant_win_awards')
-        .select('checkout_intent_id, prize_id, awarded_at, instant_win_prizes(prize_title)')
+        .select('id, checkout_intent_id, prize_id, awarded_at, instant_win_prizes(prize_title)')
         .in('checkout_intent_id', checkoutIds)
 
       if (awards) {
-        // Track seen prize titles per checkout so repeated titles are not
-        // shown as "Balloon Pop, Balloon Pop, Balloon Pop".
-        const seenTitles: Record<string, Set<string>> = {}
-
         for (const a of awards) {
           const checkoutIntentId = (a as any).checkout_intent_id as string | null
           // Skip awards with no checkout linkage — cannot be safely attributed.
@@ -116,12 +115,12 @@ export default async function AccountPage() {
 
           if (!winsMap[checkoutIntentId]) {
             winsMap[checkoutIntentId] = []
-            seenTitles[checkoutIntentId] = new Set()
           }
-          if (seenTitles[checkoutIntentId].has(prizeTitle)) continue
-          seenTitles[checkoutIntentId].add(prizeTitle)
 
+          // Every distinct award row is retained (no title-based dedup) so
+          // multiple wins on one checkout each display separately.
           winsMap[checkoutIntentId].push({
+            awardId: (a as any).id as string,
             prizeTitle,
             awardedAt: a.awarded_at,
           })

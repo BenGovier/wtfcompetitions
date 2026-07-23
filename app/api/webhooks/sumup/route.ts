@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { normalizeAwardPayload } from '@/lib/payments/confirmPaymentAndAward'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -147,7 +148,7 @@ export async function POST(request: NextRequest) {
   }
 
   // 7) Confirm + award via RPC (idempotent)
-  const { error: rpcErr } = await supabase.rpc('confirm_payment_and_award', {
+  const { data: rpcData, error: rpcErr } = await supabase.rpc('confirm_payment_and_award', {
     p_ref: intent.ref,
     p_user_id: intent.user_id,
   })
@@ -157,7 +158,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false }, { status: 500 })
   }
 
-  console.log('[webhooks/sumup] confirmed:', intent.ref)
+  // Normalise through the shared normaliser so multi-prize awards are handled
+  // consistently. Used for safe logging only — no PII / provider secrets.
+  const award = normalizeAwardPayload(rpcData)
+  console.log('[webhooks/sumup] confirmed:', {
+    checkout_ref: intent.ref,
+    won: award.won,
+    prize_count: award.prizes.length,
+  })
 
   // === POST-PURCHASE CONFIRMATION EMAIL (best-effort, non-blocking, race-safe) ===
   try {

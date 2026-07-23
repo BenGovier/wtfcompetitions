@@ -76,7 +76,9 @@ export async function POST(request: Request) {
   // 4) Fetch the matching checkout_intents row.
   const { data: intent, error: intentErr } = await svc
     .from('checkout_intents')
-    .select('id, ref, user_id, total_pence, currency, state, campaign_id, provider_customer_id')
+    .select(
+      'id, ref, user_id, total_pence, currency, state, campaign_id, provider_customer_id, wallet_credit_requested, wallet_credit_pence, external_payment_pence',
+    )
     .eq('ref', ref)
     .single()
 
@@ -113,6 +115,133 @@ export async function POST(request: Request) {
     )
   }
 
+  // 5a) Wallet reservation release helper.
+  //     walletReservationActive becomes true ONLY once a partial-wallet order's
+  //     reservation has been validated in step 5b. releaseWalletReservation()
+  //     is a best-effort, idempotent no-op for every normal (non-wallet) order
+  //     — it never touches wallet_reservations unless a reservation was actually
+  //     held. The RPC is service-role callable and idempotent; a release failure
+  //     is logged and never alters the response.
+  //
+  //     Release policy (deliberately NOT "release on every post-validation
+  //     failure"):
+  //       - Release ONLY on terminal failures that occur BEFORE the payment-link
+  //         POST is attempted (missing config, login failures, customer failures),
+  //         plus the one case where Acquired returns an explicit non-2xx response
+  //         to POST /v1/payment-links (no usable link was created).
+  //       - Once the POST has been attempted and the outcome is ambiguous or
+  //         successful (network/parse error after 2xx, 2xx with missing link_id,
+  //         or a local DB-update failure after the link exists) we do NOT release,
+  //         because a payment link may already be usable. Those reservations are
+  //         reclaimed solely by the 15-minute expiry engine.
+  let walletReservationActive = false
+  let walletReservationReleased = false
+  // Captured from the (non-null) intent so the hoisted helper closure has
+  // stable, correctly-typed identifiers without re-narrowing `intent`.
+  const releaseIntentId = intent.id
+  const releaseUserId = intent.user_id
+  async function releaseWalletReservation(reason: string): Promise<void> {
+    if (!walletReservationActive || walletReservationReleased) return
+    walletReservationReleased = true
+    try {
+      const { error: releaseErr } = await svc.rpc('wallet_release_checkout_reservation', {
+        p_checkout_intent_id: releaseIntentId,
+        p_user_id: releaseUserId,
+        p_reason: reason,
+      })
+      if (releaseErr) {
+        console.error(
+          `[payments/acquired] wallet_release_checkout_reservation failed for ref ${ref}:`,
+          releaseErr.message,
+        )
+      }
+    } catch (err: any) {
+      console.error(
+        `[payments/acquired] wallet_release_checkout_reservation threw for ref ${ref}:`,
+        String(err?.message || err),
+      )
+    }
+  }
+
+  // 5b) Determine the AUTHORITATIVE provider amount (WTF Credit aware).
+  //     The amount charged by Acquired is derived entirely from the persisted
+  //     checkout_intents row — a client-supplied amount is NEVER read here.
+  //     - Normal (non-wallet) order: preserve existing behaviour → charge
+  //       total_pence, and never touch wallet_reservations.
+  //     - Wallet order: require a well-formed split that sums exactly to
+  //       total_pence, charge only the external remainder, and (for partial
+  //       orders) require a valid, active, unexpired reservation.
+  const totalPence = intent.total_pence as number
+  const walletCreditRequested = intent.wallet_credit_requested === true
+  let providerAmountPence = totalPence
+
+  if (walletCreditRequested) {
+    const walletCreditPence = intent.wallet_credit_pence
+    const externalPaymentPence = intent.external_payment_pence
+
+    const isNonNegInt = (v: unknown): v is number =>
+      typeof v === 'number' && Number.isFinite(v) && Number.isInteger(v) && v >= 0
+
+    const validSplit =
+      isNonNegInt(walletCreditPence) &&
+      isNonNegInt(externalPaymentPence) &&
+      walletCreditPence + externalPaymentPence === totalPence
+
+    if (!validSplit) {
+      // Log safely with the checkout reference only — never raw amounts beyond
+      // the expected total (which is already server-derived, not client data).
+      console.error(
+        `[payments/acquired] invalid wallet split for ref ${ref} (expected total ${totalPence})`,
+      )
+      return NextResponse.json(
+        { ok: false, error: 'invalid_wallet_split' },
+        { status: 409, headers: noStore },
+      )
+    }
+
+    // Fully wallet-funded: no external payment is required, so Acquired must not
+    // be called. This route does not confirm or fulfil the checkout.
+    if (externalPaymentPence === 0) {
+      return NextResponse.json(
+        { ok: false, error: 'provider_payment_not_required' },
+        { status: 409, headers: noStore },
+      )
+    }
+
+    // Partial-wallet order: verify the reservation in a single batched row query.
+    // Normal non-wallet checkouts never reach this branch, so they never query
+    // wallet_reservations.
+    if (walletCreditPence > 0) {
+      const { data: reservation, error: reservationErr } = await svc
+        .from('wallet_reservations')
+        .select('id, checkout_intent_id, user_id, amount_pence, status, expires_at')
+        .eq('checkout_intent_id', intent.id)
+        .eq('user_id', intent.user_id)
+        .eq('amount_pence', walletCreditPence)
+        .eq('status', 'active')
+        .gt('expires_at', new Date().toISOString())
+        .maybeSingle()
+
+      if (reservationErr || !reservation) {
+        console.error(
+          `[payments/acquired] wallet reservation invalid for ref ${ref}`,
+          reservationErr?.message ?? '(no active reservation)',
+        )
+        return NextResponse.json(
+          { ok: false, error: 'wallet_reservation_invalid' },
+          { status: 409, headers: noStore },
+        )
+      }
+
+      // A valid, active, unexpired reservation is held for this checkout — from
+      // here on, any failure exit must release it.
+      walletReservationActive = true
+    }
+
+    // Charge only the external remainder.
+    providerAmountPence = externalPaymentPence
+  }
+
   // 6) Env vars. Per Acquired support, Hosted Checkout payment-links must NOT
   //    specify a MID, so ACQUIRED_MID is no longer read or required.
   const appId = process.env.ACQUIRED_APP_ID
@@ -131,6 +260,7 @@ export async function POST(request: Request) {
       .map(([name]) => name)
 
     console.error('[payments/acquired] Missing Acquired configuration', { missing })
+    await releaseWalletReservation('acquired_config_missing')
     return NextResponse.json(
       { ok: false, error: 'Server configuration error', missing },
       { status: 500, headers: noStore },
@@ -149,6 +279,7 @@ export async function POST(request: Request) {
 
     if (!loginRes.ok) {
       console.error('[payments/acquired] login failed', loginRes.status)
+      await releaseWalletReservation('acquired_login_failed')
       return NextResponse.json(
         { ok: false, error: 'acquired_login_failed', status: loginRes.status },
         { status: 502, headers: noStore },
@@ -159,6 +290,7 @@ export async function POST(request: Request) {
     accessToken = (loginData.access_token as string) || ''
   } catch (err: any) {
     console.error('[payments/acquired] login fetch error', String(err?.message || err))
+    await releaseWalletReservation('acquired_login_failed')
     return NextResponse.json(
       { ok: false, error: 'acquired_login_failed' },
       { status: 502, headers: noStore },
@@ -167,6 +299,7 @@ export async function POST(request: Request) {
 
   if (!accessToken) {
     console.error('[payments/acquired] login returned no access token')
+    await releaseWalletReservation('acquired_login_failed')
     return NextResponse.json(
       { ok: false, error: 'acquired_login_failed' },
       { status: 502, headers: noStore },
@@ -184,8 +317,20 @@ export async function POST(request: Request) {
   let customerSource: 'reused' | 'created' | 'recovered_by_reference' | 'none' = 'none'
   let customerPayloadKeys: string[] = []
 
+  // Staging/preview detector. The restored staging database contains Acquired
+  // `provider_customer_id` values issued by the LIVE Acquired tenant; those IDs
+  // do not exist in the QA/test tenant and are rejected by the QA payment-link
+  // endpoint ("customer.customer_id — Customer is invalid"). On staging/preview
+  // we therefore SKIP reuse of persisted customer IDs and always create/recover
+  // a customer against the currently-configured QA host. Production is never
+  // classified as staging, so its reuse behaviour is unchanged.
+  const isStagingOrPreview =
+    process.env.VERCEL_ENV === 'preview' ||
+    (process.env.NEXT_PUBLIC_SITE_URL ?? '').includes('staging.wtf-giveaways.co.uk')
+
   // A) Reuse the most recent acquired customer_id for this user, if any.
-  if (intent.user_id) {
+  //    Production only — see isStagingOrPreview note above.
+  if (intent.user_id && !isStagingOrPreview) {
     const { data: priorIntent } = await svc
       .from('checkout_intents')
       .select('provider_customer_id')
@@ -450,6 +595,7 @@ export async function POST(request: Request) {
             console.error('[payments/acquired] customer recovery by reference failed', {
               status: customerRes.status,
             })
+            await releaseWalletReservation('acquired_customer_create_failed')
             return NextResponse.json(
               {
                 ok: false,
@@ -461,6 +607,7 @@ export async function POST(request: Request) {
             )
           }
         } else {
+          await releaseWalletReservation('acquired_customer_create_failed')
           return NextResponse.json(
             {
               ok: false,
@@ -488,6 +635,7 @@ export async function POST(request: Request) {
       }
     } catch (err: any) {
       console.error('[payments/acquired] customer fetch error', String(err?.message || err))
+      await releaseWalletReservation('acquired_customer_create_failed')
       return NextResponse.json(
         { ok: false, error: 'acquired_customer_create_failed' },
         { status: 502, headers: noStore },
@@ -496,6 +644,7 @@ export async function POST(request: Request) {
 
     if (!customerId) {
       console.error('[payments/acquired] customer creation returned no customer_id')
+      await releaseWalletReservation('acquired_customer_create_failed')
       return NextResponse.json(
         { ok: false, error: 'acquired_customer_create_failed' },
         { status: 502, headers: noStore },
@@ -545,8 +694,10 @@ export async function POST(request: Request) {
     }
   }
 
-  // 8) Create Acquired payment link.
-  const amountDecimal = parseFloat((intent.total_pence / 100).toFixed(2))
+  // 8) Create Acquired payment link. The amount is the authoritative,
+  //    server-derived provider amount: total_pence for a normal order, or the
+  //    external remainder for a wallet order (see step 5b). Never client input.
+  const amountDecimal = parseFloat((providerAmountPence / 100).toFixed(2))
 
   // Minimum Hosted Checkout request per Acquired support: Company-Id only,
   // no MID/public key/signing keys, and only the transaction object (no
@@ -724,6 +875,7 @@ export async function POST(request: Request) {
         company_id_debug: companyIdDebug,
       })
 
+      await releaseWalletReservation('acquired_payment_link_failed')
       return NextResponse.json(
         {
           ok: false,
@@ -739,6 +891,12 @@ export async function POST(request: Request) {
     linkData = JSON.parse(raw || '{}')
   } catch (err: any) {
     console.error('[payments/acquired] payment-link fetch error', String(err?.message || err))
+    // Do NOT release the reservation here. This catch covers both a genuine
+    // network exception AND a JSON parse failure that follows an HTTP 2xx
+    // response, so Acquired may already have created a payment link. Releasing
+    // now could let a late external payment succeed after the WTF Credit became
+    // spendable again. The 15-minute expiry engine reclaims any truly-unused
+    // reservation instead.
     return NextResponse.json(
       { ok: false, error: 'acquired_payment_link_failed' },
       { status: 502, headers: noStore },
@@ -749,6 +907,10 @@ export async function POST(request: Request) {
   const linkId = (linkData.link_id as string) || ''
   if (!linkId) {
     console.error('[payments/acquired] missing link_id in response')
+    // Do NOT release the reservation here. Acquired already returned HTTP 2xx,
+    // so a payment-link resource may exist server-side even though we cannot
+    // derive its URL. The 15-minute expiry engine reclaims the reservation if
+    // it truly went unused.
     return NextResponse.json(
       { ok: false, error: 'acquired_missing_link_id' },
       { status: 502, headers: noStore },
@@ -856,6 +1018,10 @@ export async function POST(request: Request) {
 
   if (updateErr || !updated?.provider_session_id) {
     console.error('[payments/acquired] DB update failed', updateErr?.message)
+    // Do NOT release the reservation here. A usable payment link and checkout
+    // URL already exist at this point, so releasing would allow a late external
+    // payment after the WTF Credit became spendable again. Only the 15-minute
+    // expiry engine may reclaim this reservation.
     return NextResponse.json(
       { ok: false, error: 'Failed to update intent' },
       { status: 500, headers: noStore },

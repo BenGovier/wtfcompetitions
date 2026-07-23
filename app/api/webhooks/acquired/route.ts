@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import crypto from 'node:crypto'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
+import { normalizeAwardPayload } from '@/lib/payments/confirmPaymentAndAward'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -98,7 +99,7 @@ export async function POST(request: Request) {
   const { data: intent, error: lookupErr } = await svc
     .from('checkout_intents')
     .select(
-      'id, ref, user_id, state, total_pence, provider_transaction_id, provider_status, provider_payload',
+      'id, ref, user_id, state, total_pence, provider_transaction_id, provider_status, provider_payload, wallet_credit_requested, wallet_credit_pence, external_payment_pence',
     )
     .eq('ref', orderId)
     .maybeSingle()
@@ -247,6 +248,85 @@ export async function POST(request: Request) {
     webhookType === 'status_update' && status === 'success' && Boolean(transactionId)
 
   if (!eligibleToFulfil) {
+    // 8b-i) Terminal-failure wallet release (best-effort, internal only).
+    //   Reached ONLY after the signature is verified, the body is parsed, and
+    //   the matching intent is found. The already-confirmed guard (8a) runs
+    //   first, and card_new is handled/returned earlier, so neither a confirmed
+    //   order nor card_new can ever reach this release path.
+    //
+    //   A held WTF Credit reservation is released ONLY when EVERY condition
+    //   holds:
+    //     - this is a status_update webhook,
+    //     - the normalised status is exactly one of the strict five-status
+    //       terminal-failure allowlist below (the external payment definitively
+    //       failed — success, pending/processing, authorised and any unknown or
+    //       ambiguous status are never released and stay reserved until the
+    //       15-minute expiry engine handles them),
+    //     - the intent is NOT already confirmed,
+    //     - the intent is a wallet order with a well-formed split that sums to
+    //       total_pence,
+    //     - a reservation was actually held (wallet_credit_pence is a finite
+    //       positive integer), and
+    //     - the intent has a user_id.
+    //
+    //   The release RPC is service-role callable and idempotent. Any error is
+    //   logged and NEVER alters the webhook acknowledgement, which is byte-for-
+    //   byte identical to the pre-Phase-3B response.
+    const normalizedStatus =
+      typeof status === 'string' ? status.trim().toLowerCase() : ''
+
+    // Strict terminal-failure allowlist → internal release reason. Raw provider
+    // status text is never persisted as the reason.
+    const TERMINAL_FAILURE_REASONS: Record<string, string> = {
+      failed: 'acquired_failed',
+      declined: 'acquired_declined',
+      cancelled: 'acquired_cancelled',
+      canceled: 'acquired_cancelled',
+      expired: 'acquired_expired',
+    }
+
+    const releaseReason = TERMINAL_FAILURE_REASONS[normalizedStatus]
+
+    const walletCreditPence = intent.wallet_credit_pence
+    const externalPaymentPence = intent.external_payment_pence
+
+    const isPositiveInt = (v: unknown): v is number =>
+      typeof v === 'number' && Number.isFinite(v) && Number.isInteger(v) && v > 0
+
+    const isNonNegInt = (v: unknown): v is number =>
+      typeof v === 'number' && Number.isFinite(v) && Number.isInteger(v) && v >= 0
+
+    const releaseEligible =
+      webhookType === 'status_update' &&
+      Boolean(releaseReason) &&
+      intent.state !== 'confirmed' &&
+      intent.wallet_credit_requested === true &&
+      isPositiveInt(walletCreditPence) &&
+      isNonNegInt(externalPaymentPence) &&
+      (walletCreditPence as number) + (externalPaymentPence as number) === intent.total_pence &&
+      Boolean(intent.user_id)
+
+    if (releaseEligible) {
+      try {
+        const { error: releaseErr } = await svc.rpc('wallet_release_checkout_reservation', {
+          p_checkout_intent_id: intent.id,
+          p_user_id: intent.user_id,
+          p_reason: releaseReason,
+        })
+        if (releaseErr) {
+          console.error(
+            `[webhooks/acquired] wallet_release_checkout_reservation failed for ref ${orderId}:`,
+            releaseErr.message,
+          )
+        }
+      } catch (err: any) {
+        console.error(
+          `[webhooks/acquired] wallet_release_checkout_reservation threw for ref ${orderId}:`,
+          String(err?.message || err),
+        )
+      }
+    }
+
     return NextResponse.json(
       { ...ackBase, fulfilment_status: 'not_success_status' },
       { status: 200, headers: noStore },
@@ -275,9 +355,20 @@ export async function POST(request: Request) {
     )
   }
 
-  // 8d) Fulfilled. Echo the RPC result (ticket/instant-win allocation summary).
+  // 8d) Fulfilled. Normalise the RPC result through the shared normaliser so a
+  //     multi-prize response is never reduced to only the first prize, then
+  //     echo the full ticket/instant-win allocation summary.
+  const fulfilment = normalizeAwardPayload(rpcData)
+
+  // Safe metadata only — no customer PII, no provider secrets/payloads.
+  console.log('[webhooks/acquired] fulfilled:', {
+    order_id: orderId,
+    won: fulfilment.won,
+    prize_count: fulfilment.prizes.length,
+  })
+
   return NextResponse.json(
-    { ...ackBase, fulfilment_status: 'fulfilled', fulfilment: rpcData ?? null },
+    { ...ackBase, fulfilment_status: 'fulfilled', fulfilment },
     { status: 200, headers: noStore },
   )
 }
