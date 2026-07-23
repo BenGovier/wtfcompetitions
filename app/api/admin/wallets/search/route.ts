@@ -8,10 +8,26 @@ const NO_STORE = { headers: { 'Cache-Control': 'private, no-store' } }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const MAX_QUERY_LEN = 200
+const MIN_QUERY_LEN = 3
 const MAX_RESULTS = 25
-// Bounded auth scan for email lookups (admin API has no email filter).
-const EMAIL_SCAN_PER_PAGE = 200
-const EMAIL_SCAN_MAX_PAGES = 25 // up to 5000 users scanned
+
+// The GoTrue admin users list (@supabase/auth-js) caps per_page server-side at
+// 50 regardless of a larger requested value, so 50 is the largest safe page
+// size actually honoured by the installed client.
+const EMAIL_SCAN_PER_PAGE = 50
+
+// Defensive ceiling to prevent a runaway request. This is NOT a silent result
+// cutoff: if we hit it before the auth list genuinely ends AND before finding
+// MAX_RESULTS matches, we return HTTP 503 `search_incomplete` rather than a
+// partial result presented as complete. 50 * 4000 = 200,000 accounts scanned
+// before the defensive limit engages.
+const EMAIL_SCAN_MAX_PAGES = 4000
+
+// A syntactically complete email address (used for the exact-match fast path).
+const FULL_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+// Control characters are rejected from free-text (non-UUID) queries.
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHAR_RE = /[\u0000-\u001f\u007f]/
 
 /** Coerce a DB integer into a finite, safe, non-negative integer (defensive). */
 function safeNonNegInt(value: unknown): number {
@@ -109,6 +125,17 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ok: false, error: 'query_too_long' }, { status: 400, ...NO_STORE })
   }
 
+  const isUuid = UUID_RE.test(q)
+  // Validation for all non-UUID (email / name) searches.
+  if (!isUuid) {
+    if (CONTROL_CHAR_RE.test(q)) {
+      return NextResponse.json({ ok: false, error: 'invalid_query' }, { status: 400, ...NO_STORE })
+    }
+    if (q.length < MIN_QUERY_LEN) {
+      return NextResponse.json({ ok: false, error: 'query_too_short' }, { status: 400, ...NO_STORE })
+    }
+  }
+
   try {
     let matchedUserIds: string[] = []
     let profileById: Record<string, { real_name: string | null }> = {}
@@ -116,7 +143,7 @@ export async function GET(request: NextRequest) {
     let mode: 'uuid' | 'email' | 'name' = 'name'
     let notice: string | null = null
 
-    if (UUID_RE.test(q)) {
+    if (isUuid) {
       // === UUID: exact user lookup ===
       mode = 'uuid'
       const { data: authData, error: authErr } = await svc.auth.admin.getUserById(q)
@@ -125,30 +152,91 @@ export async function GET(request: NextRequest) {
         emailById[authData.user.id] = authData.user.email ?? null
       }
     } else if (q.includes('@')) {
-      // === Email: bounded scan of auth users (partial/substring, case-insensitive) ===
+      // === Email: server-side pagination of the auth user list ===
+      // The GoTrue admin API exposes no email filter, so we page through the
+      // user list and match case-insensitively. We NEVER stop at an arbitrary
+      // page count and pretend the search finished — the loop stops only when
+      // (a) MAX_RESULTS matches are found, (b) an exact full-email match is
+      // found, or (c) the auth list genuinely ends. If the defensive page
+      // ceiling is hit before the list ends and before enough matches, we
+      // signal `search_incomplete` (HTTP 503) instead of returning a partial
+      // result as if it were complete.
       mode = 'email'
       const target = q.toLowerCase()
+      const isFullEmail = FULL_EMAIL_RE.test(q)
       const found: string[] = []
-      for (let page = 1; page <= EMAIL_SCAN_MAX_PAGES; page++) {
+      let exactMatchId: string | null = null
+
+      let listEnded = false
+      let listErrored = false
+      let page = 1
+      for (; page <= EMAIL_SCAN_MAX_PAGES; page++) {
         const { data, error } = await svc.auth.admin.listUsers({ page, perPage: EMAIL_SCAN_PER_PAGE })
         if (error) {
+          // Do not surface raw auth errors; treat as a failed scan.
           console.error('[admin/wallets/search] listUsers error:', error.message)
+          listErrored = true
           break
         }
-        for (const u of data.users) {
+
+        const users = data?.users ?? []
+        for (const u of users) {
           const email = (u.email ?? '').toLowerCase()
-          if (email && email.includes(target)) {
+          if (!email) continue
+
+          // Exact full-email match: return immediately with just this account.
+          if (isFullEmail && email === target) {
+            exactMatchId = u.id
+            emailById[u.id] = u.email ?? null
+            break
+          }
+
+          // Otherwise accumulate case-insensitive substring matches (bounded).
+          if (email.includes(target)) {
             found.push(u.id)
             emailById[u.id] = u.email ?? null
             if (found.length >= MAX_RESULTS) break
           }
         }
+
+        if (exactMatchId) break
         if (found.length >= MAX_RESULTS) break
-        if (data.users.length < EMAIL_SCAN_PER_PAGE) break // last page reached
+
+        // Authoritative end-of-list detection. GoTrue sets `nextPage` to a
+        // number when another page exists and to null on the final page. The
+        // short-page check is a belt-and-braces secondary signal.
+        const noNextPage = (data as { nextPage?: number | null })?.nextPage == null
+        if (noNextPage || users.length < EMAIL_SCAN_PER_PAGE) {
+          listEnded = true
+          break
+        }
       }
-      matchedUserIds = found
-      notice =
-        'Email search scans a bounded number of recent auth users. On very large user bases some matches beyond the scan limit may not appear; search by exact user ID for a guaranteed lookup.'
+
+      if (listErrored) {
+        return NextResponse.json({ ok: false, error: 'search_failed' }, { status: 500, ...NO_STORE })
+      }
+
+      if (exactMatchId) {
+        matchedUserIds = [exactMatchId]
+      } else {
+        // We may safely return the results IF the scan completed: either the
+        // auth list genuinely ended, or we already found the maximum allowed
+        // number of matches (the endpoint intentionally caps results at 25).
+        const scanCompleted = listEnded || found.length >= MAX_RESULTS
+        if (!scanCompleted) {
+          // Defensive ceiling reached without finishing — never pretend success.
+          return NextResponse.json(
+            {
+              ok: false,
+              error: 'search_incomplete',
+              message:
+                'The customer search could not scan every account. Please use a more specific email address.',
+            },
+            { status: 503, ...NO_STORE },
+          )
+        }
+        matchedUserIds = found
+      }
     } else {
       // === Name: profiles_private, bounded ilike ===
       mode = 'name'

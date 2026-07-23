@@ -28,6 +28,22 @@ function formatPence(pence: number): string {
   return `£${(pence / 100).toFixed(2)}`
 }
 
+// Map fixed API error codes to friendly copy. Raw API/auth errors are never shown.
+function mapSearchError(code: unknown): string {
+  switch (code) {
+    case "search_incomplete":
+      return "The search was too broad to scan safely. Enter the customer's full email address."
+    case "query_too_long":
+      return "Search term is too long."
+    case "query_too_short":
+      return "Enter at least 3 characters to search."
+    case "invalid_query":
+      return "That search contains invalid characters. Please try again."
+    default:
+      return "Search failed. Please try again."
+  }
+}
+
 export function WalletSearch() {
   const [input, setInput] = useState("")
   const [results, setResults] = useState<SearchResult[]>([])
@@ -46,7 +62,7 @@ export function WalletSearch() {
       const res = await fetch(`/api/admin/wallets/search?q=${encodeURIComponent(q)}`)
       const json = await res.json()
       if (!res.ok || !json.ok) {
-        setError(json.error === "query_too_long" ? "Search term is too long." : "Search failed. Please try again.")
+        setError(mapSearchError(json?.error))
         setResults([])
       } else {
         setResults(json.results ?? [])
