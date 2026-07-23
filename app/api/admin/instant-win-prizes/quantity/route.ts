@@ -15,6 +15,18 @@ function validateQuantity(raw: unknown): number | null {
   return n
 }
 
+// Canonical UUID (any version) matcher.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function isUuid(raw: unknown): raw is string {
+  return typeof raw === 'string' && UUID_RE.test(raw.trim())
+}
+
+// The exact known database exception raised by
+// admin_set_instant_win_prize_quantity when a reduction would drop below the
+// number of already assigned/claimed slots.
+const REDUCTION_BLOCKED_EXCEPTION = 'quantity_below_assigned_or_claimed_slots'
+
 /**
  * Dedicated quantity-reconciliation endpoint.
  *
@@ -43,11 +55,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const prizeId = typeof body.id === 'string' ? body.id.trim() : ''
-  const campaignId = typeof body.campaign_id === 'string' ? body.campaign_id.trim() : ''
-  if (!prizeId || !campaignId) {
-    return NextResponse.json({ ok: false, error: 'Missing id or campaign_id' }, { status: 400 })
+  // Strictly validate identifiers as UUIDs before any service-role query or RPC.
+  if (!isUuid(body.id) || !isUuid(body.campaign_id)) {
+    return NextResponse.json({ ok: false, error: 'invalid_identifier' }, { status: 400 })
   }
+  const prizeId = (body.id as string).trim()
+  const campaignId = (body.campaign_id as string).trim()
 
   const newQuantity = validateQuantity(body.quantity)
   if (newQuantity === null) {
@@ -56,8 +69,7 @@ export async function POST(request: Request) {
 
   const svc = getServiceSupabase()
 
-  // Read the current quantity so we can craft a precise, friendly message if a
-  // reduction is blocked by assigned/claimed slots.
+  // Confirm the prize exists (and scope it to the campaign) before the RPC.
   const { data: current, error: curErr } = await svc
     .from('instant_win_prizes')
     .select('quantity')
@@ -66,14 +78,12 @@ export async function POST(request: Request) {
     .maybeSingle()
 
   if (curErr) {
-    console.error('[instant-win-prizes/quantity] lookup error:', curErr)
+    console.error('[instant-win-prizes/quantity] lookup error:', curErr.message)
     return NextResponse.json({ ok: false, error: 'lookup_failed' }, { status: 500 })
   }
   if (!current) {
     return NextResponse.json({ ok: false, error: 'Prize not found' }, { status: 404 })
   }
-
-  const isReduction = newQuantity < (current.quantity ?? 0)
 
   const { error: rpcErr } = await svc.rpc('admin_set_instant_win_prize_quantity', {
     p_prize_id: prizeId,
@@ -82,10 +92,13 @@ export async function POST(request: Request) {
   })
 
   if (rpcErr) {
-    // Never expose raw database exception text. A blocked reduction is the
-    // expected, actionable failure; anything else is a generic error.
-    console.error('[instant-win-prizes/quantity] RPC error:', rpcErr.message)
-    if (isReduction) {
+    // Never expose raw database exception text to the browser. Map ONLY the
+    // known reduction-blocked exception to a 409; every other RPC failure —
+    // whether the request increases or reduces quantity — is a generic 500.
+    const rawMessage = typeof rpcErr.message === 'string' ? rpcErr.message : ''
+    console.error('[instant-win-prizes/quantity] RPC error:', rawMessage.slice(0, 300))
+
+    if (rawMessage.includes(REDUCTION_BLOCKED_EXCEPTION)) {
       return NextResponse.json(
         {
           ok: false,
@@ -95,6 +108,7 @@ export async function POST(request: Request) {
         { status: 409 },
       )
     }
+
     return NextResponse.json(
       { ok: false, error: 'quantity_update_failed', message: 'Could not update quantity. Please try again.' },
       { status: 500 },

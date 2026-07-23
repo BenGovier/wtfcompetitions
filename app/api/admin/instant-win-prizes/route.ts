@@ -22,6 +22,14 @@ const GBP_RE = /^\d{1,9}(\.\d{1,2})?$/
 
 type ParseResult<T> = { ok: true; value: T } | { ok: false; error: string }
 
+// Canonical UUID (any version) matcher. Identifiers must be UUID strings
+// before any service-role query or RPC call is performed with them.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function isUuid(raw: unknown): raw is string {
+  return typeof raw === 'string' && UUID_RE.test(raw.trim())
+}
+
 /**
  * Convert an admin-supplied GBP string to integer pence with STRICT syntax.
  * Never trusts client-calculated pence. Returns integer pence or an error.
@@ -323,48 +331,91 @@ export async function DELETE(request: Request) {
   const campaignId = searchParams.get('campaignId')
   if (!id || !campaignId) return NextResponse.json({ ok: false, error: 'Missing id or campaignId' }, { status: 400 })
 
+  // Strictly validate identifiers as UUIDs before any service-role query.
+  if (!isUuid(id) || !isUuid(campaignId)) {
+    return NextResponse.json({ ok: false, error: 'invalid_identifier' }, { status: 400 })
+  }
+  const prizeId = id.trim()
+  const campaign = campaignId.trim()
+
   const svc = getServiceSupabase()
 
   // Delete protection — never rely solely on the FK exception. A prize may be
-  // deleted ONLY when it has no awards and no assigned/claimed slots.
+  // deleted ONLY when ALL of these hold:
+  //   - it has zero instant_win_awards rows;
+  //   - every linked slot is unassigned (winning_ticket IS NULL);
+  //   - every linked slot is unclaimed (claimed_at IS NULL AND
+  //     claimed_by_checkout_intent_id IS NULL).
+  // A failure to run ANY safety-check query is treated as a server error and
+  // aborts the delete — we never proceed when protection state is unknown.
+
+  // 1) Award protection.
   const { count: awardCount, error: awardErr } = await svc
     .from('instant_win_awards')
     .select('id', { count: 'exact', head: true })
-    .eq('prize_id', id)
+    .eq('prize_id', prizeId)
 
   if (awardErr) {
-    console.error('[instant-win-prizes] DELETE award-check error:', awardErr)
-    return NextResponse.json({ ok: false, error: 'prize_cannot_be_deleted' }, { status: 409 })
+    console.error('[instant-win-prizes] DELETE award-check failed:', awardErr.message)
+    return NextResponse.json({ ok: false, error: 'delete_check_failed' }, { status: 500 })
   }
   if ((awardCount ?? 0) > 0) {
     return NextResponse.json({ ok: false, error: 'prize_cannot_be_deleted' }, { status: 409 })
   }
 
-  // Any slot that has been assigned a winning ticket (assigned) counts as
-  // protected. Claimed slots also produce awards, which are covered above.
-  const { count: assignedSlotCount, error: slotErr } = await svc
+  // 2) Slot protection — any assigned OR claimed slot blocks deletion. Run each
+  // predicate as its own COUNT query so a query failure is unambiguous.
+  const { count: assignedSlotCount, error: assignedErr } = await svc
     .from('instant_win_slots')
     .select('id', { count: 'exact', head: true })
-    .eq('prize_id', id)
+    .eq('prize_id', prizeId)
     .not('winning_ticket', 'is', null)
 
-  if (slotErr) {
-    console.error('[instant-win-prizes] DELETE slot-check error:', slotErr)
-    return NextResponse.json({ ok: false, error: 'prize_cannot_be_deleted' }, { status: 409 })
+  if (assignedErr) {
+    console.error('[instant-win-prizes] DELETE assigned-slot-check failed:', assignedErr.message)
+    return NextResponse.json({ ok: false, error: 'delete_check_failed' }, { status: 500 })
   }
   if ((assignedSlotCount ?? 0) > 0) {
+    return NextResponse.json({ ok: false, error: 'prize_cannot_be_deleted' }, { status: 409 })
+  }
+
+  const { count: claimedAtCount, error: claimedAtErr } = await svc
+    .from('instant_win_slots')
+    .select('id', { count: 'exact', head: true })
+    .eq('prize_id', prizeId)
+    .not('claimed_at', 'is', null)
+
+  if (claimedAtErr) {
+    console.error('[instant-win-prizes] DELETE claimed_at-check failed:', claimedAtErr.message)
+    return NextResponse.json({ ok: false, error: 'delete_check_failed' }, { status: 500 })
+  }
+  if ((claimedAtCount ?? 0) > 0) {
+    return NextResponse.json({ ok: false, error: 'prize_cannot_be_deleted' }, { status: 409 })
+  }
+
+  const { count: claimedIntentCount, error: claimedIntentErr } = await svc
+    .from('instant_win_slots')
+    .select('id', { count: 'exact', head: true })
+    .eq('prize_id', prizeId)
+    .not('claimed_by_checkout_intent_id', 'is', null)
+
+  if (claimedIntentErr) {
+    console.error('[instant-win-prizes] DELETE claimed_intent-check failed:', claimedIntentErr.message)
+    return NextResponse.json({ ok: false, error: 'delete_check_failed' }, { status: 500 })
+  }
+  if ((claimedIntentCount ?? 0) > 0) {
     return NextResponse.json({ ok: false, error: 'prize_cannot_be_deleted' }, { status: 409 })
   }
 
   const { error } = await svc
     .from('instant_win_prizes')
     .delete()
-    .eq('id', id)
-    .eq('campaign_id', campaignId)
+    .eq('id', prizeId)
+    .eq('campaign_id', campaign)
 
   if (error) {
-    console.error('[instant-win-prizes] DELETE error:', error)
-    return NextResponse.json({ ok: false, error: error.message, details: error }, { status: 500 })
+    console.error('[instant-win-prizes] DELETE error:', error.message)
+    return NextResponse.json({ ok: false, error: 'delete_failed' }, { status: 500 })
   }
 
   return NextResponse.json({ ok: true })
