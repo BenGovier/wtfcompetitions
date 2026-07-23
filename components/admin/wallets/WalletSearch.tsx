@@ -31,8 +31,8 @@ function formatPence(pence: number): string {
 // Map fixed API error codes to friendly copy. Raw API/auth errors are never shown.
 function mapSearchError(code: unknown): string {
   switch (code) {
-    case "search_incomplete":
-      return "The search was too broad to scan safely. Enter the customer's full email address."
+    case "complete_email_required":
+      return "Enter the customer's full email address, or search by their name."
     case "query_too_long":
       return "Search term is too long."
     case "query_too_short":
@@ -96,7 +96,7 @@ export function WalletSearch() {
               <Input
                 type="text"
                 className="pl-9"
-                placeholder="Search by email, name, or user ID"
+                placeholder="Full email, customer name or user ID"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
@@ -109,7 +109,7 @@ export function WalletSearch() {
             </Button>
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
-            Returns up to 25 results. Search by exact user ID for a guaranteed lookup.
+            Returns up to 25 results. Use a full email address, a customer name, or an exact user ID.
           </p>
         </CardContent>
       </Card>
