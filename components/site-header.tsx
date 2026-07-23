@@ -120,10 +120,10 @@ export async function SiteHeader() {
           {user && (
             <Link
               href="/me"
-              aria-label={`WTF Credit balance ${formatGBP(walletAvailablePence)}. View account.`}
-              className="flex shrink-0 items-center gap-1.5 rounded-full border border-yellow-500/30 bg-yellow-500/10 px-2.5 py-1.5 text-sm font-semibold text-yellow-300 transition-colors hover:bg-yellow-500/20"
+              aria-label={`Available WTF Credit ${formatGBP(walletAvailablePence)}. View account.`}
+              className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-yellow-400/50 bg-[#2E1065] px-3 py-1.5 text-sm font-semibold text-yellow-100 shadow-[0_0_14px_rgba(247,166,0,0.18)] transition-colors hover:border-yellow-300/70 hover:bg-[#3B0F73] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
-              <Wallet className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <Wallet className="h-4 w-4 shrink-0 text-yellow-400" aria-hidden="true" />
               <span className="tabular-nums">{formatGBP(walletAvailablePence)}</span>
             </Link>
           )}
