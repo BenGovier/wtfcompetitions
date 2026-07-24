@@ -89,7 +89,7 @@ export async function SiteHeader() {
   return (
     <header className="sticky top-0 z-50 border-b bg-background/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-16 items-center justify-between">
-        <Link href="/" className="flex items-center transition-opacity hover:opacity-80">
+        <Link href="/" prefetch={false} className="flex items-center transition-opacity hover:opacity-80">
           <Image
             src="/images/wtf-logo-main.png"
             alt="WTF Giveaways"
@@ -101,13 +101,13 @@ export async function SiteHeader() {
         </Link>
 
         <nav className="hidden items-center gap-6 md:flex">
-          <Link href="/giveaways" className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+          <Link href="/giveaways" prefetch={false} className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
             Giveaways
           </Link>
-          <Link href="/winners" className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+          <Link href="/winners" prefetch={false} className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
             Winners
           </Link>
-          <Link href="/contact" className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+          <Link href="/contact" prefetch={false} className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
             Contact
           </Link>
         </nav>
@@ -120,6 +120,7 @@ export async function SiteHeader() {
           {user && (
             <Link
               href="/me"
+              prefetch={false}
               aria-label={`Available WTF Credit ${formatGBP(walletAvailablePence)}. View account.`}
               className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-yellow-400/50 bg-[#2E1065] px-3 py-1.5 text-sm font-semibold text-yellow-100 shadow-[0_0_14px_rgba(247,166,0,0.18)] transition-colors hover:border-yellow-300/70 hover:bg-[#3B0F73] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
@@ -137,19 +138,19 @@ export async function SiteHeader() {
           {user ? (
             <>
               <Button variant="ghost" size="sm" asChild className="hidden sm:inline-flex hover:bg-accent">
-                <Link href="/me">My Account</Link>
+                <Link href="/me" prefetch={false}>My Account</Link>
               </Button>
               <Button size="sm" asChild className="hidden sm:inline-flex bg-primary text-primary-foreground shadow-sm hover:bg-[#5B21B6]">
-                <Link href="/giveaways">Browse</Link>
+                <Link href="/giveaways" prefetch={false}>Browse</Link>
               </Button>
             </>
           ) : (
             <>
               <Button variant="outline" size="sm" asChild className="hidden sm:inline-flex border-white/20 bg-black/50 text-white hover:bg-black/70">
-                <Link href="/auth/login">Log in</Link>
+                <Link href="/auth/login" prefetch={false}>Log in</Link>
               </Button>
               <Button size="sm" asChild className="hidden sm:inline-flex bg-red-600 text-white shadow-sm hover:bg-red-700">
-                <Link href="/auth/sign-up">Create account</Link>
+                <Link href="/auth/sign-up" prefetch={false}>Create account</Link>
               </Button>
             </>
           )}

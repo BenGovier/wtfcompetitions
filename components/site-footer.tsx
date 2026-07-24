@@ -22,7 +22,7 @@ export function SiteFooter() {
           <div className="grid gap-6 sm:grid-cols-2 sm:gap-10 lg:grid-cols-5">
             {/* Logo section */}
             <div className="lg:col-span-1">
-              <Link href="/" className="inline-block">
+              <Link href="/" prefetch={false} className="inline-block">
                 <Image
                   src="/images/wtf-logo-main.png"
                   alt="WTF Giveaways"
@@ -37,7 +37,7 @@ export function SiteFooter() {
               <h3 className="mb-4 text-xs font-semibold uppercase tracking-wider text-amber-400">Company</h3>
               <ul className="space-y-3 text-sm">
                 <li>
-                  <Link href="/contact" className="text-white/80 transition-colors hover:text-amber-400">
+                  <Link href="/contact" prefetch={false} className="text-white/80 transition-colors hover:text-amber-400">
                     Contact
                   </Link>
                 </li>
@@ -48,7 +48,7 @@ export function SiteFooter() {
               <h3 className="mb-4 text-xs font-semibold uppercase tracking-wider text-amber-400">Support</h3>
               <ul className="space-y-3 text-sm">
                 <li>
-                  <Link href="/faq" className="text-white/80 transition-colors hover:text-amber-400">
+                  <Link href="/faq" prefetch={false} className="text-white/80 transition-colors hover:text-amber-400">
                     FAQ
                   </Link>
                 </li>
@@ -59,27 +59,27 @@ export function SiteFooter() {
               <h3 className="mb-4 text-xs font-semibold uppercase tracking-wider text-amber-400">Legal</h3>
               <ul className="space-y-3 text-sm">
                 <li>
-                  <Link href="/terms" className="text-white/80 transition-colors hover:text-amber-400">
+                  <Link href="/terms" prefetch={false} className="text-white/80 transition-colors hover:text-amber-400">
                     Terms of Service
                   </Link>
                 </li>
                 <li>
-                  <Link href="/privacy" className="text-white/80 transition-colors hover:text-amber-400">
+                  <Link href="/privacy" prefetch={false} className="text-white/80 transition-colors hover:text-amber-400">
                     Privacy Policy
                   </Link>
                 </li>
                 <li>
-                  <Link href="/legal/website-terms-of-use" className="text-white/80 transition-colors hover:text-amber-400">
+                  <Link href="/legal/website-terms-of-use" prefetch={false} className="text-white/80 transition-colors hover:text-amber-400">
                     Website Terms of Use
                   </Link>
                 </li>
                 <li>
-                  <Link href="/legal/cookies" className="text-white/80 transition-colors hover:text-amber-400">
+                  <Link href="/legal/cookies" prefetch={false} className="text-white/80 transition-colors hover:text-amber-400">
                     Cookie Policy
                   </Link>
                 </li>
                 <li>
-                  <Link href="/acceptable" className="text-white/80 transition-colors hover:text-amber-400">
+                  <Link href="/acceptable" prefetch={false} className="text-white/80 transition-colors hover:text-amber-400">
                     Acceptable Use Policy
                   </Link>
                 </li>
