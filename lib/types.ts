@@ -31,6 +31,15 @@ export interface WinnerSnapshot {
   giveawaySlug?: string
   quote?: string
   kind?: 'main' | 'instant'
+  /**
+   * Optional fields populated defensively from the existing `winners_feed`
+   * response only where already supplied. They are never invented.
+   */
+  fulfilmentType?: 'cash' | 'wallet_credit' | 'manual' | null
+  prizeValuePence?: number | null
+  prizeValueText?: string | null
+  winningTicket?: number | null
+  campaignFormat?: string | null
 }
 
 export interface Profile {
