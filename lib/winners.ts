@@ -21,6 +21,50 @@ export const GRID_PAGE_SIZE = 24
 export type FulfilmentType = "cash" | "wallet_credit" | "manual"
 export type FulfilmentCategory = "cash" | "wallet_credit" | "other"
 
+/** Public fallback used whenever a usable first name cannot be derived. */
+export const WINNER_FALLBACK_NAME = "Verified winner"
+
+/**
+ * Reduce any supplied display name to a privacy-safe FIRST NAME ONLY.
+ *
+ * This is the single guard that stops a winner's surname from ever being
+ * serialised to the browser or rendered on the public winners page. It only
+ * ever sees the name string — it never derives a name from an email, user id,
+ * or any other field.
+ *
+ * Behaviour:
+ *  - non-string / empty / whitespace / invalid  -> "Verified winner"
+ *  - "Ben Govier"        -> "Ben"
+ *  - "  Grace   Quigley" -> "Grace"
+ *  - "Naomi H"           -> "Naomi"
+ *  - "Anne-Marie Smith"  -> "Anne-Marie"   (internal punctuation preserved)
+ *  - "O’Neil Jones"      -> "O’Neil"       (curly + straight apostrophes kept)
+ *  - "Pamela"            -> "Pamela"
+ *  - bounded to 24 Unicode code points; Unicode-safe (no ASCII-only assumptions)
+ */
+export function formatWinnerFirstName(displayName: unknown): string {
+  if (typeof displayName !== "string") return WINNER_FALLBACK_NAME
+
+  // Trim, then collapse repeated internal whitespace to a single space.
+  const normalised = displayName.trim().replace(/\s+/g, " ")
+  if (normalised.length === 0) return WINNER_FALLBACK_NAME
+
+  // Take only the first whitespace-separated token (drops the surname).
+  const firstToken = normalised.split(" ")[0] ?? ""
+
+  // Remove trailing separator punctuation (comma, full stop, colon, semicolon)
+  // while preserving internal punctuation such as hyphens and apostrophes.
+  const cleaned = firstToken.replace(/[.,:;]+$/u, "")
+  if (cleaned.trim().length === 0) return WINNER_FALLBACK_NAME
+
+  // Enforce a maximum visible length using Unicode code points, not UTF-16 units.
+  const chars = Array.from(cleaned)
+  const bounded = chars.length > 24 ? chars.slice(0, 24).join("") : cleaned
+  if (bounded.trim().length === 0) return WINNER_FALLBACK_NAME
+
+  return bounded
+}
+
 /**
  * Defensively map a raw `winners_feed` row to a WinnerSnapshot.
  * Optional fields are only populated when the response already supplies a
@@ -58,7 +102,7 @@ export function mapWinnerRow(row: any): WinnerSnapshot {
     typeof row?.avatar_url === "string" && row.avatar_url.trim().length > 0 ? row.avatar_url.trim() : undefined
 
   return {
-    name: row?.display_name || "Winner",
+    name: formatWinnerFirstName(row?.display_name),
     prizeTitle: row?.prize_title || "Prize",
     giveawayTitle: row?.campaign_title || "",
     giveawaySlug: row?.campaign_slug || undefined,
