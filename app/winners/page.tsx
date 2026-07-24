@@ -2,7 +2,14 @@ import { WinnersPageClient } from "@/components/winners-page-client"
 import { mockWinners } from "@/lib/mock-data"
 import { createClient } from "@/lib/supabase/server"
 import type { WinnerSnapshot } from "@/lib/types"
-import { FEATURED_COUNT, GRID_PAGE_SIZE, WINNERS_CUTOFF, WINNERS_KIND, mapWinnerRow } from "@/lib/winners"
+import {
+  FEATURED_COUNT,
+  GRID_PAGE_SIZE,
+  WINNERS_CUTOFF,
+  WINNERS_KIND,
+  formatWinnerFirstName,
+  mapWinnerRow,
+} from "@/lib/winners"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -55,7 +62,9 @@ export default async function WinnersPage() {
     }
 
     if (winners.length === 0 && !loadError) {
-      winners = mockWinners
+      // Never bypass the privacy rule via the mock fallback. Map into a new
+      // array (do not mutate the imported mock data) with first names only.
+      winners = mockWinners.map((w) => ({ ...w, name: formatWinnerFirstName(w.name) }))
       usingMock = true
       hasMore = false
     }
