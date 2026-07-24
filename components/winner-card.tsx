@@ -22,11 +22,13 @@ function formatDate(dateString: string): string {
   return then.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
 }
 
-function initialsFor(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean)
-  if (parts.length === 0) return "?"
-  if (parts.length === 1) return parts[0][0]!.toUpperCase()
-  return (parts[0][0]! + parts[parts.length - 1][0]!).toUpperCase()
+// Single initial only. The name is already sanitised to a first name upstream,
+// so this never reconstructs or infers a surname (Unicode-safe first character).
+function initialFor(name: string): string {
+  const trimmed = name.trim()
+  if (trimmed.length === 0) return "?"
+  const first = Array.from(trimmed)[0]
+  return first ? first.toUpperCase() : "?"
 }
 
 // Category-driven styling. Never uses a "£" heuristic.
@@ -58,7 +60,7 @@ export function WinnerCard({ winner, featured = false }: WinnerCardProps) {
   const badge = getFulfilmentBadge(winner)
   const styles = CATEGORY_STYLES[badge.category]
   const title = getPrizeDisplayTitle(winner)
-  const initials = initialsFor(winner.name || "Winner")
+  const initials = initialFor(winner.name || "Verified winner")
   const date = formatDate(winner.announcedAt)
 
   return (
