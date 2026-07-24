@@ -1,35 +1,41 @@
-/**
- * /winners page palette notes:
- * - Primary: existing --primary from Tailwind theme
- * - Accent 1 (amber/gold): "Instant Win" pill -- bg-amber-500/10 text-amber-600
- * - Accent 2 (emerald): "Verified" / trust badges -- text-emerald-600
- * - Neutrals: current muted-foreground / background tokens
- */
-
 import { WinnersPageClient } from "@/components/winners-page-client"
 import { mockWinners } from "@/lib/mock-data"
 import { createClient } from "@/lib/supabase/server"
 import type { WinnerSnapshot } from "@/lib/types"
+import { FEATURED_COUNT, GRID_PAGE_SIZE, WINNERS_CUTOFF, WINNERS_KIND, mapWinnerRow } from "@/lib/winners"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
 
+export interface LiveGiveaway {
+  slug: string
+  title: string
+  heroImageUrl: string | null
+  ticketPricePence: number
+  endsAt: string
+}
+
 export default async function WinnersPage() {
   let winners: WinnerSnapshot[] = []
-  let liveGiveaway: { slug: string; title: string; heroImageUrl: string | null; ticketPricePence: number; endsAt: string } | null = null
+  let hasMore = false
+  let loadError = false
+  let usingMock = false
+  let liveGiveaway: LiveGiveaway | null = null
+
+  // Initial bounded fetch: featured winners + one grid page (+1 peek row).
+  const initialLimit = FEATURED_COUNT + GRID_PAGE_SIZE
 
   try {
     const supabase = await createClient()
 
-    // Parallel queries: winners feed + live giveaway snapshot
     const [winnersResult, snapshotsResult] = await Promise.all([
       supabase
         .from("winners_feed")
         .select("*")
-        .eq("kind", "instant")
-        .gte("happened_at", "2026-03-20T00:00:00+00:00")
+        .eq("kind", WINNERS_KIND)
+        .gte("happened_at", WINNERS_CUTOFF)
         .order("happened_at", { ascending: false })
-        .limit(200),
+        .limit(initialLimit + 1),
       supabase
         .from("giveaway_snapshots")
         .select("payload")
@@ -40,22 +46,20 @@ export default async function WinnersPage() {
 
     const { data, error } = winnersResult
 
-    if (!error && data && data.length > 0) {
-      winners = data.map((row: any) => ({
-        name: row.display_name || "Winner",
-        prizeTitle: row.prize_title || "Prize",
-        giveawayTitle: row.campaign_title || "",
-        giveawaySlug: row.campaign_slug || undefined,
-        announcedAt: row.happened_at || new Date().toISOString(),
-        kind: (row.kind === "main" ? "main" : "instant") as "main" | "instant",
-      }))
+    if (error) {
+      loadError = true
+    } else if (data && data.length > 0) {
+      hasMore = data.length > initialLimit
+      const rows = hasMore ? data.slice(0, initialLimit) : data
+      winners = rows.map(mapWinnerRow)
     }
 
-    if (winners.length === 0) {
+    if (winners.length === 0 && !loadError) {
       winners = mockWinners
+      usingMock = true
+      hasMore = false
     }
 
-    // Find first live giveaway from snapshots
     if (!snapshotsResult.error && snapshotsResult.data) {
       const liveRow = snapshotsResult.data.find((row: any) => row.payload?.status === "live")
       if (liveRow?.payload) {
@@ -71,13 +75,20 @@ export default async function WinnersPage() {
     }
   } catch (err) {
     console.error("[winners] Failed to fetch winners_feed:", err)
-    winners = mockWinners
+    loadError = true
   }
+
+  const initialCursor = winners.length > 0 ? winners[winners.length - 1].announcedAt : null
 
   return (
     <div className="container px-4 py-6 md:py-10">
-      {/* Client component handles hero + grid */}
-      <WinnersPageClient winners={winners} liveGiveaway={liveGiveaway} />
+      <WinnersPageClient
+        initialWinners={winners}
+        initialCursor={usingMock ? null : initialCursor}
+        initialHasMore={hasMore}
+        loadError={loadError}
+        liveGiveaway={liveGiveaway}
+      />
     </div>
   )
 }
