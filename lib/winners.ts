@@ -57,6 +57,11 @@ const EMAIL_LIKE = /\S@\S/u
 const URL_LIKE = /^(?:https?:\/\/|www\.)/iu
 // Canonical 8-4-4-4-12 hexadecimal UUID.
 const UUID_LIKE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu
+// A human first name: starts with a Unicode letter, followed only by Unicode
+// letters, combining marks, internal apostrophes (' or ’) or hyphens. This
+// rejects usernames/handles/numbers (e.g. "ben123", "@ben", "user/name",
+// "07400123456") while preserving accents and names like "Anne-Marie" or "O’Neil".
+const HUMAN_NAME = /^\p{L}[\p{L}\p{M}'’-]*$/u
 
 export function formatWinnerFirstName(displayName: unknown): string {
   if (typeof displayName !== "string") return WINNER_FALLBACK_NAME
@@ -78,6 +83,10 @@ export function formatWinnerFirstName(displayName: unknown): string {
   // while preserving internal punctuation such as hyphens and apostrophes.
   const cleaned = firstToken.replace(/[.,:;]+$/u, "")
   if (cleaned.trim().length === 0) return WINNER_FALLBACK_NAME
+
+  // Final shape check: the cleaned token must look like a human first name.
+  // Rejects handles/usernames/numbers/paths that survived earlier steps.
+  if (!HUMAN_NAME.test(cleaned)) return WINNER_FALLBACK_NAME
 
   // Enforce a maximum visible length using Unicode code points, not UTF-16 units.
   const chars = Array.from(cleaned)
