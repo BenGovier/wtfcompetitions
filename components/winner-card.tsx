@@ -41,10 +41,10 @@ const CATEGORY_STYLES: Record<
     badge: "border border-yellow-500/40 bg-yellow-500/15 text-yellow-200",
   },
   cash: {
-    card: "border-emerald-500/30 bg-gradient-to-br from-[#0c2a1f] to-[#1a0a2e] hover:border-emerald-400/50",
-    avatar: "bg-gradient-to-br from-emerald-400 to-emerald-600 text-black",
-    amount: "text-emerald-300",
-    badge: "border border-emerald-500/40 bg-emerald-500/15 text-emerald-200",
+    card: "border-amber-400/30 bg-gradient-to-br from-[#3b0a4d] via-[#2a0845] to-[#12061f] hover:border-fuchsia-400/50",
+    avatar: "bg-gradient-to-br from-[#FFD46A] to-[#F7A600] text-purple-950",
+    amount: "text-amber-300",
+    badge: "border border-amber-400/50 bg-purple-950/70 text-amber-200",
   },
   other: {
     card: "border-white/10 bg-[#1a0a2e]/80 hover:border-purple-400/40",
