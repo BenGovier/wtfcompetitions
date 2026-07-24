@@ -21,6 +21,81 @@ export const GRID_PAGE_SIZE = 24
 export type FulfilmentType = "cash" | "wallet_credit" | "manual"
 export type FulfilmentCategory = "cash" | "wallet_credit" | "other"
 
+/** Public fallback used whenever a usable first name cannot be derived. */
+export const WINNER_FALLBACK_NAME = "Verified winner"
+
+/**
+ * Reduce any supplied display name to a privacy-safe FIRST NAME ONLY.
+ *
+ * This is the single guard that stops a winner's surname from ever being
+ * serialised to the browser or rendered on the public winners page. It only
+ * ever sees the name string — it never derives a name from an email, user id,
+ * or any other field.
+ *
+ * Behaviour:
+ *  - non-string / empty / whitespace / invalid  -> "Verified winner"
+ *  - "Ben Govier"        -> "Ben"
+ *  - "  Grace   Quigley" -> "Grace"
+ *  - "Naomi H"           -> "Naomi"
+ *  - "Anne-Marie Smith"  -> "Anne-Marie"   (internal punctuation preserved)
+ *  - "O’Neil Jones"      -> "O’Neil"       (curly + straight apostrophes kept)
+ *  - "Pamela"            -> "Pamela"
+ *  - bounded to 24 Unicode code points; Unicode-safe (no ASCII-only assumptions)
+ *
+ * Private / machine-generated inputs are rejected outright (return the
+ * fallback) so they can never be split into a "first name":
+ *  - email addresses  ("ben@example.com")
+ *  - URLs             ("https://example.com/ben", "www.example.com")
+ *  - UUIDs            ("cd40948f-44f5-499e-bdd3-213e11ba07fe")
+ * These checks are narrow and explicit; legitimate names containing an
+ * apostrophe, hyphen or full stop (e.g. "Anne-Marie", "O’Neil", "Dr. Smith")
+ * are NOT rejected.
+ */
+// Contains an "@" between non-space characters -> email address.
+const EMAIL_LIKE = /\S@\S/u
+// Explicit URL scheme or a leading "www." host -> URL.
+const URL_LIKE = /^(?:https?:\/\/|www\.)/iu
+// Canonical 8-4-4-4-12 hexadecimal UUID.
+const UUID_LIKE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu
+// A human first name: starts with a Unicode letter, followed only by Unicode
+// letters, combining marks, internal apostrophes (' or ’) or hyphens. This
+// rejects usernames/handles/numbers (e.g. "ben123", "@ben", "user/name",
+// "07400123456") while preserving accents and names like "Anne-Marie" or "O’Neil".
+const HUMAN_NAME = /^\p{L}[\p{L}\p{M}'’-]*$/u
+
+export function formatWinnerFirstName(displayName: unknown): string {
+  if (typeof displayName !== "string") return WINNER_FALLBACK_NAME
+
+  // Trim, then collapse repeated internal whitespace to a single space.
+  const normalised = displayName.trim().replace(/\s+/g, " ")
+  if (normalised.length === 0) return WINNER_FALLBACK_NAME
+
+  // Reject private / machine-generated values before any token extraction, so
+  // an email/URL/UUID can never leak through as a "first name".
+  if (EMAIL_LIKE.test(normalised) || URL_LIKE.test(normalised) || UUID_LIKE.test(normalised)) {
+    return WINNER_FALLBACK_NAME
+  }
+
+  // Take only the first whitespace-separated token (drops the surname).
+  const firstToken = normalised.split(" ")[0] ?? ""
+
+  // Remove trailing separator punctuation (comma, full stop, colon, semicolon)
+  // while preserving internal punctuation such as hyphens and apostrophes.
+  const cleaned = firstToken.replace(/[.,:;]+$/u, "")
+  if (cleaned.trim().length === 0) return WINNER_FALLBACK_NAME
+
+  // Final shape check: the cleaned token must look like a human first name.
+  // Rejects handles/usernames/numbers/paths that survived earlier steps.
+  if (!HUMAN_NAME.test(cleaned)) return WINNER_FALLBACK_NAME
+
+  // Enforce a maximum visible length using Unicode code points, not UTF-16 units.
+  const chars = Array.from(cleaned)
+  const bounded = chars.length > 24 ? chars.slice(0, 24).join("") : cleaned
+  if (bounded.trim().length === 0) return WINNER_FALLBACK_NAME
+
+  return bounded
+}
+
 /**
  * Defensively map a raw `winners_feed` row to a WinnerSnapshot.
  * Optional fields are only populated when the response already supplies a
@@ -58,7 +133,7 @@ export function mapWinnerRow(row: any): WinnerSnapshot {
     typeof row?.avatar_url === "string" && row.avatar_url.trim().length > 0 ? row.avatar_url.trim() : undefined
 
   return {
-    name: row?.display_name || "Winner",
+    name: formatWinnerFirstName(row?.display_name),
     prizeTitle: row?.prize_title || "Prize",
     giveawayTitle: row?.campaign_title || "",
     giveawaySlug: row?.campaign_slug || undefined,
