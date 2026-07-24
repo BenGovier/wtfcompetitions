@@ -41,13 +41,35 @@ export const WINNER_FALLBACK_NAME = "Verified winner"
  *  - "O’Neil Jones"      -> "O’Neil"       (curly + straight apostrophes kept)
  *  - "Pamela"            -> "Pamela"
  *  - bounded to 24 Unicode code points; Unicode-safe (no ASCII-only assumptions)
+ *
+ * Private / machine-generated inputs are rejected outright (return the
+ * fallback) so they can never be split into a "first name":
+ *  - email addresses  ("ben@example.com")
+ *  - URLs             ("https://example.com/ben", "www.example.com")
+ *  - UUIDs            ("cd40948f-44f5-499e-bdd3-213e11ba07fe")
+ * These checks are narrow and explicit; legitimate names containing an
+ * apostrophe, hyphen or full stop (e.g. "Anne-Marie", "O’Neil", "Dr. Smith")
+ * are NOT rejected.
  */
+// Contains an "@" between non-space characters -> email address.
+const EMAIL_LIKE = /\S@\S/u
+// Explicit URL scheme or a leading "www." host -> URL.
+const URL_LIKE = /^(?:https?:\/\/|www\.)/iu
+// Canonical 8-4-4-4-12 hexadecimal UUID.
+const UUID_LIKE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu
+
 export function formatWinnerFirstName(displayName: unknown): string {
   if (typeof displayName !== "string") return WINNER_FALLBACK_NAME
 
   // Trim, then collapse repeated internal whitespace to a single space.
   const normalised = displayName.trim().replace(/\s+/g, " ")
   if (normalised.length === 0) return WINNER_FALLBACK_NAME
+
+  // Reject private / machine-generated values before any token extraction, so
+  // an email/URL/UUID can never leak through as a "first name".
+  if (EMAIL_LIKE.test(normalised) || URL_LIKE.test(normalised) || UUID_LIKE.test(normalised)) {
+    return WINNER_FALLBACK_NAME
+  }
 
   // Take only the first whitespace-separated token (drops the surname).
   const firstToken = normalised.split(" ")[0] ?? ""
