@@ -37,6 +37,7 @@ export function MobileNav() {
         <Link
           key={item.href}
           href={item.href}
+          prefetch={false}
           className="relative -mt-6 flex flex-col items-center"
         >
           {/* Elevated center button */}
@@ -65,6 +66,7 @@ export function MobileNav() {
       <Link
         key={item.href}
         href={item.href}
+        prefetch={false}
         className={cn(
           "flex flex-col items-center justify-center gap-1 min-w-[60px] py-1 transition-colors",
           isActive ? "text-amber-400" : "text-white/80 hover:text-white"

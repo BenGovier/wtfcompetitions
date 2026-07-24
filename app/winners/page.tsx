@@ -81,14 +81,16 @@ export default async function WinnersPage() {
   const initialCursor = winners.length > 0 ? winners[winners.length - 1].announcedAt : null
 
   return (
-    <div className="container px-4 py-6 md:py-10">
-      <WinnersPageClient
-        initialWinners={winners}
-        initialCursor={usingMock ? null : initialCursor}
-        initialHasMore={hasMore}
-        loadError={loadError}
-        liveGiveaway={liveGiveaway}
-      />
+    <div className="min-h-screen bg-gradient-to-b from-[#1a002b] via-[#2d0050] to-[#0a0014]">
+      <div className="container px-4 py-6 pb-24 md:py-10">
+        <WinnersPageClient
+          initialWinners={winners}
+          initialCursor={usingMock ? null : initialCursor}
+          initialHasMore={hasMore}
+          loadError={loadError}
+          liveGiveaway={liveGiveaway}
+        />
+      </div>
     </div>
   )
 }

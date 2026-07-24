@@ -25,18 +25,30 @@ export function FeaturedWinners({ winners }: FeaturedWinnersProps) {
         </span>
       </div>
 
-      <ul
-        className={`-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 md:mx-0 md:grid md:grid-cols-2 md:overflow-visible md:px-0 md:pb-0 ${columns}`}
-      >
-        {winners.map((winner, i) => (
-          <li
-            key={`${winnerKey(winner)}-featured-${i}`}
-            className="w-[78%] shrink-0 snap-start min-[520px]:w-[42%] md:w-auto"
-          >
-            <WinnerCard winner={winner} featured={i === 0} />
-          </li>
-        ))}
-      </ul>
+      <div className="relative -mx-4 md:mx-0">
+        <ul
+          className={`flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:grid md:grid-cols-2 md:overflow-visible md:px-0 md:pb-0 ${columns}`}
+        >
+          {winners.map((winner, i) => (
+            <li
+              key={`${winnerKey(winner)}-featured-${i}`}
+              className="w-[78%] shrink-0 snap-start min-[520px]:w-[42%] md:w-auto"
+            >
+              <WinnerCard winner={winner} featured={i === 0} />
+            </li>
+          ))}
+        </ul>
+
+        {/* Mobile-only right-edge fade: signals more cards exist to the right and
+            stops the final visible card looking accidentally clipped. Purely
+            decorative and non-interactive; hidden on the desktop grid. */}
+        {winners.length > 1 ? (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-[#12061f] to-transparent md:hidden"
+          />
+        ) : null}
+      </div>
     </section>
   )
 }
