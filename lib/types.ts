@@ -38,7 +38,6 @@ export interface WinnerSnapshot {
   fulfilmentType?: 'cash' | 'wallet_credit' | 'manual' | null
   prizeValuePence?: number | null
   prizeValueText?: string | null
-  winningTicket?: number | null
   campaignFormat?: string | null
 }
 
