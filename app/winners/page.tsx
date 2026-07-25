@@ -5,6 +5,7 @@ import type { WinnerSnapshot } from "@/lib/types"
 import {
   FEATURED_COUNT,
   GRID_PAGE_SIZE,
+  PUBLIC_WINNER_COLUMNS,
   WINNERS_CUTOFF,
   WINNERS_KIND,
   formatWinnerFirstName,
@@ -38,7 +39,9 @@ export default async function WinnersPage() {
     const [winnersResult, snapshotsResult] = await Promise.all([
       supabase
         .from("winners_feed")
-        .select("*")
+        // Explicit public allow-list: never fetch `winning_ticket` / `user_id`,
+        // so they cannot leak via the raw result envelope Next.js serialises.
+        .select(PUBLIC_WINNER_COLUMNS)
         .eq("kind", WINNERS_KIND)
         .gte("happened_at", WINNERS_CUTOFF)
         .order("happened_at", { ascending: false })

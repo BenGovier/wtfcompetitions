@@ -1,7 +1,6 @@
 import type { WinnerSnapshot } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { getFulfilmentBadge, getPrizeDisplayTitle, type FulfilmentCategory } from "@/lib/winners"
-import { Ticket } from "lucide-react"
 
 interface WinnerCardProps {
   winner: WinnerSnapshot
@@ -112,15 +111,9 @@ export function WinnerCard({ winner, featured = false }: WinnerCardProps) {
         </div>
       </div>
 
-      {/* 5 + 6. Date and winning ticket (ticket only when supplied) */}
+      {/* 5. Date only. Winning ticket numbers are never exposed publicly. */}
       <div className="flex items-center justify-between gap-2 border-t border-white/5 pt-2.5 text-xs text-white/50">
         {date ? <span>{date}</span> : <span />}
-        {typeof winner.winningTicket === "number" ? (
-          <span className="inline-flex items-center gap-1 font-medium text-white/70">
-            <Ticket className="h-3.5 w-3.5" aria-hidden="true" />
-            Ticket #{winner.winningTicket}
-          </span>
-        ) : null}
       </div>
     </article>
   )

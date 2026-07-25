@@ -16,8 +16,22 @@ export const WINNERS_CUTOFF = "2026-03-20T00:00:00+00:00"
 // Bounded page sizes. The initial request loads the featured winners plus one
 // grid page; each "Load more" click loads one further bounded grid page.
 export const FEATURED_COUNT = 4
+
 export const GRID_PAGE_SIZE = 24
 
+/**
+ * Explicit allow-list of PUBLIC columns selected from `winners_feed`.
+ *
+ * This is a hard privacy boundary at the QUERY layer: sensitive columns
+ * (`winning_ticket`, `user_id`) are never fetched, so they can never appear in
+ * the raw Supabase result envelope that Next.js serialises into the RSC/HTML
+ * payload, nor in the `/api/winners` JSON. `happened_at` is the ordering /
+ * cursor key and is safe. Only columns that actually exist on the view are
+ * listed (verified against the live row shape) and every column here is read by
+ * `mapWinnerRow` — keep the two in sync.
+ */
+export const PUBLIC_WINNER_COLUMNS =
+  "kind, happened_at, display_name, prize_title, campaign_title, campaign_slug, fulfilment_type, prize_value_pence, prize_value_text"
 export type FulfilmentType = "cash" | "wallet_credit" | "manual"
 export type FulfilmentCategory = "cash" | "wallet_credit" | "other"
 
@@ -119,11 +133,6 @@ export function mapWinnerRow(row: any): WinnerSnapshot {
       ? row.prize_value_text.trim()
       : null
 
-  const winningTicket =
-    typeof row?.winning_ticket === "number" && Number.isFinite(row.winning_ticket)
-      ? row.winning_ticket
-      : null
-
   const campaignFormat =
     typeof row?.campaign_format === "string" && row.campaign_format.trim().length > 0
       ? row.campaign_format.trim()
@@ -142,7 +151,6 @@ export function mapWinnerRow(row: any): WinnerSnapshot {
     fulfilmentType,
     prizeValuePence,
     prizeValueText,
-    winningTicket,
     campaignFormat,
     avatarUrl,
   }
