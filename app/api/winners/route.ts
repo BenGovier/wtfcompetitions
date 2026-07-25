@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { GRID_PAGE_SIZE, WINNERS_CUTOFF, WINNERS_KIND, mapWinnerRow } from "@/lib/winners"
+import { GRID_PAGE_SIZE, PUBLIC_WINNER_COLUMNS, WINNERS_CUTOFF, WINNERS_KIND, mapWinnerRow } from "@/lib/winners"
 
 export const dynamic = "force-dynamic"
 
@@ -39,7 +39,9 @@ export async function GET(request: Request) {
 
     let query = supabase
       .from("winners_feed")
-      .select("*")
+      // Explicit public allow-list: `winning_ticket` / `user_id` are never
+      // fetched, so they can never appear in this JSON response.
+      .select(PUBLIC_WINNER_COLUMNS)
       .eq("kind", WINNERS_KIND)
       .gte("happened_at", WINNERS_CUTOFF)
       .order("happened_at", { ascending: false })
