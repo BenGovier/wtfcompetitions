@@ -108,7 +108,7 @@ export function WinnersPageClient({
           {/* Supporting copy + single compact proof statement */}
           <p className="mt-1.5 text-pretty text-sm text-white/70">
             Real winners. Real cash. New winners every week.
-            <span className="text-white/45"> · Meaningful prizes from £20 to £1,000+</span>
+            <span className="text-white/45"> · Cash prizes and balloon wins added regularly</span>
           </p>
 
           <div className="mt-3">
