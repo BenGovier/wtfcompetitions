@@ -31,6 +31,61 @@ export const GRID_PAGE_SIZE = 24
 export const MIN_PUBLIC_PRIZE_PENCE = 2000
 
 /**
+ * Approved Balloon competition campaign slugs.
+ *
+ * Confirmed balloon campaigns currently use MIXED `presentation_type` /
+ * `reveal_type` values (some `balloon_pop`, some `instant_cash`), so those
+ * columns cannot be trusted to detect balloons — and campaign TITLES must never
+ * be used either. This explicit slug allow-list is the single source of truth
+ * for balloon eligibility. Slug casing is exact and MUST be preserved (PostgREST
+ * `in.(...)` matching is case-sensitive).
+ */
+export const BALLOON_WINNER_CAMPAIGN_SLUGS = [
+  "salli3",
+  "rosslizzy",
+  "Salli2",
+  "Salli",
+  "ch8june",
+  "grandballoon",
+] as const
+
+/**
+ * The SINGLE shared PostgREST eligibility filter used by BOTH the initial server
+ * load and the `/api/winners` route, so their rules can never drift.
+ *
+ * A winner is eligible when EITHER:
+ *   1. `prize_value_pence >= 2000` (a proven, meaningful numeric value), OR
+ *   2. `campaign_slug` is in the approved balloon list (any value, incl. NULL
+ *      numeric value — balloon eligibility is proven by the slug itself).
+ *
+ * Non-balloon rows with a NULL numeric value fail branch 1 (NULL comparisons are
+ * false) and are not in branch 2, so they remain excluded (fail-closed). Applied
+ * BEFORE order/limit/peek so featured, grid, hasMore and the cursor all derive
+ * from the eligible set. The slugs are plain alphanumerics, so no PostgREST
+ * quoting/escaping is required inside `in.(...)`.
+ */
+export function winnersEligibilityOrFilter(): string {
+  const slugList = BALLOON_WINNER_CAMPAIGN_SLUGS.join(",")
+  return `prize_value_pence.gte.${MIN_PUBLIC_PRIZE_PENCE},campaign_slug.in.(${slugList})`
+}
+
+/**
+ * Client-safe mirror of the query eligibility rule, used ONLY by the mock
+ * fallback (never for live rows, which are filtered at the query layer). Keeps
+ * the fallback from surfacing an ineligible winner.
+ */
+export function isWinnerEligible(w: WinnerSnapshot): boolean {
+  const meetsValue =
+    typeof w.prizeValuePence === "number" &&
+    Number.isFinite(w.prizeValuePence) &&
+    w.prizeValuePence >= MIN_PUBLIC_PRIZE_PENCE
+  const isBalloon =
+    typeof w.giveawaySlug === "string" &&
+    (BALLOON_WINNER_CAMPAIGN_SLUGS as readonly string[]).includes(w.giveawaySlug)
+  return meetsValue || isBalloon
+}
+
+/**
  * Explicit allow-list of PUBLIC columns selected from `winners_feed`.
  *
  * This is a hard privacy boundary at the QUERY layer: sensitive columns
