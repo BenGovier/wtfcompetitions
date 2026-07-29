@@ -2,11 +2,9 @@ import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import {
   GRID_PAGE_SIZE,
-  MIN_PUBLIC_PRIZE_PENCE,
   PUBLIC_WINNER_COLUMNS,
-  WINNERS_CUTOFF,
-  WINNERS_KIND,
   mapWinnerRow,
+  winnersEligibilityOrFilter,
 } from "@/lib/winners"
 
 export const dynamic = "force-dynamic"
@@ -49,11 +47,11 @@ export async function GET(request: Request) {
       // Explicit public allow-list: `winning_ticket` / `user_id` are never
       // fetched, so they can never appear in this JSON response.
       .select(PUBLIC_WINNER_COLUMNS)
-      .eq("kind", WINNERS_KIND)
-      .gte("happened_at", WINNERS_CUTOFF)
-      // Same £20 eligibility rule as the initial server load, applied before
-      // order/limit/peek so pagination stays consistent. NULL values excluded.
-      .gte("prize_value_pence", MIN_PUBLIC_PRIZE_PENCE)
+      // Exact same shared eligibility rule as the initial server load:
+      // prize_value_pence >= 2000 OR campaign_slug in the approved balloon list.
+      // Applied before order/limit/peek so pagination stays consistent. Non-balloon
+      // NULL-value rows are excluded.
+      .or(winnersEligibilityOrFilter())
       .order("happened_at", { ascending: false })
       .limit(limit + 1) // peek one extra to compute hasMore
 
