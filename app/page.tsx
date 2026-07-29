@@ -5,63 +5,13 @@ import { ArrowRight, Zap } from "lucide-react"
 import { createClient } from "@/lib/supabase/server"
 import { LiveNowTakeover } from "@/components/live/LiveNowTakeover"
 import { TikTokIcon } from "@/components/icons/tiktok-icon"
+import { deadlineLabel } from "@/lib/countdown"
 
 // --- Card display helpers (shared logic, duplicated intentionally per page) ---
 
-type UrgencyTone = "ended" | "urgent" | "normal"
-
-// Calendar day (Y-M-D) for a date evaluated in Europe/London.
-function londonYMD(d: Date): { y: number; m: number; day: number } {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/London",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(d)
-  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value)
-  return { y: get("year"), m: get("month"), day: get("day") }
-}
-
-// Whole-calendar-day difference (to - from) using Europe/London dates.
-function londonCalendarDayDiff(from: Date, to: Date): number {
-  const a = londonYMD(from)
-  const b = londonYMD(to)
-  const aUTC = Date.UTC(a.y, a.m - 1, a.day)
-  const bUTC = Date.UTC(b.y, b.m - 1, b.day)
-  return Math.round((bUTC - aUTC) / (1000 * 60 * 60 * 24))
-}
-
-// Urgency badge derived only from status + ends_at. Returns null when nothing
-// can be shown safely (e.g. no ends_at and not sold out/ended).
-function getUrgency(giveaway: any): { label: string; tone: UrgencyTone } | null {
-  const status = giveaway?.status
-  const sold = Number(giveaway?.tickets_sold ?? 0)
-  const cap = Number(giveaway?.hard_cap_total_tickets ?? 0)
-
-  // 1. Sold out
-  if (status === "sold_out" || (cap > 0 && sold >= cap)) return { label: "SOLD OUT", tone: "ended" }
-  // 2. Ended
-  if (status === "ended" || status === "closed") return { label: "ENDED", tone: "ended" }
-
-  const endsAt = giveaway?.ends_at
-  if (!endsAt) return null
-  const end = new Date(endsAt)
-  if (Number.isNaN(end.getTime())) return null
-
-  const now = new Date()
-  if (end.getTime() <= now.getTime()) return { label: "ENDED", tone: "ended" }
-
-  const days = londonCalendarDayDiff(now, end)
-  // 3. Ends today / 4. Ends tomorrow
-  if (days <= 0) return { label: "ENDS TODAY", tone: "urgent" }
-  if (days === 1) return { label: "ENDS TOMORROW", tone: "urgent" }
-  // 5. X days left
-  return { label: `${days} DAYS LEFT`, tone: "normal" }
-}
-
-// Customer-friendly price: below £1 -> "49P", £1+ -> "£1.50".
+// Customer-friendly price: below £1 -> "49p", £1+ -> "£1.50".
 function priceText(pence: number): string {
-  if (pence < 100) return `${Math.round(pence)}P`
+  if (pence < 100) return `${Math.round(pence)}p`
   return `£${(pence / 100).toFixed(2)}`
 }
 
@@ -138,7 +88,9 @@ export default async function HomePage() {
         <div className="mt-6 grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 md:grid-cols-2 md:gap-5 lg:grid-cols-3">
           {giveaways.length > 0 ? (
             giveaways.map((giveaway: any) => {
-              const urgency = getUrgency(giveaway)
+              const endsAtRaw = giveaway.ends_at
+              const endMs = endsAtRaw ? new Date(endsAtRaw).getTime() : Number.NaN
+              const deadline = Number.isFinite(endMs) ? deadlineLabel(endMs, Date.now()) : null
               const sold = Number(giveaway.tickets_sold ?? 0)
               const cap = Number(giveaway.hard_cap_total_tickets ?? 0)
               const percentSold = cap > 0 ? Math.min(100, Math.floor((sold / cap) * 100)) : null
@@ -166,44 +118,32 @@ export default async function HomePage() {
                       <div className="h-full w-full bg-gradient-to-br from-[#2a0040] to-[#1a0b2e]" />
                     )}
                     {/* Bottom fade so the price badge stays legible */}
-                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#1c0b30] to-transparent" />
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/85 via-black/40 to-transparent" />
 
-                    {/* 1. Urgency badge */}
-                    {urgency && (
+                    {/* 1. Deadline pill — centred, overlapping the top edge of the artwork */}
+                    {deadline && (
                       <span
                         className={
-                          "absolute left-2 top-2 z-10 inline-flex items-center rounded-md px-2 py-1 text-[10px] font-extrabold uppercase tracking-wide shadow-md " +
-                          (urgency.tone === "ended"
-                            ? "bg-black/75 text-white/90 backdrop-blur-sm"
-                            : urgency.tone === "urgent"
-                              ? "bg-gradient-to-r from-red-600 to-red-800 text-white"
-                              : "bg-black/60 text-white backdrop-blur-sm")
+                          "absolute left-1/2 top-3 z-10 -translate-x-1/2 whitespace-nowrap rounded-full px-3 py-1 text-xs font-bold shadow-lg shadow-black/40 " +
+                          (deadline.ended
+                            ? "bg-red-600 text-white"
+                            : "bg-[#1c0b30] text-white ring-1 ring-amber-400/50")
                         }
                       >
-                        {urgency.label}
+                        {deadline.label}
                       </span>
                     )}
                   </div>
 
                   {/* Content */}
                   <div className="flex flex-1 flex-col p-3">
-                    {/* 2. Ticket-price badge, overlapping the artwork bottom */}
+                    {/* 2. Ticket price — centred gold pill overlapping the image/content seam.
+                        Price only: no label, single line, symmetrical. */}
                     {base != null && (
-                      <div className="relative z-10 -mt-7 mb-3 flex items-end gap-2">
-                        {onSale ? (
-                          <>
-                            <span className="inline-flex items-center rounded-full bg-gradient-to-r from-green-500 to-emerald-600 px-3 py-1 text-xs font-extrabold text-white shadow-md">
-                              NOW {priceText(base)}
-                            </span>
-                            <span className="text-[10px] font-semibold uppercase text-white/60 line-through">
-                              Was {priceText(was)}
-                            </span>
-                          </>
-                        ) : (
-                          <span className="inline-flex items-center rounded-full bg-gradient-to-r from-[#FFD700] to-[#FFA500] px-3 py-1 text-xs font-extrabold text-black shadow-md">
-                            {priceText(base)} A TICKET
-                          </span>
-                        )}
+                      <div className="relative z-10 -mt-6 mb-3 flex justify-center">
+                        <span className="inline-flex items-center whitespace-nowrap rounded-full bg-gradient-to-br from-[#FFD700] to-[#FFA500] px-4 py-1.5 text-lg font-black tabular-nums leading-none text-black shadow-lg shadow-black/30 md:text-xl">
+                          {priceText(base)}
+                        </span>
                       </div>
                     )}
 
