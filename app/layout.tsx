@@ -71,7 +71,11 @@ export default async function RootLayout({
 }>) {
   const hdrs = await headers()
   const pathname = hdrs.get("x-next-pathname") ?? hdrs.get("x-invoke-path") ?? ""
-  const isBarePage = pathname.startsWith("/pre-register")
+  // Admin routes render inside their own full-viewport AdminShell, so the public
+  // site chrome (announcement bar, header, footer, mobile bottom nav) must not
+  // wrap them. These elements remain untouched on all customer-facing routes.
+  const isAdminRoute = pathname.startsWith("/admin")
+  const isBarePage = pathname.startsWith("/pre-register") || isAdminRoute
 
   return (
     <html lang="en">
