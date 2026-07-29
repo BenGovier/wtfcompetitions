@@ -1,164 +1,247 @@
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { CampaignsTable } from "@/components/admin/campaigns/CampaignsTable"
+import { CampaignsTable, type CampaignRow } from "@/components/admin/campaigns/CampaignsTable"
+import {
+  CampaignsControls,
+  type FormatKey,
+  type StatusKey,
+} from "@/components/admin/campaigns/CampaignsControls"
 import { createClient } from "@/lib/supabase/server"
 import { requireAdmin } from "@/lib/admin/auth"
-import type { Campaign } from "@/lib/types/campaign"
+import { BALLOON_CAMPAIGN_SLUGS, classifyGiveaway } from "@/lib/giveaway-classification"
 
-type TabKey = 'live' | 'draft' | 'ended' | 'all'
+// Explicit column allow-list. No entry/order/counter reads and no per-row
+// detail query — everything the list needs comes from this single projection.
+const LIST_COLUMNS =
+  "id, status, title, slug, start_at, end_at, ticket_price_pence, presentation_type"
 
-const TABS: { key: TabKey; label: string }[] = [
-  { key: 'live', label: 'Live' },
-  { key: 'draft', label: 'Drafts' },
-  { key: 'ended', label: 'Ended' },
-  { key: 'all', label: 'All' },
+const STATUS_KEYS: StatusKey[] = [
+  "all",
+  "live",
+  "draft",
+  "ended",
+  "paused",
+  "sold_out",
+  "closed",
 ]
 
-function normalizeStatus(raw?: string): TabKey {
-  if (raw === 'draft' || raw === 'ended' || raw === 'all') return raw
-  return 'live'
+const PAGE_SIZES = [25, 50, 100]
+
+// Comma-joined balloon slug allow-list for PostgREST `in.(...)` filters.
+const BALLOON_SLUGS_CSV = BALLOON_CAMPAIGN_SLUGS.join(",")
+
+function normalizeStatus(raw?: string): StatusKey {
+  return (STATUS_KEYS as string[]).includes(raw ?? "") ? (raw as StatusKey) : "all"
+}
+
+function normalizeFormat(raw?: string): FormatKey {
+  return raw === "live" || raw === "instant" || raw === "other" ? raw : "all"
+}
+
+function sanitizeSearch(raw?: string): string {
+  if (!raw) return ""
+  // Strip characters that would break a PostgREST `or()` filter, cap length.
+  return raw.replace(/[,()*%]/g, " ").trim().slice(0, 100)
+}
+
+/**
+ * Apply search + format filters (NOT status) to a campaigns query. Used
+ * identically by the data query and every count query so counts and rows stay
+ * consistent. Format rules mirror the shared classifier: a known balloon slug
+ * always wins over presentation_type.
+ */
+// Minimal structural view of the PostgREST filter builder methods we call here.
+// Typing against this local shape (instead of Supabase's deeply-recursive generic
+// builder type) avoids TS2589 "excessively deep" instantiation. The return is
+// deliberately `any` so callers keep the real builder (await, .order, .range).
+type FilterableQuery = {
+  or: (filters: string) => FilterableQuery
+  eq: (column: string, value: string) => FilterableQuery
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function applyListFilters(
+  query: any,
+  { search, format }: { search: string; format: FormatKey },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): any {
+  let q = query as FilterableQuery
+  if (search) {
+    q = q.or(`title.ilike.*${search}*,slug.ilike.*${search}*`)
+  }
+  if (format === "live") {
+    // Balloon slug OR balloon_pop presentation.
+    q = q.or(`slug.in.(${BALLOON_SLUGS_CSV}),presentation_type.eq.balloon_pop`)
+  } else if (format === "instant") {
+    // instant_cash presentation AND not a known balloon slug.
+    q = q
+      .eq("presentation_type", "instant_cash")
+      .or(`slug.is.null,slug.not.in.(${BALLOON_SLUGS_CSV})`)
+  } else if (format === "other") {
+    // Neither a balloon (slug or presentation) nor instant_cash.
+    q = q
+      .or(`slug.is.null,slug.not.in.(${BALLOON_SLUGS_CSV})`)
+      .or(
+        `presentation_type.is.null,and(presentation_type.neq.balloon_pop,presentation_type.neq.instant_cash)`,
+      )
+  }
+  return q
 }
 
 export default async function CampaignsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>
+  searchParams: Promise<{
+    status?: string
+    search?: string
+    format?: string
+    page?: string
+    pageSize?: string
+  }>
 }) {
-  await requireAdmin({ roles: ['admin'] })
+  await requireAdmin({ roles: ["admin"] })
 
-  const { status } = await searchParams
-  const activeTab = normalizeStatus(status)
+  const sp = await searchParams
+  const status = normalizeStatus(sp.status)
+  const format = normalizeFormat(sp.format)
+  const search = sanitizeSearch(sp.search)
+
+  const pageSize = PAGE_SIZES.includes(Number(sp.pageSize)) ? Number(sp.pageSize) : 25
+  const requestedPage = Math.max(1, Number.parseInt(sp.page ?? "1", 10) || 1)
 
   const supabase = await createClient()
 
-  // Single existing query — loads campaigns ordered by newest created first.
-  // No entry/order queries and no per-campaign queries are added.
-  const { data: rows, error } = await supabase
-    .from('campaigns')
-    .select(
-      'id, status, title, slug, summary, description, start_at, end_at, main_prize_title, main_prize_description, hero_image_url, ticket_price_pence, max_tickets_total, max_tickets_per_user'
+  // --- Status counts (filter-consistent: search + format applied). Each is a
+  // HEAD + exact-count request — no rows are transferred. Runs in parallel. ---
+  const countPromises = STATUS_KEYS.map(async (key) => {
+    let q = applyListFilters(
+      supabase.from("campaigns").select("id", { count: "exact", head: true }),
+      { search, format },
     )
-    .order('created_at', { ascending: false })
+    if (key !== "all") q = q.eq("status", key)
+    const { count } = await q
+    return [key, count ?? 0] as const
+  })
+
+  // --- Bounded data query: exact total for the current view + range page. ---
+  const total = await (async () => {
+    let q = applyListFilters(
+      supabase.from("campaigns").select("id", { count: "exact", head: true }),
+      { search, format },
+    )
+    if (status !== "all") q = q.eq("status", status)
+    const { count } = await q
+    return count ?? 0
+  })()
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+  const page = Math.min(requestedPage, totalPages)
+  const from = (page - 1) * pageSize
+  const to = from + pageSize - 1
+
+  let dataQuery = applyListFilters(supabase.from("campaigns").select(LIST_COLUMNS), {
+    search,
+    format,
+  })
+  if (status !== "all") dataQuery = dataQuery.eq("status", status)
+  // Stable ordering: newest created first, id tie-breaker.
+  const { data: rows, error } = await dataQuery
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .range(from, to)
+
+  const countEntries = await Promise.all(countPromises)
+  const counts = Object.fromEntries(countEntries) as Record<StatusKey, number>
 
   if (error) {
     return (
       <div className="space-y-6">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">Campaigns</h2>
-          <p className="text-destructive">
-            {'Failed to load campaigns: ' + error.message}
-          </p>
-        </div>
+        <h2 className="text-3xl font-bold tracking-tight">Campaigns</h2>
+        <p className="text-destructive">Failed to load campaigns: {error.message}</p>
       </div>
     )
   }
 
-  const campaigns: Campaign[] = (rows ?? []).map((r) => ({
+  const campaigns: CampaignRow[] = (rows ?? []).map((r: any) => ({
     id: String(r.id),
-    status: r.status ?? 'draft',
-    title: r.title ?? '',
-    slug: r.slug ?? '',
-    summary: r.summary ?? '',
-    description: r.description ?? '',
-    startAt: r.start_at ?? '',
-    endAt: r.end_at ?? '',
-    mainPrizeTitle: r.main_prize_title ?? '',
-    mainPrizeDescription: r.main_prize_description ?? '',
-    heroImageUrl: r.hero_image_url ?? '',
+    title: r.title ?? "",
+    slug: r.slug ?? "",
+    status: r.status ?? "draft",
+    category: classifyGiveaway({ slug: r.slug, presentation_type: r.presentation_type }),
+    startAt: r.start_at ?? "",
+    endAt: r.end_at ?? "",
     ticketPricePence: r.ticket_price_pence ?? 0,
-    maxTicketsTotal: r.max_tickets_total ?? null,
-    maxTicketsPerUser: r.max_tickets_per_user ?? null,
   }))
 
-  // Counts per tab (computed from the single query result — no extra queries).
-  const counts: Record<TabKey, number> = {
-    live: campaigns.filter((c) => c.status === 'live').length,
-    draft: campaigns.filter((c) => c.status === 'draft').length,
-    ended: campaigns.filter((c) => c.status === 'ended').length,
-    all: campaigns.length,
+  // Build pagination hrefs preserving the current filter params.
+  const baseParams = new URLSearchParams()
+  if (status !== "all") baseParams.set("status", status)
+  if (format !== "all") baseParams.set("format", format)
+  if (search) baseParams.set("search", search)
+  if (pageSize !== 25) baseParams.set("pageSize", String(pageSize))
+  const pageHref = (p: number) => {
+    const next = new URLSearchParams(baseParams.toString())
+    if (p > 1) next.set("page", String(p))
+    const qs = next.toString()
+    return qs ? `/admin/campaigns?${qs}` : "/admin/campaigns"
   }
 
-  const toTime = (d: string) => {
-    const t = new Date(d).getTime()
-    return Number.isFinite(t) ? t : 0
-  }
-
-  // Filter by active tab, then sort per the tab's rule.
-  let visible: Campaign[]
-  if (activeTab === 'live') {
-    // Live: newest/live campaigns first (by start date desc).
-    visible = campaigns
-      .filter((c) => c.status === 'live')
-      .sort((a, b) => toTime(b.startAt) - toTime(a.startAt))
-  } else if (activeTab === 'draft') {
-    // Drafts: newest created first (query already returns created_at desc).
-    visible = campaigns.filter((c) => c.status === 'draft')
-  } else if (activeTab === 'ended') {
-    // Ended: most recently ended first (by end date desc).
-    visible = campaigns
-      .filter((c) => c.status === 'ended')
-      .sort((a, b) => toTime(b.endAt) - toTime(a.endAt))
-  } else {
-    // All: newest created first (query order preserved).
-    visible = campaigns
-  }
-
-  const emptyLabel =
-    activeTab === 'live'
-      ? 'No live campaigns'
-      : activeTab === 'draft'
-        ? 'No draft campaigns'
-        : activeTab === 'ended'
-          ? 'No ended campaigns'
-          : 'No campaigns'
+  const rangeStart = total === 0 ? 0 : from + 1
+  const rangeEnd = Math.min(from + pageSize, total)
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <h2 className="text-3xl font-bold tracking-tight">Campaigns</h2>
-        <Button asChild>
-          <Link href="/admin/campaigns/new">Create Campaign</Link>
-        </Button>
-      </div>
+      <h2 className="text-3xl font-bold tracking-tight">Campaigns</h2>
 
-      <nav
-        aria-label="Filter campaigns by status"
-        className="flex flex-wrap gap-1 border-b border-border"
-      >
-        {TABS.map((tab) => {
-          const isActive = tab.key === activeTab
-          return (
-            <Link
-              key={tab.key}
-              href={`/admin/campaigns?status=${tab.key}`}
-              aria-current={isActive ? 'page' : undefined}
-              className={
-                'inline-flex items-center gap-2 rounded-t-md border-b-2 px-3 py-2 text-sm font-medium transition-colors ' +
-                (isActive
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground')
-              }
-            >
-              {tab.label}
-              <span
-                className={
-                  'rounded-full px-1.5 py-0.5 text-xs ' +
-                  (isActive
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted text-muted-foreground')
-                }
-              >
-                {counts[tab.key]}
-              </span>
-            </Link>
-          )
-        })}
-      </nav>
+      <CampaignsControls
+        status={status}
+        search={search}
+        format={format}
+        pageSize={pageSize}
+        counts={counts}
+      />
 
-      {visible.length === 0 ? (
-        <p className="py-12 text-center text-sm text-muted-foreground">{emptyLabel}</p>
+      {campaigns.length === 0 ? (
+        <p className="py-12 text-center text-sm text-muted-foreground">
+          No campaigns match the current filters.
+        </p>
       ) : (
-        <CampaignsTable campaigns={visible} />
+        <>
+          <CampaignsTable campaigns={campaigns} />
+
+          <div className="flex flex-col items-center justify-between gap-3 sm:flex-row">
+            <p className="text-sm text-muted-foreground">
+              Showing {rangeStart}–{rangeEnd} of {total} campaign{total === 1 ? "" : "s"}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                asChild={page > 1}
+                disabled={page <= 1}
+                className="bg-transparent"
+              >
+                {page > 1 ? <Link href={pageHref(page - 1)}>Previous</Link> : <span>Previous</span>}
+              </Button>
+              <span className="px-2 text-sm text-muted-foreground">
+                Page {page} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                asChild={page < totalPages}
+                disabled={page >= totalPages}
+                className="bg-transparent"
+              >
+                {page < totalPages ? (
+                  <Link href={pageHref(page + 1)}>Next</Link>
+                ) : (
+                  <span>Next</span>
+                )}
+              </Button>
+            </div>
+          </div>
+        </>
       )}
     </div>
   )

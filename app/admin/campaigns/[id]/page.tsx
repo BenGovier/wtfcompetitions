@@ -26,10 +26,14 @@ const defaultCampaign: Campaign = {
 
 export default async function CampaignFormPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ duplicated?: string }>
 }) {
   const { id } = await params
+  const { duplicated } = await searchParams
+  const justDuplicated = duplicated === "1"
   const isNew = id === "new"
 
   await requireAdmin({ roles: ['admin'] })
@@ -102,7 +106,7 @@ export default async function CampaignFormPage({
         <h2 className="text-3xl font-bold tracking-tight">Edit Campaign</h2>
         <p className="text-muted-foreground">Update campaign details</p>
       </div>
-      <CampaignForm campaign={campaign} isNew={false} />
+      <CampaignForm campaign={campaign} isNew={false} justDuplicated={justDuplicated} />
     </div>
   )
 }
