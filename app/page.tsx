@@ -9,9 +9,9 @@ import { deadlineLabel } from "@/lib/countdown"
 
 // --- Card display helpers (shared logic, duplicated intentionally per page) ---
 
-// Customer-friendly price: below £1 -> "49P", £1+ -> "£1.50".
+// Customer-friendly price: below £1 -> "49p", £1+ -> "£1.50".
 function priceText(pence: number): string {
-  if (pence < 100) return `${Math.round(pence)}P`
+  if (pence < 100) return `${Math.round(pence)}p`
   return `£${(pence / 100).toFixed(2)}`
 }
 
