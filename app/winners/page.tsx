@@ -5,6 +5,7 @@ import type { WinnerSnapshot } from "@/lib/types"
 import {
   FEATURED_COUNT,
   GRID_PAGE_SIZE,
+  MIN_PUBLIC_PRIZE_PENCE,
   PUBLIC_WINNER_COLUMNS,
   WINNERS_CUTOFF,
   WINNERS_KIND,
@@ -44,6 +45,10 @@ export default async function WinnersPage() {
         .select(PUBLIC_WINNER_COLUMNS)
         .eq("kind", WINNERS_KIND)
         .gte("happened_at", WINNERS_CUTOFF)
+        // Only meaningful prizes (>= £20). Applied BEFORE order/limit/peek so
+        // featured, grid, hasMore and the cursor all derive from eligible rows.
+        // NULL numeric values fail this comparison and are excluded (fail-closed).
+        .gte("prize_value_pence", MIN_PUBLIC_PRIZE_PENCE)
         .order("happened_at", { ascending: false })
         .limit(initialLimit + 1),
       supabase
@@ -66,8 +71,17 @@ export default async function WinnersPage() {
 
     if (winners.length === 0 && !loadError) {
       // Never bypass the privacy rule via the mock fallback. Map into a new
-      // array (do not mutate the imported mock data) with first names only.
-      winners = mockWinners.map((w) => ({ ...w, name: formatWinnerFirstName(w.name) }))
+      // array (do not mutate the imported mock data) with first names only, and
+      // apply the SAME £20 eligibility rule so the fallback can never surface a
+      // sub-threshold or null-value winner.
+      winners = mockWinners
+        .filter(
+          (w) =>
+            typeof w.prizeValuePence === "number" &&
+            Number.isFinite(w.prizeValuePence) &&
+            w.prizeValuePence >= MIN_PUBLIC_PRIZE_PENCE,
+        )
+        .map((w) => ({ ...w, name: formatWinnerFirstName(w.name) }))
       usingMock = true
       hasMore = false
     }
