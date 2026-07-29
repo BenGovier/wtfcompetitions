@@ -55,8 +55,16 @@ export const BALLOON_WINNER_CAMPAIGN_SLUGS = [
  *
  * A winner is eligible when EITHER:
  *   1. `prize_value_pence >= 2000` (a proven, meaningful numeric value), OR
- *   2. `campaign_slug` is in the approved balloon list (any value, incl. NULL
- *      numeric value — balloon eligibility is proven by the slug itself).
+ *   2. it is a genuine, NON-wallet-credit balloon win, i.e. `campaign_slug` is in
+ *      the approved balloon list AND `fulfilment_type` IS DISTINCT FROM
+ *      'wallet_credit'. This lets balloon cash / manual / Balloon-Pop prizes
+ *      through (including NULL numeric value) while still EXCLUDING sub-£20 WTF
+ *      Credit even when it belongs to a balloon campaign.
+ *
+ * Because a NULL `fulfilment_type` must be treated as distinct from
+ * 'wallet_credit' (IS DISTINCT FROM), branch 2 uses
+ * `or(fulfilment_type.is.null,fulfilment_type.neq.wallet_credit)` — a plain
+ * `.neq` would drop NULL rows since `NULL <> 'wallet_credit'` is NULL/false.
  *
  * Non-balloon rows with a NULL numeric value fail branch 1 (NULL comparisons are
  * false) and are not in branch 2, so they remain excluded (fail-closed). Applied
@@ -66,7 +74,8 @@ export const BALLOON_WINNER_CAMPAIGN_SLUGS = [
  */
 export function winnersEligibilityOrFilter(): string {
   const slugList = BALLOON_WINNER_CAMPAIGN_SLUGS.join(",")
-  return `prize_value_pence.gte.${MIN_PUBLIC_PRIZE_PENCE},campaign_slug.in.(${slugList})`
+  const balloonNonCredit = `and(campaign_slug.in.(${slugList}),or(fulfilment_type.is.null,fulfilment_type.neq.wallet_credit))`
+  return `prize_value_pence.gte.${MIN_PUBLIC_PRIZE_PENCE},${balloonNonCredit}`
 }
 
 /**
@@ -79,10 +88,13 @@ export function isWinnerEligible(w: WinnerSnapshot): boolean {
     typeof w.prizeValuePence === "number" &&
     Number.isFinite(w.prizeValuePence) &&
     w.prizeValuePence >= MIN_PUBLIC_PRIZE_PENCE
-  const isBalloon =
+  const isBalloonSlug =
     typeof w.giveawaySlug === "string" &&
     (BALLOON_WINNER_CAMPAIGN_SLUGS as readonly string[]).includes(w.giveawaySlug)
-  return meetsValue || isBalloon
+  // IS DISTINCT FROM 'wallet_credit': NULL/undefined counts as distinct (eligible),
+  // so only an explicit "wallet_credit" is excluded on the balloon branch.
+  const isNonCreditBalloon = isBalloonSlug && w.fulfilmentType !== "wallet_credit"
+  return meetsValue || isNonCreditBalloon
 }
 
 /**
