@@ -30,7 +30,6 @@ export function DuplicateCampaignDialog({ target, onClose }: DuplicateCampaignDi
   const router = useRouter()
   const { toast } = useToast()
   const [copyBundles, setCopyBundles] = useState(true)
-  const [copyInstantPrizes, setCopyInstantPrizes] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Guards against a rapid double-click creating two drafts from one intent.
@@ -60,7 +59,6 @@ export function DuplicateCampaignDialog({ target, onClose }: DuplicateCampaignDi
         body: JSON.stringify({
           sourceId: target.id,
           copyBundles,
-          copyInstantPrizes,
         }),
       })
       const json = await res.json()
@@ -77,7 +75,7 @@ export function DuplicateCampaignDialog({ target, onClose }: DuplicateCampaignDi
       toast({
         title: "Draft copy created",
         description:
-          "Review the slug, dates, pricing, capacity, artwork and instant-prize positions before publishing.",
+          "Set a new slug and dates, then add instant-win prizes before publishing.",
       })
       // Redirect straight to the new draft's edit page with a review flag.
       router.push(`/admin/campaigns/${json.id}?duplicated=1`)
@@ -121,24 +119,12 @@ export function DuplicateCampaignDialog({ target, onClose }: DuplicateCampaignDi
             </div>
           </div>
 
-          <div className="flex items-start gap-3">
-            <Checkbox
-              id="copy-instant-prizes"
-              checked={copyInstantPrizes}
-              onCheckedChange={(v) => setCopyInstantPrizes(v === true)}
-              disabled={isSubmitting}
-              className="mt-0.5"
-            />
-            <div className="grid gap-1 leading-none">
-              <Label htmlFor="copy-instant-prizes" className="font-medium">
-                Copy instant-prize setup
-              </Label>
-              <p className="text-sm text-muted-foreground">
-                Prize titles, values, fulfilment types and quantities will be copied. New unassigned
-                prize slots will be created, but no historic ticket positions, claims or awards will
-                be copied.
-              </p>
-            </div>
+          <div className="rounded-md border border-border bg-muted/40 p-3">
+            <p className="text-sm text-muted-foreground">
+              <span className="font-medium text-foreground">Instant-win prizes are not copied.</span>{" "}
+              Add prizes and assign their ticket positions manually on the new draft. This guarantees
+              the copy starts with no instant-win positions or winners.
+            </p>
           </div>
 
           {error ? (

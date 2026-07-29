@@ -50,11 +50,22 @@ function sanitizeSearch(raw?: string): string {
  * consistent. Format rules mirror the shared classifier: a known balloon slug
  * always wins over presentation_type.
  */
-function applyListFilters<Q extends { or: (f: string) => Q; eq: (c: string, v: string) => Q }>(
-  query: Q,
+// Minimal structural view of the PostgREST filter builder methods we call here.
+// Typing against this local shape (instead of Supabase's deeply-recursive generic
+// builder type) avoids TS2589 "excessively deep" instantiation. The return is
+// deliberately `any` so callers keep the real builder (await, .order, .range).
+type FilterableQuery = {
+  or: (filters: string) => FilterableQuery
+  eq: (column: string, value: string) => FilterableQuery
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function applyListFilters(
+  query: any,
   { search, format }: { search: string; format: FormatKey },
-): Q {
-  let q = query
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): any {
+  let q = query as FilterableQuery
   if (search) {
     q = q.or(`title.ilike.*${search}*,slug.ilike.*${search}*`)
   }

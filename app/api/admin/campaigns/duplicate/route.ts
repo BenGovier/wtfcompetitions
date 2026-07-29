@@ -24,11 +24,6 @@ function getServiceSupabase() {
 const SOURCE_COLUMNS =
   'title, summary, description, main_prize_title, main_prize_description, hero_image_url, ticket_price_pence, was_price_pence, max_tickets_total, max_tickets_per_user, presentation_type, reveal_type, is_free_entry, free_entry_limit_per_user, bundles'
 
-// Reusable instant-prize DEFINITION columns. Never selects slot/award/claim
-// columns (winning_ticket, claimed_*, checkout intent, user, award, payout).
-const PRIZE_DEFINITION_COLUMNS =
-  'prize_title, prize_value_text, image_url, quantity, is_high_value, fulfilment_type, prize_value_pence'
-
 export async function POST(request: Request) {
   const supabase = await createClient()
   // 1) Authorise BEFORE creating any service-role client.
@@ -49,7 +44,6 @@ export async function POST(request: Request) {
 
   const sourceId = body.sourceId
   const copyBundles = body.copyBundles === true
-  const copyInstantPrizes = body.copyInstantPrizes === true
 
   // 2) Validate the source id as a UUID.
   if (!isUuid(sourceId)) {
@@ -114,107 +108,19 @@ export async function POST(request: Request) {
   }
 
   const newId: string = inserted.id
-  const warnings: string[] = [
-    'Review the slug, dates, pricing, capacity, artwork and instant-prize positions before publishing.',
-    'Artwork is shared with the original until you upload a new image.',
-  ]
 
-  let instantPrizeDefinitionsCreated = 0
-  let slotsCreated = 0
-
-  // 5) Optionally copy reusable instant-prize DEFINITIONS. The draft is already
-  //    created; a prize-copy failure never publishes it and never rolls back the
-  //    draft — we keep the draft and report the failure clearly.
-  if (copyInstantPrizes) {
-    const { data: sourcePrizes, error: prizeReadError } = await svc
-      .from('instant_win_prizes')
-      .select(PRIZE_DEFINITION_COLUMNS)
-      .eq('campaign_id', src)
-      .order('created_at', { ascending: true })
-
-    if (prizeReadError) {
-      return NextResponse.json({
-        ok: true,
-        id: newId,
-        bundlesCopied: copyBundles,
-        instantPrizeDefinitionsCreated: 0,
-        slotsCreated: 0,
-        warnings: [
-          ...warnings,
-          'Instant-prize setup could not be read and was NOT copied. The draft was created without instant prizes — add them manually.',
-        ],
-      })
-    }
-
-    const rows = (sourcePrizes ?? []).map((p: any) => ({
-      campaign_id: newId,
-      prize_title: p.prize_title,
-      prize_value_text: p.prize_value_text ?? null,
-      // unlock_ratio retained for DB compatibility; new rows store a harmless 0.
-      unlock_ratio: 0,
-      image_url: p.image_url ?? null,
-      quantity: p.quantity ?? 1,
-      is_high_value: p.is_high_value === true,
-      fulfilment_type: p.fulfilment_type ?? 'cash',
-      prize_value_pence: p.prize_value_pence ?? null,
-    }))
-
-    if (rows.length > 0) {
-      // Single batch insert = all-or-nothing. The DB trigger creates exactly
-      // `quantity` brand-new UNASSIGNED slots per inserted definition. If the
-      // statement fails, nothing is inserted and we report the failure without
-      // publishing the draft.
-      const { data: createdPrizes, error: prizeInsertError } = await svc
-        .from('instant_win_prizes')
-        .insert(rows)
-        .select('id')
-
-      if (prizeInsertError) {
-        return NextResponse.json({
-          ok: true,
-          id: newId,
-          bundlesCopied: copyBundles,
-          instantPrizeDefinitionsCreated: 0,
-          slotsCreated: 0,
-          warnings: [
-            ...warnings,
-            'Instant-prize setup failed to copy, so NO instant prizes were created. The draft is safe and unpublished — add instant prizes manually before publishing.',
-          ],
-        })
-      }
-
-      instantPrizeDefinitionsCreated = createdPrizes?.length ?? 0
-
-      // Count the slots the trigger created for the new campaign, and prove they
-      // are all unassigned/unclaimed.
-      const { count: totalSlots } = await svc
-        .from('instant_win_slots')
-        .select('id', { count: 'exact', head: true })
-        .eq('campaign_id', newId)
-
-      const { count: assignedSlots } = await svc
-        .from('instant_win_slots')
-        .select('id', { count: 'exact', head: true })
-        .eq('campaign_id', newId)
-        .not('winning_ticket', 'is', null)
-
-      slotsCreated = totalSlots ?? 0
-      if ((assignedSlots ?? 0) > 0) {
-        warnings.push(
-          'Warning: some new slots appear pre-assigned. Review instant-prize positions before publishing.',
-        )
-      }
-    }
-  }
-
-  // 6) Safe response — new id + summary only. Never returns source rows or raw
-  //    Supabase errors.
+  // 5) Safe response — new id + summary only. Never returns source rows or raw
+  //    Supabase errors. Instant-win prizes are intentionally NOT copied: the DB
+  //    trigger would create live slots, so the admin re-adds prizes manually,
+  //    guaranteeing the duplicate has zero instant-win slots/positions/awards.
   return NextResponse.json({
     ok: true,
     id: newId,
     bundlesCopied: copyBundles,
-    instantPrizeDefinitionsCreated,
-    slotsCreated,
-    warnings,
+    warnings: [
+      'Instant-win prizes were NOT copied — add them manually before publishing.',
+      'Review the slug, dates, pricing, capacity and artwork before publishing.',
+      'Artwork is shared with the original until you upload a new image.',
+    ],
   })
 }

@@ -627,6 +627,22 @@ export function CampaignForm({ campaign, isNew, justDuplicated = false }: Campai
 
   return (
     <div className="space-y-6">
+      {justDuplicated ? (
+        <Card className="border-amber-300 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/20">
+          <CardContent className="pt-6">
+            <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+              Draft copy created — review before publishing
+            </p>
+            <p className="mt-1 text-sm text-amber-900/90 dark:text-amber-100/90">
+              This is a new draft. Sales, entries, tickets, instant-win positions, winners and payouts
+              were <strong>not</strong> copied. Set a new <strong>slug</strong> and{" "}
+              <strong>start/end dates</strong>, and review the title, pricing, capacity, bundles and
+              artwork. Instant-win prizes must be added manually.
+            </p>
+          </CardContent>
+        </Card>
+      ) : null}
+
       <Card className="bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900">
         <CardContent className="pt-6">
           <p className="text-sm text-blue-900 dark:text-blue-100">
