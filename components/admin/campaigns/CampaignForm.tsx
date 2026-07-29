@@ -28,7 +28,17 @@ import { useToast } from "@/hooks/use-toast"
 interface CampaignFormProps {
   campaign: Campaign
   isNew: boolean
+  /** True when the admin arrived here right after duplicating a campaign. */
+  justDuplicated?: boolean
 }
+
+// A publishable slug: non-empty, lowercase/uppercase letters, digits and
+// hyphens (no leading/trailing hyphen). Matching is case-insensitive because
+// some historic slugs use mixed casing.
+const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/i
+
+/** Statuses that make a campaign publicly visible and therefore require a slug. */
+const PUBLIC_STATUSES = new Set(["live", "paused", "sold_out", "closed"])
 
 // Format integer pence into an editable GBP string (e.g. 50050 -> "500.50").
 function penceToGbpInput(pence: number | null | undefined): string {
@@ -48,7 +58,7 @@ const FULFILMENT_LABELS: Record<InstantWinFulfilmentType, string> = {
   manual: "Manual",
 }
 
-export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
+export function CampaignForm({ campaign, isNew, justDuplicated = false }: CampaignFormProps) {
   const router = useRouter()
   const { toast } = useToast()
   const [formData, setFormData] = useState<Campaign>({
@@ -63,6 +73,7 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [slugError, setSlugError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Instant wins state
@@ -209,6 +220,23 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
       setSaveError('An instant win image is still uploading — please wait')
       return
     }
+    // Publish safety: a public status requires a valid, non-empty slug. This
+    // blocks a blank-slug draft (e.g. a fresh duplicate) from going live.
+    setSlugError(null)
+    if (PUBLIC_STATUSES.has(formData.status)) {
+      const slug = (formData.slug ?? "").trim()
+      if (slug.length === 0) {
+        setSlugError("Add a slug before publishing. A blank slug cannot go live.")
+        setSaveError("This campaign needs a valid slug before it can be published.")
+        return
+      }
+      if (!SLUG_RE.test(slug)) {
+        setSlugError("Use only letters, numbers and hyphens (no spaces or symbols).")
+        setSaveError("This campaign needs a valid slug before it can be published.")
+        return
+      }
+    }
+
     setIsSaving(true)
     setSaveError(null)
     setIwError(null)
@@ -627,9 +655,19 @@ export function CampaignForm({ campaign, isNew }: CampaignFormProps) {
             <Input
               id="slug"
               value={formData.slug}
-              onChange={(e) => handleChange("slug", e.target.value)}
+              onChange={(e) => {
+                setSlugError(null)
+                handleChange("slug", e.target.value)
+              }}
               placeholder="iphone-15-pro-giveaway"
+              aria-invalid={slugError ? true : undefined}
+              aria-describedby={slugError ? "slug-error" : undefined}
             />
+            {slugError ? (
+              <p id="slug-error" className="text-sm font-medium text-destructive" role="alert">
+                {slugError}
+              </p>
+            ) : null}
           </div>
 
           <div className="space-y-2">
