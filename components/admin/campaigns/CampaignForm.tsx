@@ -37,6 +37,9 @@ interface CampaignFormProps {
 // some historic slugs use mixed casing.
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/i
 
+/** Prefix used by server-side duplication for temporary placeholder slugs. */
+const TEMP_SLUG_PREFIX = "draft-copy-"
+
 /** Statuses that make a campaign publicly visible and therefore require a slug. */
 const PUBLIC_STATUSES = new Set(["live", "paused", "sold_out", "closed"])
 
@@ -233,6 +236,12 @@ export function CampaignForm({ campaign, isNew, justDuplicated = false }: Campai
       if (!SLUG_RE.test(slug)) {
         setSlugError("Use only letters, numbers and hyphens (no spaces or symbols).")
         setSaveError("This campaign needs a valid slug before it can be published.")
+        return
+      }
+      // A temporary duplicate placeholder must never be published as-is.
+      if (slug.toLowerCase().startsWith(TEMP_SLUG_PREFIX)) {
+        setSlugError("Replace the temporary draft slug before publishing.")
+        setSaveError("Replace the temporary draft slug before publishing.")
         return
       }
     }
@@ -635,9 +644,13 @@ export function CampaignForm({ campaign, isNew, justDuplicated = false }: Campai
             </p>
             <p className="mt-1 text-sm text-amber-900/90 dark:text-amber-100/90">
               This is a new draft. Sales, entries, tickets, instant-win positions, winners and payouts
-              were <strong>not</strong> copied. Set a new <strong>slug</strong> and{" "}
-              <strong>start/end dates</strong>, and review the title, pricing, capacity, bundles and
-              artwork. Instant-win prizes must be added manually.
+              were <strong>not</strong> copied. This is a{" "}
+              <strong>temporary draft slug</strong> — replace it with the final campaign URL before
+              publishing.
+            </p>
+            <p className="mt-2 text-sm text-amber-900/90 dark:text-amber-100/90">
+              Review before publishing: title, slug, dates, pricing, capacity, artwork, bundles and
+              prizes. Instant-win prizes must be added manually.
             </p>
           </CardContent>
         </Card>
@@ -682,6 +695,11 @@ export function CampaignForm({ campaign, isNew, justDuplicated = false }: Campai
             {slugError ? (
               <p id="slug-error" className="text-sm font-medium text-destructive" role="alert">
                 {slugError}
+              </p>
+            ) : (formData.slug ?? "").toLowerCase().startsWith(TEMP_SLUG_PREFIX) ? (
+              <p className="text-sm font-medium text-amber-600 dark:text-amber-500">
+                This is a temporary draft slug. Replace it with the final campaign URL before
+                publishing.
               </p>
             ) : null}
           </div>
