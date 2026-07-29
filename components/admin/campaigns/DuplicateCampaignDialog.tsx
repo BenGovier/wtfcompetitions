@@ -64,10 +64,17 @@ export function DuplicateCampaignDialog({ target, onClose }: DuplicateCampaignDi
       const json = await res.json()
 
       if (!res.ok || !json.ok || !json.id) {
+        // Prefer a human-readable message returned by the server (e.g. the
+        // mapped 409 "unique draft identifier" message). Fall back to friendly
+        // copy for known machine codes / unknown failures.
+        const serverMsg = typeof json?.error === "string" ? json.error : ""
+        const isHumanMessage = serverMsg.includes(" ") // machine codes have no spaces
         setError(
           json?.error === "source_not_found"
             ? "That campaign could not be found."
-            : "Could not create the draft copy. Please try again.",
+            : isHumanMessage
+              ? serverMsg
+              : "Could not create the draft copy. Please try again.",
         )
         return
       }
