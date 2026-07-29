@@ -1,14 +1,13 @@
 "use client"
 
-import { useMemo, useRef, useState } from "react"
+import { useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import type { WinnerSnapshot } from "@/lib/types"
 import type { LiveGiveaway } from "@/app/winners/page"
 import { WinnersGrid } from "@/components/winners-grid"
 import { FeaturedWinners } from "@/components/winners/featured-winners"
-import { WinnerFilters, type WinnerFilter } from "@/components/winners/winner-filters"
-import { FEATURED_COUNT, classifyFulfilment, winnerKey, type FulfilmentCategory } from "@/lib/winners"
+import { FEATURED_COUNT, winnerKey } from "@/lib/winners"
 import { Loader2, ShieldCheck, Ticket, Trophy } from "lucide-react"
 
 interface WinnersPageClientProps {
@@ -33,30 +32,14 @@ export function WinnersPageClient({
   const [hasMore, setHasMore] = useState<boolean>(initialHasMore)
   const [loading, setLoading] = useState(false)
   const [pageError, setPageError] = useState(false)
-  const [filter, setFilter] = useState<WinnerFilter>("all")
 
   // Stable de-duplication guard across pages.
   const seenRef = useRef<Set<string>>(new Set(initialWinners.map(winnerKey)))
 
+  // Featured = the newest eligible winners; the grid is everything after them.
+  // The server query already enforces the £20 threshold, so no client filtering.
   const featured = winners.slice(0, Math.min(FEATURED_COUNT, winners.length))
   const gridWinners = winners.slice(FEATURED_COUNT)
-
-  // Which recognised fulfilment categories are present in the grid.
-  const availableCategories = useMemo<FulfilmentCategory[]>(() => {
-    const present = new Set<FulfilmentCategory>()
-    for (const w of gridWinners) present.add(classifyFulfilment(w))
-    return (["cash", "wallet_credit", "other"] as FulfilmentCategory[]).filter((c) => present.has(c))
-  }, [gridWinners])
-
-  // Only show filters when a genuine, meaningful choice exists (a recognised
-  // cash or wallet_credit type is present). Never falsely categorise unknowns.
-  const showFilters =
-    availableCategories.includes("cash") || availableCategories.includes("wallet_credit")
-
-  const filteredGrid = useMemo(() => {
-    if (filter === "all") return gridWinners
-    return gridWinners.filter((w) => classifyFulfilment(w) === filter)
-  }, [gridWinners, filter])
 
   async function loadMore() {
     if (loading || !hasMore || !cursor) return
@@ -86,34 +69,57 @@ export function WinnersPageClient({
 
   return (
     <>
-      {/* A. Hero */}
-      <section className="relative mb-8 overflow-hidden rounded-2xl border border-yellow-500/20 bg-gradient-to-br from-[#2a0845] via-[#1f0033] to-[#0f0018] p-6 md:p-10">
+      {/* A. Static trust banner — approved marketing copy. No fetch, no state,
+          no reporting logic; the £200,000+ figure is a fixed string. Height is
+          intentionally restrained so the featured winners peek on the first
+          mobile screen. */}
+      <section
+        aria-labelledby="winners-trust-heading"
+        className="relative mb-6 overflow-hidden rounded-2xl border border-yellow-500/30 bg-gradient-to-br from-[#2a0845] via-[#1f0033] to-[#0f0018] px-5 py-4 md:mb-8 md:p-8"
+      >
+        {/* Subtle gold accent hairline along the top edge. */}
         <div
-          className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-yellow-500/10 blur-3xl"
+          className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-yellow-400/60 to-transparent"
           aria-hidden="true"
         />
         <div
-          className="pointer-events-none absolute -bottom-12 -left-10 h-40 w-40 rounded-full bg-purple-500/20 blur-3xl"
+          className="pointer-events-none absolute -right-12 -top-12 h-36 w-36 rounded-full bg-yellow-500/10 blur-3xl"
           aria-hidden="true"
         />
         <div className="relative">
-          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-yellow-500/30 bg-yellow-500/10 px-3 py-1">
+          <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-yellow-500/30 bg-yellow-500/10 px-3 py-1">
             <Trophy className="h-3.5 w-3.5 text-yellow-400" aria-hidden="true" />
-            <span className="text-xs font-bold uppercase tracking-wider text-yellow-300">Winners Hub</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-yellow-300">WTF Giveaways</span>
           </div>
-          <h1 className="text-balance text-2xl font-extrabold leading-tight text-white md:text-4xl">
-            Real winners. Real prizes.
-          </h1>
-          <p className="mt-2 max-w-xl text-pretty text-sm text-white/70 md:text-base">
-            See the latest cash, WTF Credit and instant-prize winners from WTF Giveaways.
+
+          {/* Dominant figure */}
+          <p className="text-5xl font-extrabold leading-none tracking-tight text-yellow-300 tabular-nums [text-shadow:0_2px_18px_rgba(250,204,21,0.25)] md:text-6xl">
+            £200,000+
           </p>
-          <Link
-            href={liveHref}
-            className="mt-5 inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-yellow-500 to-amber-500 px-5 py-2.5 text-sm font-bold text-black transition-colors duration-200 hover:from-yellow-400 hover:to-amber-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#1f0033] motion-reduce:transition-none"
+
+          {/* Strong secondary headline */}
+          <h1
+            id="winners-trust-heading"
+            className="mt-2 text-sm font-bold uppercase tracking-[0.12em] text-white md:text-base"
           >
-            <Ticket className="h-4 w-4" aria-hidden="true" />
-            Enter live raffles
-          </Link>
+            Paid out in cash prizes
+          </h1>
+
+          {/* Supporting copy + single compact proof statement */}
+          <p className="mt-1.5 text-pretty text-sm text-white/70">
+            Real winners. Real cash. New winners every week.
+            <span className="text-white/45"> · Meaningful prizes from £20 to £1,000+</span>
+          </p>
+
+          <div className="mt-3">
+            <Link
+              href={liveHref}
+              className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-yellow-500 to-amber-500 px-5 py-2.5 text-sm font-bold text-black transition-colors duration-200 hover:from-yellow-400 hover:to-amber-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#1f0033] motion-reduce:transition-none"
+            >
+              <Ticket className="h-4 w-4" aria-hidden="true" />
+              Enter live raffles
+            </Link>
+          </div>
         </div>
       </section>
 
@@ -133,20 +139,10 @@ export function WinnersPageClient({
             <section aria-label="More recent winners">
               <h2 className="mb-3 text-lg font-bold text-white md:text-xl">More recent winners</h2>
 
-              {/* C. Filters */}
-              {showFilters && (
-                <WinnerFilters active={filter} onChange={setFilter} available={availableCategories} />
-              )}
+              {/* One strong stream of meaningful £20+ winners — no filters. */}
+              <WinnersGrid winners={gridWinners} />
 
-              {filteredGrid.length > 0 ? (
-                <WinnersGrid winners={filteredGrid} />
-              ) : (
-                <p className="rounded-xl border border-white/10 bg-[#1a0a2e]/60 p-8 text-center text-sm text-white/60">
-                  No winners match this filter yet.
-                </p>
-              )}
-
-              {/* E. Pagination */}
+              {/* Pagination */}
               <div className="mt-6 flex flex-col items-center gap-3">
                 {pageError && (
                   <p className="text-sm text-red-300" role="alert">

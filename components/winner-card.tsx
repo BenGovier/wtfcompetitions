@@ -88,8 +88,18 @@ export function WinnerCard({ winner, featured = false }: WinnerCardProps) {
         )}
       </div>
 
-      {/* 1. Prize amount / title — largest element */}
-      <p className={cn("text-balance text-xl font-extrabold leading-tight md:text-2xl", styles.amount)}>{title}</p>
+      {/* 1. Prize amount / title — the dominant element on the card. Tabular
+          figures keep amounts aligned; the featured card renders it larger.
+          `break-words` guarantees the full amount is never clipped. */}
+      <p
+        className={cn(
+          "text-balance break-words font-extrabold leading-tight tabular-nums",
+          featured ? "text-3xl md:text-4xl" : "text-2xl md:text-3xl",
+          styles.amount,
+        )}
+      >
+        {title}
+      </p>
 
       {/* 3. Winner name (with branded initials avatar) */}
       <div className="mt-auto flex items-center gap-2.5">
