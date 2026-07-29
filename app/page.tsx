@@ -1,49 +1,35 @@
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
-import Image from "next/image"
-import { ArrowRight, Zap } from "lucide-react"
 import { createClient } from "@/lib/supabase/server"
 import { LiveNowTakeover } from "@/components/live/LiveNowTakeover"
-import { TikTokIcon } from "@/components/icons/tiktok-icon"
-import { deadlineLabel } from "@/lib/countdown"
+import { GiveawaySection } from "@/components/giveaway-section"
+import { groupGiveawaysByCategory } from "@/lib/giveaway-classification"
 
-// --- Card display helpers (shared logic, duplicated intentionally per page) ---
+// Homepage card counts — keep the page focused. The section "View all" links
+// provide access to the remainder on /giveaways.
+const MAX_LIVE_CARDS = 4
+const MAX_INSTANT_CARDS = 6
+const MAX_OTHER_CARDS = 3
 
-// Customer-friendly price: below £1 -> "49p", £1+ -> "£1.50".
-function priceText(pence: number): string {
-  if (pence < 100) return `${Math.round(pence)}p`
-  return `£${(pence / 100).toFixed(2)}`
-}
-
-// Genuine prize subtitle only. Returns the prize_title when it is present,
-// non-empty after trimming, and not a case-insensitive duplicate of the
-// campaign title; otherwise null (no synthesized/generic marketing copy).
-function prizeSubtitle(giveaway: any): string | null {
-  const title = String(giveaway?.title ?? "").trim().toLowerCase()
-  const prize = String(giveaway?.prize_title ?? "").trim()
-  if (prize && prize.toLowerCase() !== title) return prize
-  return null
-}
-
-// Emergency fallback data - used if snapshot query fails
+// Emergency fallback data - used only if the snapshot query returns nothing.
 const emergencyFeaturedGiveaway = {
-  title: 'Super Holiday',
-  subtitle: 'Enter now for your chance to win our live Super Holiday giveaway.',
-  status: 'Live now',
-  ctaHref: '/giveaways/superholiday',
-  ctaLabel: 'Enter Now',
+  title: "Super Holiday",
+  subtitle: "Enter now for your chance to win our live Super Holiday giveaway.",
+  status: "Live now",
+  ctaHref: "/giveaways/superholiday",
+  ctaLabel: "Enter Now",
 }
 
 export default async function HomePage() {
-  // Fetch giveaway snapshots from Supabase
+  // Fetch giveaway snapshots from Supabase — ONE bounded query for the whole page.
   const supabase = await createClient()
 
   const { data } = await supabase
-    .from('giveaway_snapshots')
-    .select('payload')
-    .eq('kind', 'list')
-    .eq('payload->>status', 'live')
-    .order('generated_at', { ascending: false })
+    .from("giveaway_snapshots")
+    .select("payload")
+    .eq("kind", "list")
+    .eq("payload->>status", "live")
+    .order("generated_at", { ascending: false })
     .limit(20)
 
   const now = Date.now()
@@ -51,9 +37,9 @@ export default async function HomePage() {
     .map((x: any) => x.payload)
     .filter((g: any) => {
       // Exclude ended/sold_out/closed statuses
-      if (!g || g.status === 'ended' || g.status === 'sold_out' || g.status === 'closed') return false
+      if (!g || g.status === "ended" || g.status === "sold_out" || g.status === "closed") return false
       // Only include live raffles
-      if (g.status !== 'live') return false
+      if (g.status !== "live") return false
       // Exclude if ends_at is in the past
       if (g.ends_at) {
         const endsAt = new Date(g.ends_at).getTime()
@@ -62,161 +48,74 @@ export default async function HomePage() {
       return true
     })
 
+  // Classify + sort once, server-side, from the already-fetched array.
+  const grouped = groupGiveawaysByCategory(giveaways)
+  const liveGiveaways = grouped.live_balloon.slice(0, MAX_LIVE_CARDS)
+  const instantGiveaways = grouped.instant_cash.slice(0, MAX_INSTANT_CARDS)
+  const otherGiveaways = grouped.other.slice(0, MAX_OTHER_CARDS)
+
+  const hasAny = liveGiveaways.length + instantGiveaways.length + otherGiveaways.length > 0
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#1a002b] via-[#2d0050] to-[#0a0014]">
       <div className="container px-4 py-8 md:py-16">
-      {/* LIVE NOW site takeover — renders only when a takeover is enabled. */}
-      <LiveNowTakeover />
+        {/* LIVE NOW site takeover — renders only when a takeover is enabled. */}
+        <LiveNowTakeover />
 
-      {/* Featured Giveaways */}
-      <section className="mb-16">
-        <div>
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-balance text-2xl font-bold tracking-tight text-white md:text-3xl">Featured Giveaways</h2>
-              <p className="mt-1 text-pretty bg-gradient-to-r from-[#FFD700] to-[#FFA500] bg-clip-text text-transparent">Big prizes. Small ticket prices. Pick your winner.</p>
+        {/* Accessible page title without disrupting the visual hierarchy. */}
+        <h1 className="sr-only">Win with WTF Giveaways</h1>
+
+        {hasAny ? (
+          <>
+            <GiveawaySection
+              id="live-balloon-heading"
+              title="TikTok Live Balloon Pops"
+              supportingCopy="Enter now, then watch the balloons pop live with your host."
+              giveaways={liveGiveaways}
+              category="live_balloon"
+              viewAllHref="/giveaways?category=live"
+              viewAllLabel="View all Live"
+            />
+
+            <GiveawaySection
+              id="instant-cash-heading"
+              title="Instant Cash Wins"
+              supportingCopy="Play any time and reveal instant cash prizes automatically."
+              giveaways={instantGiveaways}
+              category="instant_cash"
+              viewAllHref="/giveaways?category=instant"
+              viewAllLabel="View all Instant Cash"
+            />
+
+            <GiveawaySection
+              id="more-giveaways-heading"
+              title="More Giveaways"
+              supportingCopy="More ways to play and win."
+              giveaways={otherGiveaways}
+              category="other"
+              viewAllHref="/giveaways"
+              viewAllLabel="View all"
+            />
+          </>
+        ) : (
+          // Emergency fallback - single static card when no live giveaways exist.
+          <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-sm md:p-8">
+            <div className="flex flex-col items-center gap-4 text-center">
+              <span className="inline-flex items-center rounded-full bg-green-500/20 px-3 py-1 text-sm font-medium text-green-400">
+                {emergencyFeaturedGiveaway.status}
+              </span>
+              <h2 className="text-2xl font-bold text-white md:text-3xl">{emergencyFeaturedGiveaway.title}</h2>
+              <p className="max-w-md text-white/70">{emergencyFeaturedGiveaway.subtitle}</p>
+              <Button
+                size="lg"
+                className="mt-4 rounded-xl bg-gradient-to-r from-[#FFD700] to-[#FFA500] font-semibold text-black shadow-md transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg"
+                asChild
+              >
+                <Link href={emergencyFeaturedGiveaway.ctaHref}>{emergencyFeaturedGiveaway.ctaLabel}</Link>
+              </Button>
             </div>
-            <Button variant="ghost" className="text-white/80 hover:text-white hover:bg-white/10" asChild>
-              <Link href="/giveaways">
-                View All <ArrowRight className="ml-2 h-4 w-4" />
-              </Link>
-            </Button>
           </div>
-        </div>
-
-        {/* Giveaway cards */}
-        <div className="mt-6 grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 md:grid-cols-2 md:gap-5 lg:grid-cols-3">
-          {giveaways.length > 0 ? (
-            giveaways.map((giveaway: any) => {
-              const endsAtRaw = giveaway.ends_at
-              const endMs = endsAtRaw ? new Date(endsAtRaw).getTime() : Number.NaN
-              const deadline = Number.isFinite(endMs) ? deadlineLabel(endMs, Date.now()) : null
-              const sold = Number(giveaway.tickets_sold ?? 0)
-              const cap = Number(giveaway.hard_cap_total_tickets ?? 0)
-              const percentSold = cap > 0 ? Math.min(100, Math.floor((sold / cap) * 100)) : null
-              const base = giveaway.base_ticket_price_pence
-              const was = giveaway.was_ticket_price_pence
-              const onSale = base != null && was != null && was > base
-
-              return (
-                <Link
-                  key={giveaway.slug}
-                  href={`/giveaways/${giveaway.slug}`}
-                  className="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#1c0b30] transition-all duration-300 hover:border-amber-400/50 hover:shadow-lg hover:shadow-amber-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0014]"
-                >
-                  {/* Artwork with overlays */}
-                  <div className="relative aspect-[4/3] w-full overflow-hidden">
-                    {giveaway.hero_image_url ? (
-                      <Image
-                        src={giveaway.hero_image_url}
-                        alt={giveaway.title || "Giveaway"}
-                        fill
-                        className="object-cover transition-transform duration-300 group-hover:scale-105"
-                        sizes="(max-width: 359px) 100vw, (max-width: 768px) 50vw, (max-width: 1023px) 50vw, 33vw"
-                      />
-                    ) : (
-                      <div className="h-full w-full bg-gradient-to-br from-[#2a0040] to-[#1a0b2e]" />
-                    )}
-                    {/* Bottom fade so the price badge stays legible */}
-                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/85 via-black/40 to-transparent" />
-
-                    {/* 1. Deadline pill — centred, overlapping the top edge of the artwork */}
-                    {deadline && (
-                      <span
-                        className={
-                          "absolute left-1/2 top-3 z-10 -translate-x-1/2 whitespace-nowrap rounded-full px-3 py-1 text-xs font-bold shadow-lg shadow-black/40 " +
-                          (deadline.ended
-                            ? "bg-red-600 text-white"
-                            : "bg-[#1c0b30] text-white ring-1 ring-amber-400/50")
-                        }
-                      >
-                        {deadline.label}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Content */}
-                  <div className="flex flex-1 flex-col p-3">
-                    {/* 2. Ticket price — centred gold pill overlapping the image/content seam.
-                        Price only: no label, single line, symmetrical. */}
-                    {base != null && (
-                      <div className="relative z-10 -mt-6 mb-3 flex justify-center">
-                        <span className="inline-flex items-center whitespace-nowrap rounded-full bg-gradient-to-br from-[#FFD700] to-[#FFA500] px-4 py-1.5 text-lg font-black tabular-nums leading-none text-black shadow-lg shadow-black/30 md:text-xl">
-                          {priceText(base)}
-                        </span>
-                      </div>
-                    )}
-
-                    {/* 3. Format row — driven only by presentation_type.
-                        Nothing renders (and no space is reserved) for null/unknown. */}
-                    {giveaway.presentation_type === "balloon_pop" && (
-                      <div className="mb-2 inline-flex w-fit items-center gap-1.5 rounded-md bg-black px-2 py-1 text-[11px] font-extrabold uppercase tracking-wide text-white shadow-sm">
-                        <TikTokIcon className="h-[18px] w-[18px] shrink-0" />
-                        TikTok Live
-                      </div>
-                    )}
-                    {giveaway.presentation_type === "instant_cash" && (
-                      <div className="mb-2 inline-flex w-fit items-center gap-1.5 rounded-md bg-amber-400/10 px-2 py-1 text-[11px] font-extrabold uppercase tracking-wide text-[#FFD700] ring-1 ring-inset ring-amber-400/40">
-                        <Zap className="h-[18px] w-[18px] shrink-0" fill="currentColor" />
-                        Instant Cash
-                      </div>
-                    )}
-
-                    {/* 4. Title */}
-                    <h3 className="min-h-[2.5rem] text-pretty text-sm font-bold leading-tight text-white line-clamp-2 transition-colors group-hover:text-amber-400 md:text-base">
-                      {giveaway.title}
-                    </h3>
-
-                    {/* 5. Genuine prize title — only when meaningful and not a
-                        duplicate of the campaign title. No generic fallback. */}
-                    {prizeSubtitle(giveaway) && (
-                      <p className="mt-1.5 text-xs leading-snug text-amber-100/70 line-clamp-2 md:text-sm">
-                        {prizeSubtitle(giveaway)}
-                      </p>
-                    )}
-
-                    {/* 6. Percentage sold + progress bar */}
-                    {percentSold !== null && (
-                      <div className="mt-3">
-                        <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-amber-400">
-                          {percentSold}% Sold
-                        </div>
-                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-                          <div
-                            className="h-full rounded-full bg-gradient-to-r from-amber-400 to-fuchsia-500"
-                            style={{ width: `${percentSold}%` }}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* 7. Enter now CTA (styled non-button; whole card is the link) */}
-                    <div className="mt-auto pt-3">
-                      <div className="flex min-h-[44px] items-center justify-center rounded-xl bg-gradient-to-r from-[#FFD700] to-[#FFA500] px-4 py-3 text-sm font-bold text-black transition-all group-hover:shadow-lg">
-                        Enter now
-                      </div>
-                    </div>
-                  </div>
-                </Link>
-              )
-            })
-          ) : (
-            // Emergency fallback - single static card
-            <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm p-6 md:p-8 sm:col-span-2 lg:col-span-3">
-              <div className="flex flex-col items-center text-center gap-4">
-                <span className="inline-flex items-center rounded-full bg-green-500/20 px-3 py-1 text-sm font-medium text-green-400">
-                  {emergencyFeaturedGiveaway.status}
-                </span>
-                <h3 className="text-2xl font-bold text-white md:text-3xl">{emergencyFeaturedGiveaway.title}</h3>
-                <p className="text-white/70 max-w-md">{emergencyFeaturedGiveaway.subtitle}</p>
-                <Button size="lg" className="mt-4 rounded-xl bg-gradient-to-r from-[#FFD700] to-[#FFA500] text-black font-semibold shadow-md transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg" asChild>
-                  <Link href={emergencyFeaturedGiveaway.ctaHref}>{emergencyFeaturedGiveaway.ctaLabel}</Link>
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
-      </section>
+        )}
       </div>
     </div>
   )
