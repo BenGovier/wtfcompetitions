@@ -5,8 +5,7 @@ import { ArrowRight, Zap } from "lucide-react"
 import { createClient } from "@/lib/supabase/server"
 import { LiveNowTakeover } from "@/components/live/LiveNowTakeover"
 import { TikTokIcon } from "@/components/icons/tiktok-icon"
-import { DeadlineBadge } from "@/components/deadline-badge"
-import { computeCountdown } from "@/lib/countdown"
+import { deadlineLabel } from "@/lib/countdown"
 
 // --- Card display helpers (shared logic, duplicated intentionally per page) ---
 
@@ -91,7 +90,7 @@ export default async function HomePage() {
             giveaways.map((giveaway: any) => {
               const endsAtRaw = giveaway.ends_at
               const endMs = endsAtRaw ? new Date(endsAtRaw).getTime() : Number.NaN
-              const initialCd = Number.isFinite(endMs) ? computeCountdown(endMs, Date.now()) : null
+              const deadline = Number.isFinite(endMs) ? deadlineLabel(endMs, Date.now()) : null
               const sold = Number(giveaway.tickets_sold ?? 0)
               const cap = Number(giveaway.hard_cap_total_tickets ?? 0)
               const percentSold = cap > 0 ? Math.min(100, Math.floor((sold / cap) * 100)) : null
@@ -121,32 +120,30 @@ export default async function HomePage() {
                     {/* Bottom fade so the price badge stays legible */}
                     <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/85 via-black/40 to-transparent" />
 
-                    {/* 1. Deadline / live countdown badge (fixed top-left) */}
-                    {initialCd && (
-                      <DeadlineBadge
-                        endsAtMs={endMs}
-                        initialLabel={initialCd.label}
-                        initialTone={initialCd.tone}
-                        className="absolute left-2 top-2 z-10"
-                      />
+                    {/* 1. Deadline pill — centred, overlapping the top edge of the artwork */}
+                    {deadline && (
+                      <span
+                        className={
+                          "absolute left-1/2 top-3 z-10 -translate-x-1/2 whitespace-nowrap rounded-full px-3 py-1 text-xs font-bold shadow-lg shadow-black/40 " +
+                          (deadline.ended
+                            ? "bg-red-600 text-white"
+                            : "bg-[#1c0b30] text-white ring-1 ring-amber-400/50")
+                        }
+                      >
+                        {deadline.label}
+                      </span>
                     )}
                   </div>
 
                   {/* Content */}
                   <div className="flex flex-1 flex-col p-3">
-                    {/* 2. Ticket price — dominant opaque gold badge overlapping the seam.
-                        Fixed position and shape regardless of sale state so it never jumps. */}
+                    {/* 2. Ticket price — centred gold pill overlapping the image/content seam.
+                        Price only: no label, single line, symmetrical. */}
                     {base != null && (
-                      <div className="relative z-10 -mt-8 mb-3 flex flex-wrap items-end gap-x-2 gap-y-1">
-                        <span className="inline-flex flex-col items-start rounded-xl bg-gradient-to-br from-[#FFD700] to-[#FFA500] px-3 py-1.5 leading-none shadow-lg shadow-black/30">
-                          <span className="text-lg font-black tabular-nums text-black md:text-xl">{priceText(base)}</span>
-                          <span className="mt-0.5 text-[9px] font-extrabold uppercase tracking-wider text-black/70">A Ticket</span>
+                      <div className="relative z-10 -mt-6 mb-3 flex justify-center">
+                        <span className="inline-flex items-center whitespace-nowrap rounded-full bg-gradient-to-br from-[#FFD700] to-[#FFA500] px-4 py-1.5 text-lg font-black tabular-nums leading-none text-black shadow-lg shadow-black/30 md:text-xl">
+                          {priceText(base)}
                         </span>
-                        {onSale && (
-                          <span className="mb-1 inline-flex items-center rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white/75 line-through">
-                            Was {priceText(was)}
-                          </span>
-                        )}
                       </div>
                     )}
 

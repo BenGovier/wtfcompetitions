@@ -1,48 +1,50 @@
-// Pure, framework-agnostic countdown formatting shared by the server
-// (initial render) and the client DeadlineBadge (live updates). Keeping this
-// deterministic and free of `Date.now()` lets the caller pass an explicit
-// `nowMs`, which is what makes the badge hydration-safe.
+// Pure, framework-agnostic deadline formatting shared by the giveaway cards.
+// Produces concise, human-readable wording (never a long live countdown):
+//   "Ended", "Ends Today", "Ends Tomorrow", "Ends in 6 days".
+// Keeping it deterministic and free of `Date.now()` lets callers pass an
+// explicit `nowMs` when they need to.
 
-export type CountdownTone = "ended" | "urgent" | "soon" | "normal"
-
-export interface CountdownDisplay {
-  /** Human label, e.g. "12D 04H 31M", "04H 31M 22S", or "ENDED". */
+export interface DeadlineDisplay {
+  /** Human label, e.g. "Ends in 6 days", "Ends Tomorrow", or "Ended". */
   label: string
-  tone: CountdownTone
-  /** True when under 24h remaining — signals the caller to tick per second. */
-  sub24: boolean
+  /** True when the giveaway has finished. */
+  ended: boolean
 }
 
-const HOUR = 60 * 60 * 1000
-const DAY = 24 * HOUR
+// Calendar day (Y-M-D) for a timestamp evaluated in Europe/London.
+function londonYMD(ms: number): { y: number; m: number; d: number } {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(ms))
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value)
+  return { y: get("year"), m: get("month"), d: get("day") }
+}
 
-function pad(n: number): string {
-  return n < 10 ? `0${n}` : `${n}`
+// Whole-calendar-day difference (end - now) using Europe/London dates.
+function londonCalendarDayDiff(nowMs: number, endMs: number): number {
+  const a = londonYMD(nowMs)
+  const b = londonYMD(endMs)
+  const aUTC = Date.UTC(a.y, a.m - 1, a.d)
+  const bUTC = Date.UTC(b.y, b.m - 1, b.d)
+  return Math.round((bUTC - aUTC) / (1000 * 60 * 60 * 24))
 }
 
 /**
- * Format the time between `nowMs` and `endsAtMs`.
- *  - <= 0 or invalid         -> "ENDED"
- *  - < 24h                   -> "04H 31M 22S" (urgent, per-second)
- *  - < 48h                   -> "01D 04H 31M" (soon)
- *  - otherwise               -> "12D 04H 31M" (normal)
+ * Concise deadline wording.
+ *  - invalid / <= now  -> "Ended"
+ *  - same calendar day  -> "Ends Today"
+ *  - next calendar day  -> "Ends Tomorrow"
+ *  - otherwise          -> "Ends in N days"
  */
-export function computeCountdown(endsAtMs: number, nowMs: number): CountdownDisplay {
-  const diff = endsAtMs - nowMs
-  if (!Number.isFinite(endsAtMs) || diff <= 0) {
-    return { label: "ENDED", tone: "ended", sub24: false }
+export function deadlineLabel(endsAtMs: number, nowMs: number): DeadlineDisplay {
+  if (!Number.isFinite(endsAtMs) || endsAtMs - nowMs <= 0) {
+    return { label: "Ended", ended: true }
   }
-
-  const totalSeconds = Math.floor(diff / 1000)
-  const days = Math.floor(totalSeconds / 86400)
-  const hours = Math.floor((totalSeconds % 86400) / 3600)
-  const minutes = Math.floor((totalSeconds % 3600) / 60)
-  const seconds = totalSeconds % 60
-
-  if (diff < DAY) {
-    return { label: `${pad(hours)}H ${pad(minutes)}M ${pad(seconds)}S`, tone: "urgent", sub24: true }
-  }
-
-  const tone: CountdownTone = diff < 2 * DAY ? "soon" : "normal"
-  return { label: `${pad(days)}D ${pad(hours)}H ${pad(minutes)}M`, tone, sub24: false }
+  const days = londonCalendarDayDiff(nowMs, endsAtMs)
+  if (days <= 0) return { label: "Ends Today", ended: false }
+  if (days === 1) return { label: "Ends Tomorrow", ended: false }
+  return { label: `Ends in ${days} days`, ended: false }
 }

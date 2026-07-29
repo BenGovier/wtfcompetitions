@@ -1,5 +1,6 @@
 import type { GiveawayPublic } from "@/lib/types"
 import Link from "next/link"
+import { deadlineLabel } from "@/lib/countdown"
 
 interface GiveawayCardProps {
   giveaway: GiveawayPublic
@@ -13,18 +14,11 @@ function formatPriceGBP(price: number | null | undefined) {
   return `£${n.toFixed(2)}`
 }
 
-function getTimeLabel(msLeft: number, isEnded: boolean): string {
-  if (isEnded) return "Ended"
-  const daysLeft = Math.ceil(msLeft / (1000 * 60 * 60 * 24))
-  if (daysLeft <= 1) return "Ends today"
-  return `Ends in ${daysLeft} days`
-}
-
 export function GiveawayCard({ giveaway, mode = "live" }: GiveawayCardProps) {
   const msLeft = giveaway.endsAt.getTime() - Date.now()
   const isEnded = msLeft <= 0
   const effectiveStatus = isEnded ? "ended" : giveaway.status
-  const timeLabel = getTimeLabel(msLeft, isEnded)
+  const deadline = deadlineLabel(giveaway.endsAt.getTime(), Date.now())
 
   const sold =
     giveaway.ticketsSold ??
@@ -48,13 +42,19 @@ export function GiveawayCard({ giveaway, mode = "live" }: GiveawayCardProps) {
           />
           {/* Overlay gradient */}
           <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-          
-          {/* Status badge */}
-          {effectiveStatus === "ended" ? (
-            <div className="absolute right-3 top-3 rounded-full bg-red-600/90 px-3 py-1 text-xs font-semibold text-white shadow backdrop-blur-sm">
-              Ended
-            </div>
-          ) : giveaway.status === "paused" ? (
+
+          {/* Deadline pill — centred, overlapping the top edge of the artwork */}
+          <span
+            className={
+              "absolute left-1/2 top-3 z-10 -translate-x-1/2 whitespace-nowrap rounded-full px-3 py-1 text-xs font-bold shadow-lg shadow-black/40 " +
+              (deadline.ended ? "bg-red-600 text-white" : "bg-[#1c0b30] text-white ring-1 ring-amber-400/50")
+            }
+          >
+            {deadline.label}
+          </span>
+
+          {/* Status badge (deadline shown separately in the centred pill above) */}
+          {effectiveStatus === "ended" ? null : giveaway.status === "paused" ? (
             <div className="absolute right-3 top-3 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold text-white/70 shadow backdrop-blur-sm">
               Paused
             </div>
@@ -72,13 +72,16 @@ export function GiveawayCard({ giveaway, mode = "live" }: GiveawayCardProps) {
 
       {/* Content Section */}
       <div className="p-4 space-y-3 flex-1 flex flex-col">
+        {/* Ticket price — centred gold pill overlapping the image/content seam. Price only. */}
+        <div className="relative z-10 -mt-9 flex justify-center">
+          <span className="inline-flex items-center whitespace-nowrap rounded-full bg-gradient-to-br from-[#FFD700] to-[#FFA500] px-4 py-1.5 text-xl font-black tabular-nums leading-none text-black shadow-lg shadow-black/30">
+            {formatPriceGBP(giveaway.ticketPrice)}
+          </span>
+        </div>
+
         <h3 className="text-white text-lg font-semibold">
           {giveaway.title}
         </h3>
-        
-        <p className="text-sm font-medium text-white/70">
-          {timeLabel}
-        </p>
 
         {/* Progress Bar */}
         {hasCapInfo && (
@@ -108,14 +111,8 @@ export function GiveawayCard({ giveaway, mode = "live" }: GiveawayCardProps) {
           </div>
         )}
 
-        {/* Price + CTA Section */}
+        {/* CTA Section */}
         <div className="pt-2 space-y-2 mt-auto">
-          {/* Dominant opaque gold price badge — matches the homepage/giveaways card hierarchy */}
-          <span className="inline-flex flex-col items-start rounded-xl bg-gradient-to-br from-[#FFD700] to-[#FFA500] px-3 py-1.5 leading-none shadow-lg shadow-black/30">
-            <span className="text-xl font-black tabular-nums text-black">{formatPriceGBP(giveaway.ticketPrice)}</span>
-            <span className="mt-0.5 text-[9px] font-extrabold uppercase tracking-wider text-black/70">A Ticket</span>
-          </span>
-
           {effectiveStatus === "ended" ? (
             mode === "past" ? (
               <Link
