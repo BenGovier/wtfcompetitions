@@ -20,6 +20,17 @@ export const FEATURED_COUNT = 4
 export const GRID_PAGE_SIZE = 24
 
 /**
+ * Minimum numeric prize value (in pence) shown on the PUBLIC winners page.
+ *
+ * Enforced as a `>= 2000` predicate on `prize_value_pence` at the QUERY layer
+ * in both the initial server load and the `/api/winners` route, applied before
+ * ordering / limiting / the peek row / hasMore / nextCursor. Because SQL
+ * comparisons against NULL evaluate to false, rows with a missing numeric value
+ * fail closed and are excluded — we never infer a value from titles or text.
+ */
+export const MIN_PUBLIC_PRIZE_PENCE = 2000
+
+/**
  * Explicit allow-list of PUBLIC columns selected from `winners_feed`.
  *
  * This is a hard privacy boundary at the QUERY layer: sensitive columns
@@ -156,10 +167,14 @@ export function mapWinnerRow(row: any): WinnerSnapshot {
   }
 }
 
-/** Format a pence amount as GBP, trimming a trailing ".00". */
+/** Format a pence amount as GBP with thousands grouping, trimming ".00". */
 export function formatGBP(pence: number): string {
   const value = pence / 100
-  return `£${value.toFixed(2).replace(/\.00$/, "")}`
+  const formatted = value.toLocaleString("en-GB", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+  return `£${formatted.replace(/\.00$/, "")}`
 }
 
 /**
