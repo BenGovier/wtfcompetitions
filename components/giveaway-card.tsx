@@ -76,7 +76,7 @@ export function GiveawayCard({ giveaway, mode = "live" }: GiveawayCardProps) {
           {giveaway.title}
         </h3>
         
-        <p className="text-white/60 text-sm">
+        <p className="text-sm font-medium text-white/70">
           {timeLabel}
         </p>
 
@@ -110,8 +110,11 @@ export function GiveawayCard({ giveaway, mode = "live" }: GiveawayCardProps) {
 
         {/* Price + CTA Section */}
         <div className="pt-2 space-y-2 mt-auto">
-          <div className="text-sm text-white/60">Entry from</div>
-          <div className="text-xl font-bold text-white">{formatPriceGBP(giveaway.ticketPrice)}</div>
+          {/* Dominant opaque gold price badge — matches the homepage/giveaways card hierarchy */}
+          <span className="inline-flex flex-col items-start rounded-xl bg-gradient-to-br from-[#FFD700] to-[#FFA500] px-3 py-1.5 leading-none shadow-lg shadow-black/30">
+            <span className="text-xl font-black tabular-nums text-black">{formatPriceGBP(giveaway.ticketPrice)}</span>
+            <span className="mt-0.5 text-[9px] font-extrabold uppercase tracking-wider text-black/70">A Ticket</span>
+          </span>
 
           {effectiveStatus === "ended" ? (
             mode === "past" ? (
