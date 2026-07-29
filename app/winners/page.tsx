@@ -7,8 +7,6 @@ import {
   GRID_PAGE_SIZE,
   MIN_PUBLIC_PRIZE_PENCE,
   PUBLIC_WINNER_COLUMNS,
-  WINNERS_CUTOFF,
-  WINNERS_KIND,
   formatWinnerFirstName,
   mapWinnerRow,
 } from "@/lib/winners"
@@ -43,11 +41,12 @@ export default async function WinnersPage() {
         // Explicit public allow-list: never fetch `winning_ticket` / `user_id`,
         // so they cannot leak via the raw result envelope Next.js serialises.
         .select(PUBLIC_WINNER_COLUMNS)
-        .eq("kind", WINNERS_KIND)
-        .gte("happened_at", WINNERS_CUTOFF)
-        // Only meaningful prizes (>= £20). Applied BEFORE order/limit/peek so
-        // featured, grid, hasMore and the cursor all derive from eligible rows.
-        // NULL numeric values fail this comparison and are excluded (fail-closed).
+        // Eligibility is determined by proven prize VALUE, not by winner kind or
+        // date: all winner kinds (instant, main-prize, draw, etc.) and historical
+        // dates are eligible. Only meaningful prizes (>= £20) are shown; applied
+        // BEFORE order/limit/peek so featured, grid, hasMore and the cursor all
+        // derive from eligible rows. NULL numeric values fail this comparison and
+        // are excluded (fail-closed).
         .gte("prize_value_pence", MIN_PUBLIC_PRIZE_PENCE)
         .order("happened_at", { ascending: false })
         .limit(initialLimit + 1),
