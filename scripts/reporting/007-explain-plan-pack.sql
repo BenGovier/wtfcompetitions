@@ -9,38 +9,23 @@
 --     the queries against production (ANALYZE executes the statement).
 --
 -- How to read the output:
---   * Section A (bounded refresh source) is the hot path. We WANT to see an
---     "Index Scan"/"Bitmap Index Scan" using a confirmed_at partial index and a
---     small estimated row count. If you instead see "Seq Scan on
---     checkout_intents" it means the predicate is NON-SARGABLE (see the note in
---     A2) and the refresh is NOT safe to run every minute.
+--   * Section A (bounded refresh source) is the hot path, and it now matches the
+--     SHIPPED refresh function exactly (15-minute lookback, bare confirmed_at).
+--     We WANT to see an "Index Scan"/"Bitmap Index Scan" using
+--     idx_checkout_intents_confirmed_at_confirmed and a small estimated row
+--     count. A "Seq Scan on checkout_intents" here means the confirmed_at
+--     partial index (002a) has not been created yet, or the column differs.
 -- ============================================================================
 
 \set ON_ERROR_STOP on
 
 -- ----------------------------------------------------------------------------
--- A. Bounded refresh SOURCE query (the every-tick hot path).
+-- A. Bounded refresh SOURCE query — the every-tick hot path.
+--    This is EXACTLY what refresh_sales_reporting runs for the recurring
+--    15-minute cron window (003): bare `confirmed_at` compared to constants,
+--    state='confirmed', no COALESCE / DATE_TRUNC / AT TIME ZONE / CAST on the
+--    timestamp. Expect an index/bitmap scan on the confirmed_at partial index.
 -- ----------------------------------------------------------------------------
--- A1. Plan for the query EXACTLY as the shipped refresh function runs it today
---     (predicate wraps the timestamp in COALESCE). Inspect whether the planner
---     can use idx_checkout_intents_confirmed_at_confirmed. Expectation with the
---     current code: it CANNOT (COALESCE(confirmed_at, created_at) is not an
---     indexable expression against a bare-confirmed_at index) -> Seq Scan.
-EXPLAIN (VERBOSE, FORMAT TEXT)
-SELECT
-  ci.campaign_id, ci.provider, ci.total_pence, ci.wallet_credit_pence, ci.qty,
-  COALESCE(ci.confirmed_at, ci.created_at) AS ts
-FROM public.checkout_intents ci
-WHERE ci.state = 'confirmed'
-  AND ci.provider IS DISTINCT FROM 'debug'
-  AND (ci.ref IS NULL OR ci.ref NOT LIKE 'SIM-%')
-  AND ci.campaign_id IS NOT NULL
-  AND COALESCE(ci.confirmed_at, ci.created_at) >= (now() - interval '15 minutes')
-  AND COALESCE(ci.confirmed_at, ci.created_at) <  (now() + interval '1 minute');
-
--- A2. Plan for the SARGABLE rewrite (recommended remediation): filter the raw
---     indexed column directly so the confirmed_at partial index is usable.
---     Compare its plan to A1 — this should switch to an index/bitmap scan.
 EXPLAIN (VERBOSE, FORMAT TEXT)
 SELECT
   ci.campaign_id, ci.provider, ci.total_pence, ci.wallet_credit_pence, ci.qty,
@@ -51,21 +36,6 @@ WHERE ci.state = 'confirmed'
   AND (ci.ref IS NULL OR ci.ref NOT LIKE 'SIM-%')
   AND ci.campaign_id IS NOT NULL
   AND ci.confirmed_at >= (now() - interval '15 minutes')
-  AND ci.confirmed_at <  (now() + interval '1 minute');
-
--- A3. Plan for the 3-DAY lookback the cron route actually requests today
---     (lookback_minutes = 4320). Shows how much work each scheduled tick plans
---     under the current configuration.
-EXPLAIN (VERBOSE, FORMAT TEXT)
-SELECT
-  ci.campaign_id, ci.provider, ci.total_pence, ci.wallet_credit_pence, ci.qty,
-  ci.confirmed_at AS ts
-FROM public.checkout_intents ci
-WHERE ci.state = 'confirmed'
-  AND ci.provider IS DISTINCT FROM 'debug'
-  AND (ci.ref IS NULL OR ci.ref NOT LIKE 'SIM-%')
-  AND ci.campaign_id IS NOT NULL
-  AND ci.confirmed_at >= (now() - interval '4320 minutes')
   AND ci.confirmed_at <  (now() + interval '1 minute');
 
 -- ----------------------------------------------------------------------------

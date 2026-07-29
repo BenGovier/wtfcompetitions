@@ -13,7 +13,8 @@
 -- refresh_sales_reporting_job(p_lookback_minutes):
 --   * wraps the core call with a transaction-scoped advisory lock so overlapping
 --     cron executions cannot stack; returns {skipped:true} instead of blocking
---   * used by the protected /api/jobs/refresh-sales-reporting route
+--   * used by the protected /api/jobs/refresh-reporting route
+--   * default recurring lookback is 15 minutes (small, indexed, bounded)
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION public.refresh_sales_reporting(
@@ -33,6 +34,11 @@ DECLARE
   v_minutes_written bigint := 0;
   v_days_written    bigint := 0;
 BEGIN
+  -- Transaction-local safety limits: a pathological run self-terminates rather
+  -- than lingering. Applied BEFORE any source query or reporting-table write.
+  PERFORM set_config('statement_timeout', '30s', true);
+  PERFORM set_config('lock_timeout', '5s', true);
+
   IF p_from IS NULL OR p_to IS NULL THEN
     RAISE EXCEPTION 'refresh_sales_reporting: p_from and p_to are required';
   END IF;
@@ -82,19 +88,23 @@ BEGIN
       ci.total_pence,
       ci.wallet_credit_pence,
       ci.qty,
-      COALESCE(ci.confirmed_at, ci.created_at) AS ts,
+      ci.confirmed_at AS ts,
       CASE
         WHEN ci.external_payment_pence IS NOT NULL
           THEN ci.external_payment_pence
         ELSE ci.total_pence - COALESCE(ci.wallet_credit_pence, 0)
       END AS external_calc
     FROM public.checkout_intents ci
+    -- Sargable window: bare confirmed_at compared to constants so the partial
+    -- index idx_checkout_intents_confirmed_at_confirmed is used. confirmed_at is
+    -- NEVER wrapped in COALESCE/DATE_TRUNC/AT TIME ZONE/CAST here. Europe/London
+    -- bucketing happens only in the SELECT above, after rows are selected.
     WHERE ci.state = 'confirmed'
       AND ci.provider IS DISTINCT FROM 'debug'
       AND (ci.ref IS NULL OR ci.ref NOT LIKE 'SIM-%')
       AND ci.campaign_id IS NOT NULL
-      AND COALESCE(ci.confirmed_at, ci.created_at) >= v_from
-      AND COALESCE(ci.confirmed_at, ci.created_at) <  v_to
+      AND ci.confirmed_at >= v_from
+      AND ci.confirmed_at <  v_to
   ) src
   GROUP BY 1, 2, 3;
 
@@ -180,6 +190,10 @@ DECLARE
   v_to       timestamptz;
   v_result   jsonb;
 BEGIN
+  -- Transaction-local safety limits, set before the advisory lock and any work.
+  PERFORM set_config('statement_timeout', '30s', true);
+  PERFORM set_config('lock_timeout', '5s', true);
+
   -- Clamp lookback to a sane range (1 min .. 7 days).
   IF p_lookback_minutes IS NULL OR p_lookback_minutes < 1 THEN
     p_lookback_minutes := 15;

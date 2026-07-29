@@ -1,53 +1,95 @@
 -- ============================================================================
--- WTF Reporting: one-time historical backfill  (DO NOT RUN IN THIS PROJECT)
+-- WTF Reporting: historical backfill  (BOUNDED, RESTARTABLE — DO NOT RUN HERE)
 -- ----------------------------------------------------------------------------
--- Populates reporting_sales_minute + reporting_sales_daily from all existing
--- confirmed production checkouts, month by month, by repeatedly calling the
--- bounded, idempotent refresh_sales_reporting(). Because each call is
--- idempotent (delete+insert within its window), this whole script is
--- restartable: re-running it simply recomputes the same rows.
+-- The backfill is NOT a single all-history transaction. It is a bounded helper
+-- function that backfills ONE explicit [p_from, p_to) range per call, plus a
+-- runbook generator that emits one monthly statement at a time. The operator
+-- runs those statements individually, so each month COMMITS on its own and the
+-- process is restartable after any failed month.
 --
--- It never updates or locks checkout_intents beyond the read each monthly
--- aggregate performs. It does not add triggers.
+-- Properties:
+--   * bounded: rejects ranges wider than 45 days (forces monthly chunks)
+--   * restartable: re-running a month recomputes only that month (idempotent
+--     delete+insert inside refresh_sales_reporting)
+--   * read-only against checkout_intents (no update / no lock / no trigger)
+--   * NO COMMIT inside the function — autocommit of each manual call provides
+--     independent per-chunk commits
 --
--- Prerequisites: 001, 002, 003, 004 already run.
+-- Prerequisites: 001, 002a-002e, 003, 004 already run.
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
--- Step 1: month-by-month backfill from the earliest confirmed row to now.
+-- Bounded per-range backfill. One call = one chunk = one transaction (via the
+-- caller's autocommit). Delegates to the same idempotent refresh used by cron.
 -- ----------------------------------------------------------------------------
-DO $$
+CREATE OR REPLACE FUNCTION public.backfill_sales_reporting(
+  p_from timestamptz,
+  p_to   timestamptz
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 DECLARE
-  v_min_ts   timestamptz;
-  v_cursor   timestamptz;
-  v_next     timestamptz;
-  v_end      timestamptz := date_trunc('month', now()) + interval '1 month';
-  v_res      jsonb;
+  v_result jsonb;
 BEGIN
-  SELECT date_trunc('month', min(COALESCE(confirmed_at, created_at)))
-    INTO v_min_ts
-    FROM public.checkout_intents
-   WHERE state = 'confirmed'
-     AND provider IS DISTINCT FROM 'debug'
-     AND (ref IS NULL OR ref NOT LIKE 'SIM-%');
+  -- Transaction-local safety limits for the chunk.
+  PERFORM set_config('statement_timeout', '120s', true);
+  PERFORM set_config('lock_timeout', '5s', true);
 
-  IF v_min_ts IS NULL THEN
-    RAISE NOTICE 'No confirmed non-test checkouts found; nothing to backfill.';
-    RETURN;
+  IF p_from IS NULL OR p_to IS NULL THEN
+    RAISE EXCEPTION 'backfill_sales_reporting: p_from and p_to are required';
+  END IF;
+  IF p_to <= p_from THEN
+    RAISE EXCEPTION 'backfill_sales_reporting: p_to (%) must be after p_from (%)', p_to, p_from;
+  END IF;
+  IF (p_to - p_from) > interval '45 days' THEN
+    RAISE EXCEPTION 'backfill_sales_reporting: range too wide (max 45 days) — split into monthly chunks, got %', (p_to - p_from);
   END IF;
 
-  v_cursor := v_min_ts;
-  WHILE v_cursor < v_end LOOP
-    v_next := v_cursor + interval '1 month';
-    v_res  := public.refresh_sales_reporting(v_cursor, v_next);
-    RAISE NOTICE 'Backfilled % -> %: %', v_cursor, v_next, v_res;
-    v_cursor := v_next;
-  END LOOP;
-END $$;
+  v_result := public.refresh_sales_reporting(p_from, p_to);
+  RETURN v_result || jsonb_build_object('backfill_chunk', jsonb_build_object('from', p_from, 'to', p_to));
+END;
+$$;
+
+COMMENT ON FUNCTION public.backfill_sales_reporting(timestamptz, timestamptz) IS
+  'Bounded (<=45d) restartable per-range backfill chunk; delegates to refresh_sales_reporting. Run one month per call.';
+
+REVOKE ALL ON FUNCTION public.backfill_sales_reporting(timestamptz, timestamptz) FROM public, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.backfill_sales_reporting(timestamptz, timestamptz) TO service_role;
 
 -- ----------------------------------------------------------------------------
--- Step 2: reconciliation. Source (checkout_intents) vs reporting (daily rows).
--- Every monetary/volume difference MUST be zero.
+-- RUNBOOK GENERATOR (read-only). Run this SELECT to print the exact list of
+-- monthly statements to execute ONE AT A TIME. Copy each emitted line, run it,
+-- confirm it returns ok:true, then run the next. Each line commits on its own.
+-- ----------------------------------------------------------------------------
+WITH bounds AS (
+  SELECT
+    date_trunc('month', min(COALESCE(confirmed_at, created_at))) AS first_month,
+    date_trunc('month', now()) + interval '1 month'              AS end_month
+  FROM public.checkout_intents
+  WHERE state = 'confirmed'
+    AND provider IS DISTINCT FROM 'debug'
+    AND (ref IS NULL OR ref NOT LIKE 'SIM-%')
+),
+months AS (
+  SELECT generate_series(first_month, end_month - interval '1 month', interval '1 month') AS m
+  FROM bounds
+  WHERE first_month IS NOT NULL
+)
+SELECT
+  row_number() OVER (ORDER BY m)                        AS step,
+  format(
+    'SELECT public.backfill_sales_reporting(%L::timestamptz, %L::timestamptz);',
+    m, m + interval '1 month'
+  )                                                     AS run_this_statement
+FROM months
+ORDER BY m;
+
+-- ----------------------------------------------------------------------------
+-- Reconciliation (run AFTER all monthly chunks). Source vs reporting — every
+-- difference MUST be zero.
 -- ----------------------------------------------------------------------------
 WITH source AS (
   SELECT
@@ -65,6 +107,7 @@ WITH source AS (
     AND provider IS DISTINCT FROM 'debug'
     AND (ref IS NULL OR ref NOT LIKE 'SIM-%')
     AND campaign_id IS NOT NULL
+    AND confirmed_at IS NOT NULL          -- recurring/backfill path uses confirmed_at only
 ),
 report AS (
   SELECT
@@ -84,8 +127,7 @@ SELECT
 FROM source s CROSS JOIN report r;
 
 -- ----------------------------------------------------------------------------
--- Step 3: record reconciliation status for the dashboard freshness panel.
--- Re-runs the same comparison and stores it in reporting_meta.
+-- Record reconciliation status for the dashboard freshness panel.
 -- ----------------------------------------------------------------------------
 WITH source AS (
   SELECT
@@ -103,6 +145,7 @@ WITH source AS (
     AND provider IS DISTINCT FROM 'debug'
     AND (ref IS NULL OR ref NOT LIKE 'SIM-%')
     AND campaign_id IS NOT NULL
+    AND confirmed_at IS NOT NULL
 ),
 report AS (
   SELECT

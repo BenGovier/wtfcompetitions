@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/jobs/refresh-reporting",
-      "schedule": "*/10 * * * *"
+      "schedule": "* * * * *"
     }
   ]
 }

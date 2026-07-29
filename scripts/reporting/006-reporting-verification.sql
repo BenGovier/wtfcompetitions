@@ -57,7 +57,8 @@ SELECT 'today_source' AS period,
        COUNT(*) orders, COALESCE(SUM(COALESCE(qty,0)),0) tickets
   FROM public.checkout_intents
  WHERE state='confirmed' AND provider IS DISTINCT FROM 'debug' AND (ref IS NULL OR ref NOT LIKE 'SIM-%')
-   AND COALESCE(confirmed_at, created_at) >= ((now() AT TIME ZONE 'Europe/London')::date::timestamp AT TIME ZONE 'Europe/London')
+   AND confirmed_at IS NOT NULL
+   AND confirmed_at >= ((now() AT TIME ZONE 'Europe/London')::date::timestamp AT TIME ZONE 'Europe/London')
 UNION ALL
 SELECT 'last_7_days_source',
        COALESCE(SUM(total_pence),0),
@@ -67,7 +68,8 @@ SELECT 'last_7_days_source',
        COUNT(*), COALESCE(SUM(COALESCE(qty,0)),0)
   FROM public.checkout_intents
  WHERE state='confirmed' AND provider IS DISTINCT FROM 'debug' AND (ref IS NULL OR ref NOT LIKE 'SIM-%')
-   AND COALESCE(confirmed_at, created_at) >= now() - interval '7 days';
+   AND confirmed_at IS NOT NULL
+   AND confirmed_at >= now() - interval '7 days';
 
 -- 6) Freshness + reconciliation snapshot.
 SELECT key, value, updated_at FROM public.reporting_meta ORDER BY key;
@@ -78,10 +80,13 @@ FROM pg_class
 WHERE relname IN ('reporting_sales_minute','reporting_sales_daily','reporting_meta');
 
 -- 8) EXPLAIN for the bounded refresh read path (confirm index usage; run if tuning).
--- EXPLAIN (ANALYZE, BUFFERS)
+--    Uses bare confirmed_at (sargable) to match the shipped refresh function.
+--    See 007-explain-plan-pack.sql for the full read-only (no ANALYZE) pack.
+-- EXPLAIN
 -- SELECT campaign_id, provider, SUM(total_pence)
 --   FROM public.checkout_intents
---  WHERE state='confirmed' AND COALESCE(confirmed_at, created_at) >= now() - interval '15 minutes'
+--  WHERE state='confirmed' AND confirmed_at >= now() - interval '15 minutes'
+--                        AND confirmed_at <  now() + interval '1 minute'
 --  GROUP BY campaign_id, provider;
 
 -- 9) The dashboard RPC returns a bounded payload (smoke test).

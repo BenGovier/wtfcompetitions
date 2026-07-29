@@ -14,8 +14,12 @@ const NO_STORE = { 'Cache-Control': 'private, no-store' }
  *   B) Vercel cron via x-vercel-cron header / vercel-cron UA
  *
  * The heavy lifting + advisory lock live in the SQL function
- * `reporting_refresh_job(p_lookback_minutes)`, so overlapping invocations are
- * safe (a concurrent run simply reports skipped=true).
+ * `refresh_sales_reporting_job(p_lookback_minutes)`, so overlapping invocations
+ * are safe (a concurrent run simply reports skipped=true).
+ *
+ * Normal recurring lookback is 15 minutes (small, indexed, bounded). A wider
+ * reconciliation catch-up can be requested explicitly via ?lookback_minutes=,
+ * clamped in SQL to at most 7 days; it must NOT be run every minute.
  */
 async function handleRefresh(request: NextRequest) {
   const authHeader = request.headers.get('authorization')
@@ -46,13 +50,15 @@ async function handleRefresh(request: NextRequest) {
 
   const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
 
-  // Allow an override for backfill catch-up; default lookback is 3 days of minutes.
+  // Normal recurring lookback is 15 minutes. An explicit ?lookback_minutes=
+  // override is allowed for manual reconciliation catch-up (SQL clamps to 7 days),
+  // but the scheduled cron passes no override and therefore uses 15.
   const lookbackParam = Number(request.nextUrl.searchParams.get('lookback_minutes'))
   const lookbackMinutes =
-    Number.isFinite(lookbackParam) && lookbackParam > 0 ? Math.floor(lookbackParam) : 4320
+    Number.isFinite(lookbackParam) && lookbackParam > 0 ? Math.floor(lookbackParam) : 15
 
   const startedAt = Date.now()
-  const { data, error } = await supabase.rpc('reporting_refresh_job', {
+  const { data, error } = await supabase.rpc('refresh_sales_reporting_job', {
     p_lookback_minutes: lookbackMinutes,
   })
 
