@@ -1,59 +1,75 @@
 import Link from "next/link"
-import Image from "next/image"
-import { Zap } from "lucide-react"
 import { createClient } from "@/lib/supabase/server"
-import { TikTokIcon } from "@/components/icons/tiktok-icon"
-import { deadlineLabel } from "@/lib/countdown"
+import { GiveawaySection } from "@/components/giveaway-section"
+import { PublicGiveawayCard } from "@/components/public-giveaway-card"
+import { groupGiveawaysByCategory } from "@/lib/giveaway-classification"
 
-// --- Card display helpers (shared logic, duplicated intentionally per page) ---
+type View = "all" | "live" | "instant"
 
-// Customer-friendly price: below £1 -> "49p", £1+ -> "£1.50".
-function priceText(pence: number): string {
-  if (pence < 100) return `${Math.round(pence)}p`
-  return `£${(pence / 100).toFixed(2)}`
+// Compact, keyboard-accessible category navigation. Plain links using query
+// params — never a client-side tab system. Horizontally scrollable on narrow
+// mobile without overflowing the page.
+function CategoryNav({ view }: { view: View }) {
+  const items: { label: string; href: string; key: View }[] = [
+    { label: "All Giveaways", href: "/giveaways", key: "all" },
+    { label: "TikTok Live", href: "/giveaways?category=live", key: "live" },
+    { label: "Instant Cash", href: "/giveaways?category=instant", key: "instant" },
+  ]
+
+  return (
+    <nav aria-label="Giveaway categories" className="mt-5 -mx-4 px-4">
+      <ul className="flex gap-2 overflow-x-auto pb-1">
+        {items.map((item) => {
+          const active = item.key === view
+          return (
+            <li key={item.key} className="shrink-0">
+              <Link
+                href={item.href}
+                aria-current={active ? "page" : undefined}
+                className={
+                  "inline-flex min-h-[40px] items-center whitespace-nowrap rounded-full px-4 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0014] " +
+                  (active
+                    ? "bg-gradient-to-r from-[#FFD700] to-[#FFA500] text-black"
+                    : "bg-white/10 text-white/80 hover:bg-white/20 hover:text-white")
+                }
+              >
+                {item.label}
+              </Link>
+            </li>
+          )
+        })}
+      </ul>
+    </nav>
+  )
 }
 
-// Genuine prize subtitle only. Returns the prize_title when it is present,
-// non-empty after trimming, and not a case-insensitive duplicate of the
-// campaign title; otherwise null (no synthesized/generic marketing copy).
-function prizeSubtitle(giveaway: any): string | null {
-  const title = String(giveaway?.title ?? "").trim().toLowerCase()
-  const prize = String(giveaway?.prize_title ?? "").trim()
-  if (prize && prize.toLowerCase() !== title) return prize
-  return null
-}
+const GRID_CLASS = "mt-8 grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 md:grid-cols-2 md:gap-5 lg:grid-cols-3"
 
-// Emergency fallback data
-const emergencyGiveaways = [
-  {
-    slug: 'superholiday',
-    title: 'Super Holiday',
-    prize_title: 'Enter now for your chance to win our live Super Holiday giveaway.',
-    status: 'live',
-    hero_image_url: null,
-    ends_at: null,
-  },
-]
+export default async function GiveawaysPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}) {
+  const sp = await searchParams
+  const rawCategory = Array.isArray(sp?.category) ? sp.category[0] : sp?.category
+  // Unknown values fall back safely to the all-category view.
+  const view: View = rawCategory === "live" ? "live" : rawCategory === "instant" ? "instant" : "all"
 
-export default async function GiveawaysPage() {
   const supabase = await createClient()
 
   const { data } = await supabase
-    .from('giveaway_snapshots')
-    .select('payload')
-    .eq('kind', 'list')
-    .order('generated_at', { ascending: false })
+    .from("giveaway_snapshots")
+    .select("payload")
+    .eq("kind", "list")
+    .order("generated_at", { ascending: false })
     .limit(20)
 
   const now = Date.now()
   const giveaways = (data ?? [])
     .map((x: any) => x.payload)
     .filter((g: any) => {
-      // Exclude ended/sold_out/closed statuses
-      if (!g || g.status === 'ended' || g.status === 'sold_out' || g.status === 'closed') return false
-      // Only include live raffles
-      if (g.status !== 'live') return false
-      // Exclude if ends_at is in the past
+      if (!g || g.status === "ended" || g.status === "sold_out" || g.status === "closed") return false
+      if (g.status !== "live") return false
       if (g.ends_at) {
         const endsAt = new Date(g.ends_at).getTime()
         if (Number.isFinite(endsAt) && endsAt <= now) return false
@@ -61,131 +77,80 @@ export default async function GiveawaysPage() {
       return true
     })
 
-  const displayGiveaways = giveaways.length > 0 ? giveaways : emergencyGiveaways
+  // Classify + sort once, server-side, from the already-fetched array.
+  const grouped = groupGiveawaysByCategory(giveaways)
+
+  const headings: Record<View, { title: string; copy: string }> = {
+    all: { title: "All Giveaways", copy: "Big prizes. Small ticket prices. Pick your winner." },
+    live: { title: "TikTok Live Balloon Pops", copy: "Enter now, then watch the balloons pop live with your host." },
+    instant: { title: "Instant Cash Wins", copy: "Play any time and reveal instant cash prizes automatically." },
+  }
+
+  const filtered = view === "live" ? grouped.live_balloon : view === "instant" ? grouped.instant_cash : []
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#1a002b] via-[#2d0050] to-[#0a0014]">
       <div className="container px-4 py-8">
-        <div>
-          <h2 className="text-balance text-2xl font-bold tracking-tight text-white md:text-3xl">All Giveaways</h2>
-          <p className="mt-1 text-pretty bg-gradient-to-r from-[#FFD700] to-[#FFA500] bg-clip-text text-transparent">Big prizes. Small ticket prices. Pick your winner.</p>
-        </div>
+        <header>
+          <h1 className="text-balance text-2xl font-bold tracking-tight text-white md:text-3xl">
+            {headings[view].title}
+          </h1>
+          <p className="mt-1 text-pretty text-sm text-white/70 md:text-base">{headings[view].copy}</p>
+        </header>
 
-        <div className="mt-8 grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 md:grid-cols-2 md:gap-5 lg:grid-cols-3">
-          {displayGiveaways.map((giveaway: any) => {
-            const endsAtRaw = giveaway.ends_at
-            const endMs = endsAtRaw ? new Date(endsAtRaw).getTime() : Number.NaN
-            const deadline = Number.isFinite(endMs) ? deadlineLabel(endMs, Date.now()) : null
-            const sold = Number(giveaway.tickets_sold ?? 0)
-            const cap = Number(giveaway.hard_cap_total_tickets ?? 0)
-            const percentSold = cap > 0 ? Math.min(100, Math.floor((sold / cap) * 100)) : null
-            const base = giveaway.base_ticket_price_pence
-            const was = giveaway.was_ticket_price_pence
-            const onSale = base != null && was != null && was > base
+        <CategoryNav view={view} />
 
-            return (
-              <Link
+        {view === "all" ? (
+          <div className="mt-8">
+            <GiveawaySection
+              id="all-live-heading"
+              title="TikTok Live Balloon Pops"
+              supportingCopy="Enter now, then watch the balloons pop live with your host."
+              giveaways={grouped.live_balloon}
+              category="live_balloon"
+              viewAllHref="/giveaways?category=live"
+              viewAllLabel="View all Live"
+            />
+            <GiveawaySection
+              id="all-instant-heading"
+              title="Instant Cash Wins"
+              supportingCopy="Play any time and reveal instant cash prizes automatically."
+              giveaways={grouped.instant_cash}
+              category="instant_cash"
+              viewAllHref="/giveaways?category=instant"
+              viewAllLabel="View all Instant Cash"
+            />
+            <GiveawaySection
+              id="all-other-heading"
+              title="More Giveaways"
+              supportingCopy="More ways to play and win."
+              giveaways={grouped.other}
+              category="other"
+            />
+            {grouped.live_balloon.length + grouped.instant_cash.length + grouped.other.length === 0 && (
+              <p className="rounded-xl border border-white/10 bg-white/5 p-8 text-center text-sm text-white/60">
+                No live giveaways right now. Check back soon.
+              </p>
+            )}
+          </div>
+        ) : filtered.length > 0 ? (
+          <div className={GRID_CLASS}>
+            {filtered.map((giveaway: any) => (
+              <PublicGiveawayCard
                 key={giveaway.slug}
-                href={`/giveaways/${giveaway.slug}`}
-                className="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#1c0b30] transition-all duration-300 hover:border-amber-400/50 hover:shadow-lg hover:shadow-amber-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0014]"
-              >
-                {/* Artwork with overlays */}
-                <div className="relative aspect-[4/3] w-full overflow-hidden">
-                  {giveaway.hero_image_url ? (
-                    <Image
-                      src={giveaway.hero_image_url}
-                      alt={giveaway.title || "Giveaway"}
-                      fill
-                      className="object-cover transition-transform duration-300 group-hover:scale-105"
-                      sizes="(max-width: 359px) 100vw, (max-width: 768px) 50vw, (max-width: 1023px) 50vw, 33vw"
-                    />
-                  ) : (
-                    <div className="h-full w-full bg-gradient-to-br from-[#2a0040] to-[#1a0b2e]" />
-                  )}
-                  {/* Bottom fade so the price badge stays legible */}
-                  <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/85 via-black/40 to-transparent" />
-
-                  {/* 1. Deadline pill — centred, overlapping the top edge of the artwork */}
-                  {deadline && (
-                    <span
-                      className={
-                        "absolute left-1/2 top-3 z-10 -translate-x-1/2 whitespace-nowrap rounded-full px-3 py-1 text-xs font-bold shadow-lg shadow-black/40 " +
-                        (deadline.ended
-                          ? "bg-red-600 text-white"
-                          : "bg-[#1c0b30] text-white ring-1 ring-amber-400/50")
-                      }
-                    >
-                      {deadline.label}
-                    </span>
-                  )}
-                </div>
-
-                {/* Content */}
-                <div className="flex flex-1 flex-col p-3">
-                  {/* 2. Ticket price — centred gold pill overlapping the image/content seam.
-                      Price only: no label, single line, symmetrical. */}
-                  {base != null && (
-                    <div className="relative z-10 -mt-6 mb-3 flex justify-center">
-                      <span className="inline-flex items-center whitespace-nowrap rounded-full bg-gradient-to-br from-[#FFD700] to-[#FFA500] px-4 py-1.5 text-lg font-black tabular-nums leading-none text-black shadow-lg shadow-black/30 md:text-xl">
-                        {priceText(base)}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* 3. Format row — driven only by presentation_type.
-                      Nothing renders (and no space is reserved) for null/unknown. */}
-                  {giveaway.presentation_type === "balloon_pop" && (
-                    <div className="mb-2 inline-flex w-fit items-center gap-1.5 rounded-md bg-black px-2 py-1 text-[11px] font-extrabold uppercase tracking-wide text-white shadow-sm">
-                      <TikTokIcon className="h-[18px] w-[18px] shrink-0" />
-                      TikTok Live
-                    </div>
-                  )}
-                  {giveaway.presentation_type === "instant_cash" && (
-                    <div className="mb-2 inline-flex w-fit items-center gap-1.5 rounded-md bg-amber-400/10 px-2 py-1 text-[11px] font-extrabold uppercase tracking-wide text-[#FFD700] ring-1 ring-inset ring-amber-400/40">
-                      <Zap className="h-[18px] w-[18px] shrink-0" fill="currentColor" />
-                      Instant Cash
-                    </div>
-                  )}
-
-                  {/* 4. Title */}
-                  <h3 className="min-h-[2.5rem] text-pretty text-sm font-bold leading-tight text-white line-clamp-2 transition-colors group-hover:text-amber-400 md:text-base">
-                    {giveaway.title}
-                  </h3>
-
-                  {/* 5. Genuine prize title — only when meaningful and not a
-                      duplicate of the campaign title. No generic fallback. */}
-                  {prizeSubtitle(giveaway) && (
-                    <p className="mt-1.5 text-xs leading-snug text-amber-100/70 line-clamp-2 md:text-sm">
-                      {prizeSubtitle(giveaway)}
-                    </p>
-                  )}
-
-                  {/* 6. Percentage sold + progress bar */}
-                  {percentSold !== null && (
-                    <div className="mt-3">
-                      <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-amber-400">
-                        {percentSold}% Sold
-                      </div>
-                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-                        <div
-                          className="h-full rounded-full bg-gradient-to-r from-amber-400 to-fuchsia-500"
-                          style={{ width: `${percentSold}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 7. Enter now CTA (styled non-button; whole card is the link) */}
-                  <div className="mt-auto pt-3">
-                    <div className="flex min-h-[44px] items-center justify-center rounded-xl bg-gradient-to-r from-[#FFD700] to-[#FFA500] px-4 py-3 text-sm font-bold text-black transition-all group-hover:shadow-lg">
-                      Enter now
-                    </div>
-                  </div>
-                </div>
-              </Link>
-            )
-          })}
-        </div>
+                giveaway={giveaway}
+                category={view === "live" ? "live_balloon" : "instant_cash"}
+              />
+            ))}
+          </div>
+        ) : (
+          <p className="mt-8 rounded-xl border border-white/10 bg-white/5 p-8 text-center text-sm text-white/60">
+            No {view === "live" ? "TikTok Live Balloon Pops" : "Instant Cash Wins"} available right now.{" "}
+            <Link href="/giveaways" className="font-semibold text-amber-300 underline hover:text-amber-200">
+              View all giveaways
+            </Link>
+          </p>
+        )}
       </div>
     </div>
   )
