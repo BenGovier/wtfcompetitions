@@ -4,8 +4,6 @@ import {
   GRID_PAGE_SIZE,
   MIN_PUBLIC_PRIZE_PENCE,
   PUBLIC_WINNER_COLUMNS,
-  WINNERS_CUTOFF,
-  WINNERS_KIND,
   mapWinnerRow,
 } from "@/lib/winners"
 
@@ -49,10 +47,9 @@ export async function GET(request: Request) {
       // Explicit public allow-list: `winning_ticket` / `user_id` are never
       // fetched, so they can never appear in this JSON response.
       .select(PUBLIC_WINNER_COLUMNS)
-      .eq("kind", WINNERS_KIND)
-      .gte("happened_at", WINNERS_CUTOFF)
-      // Same £20 eligibility rule as the initial server load, applied before
-      // order/limit/peek so pagination stays consistent. NULL values excluded.
+      // Same eligibility rule as the initial server load: all winner kinds and
+      // historical dates are eligible; only the £20 numeric-value filter applies,
+      // before order/limit/peek so pagination stays consistent. NULL excluded.
       .gte("prize_value_pence", MIN_PUBLIC_PRIZE_PENCE)
       .order("happened_at", { ascending: false })
       .limit(limit + 1) // peek one extra to compute hasMore
