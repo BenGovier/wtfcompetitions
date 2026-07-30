@@ -48,9 +48,9 @@ function extractInternalReference(metadata: unknown): string | null {
 }
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ userId: string }> }) {
-  // Admin-only. Hosts (ops) and read_only are rejected.
+  // Super Admins and Operations Admins. Hosts (ops) and read_only are rejected.
   const supabase = await createClient()
-  const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin'] })
+  const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin', 'operations_admin'] })
   if (!user) {
     return NextResponse.json(
       { ok: false, error: authError },

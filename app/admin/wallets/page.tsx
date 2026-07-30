@@ -2,7 +2,7 @@ import { requireAdmin } from "@/lib/admin/auth"
 import { WalletSearch } from "@/components/admin/wallets/WalletSearch"
 
 export default async function WalletsPage() {
-  await requireAdmin({ roles: ['admin'] })
+  await requireAdmin({ roles: ['admin', 'operations_admin'] })
 
   return (
     <div className="space-y-8">

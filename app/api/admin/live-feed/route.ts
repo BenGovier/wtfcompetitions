@@ -4,9 +4,9 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { authorizeAdminApi } from '@/lib/admin/auth'
 
 export async function GET() {
-  // Live feed is accessible to full admins and Hosts (ops).
+  // Live feed is accessible to Super Admins, Operations Admins, and Hosts (ops).
   const supabase = await createClient()
-  const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin', 'ops'] })
+  const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin', 'operations_admin', 'ops'] })
   if (!user) {
     return NextResponse.json(
       { ok: false, error: authError },

@@ -6,7 +6,8 @@ export default async function InstantWinsLayout({
 }: {
   children: React.ReactNode
 }) {
-  // Admin-only segment. Hosts (ops) are redirected to /auth/unauthorized.
-  await requireAdmin({ roles: ['admin'] })
+  // Super Admins and Operations Admins only. Hosts (ops) / read_only / unknown
+  // roles are redirected to /auth/unauthorized.
+  await requireAdmin({ roles: ['admin', 'operations_admin'] })
   return <>{children}</>
 }
