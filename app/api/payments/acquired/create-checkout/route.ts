@@ -384,30 +384,53 @@ export async function POST(request: Request) {
       }
     }
 
+    // Local, pure sanitiser for Acquired customer names. Keeps normal/accented
+    // letters (and their combining marks), spaces, apostrophes and hyphens;
+    // strips emoji and other unsafe symbols; collapses internal whitespace; and
+    // caps the value at 40 characters. Never logs or mutates external state.
+    const sanitizeName = (value: string): string =>
+      value
+        .normalize('NFC')
+        .replace(/[^\p{L}\p{M} '-]/gu, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 40)
+        .trim()
+
     // Derive first/last name from the best available source, split safely.
+    // Source priority is preserved: metadata first/last → real_name → display_name.
     const nameSource = (realName || metaDisplayName).trim()
-    let firstName = metaFirstName.trim()
-    let lastName = metaLastName.trim()
+    let firstName = sanitizeName(metaFirstName)
+    let lastName = sanitizeName(metaLastName)
     if ((!firstName || !lastName) && nameSource) {
       const parts = nameSource.split(/\s+/).filter(Boolean)
       if (parts.length > 0) {
-        if (!firstName) firstName = parts[0]
-        if (!lastName && parts.length > 1) lastName = parts.slice(1).join(' ')
+        if (!firstName) firstName = sanitizeName(parts[0])
+        if (!lastName && parts.length > 1) lastName = sanitizeName(parts.slice(1).join(' '))
       }
     }
+
+    // Guarantee a valid, matched pair. Acquired requires a non-empty last_name
+    // whenever name fields are present, so fall back deterministically.
+    if (!firstName && email) {
+      firstName = sanitizeName(email.split('@')[0] ?? '')
+    }
+    if (!firstName) firstName = 'Customer'
+    if (!lastName) lastName = 'Customer'
 
     // Deterministic per-user reference. Acquired enforces uniqueness on this, so
     // it is also the key we use to recover an already-existing customer on 409.
     const customerReference = `wtf_user_${intent.user_id ?? intent.id}`
 
-    // Build the customer payload. `reference` is always present; everything
-    // else is included only when non-empty. No address/postcode/phone is sent
-    // in this first QA pass.
+    // Build the customer payload. `reference` is always present, and first/last
+    // name are always sent as a matched, sanitised, non-empty pair. `billing` is
+    // included only when we have an email. No address/postcode/phone is sent in
+    // this first QA pass.
     const customerPayload: Record<string, unknown> = {
       reference: customerReference,
+      first_name: firstName,
+      last_name: lastName,
     }
-    if (firstName) customerPayload.first_name = firstName
-    if (lastName) customerPayload.last_name = lastName
     if (email) customerPayload.billing = { email }
     customerPayloadKeys = Object.keys(customerPayload)
 
