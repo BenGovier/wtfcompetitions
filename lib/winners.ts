@@ -43,6 +43,7 @@ export const MIN_PUBLIC_PRIZE_PENCE = 2000
 export const BALLOON_WINNER_CAMPAIGN_SLUGS = [
   "salli3",
   "rosslizzy",
+  "rosslizzy2",
   "Salli2",
   "Salli",
   "ch8june",
