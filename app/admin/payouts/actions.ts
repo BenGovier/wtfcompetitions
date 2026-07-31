@@ -4,22 +4,32 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { authorizeAdminApi } from '@/lib/admin/auth'
+import type { AdminRole } from '@/lib/admin/permissions'
 
 const ALLOWED_STATUSES = ['new', 'paid', 'problem'] as const
 type PayoutStatus = (typeof ALLOWED_STATUSES)[number]
 
+// Managing payout status is an operational task available to Super Admins and
+// Operations Admins.
+const PAYOUT_MANAGER_ROLES: AdminRole[] = ['admin', 'operations_admin']
+// Permanent deletion stays restricted to Super Admins only.
+const PAYOUT_DELETE_ROLES: AdminRole[] = ['admin']
+
 /**
- * Helper to verify admin authorization (full admins only — not Hosts).
- * Returns user if authorized, error otherwise.
+ * Helper to verify authorization for a payout action against a specific set of
+ * roles. Returns user if authorized, error otherwise. The check runs before any
+ * service-role client is created by the caller.
  */
-async function verifyAdmin(): Promise<{ user: { id: string } } | { error: string }> {
+async function verifyPayoutAccess(
+  roles: AdminRole[],
+): Promise<{ user: { id: string } } | { error: string }> {
   try {
     const supabase = await createClient()
-    const { user, error } = await authorizeAdminApi(supabase, { roles: ['admin'] })
+    const { user, error } = await authorizeAdminApi(supabase, { roles })
 
     if (!user) {
       console.error('[payouts/actions] Authorization failed:', error)
-      return { error: error === 'Not authenticated' ? 'Not authenticated - please log in again' : 'Not authorized as admin' }
+      return { error: error === 'Not authenticated' ? 'Not authenticated - please log in again' : 'Not authorized' }
     }
 
     return { user: { id: user.id } }
@@ -66,8 +76,8 @@ export async function updatePayoutStatus(
     return { ok: false, error: 'Invalid payout ID' }
   }
 
-  // Auth check
-  const authResult = await verifyAdmin()
+  // Auth check — Super Admins and Operations Admins may change payout status.
+  const authResult = await verifyPayoutAccess(PAYOUT_MANAGER_ROLES)
   if ('error' in authResult) {
     return { ok: false, error: authResult.error }
   }
@@ -114,8 +124,10 @@ export async function deletePayout(
     return { ok: false, error: 'Invalid payout ID' }
   }
 
-  // Auth check
-  const authResult = await verifyAdmin()
+  // Auth check — permanent deletion is restricted to Super Admins only.
+  // Operations Admins receive a clear unauthorised error here, before any
+  // service-role client is created.
+  const authResult = await verifyPayoutAccess(PAYOUT_DELETE_ROLES)
   if ('error' in authResult) {
     return { ok: false, error: authResult.error }
   }
@@ -179,8 +191,8 @@ export async function bulkUpdatePayoutStatus(
     }
   }
 
-  // Auth check
-  const authResult = await verifyAdmin()
+  // Auth check — Super Admins and Operations Admins may change payout status.
+  const authResult = await verifyPayoutAccess(PAYOUT_MANAGER_ROLES)
   if ('error' in authResult) {
     return { ok: false, error: authResult.error }
   }

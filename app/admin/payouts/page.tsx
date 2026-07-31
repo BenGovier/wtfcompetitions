@@ -13,7 +13,7 @@ interface PageProps {
 }
 
 export default async function AdminPayoutsPage({ searchParams }: PageProps) {
-  await requireAdmin({ roles: ['admin'] })
+  await requireAdmin({ roles: ['admin', 'operations_admin'] })
 
   const params = await searchParams
   const statusFilter = (params.status as StatusFilter) || "unpaid"

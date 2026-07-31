@@ -6,8 +6,10 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 export default async function AdminDashboard() {
-  // Preserve existing role routing: hosts (ops) land on the live feed rather
-  // than an unauthorized page; only full admins see finance figures.
+  // Preserve existing role routing: hosts (ops) land on the live feed and
+  // operations admins land on payouts rather than an unauthorized page; only
+  // full Super Admins see finance figures. The role branch runs BEFORE any
+  // Dashboard-specific data is loaded, so non-admins never receive it.
   const adminContext = await getAdminContext()
 
   if (!adminContext) {
@@ -15,6 +17,9 @@ export default async function AdminDashboard() {
   }
   if (adminContext.role === 'ops') {
     redirect('/admin/live-feed')
+  }
+  if (adminContext.role === 'operations_admin') {
+    redirect('/admin/payouts')
   }
   if (adminContext.role !== 'admin') {
     redirect('/auth/unauthorized')

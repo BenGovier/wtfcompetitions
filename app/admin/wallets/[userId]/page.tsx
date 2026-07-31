@@ -11,7 +11,7 @@ export default async function WalletDetailPage({
 }: {
   params: Promise<{ userId: string }>
 }) {
-  await requireAdmin({ roles: ['admin'] })
+  await requireAdmin({ roles: ['admin', 'operations_admin'] })
 
   const { userId } = await params
   if (!UUID_RE.test(userId)) {

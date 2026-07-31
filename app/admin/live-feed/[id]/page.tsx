@@ -12,8 +12,8 @@ export default async function CampaignLiveControlPage({
 }: {
   params: Promise<{ id: string }>
 }) {
-  // Admins and Hosts (ops) can operate a campaign's live control screen.
-  await requireAdmin({ roles: ["admin", "ops"] })
+  // Super Admins, Operations Admins, and Hosts (ops) can operate a campaign's live control screen.
+  await requireAdmin({ roles: ["admin", "operations_admin", "ops"] })
 
   const { id } = await params
 
