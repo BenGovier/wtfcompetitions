@@ -72,6 +72,10 @@ export type AdminInstantWinAward = {
   award_id: string
   awarded_at: string
   campaign_id: string
+  /** Campaign title for the Campaign column (null when unavailable). */
+  campaign_title: string | null
+  /** Campaign slug for secondary context (null when unavailable). */
+  campaign_slug: string | null
   giveaway_id: string | null
   prize_id: string
   prize_title: string
@@ -79,6 +83,8 @@ export type AdminInstantWinAward = {
   checkout_ref: string
   user_id: string | null
   customer_name: string
+  /** Public display name / TikTok username (secondary customer identity). */
+  display_name: string | null
   customer_email: string
   customer_mobile: string
   start_ticket: number | null
