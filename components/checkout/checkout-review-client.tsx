@@ -64,9 +64,25 @@ const FRIENDLY_ERRORS: Record<string, string> = {
   wallet_confirmation_invalid_state:
     "We couldn't confirm this order. Your credit was not charged — please start again.",
   provider_payment_not_required: 'Please try again to finish your entry.',
+  // Deterministic customer-name problems saved on the account (see NAME_ERROR_CODES).
+  customer_name_invalid:
+    "We couldn't verify the name saved on your account. Please check your first and last name before continuing.",
+  customer_name_required:
+    "We couldn't verify the name saved on your account. Please check your first and last name before continuing.",
 }
 
 const GENERIC_ERROR = 'Something went wrong. Please try again.'
+
+/**
+ * Deterministic, user-data errors. These will NOT succeed on a blind retry with
+ * the same account details, so the checkout button is hard-disabled (rather
+ * than re-enabled) until the customer updates their account and reloads.
+ */
+const NAME_ERROR_CODES = new Set(['customer_name_invalid', 'customer_name_required'])
+
+function isNameError(code: unknown): boolean {
+  return typeof code === 'string' && NAME_ERROR_CODES.has(code)
+}
 
 function friendlyError(code: unknown): string {
   if (typeof code === 'string' && code in FRIENDLY_ERRORS) return FRIENDLY_ERRORS[code]
@@ -103,6 +119,9 @@ export function CheckoutReviewClient({
   const [submitting, setSubmitting] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Set for deterministic account-data errors (invalid/missing name). Keeps the
+  // checkout button disabled so the customer cannot blindly retry the same data.
+  const [hardBlocked, setHardBlocked] = useState(false)
 
   // Selected ticket option. Defaults to the option the customer arrived with.
   const [selectedKey, setSelectedKey] = useState(initialKey)
@@ -173,21 +192,30 @@ export function CheckoutReviewClient({
     window.location.href = `/auth/login?redirect=${redirect}`
   }
 
-  /** Release the latch and clear the busy state so the user can retry. */
+  /**
+   * Clear the busy state after a failure. For deterministic account-data errors
+   * (invalid/missing name) we HARD-BLOCK instead of re-enabling: the same
+   * account data will fail again, so the customer must fix their details and
+   * reload. All other (transient) errors remain freely retryable.
+   */
   function releaseForRetry(code?: unknown) {
     setError(friendlyError(code))
     setStatus(null)
     setSubmitting(false)
     submitLatch.current = false
+    if (isNameError(code)) setHardBlocked(true)
   }
 
   function selectOption(key: string) {
-    if (submitting) return
+    if (submitting || hardBlocked) return
     setError(null)
     setSelectedKey(key)
   }
 
   async function handleConfirm() {
+    // Deterministic account-data error already surfaced — do not retry with the
+    // same data. The customer must update their account details and reload.
+    if (hardBlocked) return
     // Synchronous guard — set the latch before any await.
     if (submitLatch.current) return
     submitLatch.current = true
@@ -434,7 +462,7 @@ export function CheckoutReviewClient({
     <Button
       size="lg"
       onClick={handleConfirm}
-      disabled={submitting}
+      disabled={submitting || hardBlocked}
       className="w-full rounded-xl bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] py-4 text-base font-bold text-black shadow-[0_10px_40px_rgba(255,180,0,0.4)] transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
     >
       {submitting ? (
@@ -780,7 +808,15 @@ export function CheckoutReviewClient({
               className="flex items-start gap-2 rounded-xl bg-red-500/15 p-3 text-sm text-red-200"
             >
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-              <span>{error}</span>
+              <div className="space-y-1">
+                <p>{error}</p>
+                {hardBlocked && (
+                  <p className="text-red-200/80">
+                    Please update your first and last name on your account, then reload this page to
+                    continue.
+                  </p>
+                )}
+              </div>
             </div>
           )}
 

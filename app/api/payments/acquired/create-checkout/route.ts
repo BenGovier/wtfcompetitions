@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
+import {
+  classifyAcquiredCustomerError,
+  resolveCustomerName,
+} from '@/lib/acquired/customer-name'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -384,30 +388,53 @@ export async function POST(request: Request) {
       }
     }
 
-    // Derive first/last name from the best available source, split safely.
-    const nameSource = (realName || metaDisplayName).trim()
-    let firstName = metaFirstName.trim()
-    let lastName = metaLastName.trim()
-    if ((!firstName || !lastName) && nameSource) {
-      const parts = nameSource.split(/\s+/).filter(Boolean)
-      if (parts.length > 0) {
-        if (!firstName) firstName = parts[0]
-        if (!lastName && parts.length > 1) lastName = parts.slice(1).join(' ')
-      }
+    // Derive, normalise and validate the customer name against Acquired's
+    // CONFIRMED rules (length 0-50, regex ^[a-zA-Z.\- ']*$) BEFORE calling the
+    // provider. A missing or invalid name is a deterministic, user-fixable
+    // condition — never a provider outage — so we stop here and return 422
+    // rather than sending the request and mapping a provider 400 to a
+    // misleading 502. Legitimate accented / smart-punctuation names are folded
+    // to their Acquired-acceptable ASCII form inside resolveCustomerName rather
+    // than rejected.
+    const nameResult = resolveCustomerName({
+      metaFirstName,
+      metaLastName,
+      realName,
+      metaDisplayName,
+    })
+
+    if (!nameResult.ok) {
+      // Safe structured log: field + length + normalisation flag only. NEVER the
+      // name value, email, or other PII.
+      console.error('[payments/acquired] acquired_customer_name_rejected', {
+        event: 'acquired_customer_name_rejected',
+        stage: 'local_validation',
+        field: nameResult.field,
+        error: nameResult.error,
+        nameLength: nameResult.nameLength,
+        wasNormalised: nameResult.wasNormalised,
+      })
+      await releaseWalletReservation('acquired_customer_name_invalid')
+      return NextResponse.json(
+        { ok: false, error: nameResult.error, field: nameResult.field },
+        { status: 422, headers: noStore },
+      )
     }
+
+    const firstName = nameResult.firstName
+    const lastName = nameResult.lastName
 
     // Deterministic per-user reference. Acquired enforces uniqueness on this, so
     // it is also the key we use to recover an already-existing customer on 409.
     const customerReference = `wtf_user_${intent.user_id ?? intent.id}`
 
-    // Build the customer payload. `reference` is always present; everything
-    // else is included only when non-empty. No address/postcode/phone is sent
-    // in this first QA pass.
+    // Build the customer payload. Both names are now validated + present. No
+    // address/postcode/phone is sent in this first QA pass.
     const customerPayload: Record<string, unknown> = {
       reference: customerReference,
+      first_name: firstName,
+      last_name: lastName,
     }
-    if (firstName) customerPayload.first_name = firstName
-    if (lastName) customerPayload.last_name = lastName
     if (email) customerPayload.billing = { email }
     customerPayloadKeys = Object.keys(customerPayload)
 
@@ -519,16 +546,46 @@ export async function POST(request: Request) {
           },
         })
 
+        // Classify the provider error via the shared, unit-tested classifier so
+        // the route and its tests use a single source of truth:
+        //   - name_validation  -> deterministic bad customer data -> HTTP 422
+        //   - reference_conflict-> customer already exists -> recover by reference
+        //   - upstream          -> genuine provider/outage failure -> HTTP 502
+        const errorClass = classifyAcquiredCustomerError(customerRes.status, errorObj)
+
+        // Deterministic customer-name rejection: surface as 422 (never a 502
+        // outage) so the client shows an actionable message and does NOT invite
+        // a blind retry with the same account data.
+        if (errorClass.kind === 'name_validation') {
+          const providerCorrelationId =
+            correlationHeaders['x-request-id'] ||
+            correlationHeaders['request-id'] ||
+            correlationHeaders['x-correlation-id'] ||
+            correlationHeaders['correlation-id'] ||
+            correlationHeaders['cf-ray'] ||
+            null
+          // Safe structured log: field + provider status + correlation id only.
+          // NEVER the name value, email, or other PII.
+          console.error('[payments/acquired] acquired_customer_name_rejected', {
+            event: 'acquired_customer_name_rejected',
+            stage: 'provider_response',
+            field: errorClass.field,
+            providerStatus: customerRes.status,
+            providerCorrelationId,
+            wasNormalised: true,
+          })
+          await releaseWalletReservation('acquired_customer_name_invalid')
+          return NextResponse.json(
+            { ok: false, error: 'customer_name_invalid', field: errorClass.field },
+            { status: 422, headers: noStore },
+          )
+        }
+
         // Idempotent recovery: a 409 whose invalid_parameters names `reference`
         // means the customer already exists in Acquired but our DB had no
         // provider_customer_id saved. Do ONE lookup by reference, reuse the
         // existing customer_id, and continue — never create a second customer.
-        const isReferenceConflict =
-          customerRes.status === 409 &&
-          Array.isArray(invalidParameters) &&
-          invalidParameters.some(
-            (p) => p && typeof p === 'object' && (p as Record<string, unknown>).parameter === 'reference',
-          )
+        const isReferenceConflict = errorClass.kind === 'reference_conflict'
 
         if (isReferenceConflict) {
           console.log('[payments/acquired] attempting customer recovery by reference')
