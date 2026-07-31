@@ -186,6 +186,38 @@ export function resolveCustomerName(inputs: CustomerNameInputs): ResolveCustomer
   }
 }
 
+export interface CustomerNameProblem {
+  field: CustomerNameField
+  error: CustomerNameErrorCode
+}
+
+/**
+ * Return every name field that is missing or invalid, after deriving from the
+ * best available source. An empty array means both names are acceptable.
+ * Used to build the checkout `requiredFields` payload so the inline form can ask
+ * for exactly the fields that need attention (both, when both are missing).
+ */
+export function findCustomerNameProblems(inputs: CustomerNameInputs): CustomerNameProblem[] {
+  const { firstName, lastName } = deriveCustomerName(inputs)
+  const problems: CustomerNameProblem[] = []
+  const first = validateCustomerName(firstName, 'first_name')
+  if (!first.ok) problems.push({ field: 'first_name', error: first.error })
+  const last = validateCustomerName(lastName, 'last_name')
+  if (!last.ok) problems.push({ field: 'last_name', error: last.error })
+  return problems
+}
+
+/**
+ * Collapse a set of field problems into a single response error code: only
+ * `customer_name_required` when EVERY problem is a missing value, otherwise
+ * `customer_name_invalid` (a present-but-unnormalisable value takes precedence).
+ */
+export function combineNameErrorCode(problems: CustomerNameProblem[]): CustomerNameErrorCode {
+  return problems.length > 0 && problems.every((p) => p.error === 'customer_name_required')
+    ? 'customer_name_required'
+    : 'customer_name_invalid'
+}
+
 export type AcquiredCustomerErrorClass =
   | { kind: 'reference_conflict' }
   | { kind: 'name_validation'; field: CustomerNameField }

@@ -1,10 +1,13 @@
 'use client'
 
-import { useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Spinner } from '@/components/ui/spinner'
+import { validateCustomerName } from '@/lib/acquired/customer-name'
 import {
   AlertCircle,
   ArrowLeft,
@@ -75,8 +78,9 @@ const GENERIC_ERROR = 'Something went wrong. Please try again.'
 
 /**
  * Deterministic, user-data errors. These will NOT succeed on a blind retry with
- * the same account details, so the checkout button is hard-disabled (rather
- * than re-enabled) until the customer updates their account and reloads.
+ * the same account details, so instead of re-enabling the pay button we open a
+ * small inline form that collects the name and continues checkout in ONE
+ * request (see goToAcquired / submitName).
  */
 const NAME_ERROR_CODES = new Set(['customer_name_invalid', 'customer_name_required'])
 
@@ -119,9 +123,22 @@ export function CheckoutReviewClient({
   const [submitting, setSubmitting] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  // Set for deterministic account-data errors (invalid/missing name). Keeps the
-  // checkout button disabled so the customer cannot blindly retry the same data.
-  const [hardBlocked, setHardBlocked] = useState(false)
+
+  // ---- Inline "Confirm your name" form -------------------------------------
+  // Shown ONLY when the server reports the stored name is missing/invalid for a
+  // payment. Customers with a valid stored name never see it and pay a zero
+  // extra-request cost. The completed form reuses the SAME checkout ref and
+  // continues to the payment page in a single request.
+  const [nameFormOpen, setNameFormOpen] = useState(false)
+  const [pendingRef, setPendingRef] = useState<string | null>(null)
+  const [nameFirst, setNameFirst] = useState('')
+  const [nameLast, setNameLast] = useState('')
+  const [nameFirstError, setNameFirstError] = useState<string | null>(null)
+  const [nameLastError, setNameLastError] = useState<string | null>(null)
+  const [nameSubmitting, setNameSubmitting] = useState(false)
+  // Synchronous latch mirroring submitLatch — blocks rapid double submits of the
+  // name form before React state settles.
+  const nameSubmitLatch = useRef(false)
 
   // Selected ticket option. Defaults to the option the customer arrived with.
   const [selectedKey, setSelectedKey] = useState(initialKey)
@@ -193,29 +210,106 @@ export function CheckoutReviewClient({
   }
 
   /**
-   * Clear the busy state after a failure. For deterministic account-data errors
-   * (invalid/missing name) we HARD-BLOCK instead of re-enabling: the same
-   * account data will fail again, so the customer must fix their details and
-   * reload. All other (transient) errors remain freely retryable.
+   * Clear the busy state after a TRANSIENT failure so the customer can retry.
+   * Deterministic name problems are handled separately by opening the inline
+   * name form (see openNameForm), not by this path.
    */
   function releaseForRetry(code?: unknown) {
     setError(friendlyError(code))
     setStatus(null)
     setSubmitting(false)
     submitLatch.current = false
-    if (isNameError(code)) setHardBlocked(true)
+  }
+
+  /**
+   * Open (or refresh) the inline name form after the server reports a missing/
+   * invalid name. Preserves the checkout ref so submission continues the SAME
+   * checkout. When `fromSubmit` is true the name we just sent was rejected by
+   * the provider, so we flag the offending field(s) inline.
+   */
+  function openNameForm(ref: string, requiredFields: unknown, fromSubmit: boolean) {
+    const fields = Array.isArray(requiredFields)
+      ? requiredFields.filter((f) => f === 'first_name' || f === 'last_name')
+      : []
+    setPendingRef(ref)
+    setNameFormOpen(true)
+    setError(null)
+    setStatus(null)
+    setSubmitting(false)
+    submitLatch.current = false
+    if (fromSubmit) {
+      const msg = 'Please check this name and try again.'
+      if (fields.length === 0 || fields.includes('first_name')) setNameFirstError(msg)
+      if (fields.length === 0 || fields.includes('last_name')) setNameLastError(msg)
+    }
+  }
+
+  /**
+   * Validate the inline form locally (mirroring the server's Acquired-confirmed
+   * rules), then continue the EXISTING checkout in a single request that saves
+   * the name and returns the payment redirect. No page reload; the basket,
+   * checkout intent and any wallet reservation are all preserved.
+   */
+  async function submitName() {
+    if (nameSubmitLatch.current || nameSubmitting) return
+    const first = validateCustomerName(nameFirst, 'first_name')
+    if (!first.ok) {
+      setNameFirstError(
+        first.error === 'customer_name_required'
+          ? 'Enter your first name to continue.'
+          : 'Please check this name and try again.',
+      )
+      return
+    }
+    const last = validateCustomerName(nameLast, 'last_name')
+    if (!last.ok) {
+      setNameLastError(
+        last.error === 'customer_name_required'
+          ? 'Enter your surname to continue.'
+          : 'Please check this name and try again.',
+      )
+      return
+    }
+    const ref = pendingRef
+    if (!ref) {
+      // No checkout context to continue — fall back to a normal retry.
+      setNameFormOpen(false)
+      releaseForRetry()
+      return
+    }
+    nameSubmitLatch.current = true
+    setNameSubmitting(true)
+    setNameFirstError(null)
+    setNameLastError(null)
+    try {
+      await goToAcquired(ref, { firstName: nameFirst, lastName: nameLast })
+    } catch {
+      setNameFormOpen(false)
+      releaseForRetry()
+    } finally {
+      nameSubmitLatch.current = false
+      setNameSubmitting(false)
+    }
+  }
+
+  function onNameKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key !== 'Enter') return
+    // Respect CJK IME composition (and Safari's unreliable final event).
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return
+    e.preventDefault()
+    void submitName()
   }
 
   function selectOption(key: string) {
-    if (submitting || hardBlocked) return
+    if (submitting || nameFormOpen) return
     setError(null)
     setSelectedKey(key)
   }
 
   async function handleConfirm() {
-    // Deterministic account-data error already surfaced — do not retry with the
-    // same data. The customer must update their account details and reload.
-    if (hardBlocked) return
+    // While the inline name form is open the pay button is inert — the form's
+    // own "Save and continue" action drives the (single-request) continuation.
+    if (nameFormOpen) return
     // Synchronous guard — set the latch before any await.
     if (submitLatch.current) return
     submitLatch.current = true
@@ -413,12 +507,19 @@ export function CheckoutReviewClient({
     releaseForRetry(sumupJson.error)
   }
 
-  /** Acquired Hosted Checkout — authoritative for the external amount. */
-  async function goToAcquired(ref: string) {
+  /**
+   * Acquired Hosted Checkout — authoritative for the external amount. When
+   * `names` is supplied (the inline form submission) they ride along on the
+   * SAME request that saves the name and returns the payment redirect, so the
+   * correction flow costs exactly one request.
+   */
+  async function goToAcquired(ref: string, names?: { firstName: string; lastName: string }) {
     const acquiredRes = await fetch('/api/payments/acquired/create-checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ref }),
+      body: JSON.stringify(
+        names ? { ref, firstName: names.firstName, lastName: names.lastName } : { ref },
+      ),
     })
 
     if (acquiredRes.status === 401) {
@@ -441,10 +542,23 @@ export function CheckoutReviewClient({
       typeof checkoutUrl === 'string' &&
       checkoutUrl.length > 0
     ) {
+      // Success — leave for the hosted payment page. Ensure the form is closed.
+      setNameFormOpen(false)
       window.location.assign(checkoutUrl)
       return
     }
 
+    // Deterministic name problem: open (or keep) the inline form rather than a
+    // blind retry. `names` present means the provider rejected what we just
+    // sent, so flag the field(s).
+    if (isNameError(acquiredJson.error)) {
+      openNameForm(ref, acquiredJson.requiredFields, Boolean(names))
+      return
+    }
+
+    // Any other failure is transient. If the name was just saved it stays saved;
+    // close the form and fall back to the normal retryable error.
+    setNameFormOpen(false)
     releaseForRetry(acquiredJson.error)
   }
 

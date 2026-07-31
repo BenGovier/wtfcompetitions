@@ -1,8 +1,13 @@
 import { NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
+import { createClient as createAuthedClient } from '@/lib/supabase/server'
 import {
   classifyAcquiredCustomerError,
+  combineNameErrorCode,
+  findCustomerNameProblems,
   resolveCustomerName,
+  validateCustomerName,
+  type CustomerNameField,
 } from '@/lib/acquired/customer-name'
 
 export const dynamic = 'force-dynamic'
@@ -74,6 +79,16 @@ export async function POST(request: Request) {
     )
   }
 
+  // 2a) Optional client-supplied name (ONLY sent by the inline "Confirm your
+  //     name" form after the server reported the stored name was missing or
+  //     invalid). When absent — the overwhelming majority of checkouts — nothing
+  //     below changes: no auth call, no account write, and the stored name is
+  //     used exactly as before. These values are NEVER trusted blindly: they are
+  //     re-validated server-side and only applied to the authenticated owner.
+  const clientFirstRaw = typeof body.firstName === 'string' ? body.firstName : undefined
+  const clientLastRaw = typeof body.lastName === 'string' ? body.lastName : undefined
+  const clientSuppliedName = clientFirstRaw !== undefined || clientLastRaw !== undefined
+
   // 3) Service-role client.
   const svc = getServiceSupabase()
 
@@ -117,6 +132,32 @@ export async function POST(request: Request) {
       { ok: false, error: 'Missing campaign' },
       { status: 422, headers: noStore },
     )
+  }
+
+  // 5-auth) Identity gate for client-supplied names ONLY. Checkouts that do not
+  //         submit a name skip this entirely (no extra auth round-trip on the
+  //         normal path). When a name IS submitted we require a real session AND
+  //         that the session user owns this checkout intent, so one user can
+  //         never write a name onto another user's account via a guessed ref.
+  if (clientSuppliedName) {
+    let authedUserId: string | null = null
+    try {
+      const authed = await createAuthedClient()
+      const { data } = await authed.auth.getUser()
+      authedUserId = data.user?.id ?? null
+    } catch {
+      authedUserId = null
+    }
+    if (!authedUserId) {
+      return NextResponse.json(
+        { ok: false, error: 'auth_required' },
+        { status: 401, headers: noStore },
+      )
+    }
+    if (!intent.user_id || authedUserId !== intent.user_id) {
+      console.error('[payments/acquired] name update ownership mismatch for ref', ref)
+      return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403, headers: noStore })
+    }
   }
 
   // 5a) Wallet reservation release helper.
@@ -359,12 +400,16 @@ export async function POST(request: Request) {
     let metaFirstName = ''
     let metaLastName = ''
     let metaDisplayName = ''
+    // Full existing user_metadata, preserved so a name write MERGES rather than
+    // clobbers unrelated keys (e.g. mobile, display_name).
+    let authMetaObject: Record<string, unknown> = {}
     if (intent.user_id) {
       try {
         const { data: authData } = await svc.auth.admin.getUserById(intent.user_id)
         const authUser = authData?.user
         email = (authUser?.email as string) || ''
         const meta = (authUser?.user_metadata ?? {}) as Record<string, unknown>
+        authMetaObject = meta
         metaFirstName = typeof meta.first_name === 'string' ? meta.first_name : ''
         metaLastName = typeof meta.last_name === 'string' ? meta.last_name : ''
         metaDisplayName = typeof meta.display_name === 'string' ? meta.display_name : ''
@@ -388,41 +433,123 @@ export async function POST(request: Request) {
       }
     }
 
-    // Derive, normalise and validate the customer name against Acquired's
-    // CONFIRMED rules (length 0-50, regex ^[a-zA-Z.\- ']*$) BEFORE calling the
-    // provider. A missing or invalid name is a deterministic, user-fixable
-    // condition — never a provider outage — so we stop here and return 422
-    // rather than sending the request and mapping a provider 400 to a
-    // misleading 502. Legitimate accented / smart-punctuation names are folded
-    // to their Acquired-acceptable ASCII form inside resolveCustomerName rather
-    // than rejected.
-    const nameResult = resolveCustomerName({
-      metaFirstName,
-      metaLastName,
-      realName,
-      metaDisplayName,
-    })
+    // Resolve the customer name against Acquired's CONFIRMED rules (length 0-50,
+    // regex ^[a-zA-Z.\- ']*$) BEFORE calling the provider. A missing or invalid
+    // name is a deterministic, user-fixable condition — never a provider outage
+    // — so we stop with 422 rather than sending the request and mapping a
+    // provider 400 to a misleading 502. Legitimate accented / smart-punctuation
+    // names are folded to their Acquired-acceptable ASCII form rather than
+    // rejected.
+    let firstName: string
+    let lastName: string
 
-    if (!nameResult.ok) {
-      // Safe structured log: field + length + normalisation flag only. NEVER the
-      // name value, email, or other PII.
-      console.error('[payments/acquired] acquired_customer_name_rejected', {
-        event: 'acquired_customer_name_rejected',
-        stage: 'local_validation',
-        field: nameResult.field,
-        error: nameResult.error,
-        nameLength: nameResult.nameLength,
-        wasNormalised: nameResult.wasNormalised,
+    if (clientSuppliedName) {
+      // The inline form submitted a name. Ownership was verified at step 5-auth.
+      // Re-validate server-side (never trust the client) and, if valid, persist
+      // it to the authoritative fields future checkouts read, then CONTINUE this
+      // same request to Acquired — a single round-trip for the customer.
+      const clientFirst = validateCustomerName(clientFirstRaw ?? '', 'first_name')
+      const clientLast = validateCustomerName(clientLastRaw ?? '', 'last_name')
+
+      if (!clientFirst.ok || !clientLast.ok) {
+        const requiredFields: CustomerNameField[] = []
+        if (!clientFirst.ok) requiredFields.push('first_name')
+        if (!clientLast.ok) requiredFields.push('last_name')
+        const errorCode =
+          (clientFirst.ok || clientFirst.error === 'customer_name_required') &&
+          (clientLast.ok || clientLast.error === 'customer_name_required')
+            ? 'customer_name_required'
+            : 'customer_name_invalid'
+        // Safe structured log — required field names only, never the values.
+        console.error('[payments/acquired] checkout_payment_name_required', {
+          event: 'checkout_payment_name_required',
+          requiredFields,
+          source: 'submitted_name_invalid',
+        })
+        // Deliberately DO NOT release the wallet reservation: the customer can
+        // correct and resubmit within the existing reservation window.
+        return NextResponse.json(
+          { ok: false, error: errorCode, requiredFields },
+          { status: 422, headers: noStore },
+        )
+      }
+
+      firstName = clientFirst.value
+      lastName = clientLast.value
+
+      // Persist to the authoritative fields (service client — never exposed to
+      // the browser). Best-effort: a metadata write hiccup must not block a
+      // payment the customer is trying to make right now. Failure only means the
+      // form may reappear on a future purchase, never a lost payment.
+      if (intent.user_id) {
+        try {
+          await svc.auth.admin.updateUserById(intent.user_id, {
+            user_metadata: { ...authMetaObject, first_name: firstName, last_name: lastName },
+          })
+        } catch (err: any) {
+          console.error(
+            '[payments/acquired] user_metadata name update failed',
+            String(err?.message || err),
+          )
+        }
+        // Keep profiles_private.real_name (a fallback name source) in sync so the
+        // two sources can never diverge into conflicting values.
+        try {
+          await svc
+            .from('profiles_private')
+            .update({ real_name: `${firstName} ${lastName}` })
+            .eq('user_id', intent.user_id)
+        } catch (err: any) {
+          console.error(
+            '[payments/acquired] real_name sync failed',
+            String(err?.message || err),
+          )
+        }
+      }
+
+      console.log('[payments/acquired] checkout_payment_name_updated', {
+        event: 'checkout_payment_name_updated',
+        updatedFields: ['first_name', 'last_name'],
+        continuedToPayment: true,
       })
-      await releaseWalletReservation('acquired_customer_name_invalid')
-      return NextResponse.json(
-        { ok: false, error: nameResult.error, field: nameResult.field },
-        { status: 422, headers: noStore },
-      )
-    }
+    } else {
+      const nameResult = resolveCustomerName({
+        metaFirstName,
+        metaLastName,
+        realName,
+        metaDisplayName,
+      })
 
-    const firstName = nameResult.firstName
-    const lastName = nameResult.lastName
+      if (!nameResult.ok) {
+        // Compute EVERY failing field so the inline form asks for exactly what is
+        // needed (both, when both are missing).
+        const problems = findCustomerNameProblems({
+          metaFirstName,
+          metaLastName,
+          realName,
+          metaDisplayName,
+        })
+        const requiredFields = problems.map((p) => p.field)
+        // Safe structured log — field names + normalisation flag only. NEVER the
+        // name value, email, or other PII.
+        console.error('[payments/acquired] checkout_payment_name_required', {
+          event: 'checkout_payment_name_required',
+          requiredFields,
+          source: 'missing_stored_name',
+          wasNormalised: nameResult.wasNormalised,
+        })
+        // Deliberately DO NOT release the wallet reservation: keep it valid so
+        // the inline name-form submission can reuse this checkout within the
+        // reservation window (reclaimed only by the 15-minute expiry engine).
+        return NextResponse.json(
+          { ok: false, error: combineNameErrorCode(problems), requiredFields },
+          { status: 422, headers: noStore },
+        )
+      }
+
+      firstName = nameResult.firstName
+      lastName = nameResult.lastName
+    }
 
     // Deterministic per-user reference. Acquired enforces uniqueness on this, so
     // it is also the key we use to recover an already-existing customer on 409.
@@ -574,9 +701,18 @@ export async function POST(request: Request) {
             providerCorrelationId,
             wasNormalised: true,
           })
-          await releaseWalletReservation('acquired_customer_name_invalid')
+          // Deliberately DO NOT release the wallet reservation: this is a
+          // deterministic, user-fixable name rejection. The inline form lets the
+          // customer correct the field and resubmit within the reservation
+          // window. `requiredFields` drives that form (same shape as the local
+          // 422s above) so the client opens it consistently.
           return NextResponse.json(
-            { ok: false, error: 'customer_name_invalid', field: errorClass.field },
+            {
+              ok: false,
+              error: 'customer_name_invalid',
+              field: errorClass.field,
+              requiredFields: [errorClass.field],
+            },
             { status: 422, headers: noStore },
           )
         }
