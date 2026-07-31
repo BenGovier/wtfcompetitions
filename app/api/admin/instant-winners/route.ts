@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { authorizeAdminApi } from '@/lib/admin/auth'
+import { isValidUuid, normalizeSearchQuery } from '@/lib/admin/instant-win-search'
 
 const NO_STORE = { headers: { 'Cache-Control': 'private, no-cache' } }
 
@@ -31,7 +32,21 @@ export async function GET(request: NextRequest) {
   const limit = Math.min(25, Math.max(1, parseInt(searchParams.get('limit') || '25', 10)))
   const campaignId = searchParams.get('campaignId') || null
   const paidStatus = searchParams.get('paidStatus') || 'all' // all | unpaid | paid
-  const search = searchParams.get('search') || null
+  // `q` is the primary search param; the legacy `search` param is accepted only
+  // as a temporary fallback when `q` is absent.
+  const rawQuery = searchParams.get('q') ?? searchParams.get('search')
+
+  // Validate campaignId as a UUID up front so a malformed value returns 400
+  // rather than producing a Postgres error and a 500.
+  if (campaignId && !isValidUuid(campaignId)) {
+    return NextResponse.json({ ok: false, error: 'invalid_campaign' }, { status: 400, ...NO_STORE })
+  }
+
+  // Normalise/validate the search term (server is the authoritative layer).
+  const normalized = normalizeSearchQuery(rawQuery)
+  if (normalized.kind === 'error') {
+    return NextResponse.json({ ok: false, error: normalized.error }, { status: 400, ...NO_STORE })
+  }
 
   const offset = (page - 1) * limit
 
@@ -54,131 +69,182 @@ export async function GET(request: NextRequest) {
       // outstandingAmountPence remains 0
     }
 
-    // === Fetch instant_win_awards with pagination ===
+    // === Resolve candidate award IDs from the search term ===
+    // A supplied term builds a UNION of matching checkout-intent ids and
+    // instant-win slot ids, then filters awards by that union. A blank term
+    // skips resolution and returns the most recent awards.
+    let candidateCheckoutIds: string[] = []
+    let candidateSlotIds: string[] = []
+
+    if (normalized.kind === 'search') {
+      const checkoutIdSet = new Set<string>()
+      const slotIdSet = new Set<string>()
+      const userIdSet = new Set<string>()
+
+      if (normalized.runIdentitySearch) {
+        // (1) Name / email / mobile via the shared wallet identity RPC.
+        //     Reuses the exact RPC name, args, result shape and error mapping.
+        const { data: rpcData, error: rpcError } = await svc.rpc('admin_search_wallet_users', {
+          p_query: normalized.raw,
+          p_limit: 25,
+        })
+        if (rpcError) {
+          const rawMessage = typeof rpcError.message === 'string' ? rpcError.message : ''
+          console.error('[admin/instant-winners] identity RPC error:', rawMessage.slice(0, 300))
+          if (rawMessage.includes('admin_wallet_search_invalid_query')) {
+            return NextResponse.json({ ok: false, error: 'invalid_query' }, { status: 400, ...NO_STORE })
+          }
+          if (rawMessage.includes('admin_wallet_search_email_must_be_complete')) {
+            return NextResponse.json(
+              { ok: false, error: 'complete_email_required' },
+              { status: 400, ...NO_STORE },
+            )
+          }
+          // Any other RPC failure is non-fatal: fall back to the other sources.
+        } else if (Array.isArray(rpcData)) {
+          for (const row of rpcData as unknown[]) {
+            const uid = (row as Record<string, unknown>)?.user_id
+            if (typeof uid === 'string' && isValidUuid(uid)) userIdSet.add(uid)
+          }
+        }
+
+        // (2) Display name / TikTok username (case-insensitive, escaped).
+        const { data: snaps, error: snapErr } = await svc
+          .from('profiles_public_snapshot')
+          .select('user_id')
+          .ilike('display_name', normalized.likePattern)
+          .limit(500)
+        if (snapErr) {
+          console.error('[admin/instant-winners] display_name search error (non-fatal):', snapErr.message)
+        } else {
+          for (const s of snaps ?? []) if (s.user_id) userIdSet.add(s.user_id)
+        }
+
+        // (3) Checkout reference (partial, case-insensitive, escaped).
+        const { data: refs, error: refErr } = await svc
+          .from('checkout_intents')
+          .select('id')
+          .ilike('ref', normalized.likePattern)
+          .limit(500)
+        if (refErr) {
+          console.error('[admin/instant-winners] ref search error (non-fatal):', refErr.message)
+        } else {
+          for (const c of refs ?? []) if (c.id) checkoutIdSet.add(c.id)
+        }
+      }
+
+      // (4) Winning ticket (exact numeric match; a ticket can span campaigns).
+      if (normalized.ticketNumber !== null) {
+        const { data: slots, error: slotErr } = await svc
+          .from('instant_win_slots')
+          .select('id')
+          .eq('winning_ticket', normalized.ticketNumber)
+          .limit(500)
+        if (slotErr) {
+          console.error('[admin/instant-winners] ticket search error (non-fatal):', slotErr.message)
+        } else {
+          for (const s of slots ?? []) if (s.id) slotIdSet.add(s.id)
+        }
+      }
+
+      // Resolve matched users -> their checkout intents in one bounded query.
+      if (userIdSet.size > 0) {
+        const { data: userIntents, error: uiErr } = await svc
+          .from('checkout_intents')
+          .select('id')
+          .in('user_id', [...userIdSet])
+          .limit(1000)
+        if (uiErr) {
+          console.error('[admin/instant-winners] user-intent resolve error (non-fatal):', uiErr.message)
+        } else {
+          for (const c of userIntents ?? []) if (c.id) checkoutIdSet.add(c.id)
+        }
+      }
+
+      candidateCheckoutIds = [...checkoutIdSet]
+      candidateSlotIds = [...slotIdSet]
+
+      // A supplied term with zero matches returns an empty list (never all).
+      if (candidateCheckoutIds.length === 0 && candidateSlotIds.length === 0) {
+        return NextResponse.json(
+          { ok: true, awards: [], hasNext: false, outstandingAmountPence, page, limit },
+          NO_STORE,
+        )
+      }
+    }
+
+    // === Fetch instant_win_awards (newest first, paginated, capped) ===
+    let awardsQuery = svc
+      .from('instant_win_awards')
+      .select('id, awarded_at, campaign_id, giveaway_id, prize_id, instant_win_slot_id, checkout_intent_id, payout_amount_pence, is_paid, paid_at, payout_notes')
+      .order('awarded_at', { ascending: false })
+
+    if (normalized.kind === 'search') {
+      const orParts: string[] = []
+      if (candidateCheckoutIds.length > 0) {
+        orParts.push(`checkout_intent_id.in.(${candidateCheckoutIds.join(',')})`)
+      }
+      if (candidateSlotIds.length > 0) {
+        orParts.push(`instant_win_slot_id.in.(${candidateSlotIds.join(',')})`)
+      }
+      awardsQuery = awardsQuery.or(orParts.join(','))
+    }
+
+    if (campaignId) {
+      awardsQuery = awardsQuery.eq('campaign_id', campaignId)
+    }
+    if (paidStatus === 'unpaid') {
+      awardsQuery = awardsQuery.eq('is_paid', false)
+    } else if (paidStatus === 'paid') {
+      awardsQuery = awardsQuery.eq('is_paid', true)
+    }
+
+    awardsQuery = awardsQuery.range(offset, offset + limit)
+
+    const { data: awardsData, error: awardsError } = await awardsQuery
+    if (awardsError) {
+      console.error('[admin/instant-winners] Awards query error:', awardsError.message)
+      return NextResponse.json({ ok: false, error: 'Failed to fetch awards' }, { status: 500, ...NO_STORE })
+    }
+
     let awards: any[] = []
     let hasNext = false
-
-    // Check if we need to filter by checkout ref (search)
-    const hasSearchFilter = Boolean(search)
-
-    if (hasSearchFilter) {
-      // Search checkout_intents first, then filter awards by those checkout_intent_ids
-      const { data: matchingCheckouts, error: checkoutSearchError } = await svc
-        .from('checkout_intents')
-        .select('id')
-        .ilike('ref', `%${search}%`)
-        .limit(500)
-
-      if (checkoutSearchError) {
-        console.error('[admin/instant-winners] Checkout search error:', checkoutSearchError.message)
-        return NextResponse.json({ ok: false, error: 'Failed to search checkouts' }, { status: 500, ...NO_STORE })
-      }
-
-      if (!matchingCheckouts || matchingCheckouts.length === 0) {
-        return NextResponse.json({
-          ok: true,
-          awards: [],
-          hasNext: false,
-          outstandingAmountPence,
-          page,
-          limit,
-        }, NO_STORE)
-      }
-
-      const matchingCheckoutIds = matchingCheckouts.map((c) => c.id)
-
-      // Query awards filtered by checkout_intent_ids
-      let awardsQuery = svc
-        .from('instant_win_awards')
-        .select('id, awarded_at, campaign_id, giveaway_id, prize_id, instant_win_slot_id, checkout_intent_id, payout_amount_pence, is_paid, paid_at, payout_notes')
-        .in('checkout_intent_id', matchingCheckoutIds)
-        .order('awarded_at', { ascending: false })
-
-      if (campaignId) {
-        awardsQuery = awardsQuery.eq('campaign_id', campaignId)
-      }
-
-      if (paidStatus === 'unpaid') {
-        awardsQuery = awardsQuery.eq('is_paid', false)
-      } else if (paidStatus === 'paid') {
-        awardsQuery = awardsQuery.eq('is_paid', true)
-      }
-
-      awardsQuery = awardsQuery.range(offset, offset + limit)
-
-      const { data: awardsData, error: awardsError } = await awardsQuery
-
-      if (awardsError) {
-        console.error('[admin/instant-winners] Awards query error:', awardsError.message)
-        return NextResponse.json({ ok: false, error: 'Failed to fetch awards' }, { status: 500, ...NO_STORE })
-      }
-
-      if (!awardsData || awardsData.length === 0) {
-        return NextResponse.json({
-          ok: true,
-          awards: [],
-          hasNext: false,
-          outstandingAmountPence,
-          page,
-          limit,
-        }, NO_STORE)
-      }
-
-      if (awardsData.length > limit) {
-        hasNext = true
-        awards = awardsData.slice(0, limit)
-      } else {
-        awards = awardsData
-      }
+    if (awardsData && awardsData.length > limit) {
+      hasNext = true
+      awards = awardsData.slice(0, limit)
     } else {
-      // No search filter - direct awards query
-      let awardsQuery = svc
-        .from('instant_win_awards')
-        .select('id, awarded_at, campaign_id, giveaway_id, prize_id, instant_win_slot_id, checkout_intent_id, payout_amount_pence, is_paid, paid_at, payout_notes')
-        .order('awarded_at', { ascending: false })
+      awards = awardsData ?? []
+    }
 
-      if (campaignId) {
-        awardsQuery = awardsQuery.eq('campaign_id', campaignId)
-      }
-
-      if (paidStatus === 'unpaid') {
-        awardsQuery = awardsQuery.eq('is_paid', false)
-      } else if (paidStatus === 'paid') {
-        awardsQuery = awardsQuery.eq('is_paid', true)
-      }
-
-      awardsQuery = awardsQuery.range(offset, offset + limit)
-
-      const { data: awardsData, error: awardsError } = await awardsQuery
-
-      if (awardsError) {
-        console.error('[admin/instant-winners] Awards query error:', awardsError.message)
-        return NextResponse.json({ ok: false, error: 'Failed to fetch awards' }, { status: 500, ...NO_STORE })
-      }
-
-      if (!awardsData || awardsData.length === 0) {
-        return NextResponse.json({
-          ok: true,
-          awards: [],
-          hasNext: false,
-          outstandingAmountPence,
-          page,
-          limit,
-        }, NO_STORE)
-      }
-
-      if (awardsData.length > limit) {
-        hasNext = true
-        awards = awardsData.slice(0, limit)
-      } else {
-        awards = awardsData
-      }
+    if (awards.length === 0) {
+      return NextResponse.json(
+        { ok: true, awards: [], hasNext: false, outstandingAmountPence, page, limit },
+        NO_STORE,
+      )
     }
 
     // === Batch fetch related data ===
     const prizeIds = [...new Set(awards.map((a) => a.prize_id).filter(Boolean))]
     const checkoutIntentIds = [...new Set(awards.map((a) => a.checkout_intent_id).filter(Boolean))]
     const slotIds = [...new Set(awards.map((a) => a.instant_win_slot_id).filter(Boolean))]
+    const campaignIds = [...new Set(awards.map((a) => a.campaign_id).filter(Boolean))]
+
+    // Fetch campaign title/slug for the current page (single batched query).
+    let campaignsData: Record<string, { title: string | null; slug: string | null }> = {}
+    if (campaignIds.length > 0) {
+      const { data: campaigns, error: campaignsError } = await svc
+        .from('campaigns')
+        .select('id, title, slug')
+        .in('id', campaignIds)
+
+      if (campaignsError) {
+        console.error('[admin/instant-winners] Campaigns fetch error (non-fatal):', campaignsError.message)
+      } else {
+        campaignsData = Object.fromEntries(
+          (campaigns ?? []).map((c) => [c.id, { title: c.title ?? null, slug: c.slug ?? null }]),
+        )
+      }
+    }
 
     // Fetch instant_win_slots for the exact winning ticket per award.
     // Single batched query keyed by slot id (no per-award query -> avoids N+1).
@@ -273,6 +339,7 @@ export async function GET(request: NextRequest) {
     )].slice(0, 25)
 
     let profilesData: Record<string, { real_name: string | null; mobile: string | null }> = {}
+    let displayNamesData: Record<string, string | null> = {}
     let emailsData: Record<string, string | null> = {}
 
     if (userIds.length > 0) {
@@ -292,6 +359,24 @@ export async function GET(request: NextRequest) {
         }
       } catch (profileErr: any) {
         console.error('[admin/instant-winners] Profiles exception (non-fatal):', profileErr?.message)
+      }
+
+      // Fetch public display names (display name / TikTok username).
+      try {
+        const { data: snapshots, error: snapshotError } = await svc
+          .from('profiles_public_snapshot')
+          .select('user_id, display_name')
+          .in('user_id', userIds)
+
+        if (snapshotError) {
+          console.error('[admin/instant-winners] Display name fetch error (non-fatal):', snapshotError.message)
+        } else {
+          displayNamesData = Object.fromEntries(
+            (snapshots ?? []).map((p) => [p.user_id, p.display_name ?? null])
+          )
+        }
+      } catch (snapErr: any) {
+        console.error('[admin/instant-winners] Display name exception (non-fatal):', snapErr?.message)
       }
 
       // Fetch auth emails
@@ -330,13 +415,17 @@ export async function GET(request: NextRequest) {
       const allocation = entryId ? allocationsData[entryId] : null
       const userId = checkout?.user_id
       const profile = userId ? profilesData[userId] : null
+      const displayName = userId ? displayNamesData[userId] : null
       const email = userId ? emailsData[userId] : null
       const slot = award.instant_win_slot_id ? slotsData[award.instant_win_slot_id] : null
+      const campaign = award.campaign_id ? campaignsData[award.campaign_id] : null
 
       return {
         award_id: award.id,
         awarded_at: award.awarded_at,
         campaign_id: award.campaign_id,
+        campaign_title: campaign?.title ?? null,
+        campaign_slug: campaign?.slug ?? null,
         giveaway_id: award.giveaway_id,
         prize_id: award.prize_id,
         prize_title: prize?.prize_title ?? 'Unknown Prize',
@@ -344,6 +433,7 @@ export async function GET(request: NextRequest) {
         checkout_ref: checkout?.ref ?? '-',
         user_id: userId ?? null,
         customer_name: profile?.real_name || 'Unknown',
+        display_name: displayName ?? null,
         customer_email: email || '-',
         customer_mobile: profile?.mobile || '-',
         start_ticket: allocation?.start_ticket ?? null,
