@@ -576,7 +576,7 @@ export function CheckoutReviewClient({
     <Button
       size="lg"
       onClick={handleConfirm}
-      disabled={submitting || hardBlocked}
+      disabled={submitting || nameFormOpen}
       className="w-full rounded-xl bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] py-4 text-base font-bold text-black shadow-[0_10px_40px_rgba(255,180,0,0.4)] transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
     >
       {submitting ? (
@@ -588,6 +588,80 @@ export function CheckoutReviewClient({
         ctaLabel
       )}
     </Button>
+  )
+
+  // Inline "Confirm your name" form. Rendered in place of the pay button when
+  // the server reports the stored name is missing/invalid. Submitting continues
+  // the SAME checkout (single request) — no page reload, basket/wallet intact.
+  const nameForm = (
+    <div className="space-y-3 rounded-xl border border-purple-500/30 bg-white/5 p-4">
+      <div>
+        <p className="text-sm font-bold text-white">Confirm your name</p>
+        <p className="mt-1 text-xs text-purple-200">
+          We need the name on your card to complete secure payment.
+        </p>
+      </div>
+      <div className="grid gap-3">
+        <div className="grid gap-1.5">
+          <Label htmlFor="checkout-first-name" className="text-xs text-purple-100">
+            First name
+          </Label>
+          <Input
+            id="checkout-first-name"
+            type="text"
+            autoComplete="given-name"
+            required
+            aria-invalid={Boolean(nameFirstError)}
+            disabled={nameSubmitting}
+            value={nameFirst}
+            onChange={(e) => {
+              setNameFirst(e.target.value)
+              if (nameFirstError) setNameFirstError(null)
+            }}
+            onKeyDown={onNameKeyDown}
+            className="bg-white/10 text-white placeholder:text-purple-300"
+          />
+          {nameFirstError && <p className="text-xs text-red-300">{nameFirstError}</p>}
+        </div>
+        <div className="grid gap-1.5">
+          <Label htmlFor="checkout-last-name" className="text-xs text-purple-100">
+            Last name
+          </Label>
+          <Input
+            id="checkout-last-name"
+            type="text"
+            autoComplete="family-name"
+            required
+            aria-invalid={Boolean(nameLastError)}
+            disabled={nameSubmitting}
+            value={nameLast}
+            onChange={(e) => {
+              setNameLast(e.target.value)
+              if (nameLastError) setNameLastError(null)
+            }}
+            onKeyDown={onNameKeyDown}
+            className="bg-white/10 text-white placeholder:text-purple-300"
+          />
+          {nameLastError && <p className="text-xs text-red-300">{nameLastError}</p>}
+        </div>
+      </div>
+      <Button
+        type="button"
+        size="lg"
+        onClick={() => void submitName()}
+        disabled={nameSubmitting}
+        className="w-full rounded-xl bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] py-4 text-base font-bold text-black shadow-[0_10px_40px_rgba(255,180,0,0.4)] transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {nameSubmitting ? (
+          <span className="flex items-center justify-center gap-2">
+            <Spinner className="h-5 w-5" />
+            Saving…
+          </span>
+        ) : (
+          'Save and continue'
+        )}
+      </Button>
+    </div>
   )
 
   const trustRow = (
@@ -922,21 +996,14 @@ export function CheckoutReviewClient({
               className="flex items-start gap-2 rounded-xl bg-red-500/15 p-3 text-sm text-red-200"
             >
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-              <div className="space-y-1">
-                <p>{error}</p>
-                {hardBlocked && (
-                  <p className="text-red-200/80">
-                    Please update your first and last name on your account, then reload this page to
-                    continue.
-                  </p>
-                )}
-              </div>
+              <p>{error}</p>
             </div>
           )}
 
-          {/* Desktop / inline CTA */}
+          {/* Desktop / inline CTA — swap the pay button for the name form when
+              the server needs the customer's name. */}
           <div className="hidden space-y-3 lg:block">
-            {primaryButton}
+            {nameFormOpen ? nameForm : primaryButton}
             {trustRow}
           </div>
 
@@ -954,7 +1021,7 @@ export function CheckoutReviewClient({
         style={{ bottom: 'calc(5rem + 2rem + env(safe-area-inset-bottom))' }}
       >
         <div className="mx-auto max-w-5xl space-y-2 rounded-2xl border border-purple-500/30 bg-[#0e0618]/95 p-3 shadow-[0_-4px_30px_rgba(0,0,0,0.5)] backdrop-blur">
-          {primaryButton}
+          {nameFormOpen ? nameForm : primaryButton}
           {trustRow}
         </div>
       </div>

@@ -3,7 +3,9 @@ import {
   ACQUIRED_NAME_MAX_LENGTH,
   ACQUIRED_NAME_PATTERN,
   classifyAcquiredCustomerError,
+  combineNameErrorCode,
   deriveCustomerName,
+  findCustomerNameProblems,
   normalizeCustomerName,
   resolveCustomerName,
   validateCustomerName,
@@ -314,5 +316,73 @@ describe('classifyAcquiredCustomerError', () => {
     // Only 400 is a deterministic name-validation status; a 409 is a conflict.
     const body = { invalid_parameters: [{ parameter: 'first_name' }] }
     expect(classifyAcquiredCustomerError(409, body)).toEqual({ kind: 'upstream' })
+  })
+})
+
+describe('findCustomerNameProblems (drives the inline form requiredFields)', () => {
+  it('returns no problems for a fully valid stored name', () => {
+    const problems = findCustomerNameProblems({
+      metaFirstName: 'Ada',
+      metaLastName: 'Lovelace',
+      realName: '',
+      metaDisplayName: '',
+    })
+    expect(problems).toEqual([])
+  })
+
+  it('flags both fields when the account has no name at all', () => {
+    const problems = findCustomerNameProblems({
+      metaFirstName: '',
+      metaLastName: '',
+      realName: '',
+      metaDisplayName: '',
+    })
+    expect(problems.map((p) => p.field)).toEqual(['first_name', 'last_name'])
+    expect(problems.every((p) => p.error === 'customer_name_required')).toBe(true)
+  })
+
+  it('flags only the missing surname for a single-word stored name', () => {
+    const problems = findCustomerNameProblems({
+      metaFirstName: '',
+      metaLastName: '',
+      realName: 'Cher',
+      metaDisplayName: '',
+    })
+    expect(problems.map((p) => p.field)).toEqual(['last_name'])
+  })
+
+  it('flags a present-but-unnormalisable field as invalid, not required', () => {
+    const problems = findCustomerNameProblems({
+      metaFirstName: 'Ada',
+      metaLastName: '12345', // digits survive normalisation but fail the pattern
+      realName: '',
+      metaDisplayName: '',
+    })
+    expect(problems).toEqual([{ field: 'last_name', error: 'customer_name_invalid' }])
+  })
+})
+
+describe('combineNameErrorCode (route 422 error code)', () => {
+  it('is customer_name_required only when every problem is a missing value', () => {
+    expect(
+      combineNameErrorCode([
+        { field: 'first_name', error: 'customer_name_required' },
+        { field: 'last_name', error: 'customer_name_required' },
+      ]),
+    ).toBe('customer_name_required')
+  })
+
+  it('is customer_name_invalid when any problem is a present invalid value', () => {
+    expect(
+      combineNameErrorCode([
+        { field: 'first_name', error: 'customer_name_required' },
+        { field: 'last_name', error: 'customer_name_invalid' },
+      ]),
+    ).toBe('customer_name_invalid')
+  })
+
+  it('defaults to customer_name_invalid for an empty problem list', () => {
+    // Never used by the route on the ok path, but must be well-defined.
+    expect(combineNameErrorCode([])).toBe('customer_name_invalid')
   })
 })
