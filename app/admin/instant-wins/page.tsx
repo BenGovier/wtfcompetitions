@@ -29,6 +29,24 @@ const PAID_STATUS_OPTIONS = [
   { value: 'paid', label: 'Paid' },
 ]
 
+const ALL_CAMPAIGNS_VALUE = '__all__'
+
+type CampaignOption = { id: string; title: string; slug: string }
+
+// Friendly messages for the server's validation error codes.
+const SEARCH_ERROR_MESSAGES: Record<string, string> = {
+  query_too_short: 'Please enter at least 3 characters (or a ticket number).',
+  query_too_long: 'That search is too long. Please shorten it.',
+  invalid_query: 'That search contains characters we can’t use. Please try again.',
+  invalid_campaign: 'The selected campaign is invalid.',
+  complete_email_required: 'Please enter the full email address.',
+}
+
+function friendlyError(code: string | undefined): string {
+  if (!code) return 'Failed to load awards'
+  return SEARCH_ERROR_MESSAGES[code] ?? code
+}
+
 function formatPence(pence: number | null): string {
   if (pence === null || pence === undefined) return ''
   return (pence / 100).toFixed(2)
@@ -54,8 +72,10 @@ export default function InstantWinsPage() {
   const [paidStatus, setPaidStatus] = useState('all')
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
-  const [campaignIdInput, setCampaignIdInput] = useState('')
   const [campaignId, setCampaignId] = useState('')
+
+  // Campaign dropdown options (all campaigns, incl. historical).
+  const [campaigns, setCampaigns] = useState<CampaignOption[]>([])
 
   // Editing state - keyed by award_id
   const [editingPayout, setEditingPayout] = useState<Record<string, string>>({})
@@ -71,7 +91,7 @@ export default function InstantWinsPage() {
     params.set('page', page.toString())
     params.set('limit', '25')
     if (paidStatus !== 'all') params.set('paidStatus', paidStatus)
-    if (search) params.set('search', search)
+    if (search) params.set('q', search)
     if (campaignId) params.set('campaignId', campaignId)
 
     try {
@@ -79,7 +99,7 @@ export default function InstantWinsPage() {
       const json = await res.json()
 
       if (!json.ok) {
-        setError(json.error || 'Failed to load awards')
+        setError(friendlyError(json.error))
         setAwards([])
         setHasNext(false)
         setOutstandingAmountPence(0)
@@ -110,15 +130,46 @@ export default function InstantWinsPage() {
     fetchAwards()
   }, [fetchAwards])
 
-  const handleApplyFilters = () => {
-    setSearch(searchInput)
-    setCampaignId(campaignIdInput)
+  // Load the campaign dropdown options once on mount (all campaigns).
+  useEffect(() => {
+    let active = true
+    ;(async () => {
+      try {
+        const res = await fetch('/api/admin/instant-winners/campaigns')
+        const json = await res.json()
+        if (active && json.ok && Array.isArray(json.campaigns)) {
+          setCampaigns(json.campaigns)
+        }
+      } catch {
+        // Non-fatal: the dropdown simply falls back to "All campaigns".
+      }
+    })()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  // Apply the typed search term. Resets to page 1 and preserves the input.
+  const handleSearch = () => {
+    setSearch(searchInput.trim())
     setPage(1)
   }
 
+  // Clear every active filter back to defaults.
+  const handleClearFilters = () => {
+    setSearchInput('')
+    setSearch('')
+    setCampaignId('')
+    setPaidStatus('all')
+    setPage(1)
+  }
+
+  const filtersActive = search !== '' || searchInput !== '' || campaignId !== '' || paidStatus !== 'all'
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleApplyFilters()
+    // Respect IME composition so CJK input isn't submitted mid-composition.
+    if (e.key === 'Enter' && !e.nativeEvent.isComposing && (e as any).keyCode !== 229) {
+      handleSearch()
     }
   }
 
@@ -286,59 +337,90 @@ export default function InstantWinsPage() {
       </Card>
 
       {/* Filters */}
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="flex-1 min-w-[200px]">
-          <label className="text-sm font-medium mb-1 block">Checkout Ref</label>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Search checkout ref..."
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 pl-9 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:border-ring disabled:cursor-not-allowed disabled:opacity-50"
-            />
+      <div className="space-y-3">
+        {/* Primary row: winner search */}
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex-1 min-w-[240px]">
+            <label htmlFor="winner-search" className="text-sm font-medium mb-1 block">
+              Search winner
+            </label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+              <input
+                id="winner-search"
+                type="text"
+                placeholder="Name, email, mobile, ticket or checkout reference"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 pl-9 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:border-ring disabled:cursor-not-allowed disabled:opacity-50"
+              />
+            </div>
+          </div>
+
+          <Button onClick={handleSearch}>
+            <Search className="size-4 mr-1" />
+            Search
+          </Button>
+
+          {filtersActive && (
+            <Button variant="ghost" onClick={handleClearFilters}>
+              <X className="size-4 mr-1" />
+              Clear filters
+            </Button>
+          )}
+        </div>
+
+        {/* Secondary row: campaign + paid status */}
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="w-[260px] max-w-full">
+            <label className="text-sm font-medium mb-1 block">Campaign</label>
+            <Select
+              value={campaignId === '' ? ALL_CAMPAIGNS_VALUE : campaignId}
+              onValueChange={(val) => {
+                setCampaignId(val === ALL_CAMPAIGNS_VALUE ? '' : val)
+                setPage(1)
+              }}
+            >
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder="All campaigns" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_CAMPAIGNS_VALUE}>All campaigns</SelectItem>
+                {campaigns.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.title}
+                    {c.slug ? (
+                      <span className="text-muted-foreground"> · {c.slug}</span>
+                    ) : null}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="w-[140px]">
+            <label className="text-sm font-medium mb-1 block">Paid Status</label>
+            <Select
+              value={paidStatus}
+              onValueChange={(val) => {
+                setPaidStatus(val)
+                setPage(1)
+              }}
+            >
+              <SelectTrigger className="h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PAID_STATUS_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
-
-        <div className="w-[160px]">
-          <label className="text-sm font-medium mb-1 block">Campaign ID</label>
-          <input
-            type="text"
-            placeholder="Optional UUID"
-            value={campaignIdInput}
-            onChange={(e) => setCampaignIdInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:border-ring disabled:cursor-not-allowed disabled:opacity-50"
-          />
-        </div>
-
-        <div className="w-[120px]">
-          <label className="text-sm font-medium mb-1 block">Paid Status</label>
-          <Select
-            value={paidStatus}
-            onValueChange={(val) => {
-              setPaidStatus(val)
-              setPage(1)
-            }}
-          >
-            <SelectTrigger className="h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PAID_STATUS_OPTIONS.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <Button variant="secondary" onClick={handleApplyFilters}>
-          Apply
-        </Button>
       </div>
 
       {/* Error */}
@@ -358,11 +440,12 @@ export default function InstantWinsPage() {
       {/* Table */}
       {!loading && !error && (
         <>
-          <div className="rounded-md border">
+          <div className="rounded-md border overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Won At</TableHead>
+                  <TableHead>Campaign</TableHead>
                   <TableHead>Customer</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Mobile</TableHead>
@@ -377,7 +460,7 @@ export default function InstantWinsPage() {
               <TableBody>
                 {awards.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
                       No instant win awards found.
                     </TableCell>
                   </TableRow>
@@ -411,8 +494,24 @@ export default function InstantWinsPage() {
                             minute: '2-digit',
                           })}
                         </TableCell>
-                        <TableCell className="max-w-[100px] truncate text-sm" title={award.customer_name}>
-                          {award.customer_name}
+                        <TableCell
+                          className="max-w-[160px] truncate text-sm"
+                          title={award.campaign_title ?? award.campaign_slug ?? ''}
+                        >
+                          {award.campaign_title ?? award.campaign_slug ?? '-'}
+                        </TableCell>
+                        <TableCell className="max-w-[160px] text-sm">
+                          <div className="truncate font-medium" title={award.customer_name}>
+                            {award.customer_name}
+                          </div>
+                          {award.display_name && (
+                            <div
+                              className="truncate text-xs text-muted-foreground"
+                              title={award.display_name}
+                            >
+                              {award.display_name}
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell className="max-w-[140px] truncate text-xs" title={award.customer_email}>
                           {award.customer_email}
