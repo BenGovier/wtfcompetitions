@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useState } from 'react'
 import Link from 'next/link'
+import { validateCustomerName } from '@/lib/acquired/customer-name'
 
 export default function SignUpPage() {
   const [email, setEmail] = useState('')
@@ -23,6 +24,8 @@ export default function SignUpPage() {
   const [mobile, setMobile] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [mobileError, setMobileError] = useState<string | null>(null)
+  const [firstNameError, setFirstNameError] = useState<string | null>(null)
+  const [lastNameError, setLastNameError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [confirmMessage, setConfirmMessage] = useState(false)
 
@@ -30,6 +33,37 @@ export default function SignUpPage() {
     e.preventDefault()
     setMobileError(null)
     setError(null)
+    setFirstNameError(null)
+    setLastNameError(null)
+
+    // Validate first/last name against Acquired's confirmed rules so we do not
+    // store data the payment provider will reject at checkout. Legitimate
+    // hyphenated / apostrophe / accented names are accepted (accents/smart
+    // punctuation are folded to their ASCII form), and the NORMALISED value is
+    // what we persist. Server-side checkout validation remains authoritative.
+    const firstResult = validateCustomerName(firstName, 'first_name')
+    if (!firstResult.ok) {
+      setFirstNameError(
+        firstResult.error === 'customer_name_required'
+          ? 'Please enter your first name.'
+          : 'Please use only letters, spaces, hyphens and apostrophes (up to 50 characters).',
+      )
+      return
+    }
+
+    const lastResult = validateCustomerName(lastName, 'last_name')
+    if (!lastResult.ok) {
+      setLastNameError(
+        lastResult.error === 'customer_name_required'
+          ? 'Please enter your last name.'
+          : 'Please use only letters, spaces, hyphens and apostrophes (up to 50 characters).',
+      )
+      return
+    }
+
+    // Normalised, Acquired-safe values to store on the account.
+    const normalizedFirstName = firstResult.value
+    const normalizedLastName = lastResult.value
 
     // Validate mobile is provided
     if (!mobile.trim()) {
@@ -39,11 +73,11 @@ export default function SignUpPage() {
 
     // Auto-fill display_name from first_name + last initial if blank
     let finalDisplayName = displayName.trim()
-    if (!finalDisplayName && firstName.trim()) {
-      const lastInitial = lastName.trim().charAt(0).toUpperCase()
+    if (!finalDisplayName && normalizedFirstName) {
+      const lastInitial = normalizedLastName.charAt(0).toUpperCase()
       finalDisplayName = lastInitial
-        ? `${firstName.trim()} ${lastInitial}`
-        : firstName.trim()
+        ? `${normalizedFirstName} ${lastInitial}`
+        : normalizedFirstName
     }
 
     const supabase = createClient()
@@ -56,8 +90,8 @@ export default function SignUpPage() {
         options: {
           data: {
             display_name: finalDisplayName || undefined,
-            first_name: firstName.trim() || undefined,
-            last_name: lastName.trim() || undefined,
+            first_name: normalizedFirstName,
+            last_name: normalizedLastName,
             mobile: mobile.trim(),
           },
         },
@@ -125,9 +159,16 @@ export default function SignUpPage() {
                       id="first-name"
                       type="text"
                       placeholder="First name"
+                      required
+                      autoComplete="given-name"
+                      aria-invalid={Boolean(firstNameError)}
                       value={firstName}
-                      onChange={(e) => setFirstName(e.target.value)}
+                      onChange={(e) => {
+                        setFirstName(e.target.value)
+                        if (firstNameError) setFirstNameError(null)
+                      }}
                     />
+                    {firstNameError && <p className="text-sm text-destructive">{firstNameError}</p>}
                   </div>
                   <div className="grid gap-2">
                     <Label htmlFor="last-name">Last name</Label>
@@ -135,9 +176,16 @@ export default function SignUpPage() {
                       id="last-name"
                       type="text"
                       placeholder="Last name"
+                      required
+                      autoComplete="family-name"
+                      aria-invalid={Boolean(lastNameError)}
                       value={lastName}
-                      onChange={(e) => setLastName(e.target.value)}
+                      onChange={(e) => {
+                        setLastName(e.target.value)
+                        if (lastNameError) setLastNameError(null)
+                      }}
                     />
+                    {lastNameError && <p className="text-sm text-destructive">{lastNameError}</p>}
                   </div>
                 </div>
                 <div className="grid gap-2">

@@ -2,8 +2,8 @@ import { requireAdmin } from "@/lib/admin/auth"
 import { LiveCampaignPicker } from "@/components/admin/live-feed/LiveCampaignPicker"
 
 export default async function LiveFeedPage() {
-  // Admins and Hosts (ops) can use the live control flow.
-  await requireAdmin({ roles: ["admin", "ops"] })
+  // Super Admins, Operations Admins, and Hosts (ops) can use the live control flow.
+  await requireAdmin({ roles: ["admin", "operations_admin", "ops"] })
 
   return (
     <div className="space-y-6">

@@ -1,10 +1,13 @@
 'use client'
 
-import { useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Spinner } from '@/components/ui/spinner'
+import { validateCustomerName } from '@/lib/acquired/customer-name'
 import {
   AlertCircle,
   ArrowLeft,
@@ -64,9 +67,26 @@ const FRIENDLY_ERRORS: Record<string, string> = {
   wallet_confirmation_invalid_state:
     "We couldn't confirm this order. Your credit was not charged — please start again.",
   provider_payment_not_required: 'Please try again to finish your entry.',
+  // Deterministic customer-name problems saved on the account (see NAME_ERROR_CODES).
+  customer_name_invalid:
+    "We couldn't verify the name saved on your account. Please check your first and last name before continuing.",
+  customer_name_required:
+    "We couldn't verify the name saved on your account. Please check your first and last name before continuing.",
 }
 
 const GENERIC_ERROR = 'Something went wrong. Please try again.'
+
+/**
+ * Deterministic, user-data errors. These will NOT succeed on a blind retry with
+ * the same account details, so instead of re-enabling the pay button we open a
+ * small inline form that collects the name and continues checkout in ONE
+ * request (see goToAcquired / submitName).
+ */
+const NAME_ERROR_CODES = new Set(['customer_name_invalid', 'customer_name_required'])
+
+function isNameError(code: unknown): boolean {
+  return typeof code === 'string' && NAME_ERROR_CODES.has(code)
+}
 
 function friendlyError(code: unknown): string {
   if (typeof code === 'string' && code in FRIENDLY_ERRORS) return FRIENDLY_ERRORS[code]
@@ -103,6 +123,22 @@ export function CheckoutReviewClient({
   const [submitting, setSubmitting] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  // ---- Inline "Confirm your name" form -------------------------------------
+  // Shown ONLY when the server reports the stored name is missing/invalid for a
+  // payment. Customers with a valid stored name never see it and pay a zero
+  // extra-request cost. The completed form reuses the SAME checkout ref and
+  // continues to the payment page in a single request.
+  const [nameFormOpen, setNameFormOpen] = useState(false)
+  const [pendingRef, setPendingRef] = useState<string | null>(null)
+  const [nameFirst, setNameFirst] = useState('')
+  const [nameLast, setNameLast] = useState('')
+  const [nameFirstError, setNameFirstError] = useState<string | null>(null)
+  const [nameLastError, setNameLastError] = useState<string | null>(null)
+  const [nameSubmitting, setNameSubmitting] = useState(false)
+  // Synchronous latch mirroring submitLatch — blocks rapid double submits of the
+  // name form before React state settles.
+  const nameSubmitLatch = useRef(false)
 
   // Selected ticket option. Defaults to the option the customer arrived with.
   const [selectedKey, setSelectedKey] = useState(initialKey)
@@ -173,7 +209,11 @@ export function CheckoutReviewClient({
     window.location.href = `/auth/login?redirect=${redirect}`
   }
 
-  /** Release the latch and clear the busy state so the user can retry. */
+  /**
+   * Clear the busy state after a TRANSIENT failure so the customer can retry.
+   * Deterministic name problems are handled separately by opening the inline
+   * name form (see openNameForm), not by this path.
+   */
   function releaseForRetry(code?: unknown) {
     setError(friendlyError(code))
     setStatus(null)
@@ -181,13 +221,95 @@ export function CheckoutReviewClient({
     submitLatch.current = false
   }
 
+  /**
+   * Open (or refresh) the inline name form after the server reports a missing/
+   * invalid name. Preserves the checkout ref so submission continues the SAME
+   * checkout. When `fromSubmit` is true the name we just sent was rejected by
+   * the provider, so we flag the offending field(s) inline.
+   */
+  function openNameForm(ref: string, requiredFields: unknown, fromSubmit: boolean) {
+    const fields = Array.isArray(requiredFields)
+      ? requiredFields.filter((f) => f === 'first_name' || f === 'last_name')
+      : []
+    setPendingRef(ref)
+    setNameFormOpen(true)
+    setError(null)
+    setStatus(null)
+    setSubmitting(false)
+    submitLatch.current = false
+    if (fromSubmit) {
+      const msg = 'Please check this name and try again.'
+      if (fields.length === 0 || fields.includes('first_name')) setNameFirstError(msg)
+      if (fields.length === 0 || fields.includes('last_name')) setNameLastError(msg)
+    }
+  }
+
+  /**
+   * Validate the inline form locally (mirroring the server's Acquired-confirmed
+   * rules), then continue the EXISTING checkout in a single request that saves
+   * the name and returns the payment redirect. No page reload; the basket,
+   * checkout intent and any wallet reservation are all preserved.
+   */
+  async function submitName() {
+    if (nameSubmitLatch.current || nameSubmitting) return
+    const first = validateCustomerName(nameFirst, 'first_name')
+    if (!first.ok) {
+      setNameFirstError(
+        first.error === 'customer_name_required'
+          ? 'Enter your first name to continue.'
+          : 'Please check this name and try again.',
+      )
+      return
+    }
+    const last = validateCustomerName(nameLast, 'last_name')
+    if (!last.ok) {
+      setNameLastError(
+        last.error === 'customer_name_required'
+          ? 'Enter your surname to continue.'
+          : 'Please check this name and try again.',
+      )
+      return
+    }
+    const ref = pendingRef
+    if (!ref) {
+      // No checkout context to continue — fall back to a normal retry.
+      setNameFormOpen(false)
+      releaseForRetry()
+      return
+    }
+    nameSubmitLatch.current = true
+    setNameSubmitting(true)
+    setNameFirstError(null)
+    setNameLastError(null)
+    try {
+      await goToAcquired(ref, { firstName: nameFirst, lastName: nameLast })
+    } catch {
+      setNameFormOpen(false)
+      releaseForRetry()
+    } finally {
+      nameSubmitLatch.current = false
+      setNameSubmitting(false)
+    }
+  }
+
+  function onNameKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key !== 'Enter') return
+    // Respect CJK IME composition (and Safari's unreliable final event).
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return
+    e.preventDefault()
+    void submitName()
+  }
+
   function selectOption(key: string) {
-    if (submitting) return
+    if (submitting || nameFormOpen) return
     setError(null)
     setSelectedKey(key)
   }
 
   async function handleConfirm() {
+    // While the inline name form is open the pay button is inert — the form's
+    // own "Save and continue" action drives the (single-request) continuation.
+    if (nameFormOpen) return
     // Synchronous guard — set the latch before any await.
     if (submitLatch.current) return
     submitLatch.current = true
@@ -385,12 +507,19 @@ export function CheckoutReviewClient({
     releaseForRetry(sumupJson.error)
   }
 
-  /** Acquired Hosted Checkout — authoritative for the external amount. */
-  async function goToAcquired(ref: string) {
+  /**
+   * Acquired Hosted Checkout — authoritative for the external amount. When
+   * `names` is supplied (the inline form submission) they ride along on the
+   * SAME request that saves the name and returns the payment redirect, so the
+   * correction flow costs exactly one request.
+   */
+  async function goToAcquired(ref: string, names?: { firstName: string; lastName: string }) {
     const acquiredRes = await fetch('/api/payments/acquired/create-checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ref }),
+      body: JSON.stringify(
+        names ? { ref, firstName: names.firstName, lastName: names.lastName } : { ref },
+      ),
     })
 
     if (acquiredRes.status === 401) {
@@ -413,10 +542,23 @@ export function CheckoutReviewClient({
       typeof checkoutUrl === 'string' &&
       checkoutUrl.length > 0
     ) {
+      // Success — leave for the hosted payment page. Ensure the form is closed.
+      setNameFormOpen(false)
       window.location.assign(checkoutUrl)
       return
     }
 
+    // Deterministic name problem: open (or keep) the inline form rather than a
+    // blind retry. `names` present means the provider rejected what we just
+    // sent, so flag the field(s).
+    if (isNameError(acquiredJson.error)) {
+      openNameForm(ref, acquiredJson.requiredFields, Boolean(names))
+      return
+    }
+
+    // Any other failure is transient. If the name was just saved it stays saved;
+    // close the form and fall back to the normal retryable error.
+    setNameFormOpen(false)
     releaseForRetry(acquiredJson.error)
   }
 
@@ -434,7 +576,7 @@ export function CheckoutReviewClient({
     <Button
       size="lg"
       onClick={handleConfirm}
-      disabled={submitting}
+      disabled={submitting || nameFormOpen}
       className="w-full rounded-xl bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] py-4 text-base font-bold text-black shadow-[0_10px_40px_rgba(255,180,0,0.4)] transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
     >
       {submitting ? (
@@ -446,6 +588,80 @@ export function CheckoutReviewClient({
         ctaLabel
       )}
     </Button>
+  )
+
+  // Inline "Confirm your name" form. Rendered in place of the pay button when
+  // the server reports the stored name is missing/invalid. Submitting continues
+  // the SAME checkout (single request) — no page reload, basket/wallet intact.
+  const nameForm = (
+    <div className="space-y-3 rounded-xl border border-purple-500/30 bg-white/5 p-4">
+      <div>
+        <p className="text-sm font-bold text-white">Confirm your name</p>
+        <p className="mt-1 text-xs text-purple-200">
+          We need the name on your card to complete secure payment.
+        </p>
+      </div>
+      <div className="grid gap-3">
+        <div className="grid gap-1.5">
+          <Label htmlFor="checkout-first-name" className="text-xs text-purple-100">
+            First name
+          </Label>
+          <Input
+            id="checkout-first-name"
+            type="text"
+            autoComplete="given-name"
+            required
+            aria-invalid={Boolean(nameFirstError)}
+            disabled={nameSubmitting}
+            value={nameFirst}
+            onChange={(e) => {
+              setNameFirst(e.target.value)
+              if (nameFirstError) setNameFirstError(null)
+            }}
+            onKeyDown={onNameKeyDown}
+            className="bg-white/10 text-white placeholder:text-purple-300"
+          />
+          {nameFirstError && <p className="text-xs text-red-300">{nameFirstError}</p>}
+        </div>
+        <div className="grid gap-1.5">
+          <Label htmlFor="checkout-last-name" className="text-xs text-purple-100">
+            Last name
+          </Label>
+          <Input
+            id="checkout-last-name"
+            type="text"
+            autoComplete="family-name"
+            required
+            aria-invalid={Boolean(nameLastError)}
+            disabled={nameSubmitting}
+            value={nameLast}
+            onChange={(e) => {
+              setNameLast(e.target.value)
+              if (nameLastError) setNameLastError(null)
+            }}
+            onKeyDown={onNameKeyDown}
+            className="bg-white/10 text-white placeholder:text-purple-300"
+          />
+          {nameLastError && <p className="text-xs text-red-300">{nameLastError}</p>}
+        </div>
+      </div>
+      <Button
+        type="button"
+        size="lg"
+        onClick={() => void submitName()}
+        disabled={nameSubmitting}
+        className="w-full rounded-xl bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] py-4 text-base font-bold text-black shadow-[0_10px_40px_rgba(255,180,0,0.4)] transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {nameSubmitting ? (
+          <span className="flex items-center justify-center gap-2">
+            <Spinner className="h-5 w-5" />
+            Saving…
+          </span>
+        ) : (
+          'Save and continue'
+        )}
+      </Button>
+    </div>
   )
 
   const trustRow = (
@@ -780,13 +996,14 @@ export function CheckoutReviewClient({
               className="flex items-start gap-2 rounded-xl bg-red-500/15 p-3 text-sm text-red-200"
             >
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-              <span>{error}</span>
+              <p>{error}</p>
             </div>
           )}
 
-          {/* Desktop / inline CTA */}
+          {/* Desktop / inline CTA — swap the pay button for the name form when
+              the server needs the customer's name. */}
           <div className="hidden space-y-3 lg:block">
-            {primaryButton}
+            {nameFormOpen ? nameForm : primaryButton}
             {trustRow}
           </div>
 
@@ -804,7 +1021,7 @@ export function CheckoutReviewClient({
         style={{ bottom: 'calc(5rem + 2rem + env(safe-area-inset-bottom))' }}
       >
         <div className="mx-auto max-w-5xl space-y-2 rounded-2xl border border-purple-500/30 bg-[#0e0618]/95 p-3 shadow-[0_-4px_30px_rgba(0,0,0,0.5)] backdrop-blur">
-          {primaryButton}
+          {nameFormOpen ? nameForm : primaryButton}
           {trustRow}
         </div>
       </div>

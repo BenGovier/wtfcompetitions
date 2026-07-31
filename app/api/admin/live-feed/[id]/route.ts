@@ -23,7 +23,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const supabase = await createClient()
-  const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin', 'ops'] })
+  const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin', 'operations_admin', 'ops'] })
   if (!user) {
     return NextResponse.json(
       { ok: false, error: authError },
