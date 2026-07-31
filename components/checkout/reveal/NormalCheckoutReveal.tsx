@@ -548,7 +548,7 @@ function MachineActions({
 
       {!won && (
         <p className="text-center text-xs font-medium text-zinc-400">
-          Every new ticket is another instant-win chance.
+          Add more tickets for more chances in the main draw.
         </p>
       )}
 

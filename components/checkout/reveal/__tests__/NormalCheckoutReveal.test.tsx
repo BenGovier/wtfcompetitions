@@ -67,7 +67,7 @@ describe('NormalCheckoutReveal — no-win, single ticket', () => {
   it('shows the "Try Again" primary CTA and supporting text (not "Buy More")', () => {
     expect(html).toContain('Try Again')
     expect(html).not.toContain('Buy More')
-    expect(html).toContain('Every new ticket is another instant-win chance.')
+    expect(html).toContain('Add more tickets for more chances in the main draw.')
   })
 
   it('keeps Buy More href pointing at the campaign slug', () => {
@@ -130,7 +130,7 @@ describe('NormalCheckoutReveal — win result', () => {
 
   it('retains the "Buy More" label and supporting text is absent', () => {
     expect(html).toContain('Buy More')
-    expect(html).not.toContain('Every new ticket is another instant-win chance.')
+    expect(html).not.toContain('Add more tickets for more chances in the main draw.')
   })
 
   it('keeps both destinations unchanged', () => {
