@@ -23,7 +23,7 @@
 
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import Link from 'next/link'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, TicketCheck } from 'lucide-react'
 
 type Prize = {
   award_id?: string | null
@@ -127,10 +127,13 @@ export function NormalCheckoutReveal({ award }: { award: NormalRevealAward }) {
             </span>
           </>
         ) : (
-          <div data-reveal="result" className="reveal-result flex flex-1 flex-col gap-5 pt-2">
+          <div
+            data-reveal="result"
+            className={`reveal-result flex flex-1 flex-col pt-2 ${won ? 'gap-5' : 'gap-4'}`}
+          >
             <ResultImpactPanel won={won} prizes={prizes} qty={ticketCount} />
-            <TicketDrawer tickets={tickets} qty={ticketCount} />
-            <MachineActions campaignSlug={award.campaign_slug} />
+            <TicketDrawer tickets={tickets} qty={ticketCount} compact={!won} />
+            <MachineActions campaignSlug={award.campaign_slug} won={won} />
           </div>
         )}
       </div>
@@ -404,25 +407,36 @@ function ResultImpactPanel({ won, prizes, qty }: { won: boolean; prizes: Prize[]
     )
   }
 
-  // No-win — still dominant, premium, never grey/dead.
+  // No-win — reassuring, premium, never grey/dead. Reduced red glow, a calm
+  // gold "entry active" mark, and restrained supporting copy that keeps the
+  // customer's tickets front-of-mind for the main draw.
+  const single = qty === 1
   return (
     <div className="relative flex flex-col items-center gap-4 text-center">
-      <div className="pointer-events-none absolute -top-6 left-1/2 h-44 w-72 -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgba(239,38,38,0.35),transparent_70%)] blur-2xl" />
+      {/* Softened ambient glow (gold-led, faint red) — no aggressive flare. */}
+      <div className="pointer-events-none absolute -top-4 left-1/2 h-40 w-64 -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgba(245,158,11,0.18),rgba(239,68,68,0.08)_55%,transparent_75%)] blur-2xl" />
 
-      <div className="relative flex flex-col items-center gap-3">
-        <h1 className="reveal-headline text-4xl font-black uppercase leading-none tracking-tight text-white drop-shadow-[0_0_26px_rgba(239,68,68,0.7)] sm:text-5xl">
-          No Instant Win
+      {/* Ticket/check mark: signals the main-draw entry is still active. */}
+      <div className="relative flex size-16 items-center justify-center rounded-full border border-amber-400/40 bg-gradient-to-b from-zinc-900/80 to-black shadow-[0_0_20px_rgba(245,158,11,0.18)]">
+        <TicketCheck className="size-8 text-amber-300" aria-hidden="true" />
+      </div>
+
+      <div className="relative flex flex-col items-center gap-2">
+        <h1 className="reveal-headline text-3xl font-black uppercase leading-none tracking-tight text-white drop-shadow-[0_0_18px_rgba(245,158,11,0.35)] sm:text-4xl">
+          Not This Time
         </h1>
-        <p className="max-w-[20rem] text-base font-semibold text-zinc-200 text-balance">
-          Your tickets are still entered for the main draw.
+        <p className="max-w-[20rem] text-base font-medium leading-relaxed text-zinc-300 text-balance">
+          {single
+            ? 'Your ticket didn’t reveal an instant prize, but it is still entered in the main draw.'
+            : 'Your tickets didn’t reveal an instant prize, but they are still entered in the main draw.'}
         </p>
       </div>
 
-      <div className="mt-1 inline-flex items-center gap-2 rounded-xl border border-amber-400/40 bg-gradient-to-b from-zinc-900/80 to-black px-5 py-3 shadow-[0_0_24px_rgba(245,158,11,0.2)]">
-        <span className="text-sm font-bold text-amber-300">
-          {qty} {qty === 1 ? 'ticket entered' : 'tickets entered'}
-        </span>
-      </div>
+      {/* Restrained gold status chip (no oversized glowing badge). */}
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs font-semibold text-amber-200">
+        <span className="size-1.5 rounded-full bg-amber-300" aria-hidden="true" />
+        {single ? '1 ticket still active' : `${qty} tickets still active`}
+      </span>
     </div>
   )
 }
@@ -431,17 +445,57 @@ function ResultImpactPanel({ won, prizes, qty }: { won: boolean; prizes: Prize[]
 // Ticket drawer: individual numbers, collapsed by default for large orders
 // ---------------------------------------------------------------------------
 
-function TicketDrawer({ tickets, qty }: { tickets: number[]; qty: number }) {
+function TicketDrawer({
+  tickets,
+  qty,
+  compact = false,
+}: {
+  tickets: number[]
+  qty: number
+  compact?: boolean
+}) {
   const [expanded, setExpanded] = useState(false)
   if (tickets.length === 0) return null
+
+  const single = tickets.length === 1
+  // Singular "Your ticket" is only used in the compact no-win layout. The winner
+  // (non-compact) variant keeps its original "Your tickets (N)" heading.
+  const heading = compact && single ? 'Your ticket' : `Your tickets (${qty})`
+
+  // Compact single-ticket no-win layout: one pill + a small "Main draw entry"
+  // status label, on a single row, with reduced padding. Multi-ticket keeps the
+  // full number grid (and its preview/collapse behaviour) regardless of compact.
+  if (compact && single) {
+    return (
+      <div className="flex w-full items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 backdrop-blur-sm">
+        <div className="flex flex-col gap-0.5 text-left">
+          <p className="text-xs font-bold uppercase tracking-[0.15em] text-amber-400/90">
+            {heading}
+          </p>
+          <p className="text-xs font-medium text-zinc-400">Main draw entry</p>
+        </div>
+        <span className="inline-flex min-w-[54px] items-center justify-center rounded-lg border border-amber-400/25 bg-black/50 px-2.5 py-1.5 font-mono text-sm font-bold text-amber-100">
+          #{tickets[0]}
+        </span>
+      </div>
+    )
+  }
 
   const needsDrawer = tickets.length > TICKET_PREVIEW_COUNT
   const visible = expanded ? tickets : tickets.slice(0, TICKET_PREVIEW_COUNT)
 
   return (
-    <div className="w-full rounded-2xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur-sm">
-      <p className="mb-3 text-xs font-bold uppercase tracking-[0.15em] text-amber-400/90">
-        Your tickets ({qty})
+    <div
+      className={`w-full rounded-2xl border border-white/10 bg-white/[0.04] backdrop-blur-sm ${
+        compact ? 'p-3' : 'p-4'
+      }`}
+    >
+      <p
+        className={`text-xs font-bold uppercase tracking-[0.15em] text-amber-400/90 ${
+          compact ? 'mb-2' : 'mb-3'
+        }`}
+      >
+        {heading}
       </p>
       <div className="flex flex-wrap gap-2">
         {visible.map((n) => (
@@ -473,20 +527,38 @@ function TicketDrawer({ tickets, qty }: { tickets: number[]; qty: number }) {
 // Actions: exactly Buy More + My Account
 // ---------------------------------------------------------------------------
 
-function MachineActions({ campaignSlug }: { campaignSlug?: string | null }) {
+function MachineActions({
+  campaignSlug,
+  won,
+}: {
+  campaignSlug?: string | null
+  won: boolean
+}) {
+  // href logic is unchanged (campaign slug preserved, /giveaways fallback).
   const buyMoreHref = campaignSlug ? `/giveaways/${campaignSlug}` : '/giveaways'
 
   return (
-    <div className="flex w-full flex-col gap-3 pt-2">
+    <div className={`flex w-full flex-col ${won ? 'gap-3 pt-2' : 'gap-2 pt-1'}`}>
       <Link
         href={buyMoreHref}
-        className="flex h-14 w-full items-center justify-center rounded-xl bg-gradient-to-r from-amber-400 via-orange-500 to-red-600 text-base font-black uppercase tracking-wide text-black shadow-[0_0_28px_rgba(245,158,11,0.4)] transition-transform active:scale-[0.98]"
+        className="flex h-14 min-h-[44px] w-full items-center justify-center rounded-xl bg-gradient-to-r from-amber-400 via-orange-500 to-red-600 text-base font-black uppercase tracking-wide text-black shadow-[0_0_28px_rgba(245,158,11,0.4)] transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 focus-visible:ring-offset-2 focus-visible:ring-offset-black active:scale-[0.98]"
       >
-        Buy More
+        {won ? 'Buy More' : 'Try Again'}
       </Link>
+
+      {!won && (
+        <p className="text-center text-xs font-medium text-zinc-400">
+          Every new ticket is another instant-win chance.
+        </p>
+      )}
+
       <Link
         href="/me"
-        className="flex h-14 w-full items-center justify-center rounded-xl border border-amber-400/40 bg-white/[0.05] text-base font-bold text-white backdrop-blur-sm transition-colors hover:bg-white/10 active:scale-[0.98]"
+        className={
+          won
+            ? 'flex h-14 min-h-[44px] w-full items-center justify-center rounded-xl border border-amber-400/40 bg-white/[0.05] text-base font-bold text-white backdrop-blur-sm transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 focus-visible:ring-offset-2 focus-visible:ring-offset-black active:scale-[0.98]'
+            : 'flex h-11 min-h-[44px] w-full items-center justify-center rounded-xl border border-white/10 text-sm font-semibold text-zinc-300 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 focus-visible:ring-offset-2 focus-visible:ring-offset-black active:scale-[0.98]'
+        }
       >
         My Account
       </Link>
