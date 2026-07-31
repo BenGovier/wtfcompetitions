@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { Radio, Wallet } from "lucide-react"
+import { Radio, Wallet, Users } from "lucide-react"
 import { canAccessRoute, type AdminRole } from "@/lib/admin/permissions"
 
 const navItems = [
@@ -16,7 +16,7 @@ const navItems = [
   { href: "/admin/payouts", label: "Payouts" },
   { href: "/admin/reports", label: "Reports" },
   { href: "/admin/audit-logs", label: "Audit Logs" },
-  { href: "/admin/hosts", label: "Hosts" },
+  { href: "/admin/hosts", label: "Team Access" },
 ]
 
 function isRouteActive(pathname: string, href: string): boolean {
@@ -64,6 +64,9 @@ export function AdminNavLinks({
             )}
             {item.href === "/admin/wallets" && (
               <Wallet className="mr-2 inline-block h-4 w-4" />
+            )}
+            {item.href === "/admin/hosts" && (
+              <Users className="mr-2 inline-block h-4 w-4" />
             )}
             {item.label}
           </Link>
