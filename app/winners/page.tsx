@@ -30,8 +30,12 @@ export default async function WinnersPage() {
   let usingMock = false
   let liveGiveaway: LiveGiveaway | null = null
 
-  // Initial bounded fetch: featured winners + one grid page (+1 peek row).
-  const initialLimit = FEATURED_COUNT + GRID_PAGE_SIZE
+  // Initial bounded fetch: show up to 50 latest eligible winners on first load
+  // (featured winners + the remaining grid), capped at the database-query level
+  // via `.limit()` below. "Load more" continues to page in bounded GRID_PAGE_SIZE
+  // chunks beyond these 50. Never fetches more than this from the database.
+  const INITIAL_WINNERS = 50
+  const initialLimit = INITIAL_WINNERS
 
   try {
     const supabase = await createClient()
