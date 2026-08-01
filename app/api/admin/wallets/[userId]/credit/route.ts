@@ -52,9 +52,11 @@ function safeNonNegInt(value: unknown): number | null {
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ userId: string }> }) {
-  // Admin-only. Hosts (ops) and read_only are rejected.
+  // Super Admins and Operations Admins. Hosts (ops) and read_only are rejected.
+  // Sensitive write: this explicit per-handler check runs before the
+  // service-role client is created below.
   const supabase = await createClient()
-  const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin'] })
+  const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin', 'operations_admin'] })
   if (!user) {
     return NextResponse.json(
       { ok: false, error: authError },

@@ -1,27 +1,27 @@
 import { requireAdmin } from "@/lib/admin/auth"
-import { listHosts } from "./actions"
-import { HostsManager } from "@/components/admin/hosts/HostsManager"
+import { listTeamMembers } from "./actions"
+import { TeamAccessManager } from "@/components/admin/team-access/TeamAccessManager"
 
-export default async function HostsPage() {
-  // Full-admin-only page.
-  await requireAdmin({ roles: ['admin'] })
+export default async function TeamAccessPage() {
+  // Super-Admin-only page.
+  const { user } = await requireAdmin({ roles: ['admin'] })
 
-  const result = await listHosts()
+  const result = await listTeamMembers()
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-3xl font-bold tracking-tight">Hosts</h2>
+        <h2 className="text-3xl font-bold tracking-tight">Team Access</h2>
         <p className="text-muted-foreground">
-          Manage Host accounts. Hosts can only access the Live Feed.
+          Manage Super Admins, Operations Admins and Hosts.
         </p>
       </div>
 
       {result.ok ? (
-        <HostsManager initialHosts={result.hosts ?? []} />
+        <TeamAccessManager initialMembers={result.members ?? []} currentUserId={user.id} />
       ) : (
         <div className="rounded-md border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
-          {result.error ?? 'Failed to load hosts.'}
+          {result.error ?? 'Failed to load team members.'}
         </div>
       )}
     </div>

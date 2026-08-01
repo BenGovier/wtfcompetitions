@@ -14,7 +14,7 @@ const NO_STORE = { headers: { 'Cache-Control': 'private, no-cache, no-store' } }
  */
 export async function GET() {
   const supabase = await createClient()
-  const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin', 'ops'] })
+  const { user, error: authError } = await authorizeAdminApi(supabase, { roles: ['admin', 'operations_admin', 'ops'] })
   if (!user) {
     return NextResponse.json(
       { ok: false, error: authError },
