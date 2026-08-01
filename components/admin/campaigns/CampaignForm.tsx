@@ -753,6 +753,7 @@ export function CampaignForm({ campaign, isNew, justDuplicated = false }: Campai
               <SelectContent>
                 <SelectItem value="normal">Normal</SelectItem>
                 <SelectItem value="scratch_card">Scratch Card</SelectItem>
+                <SelectItem value="treasure_chest">Treasure Chest</SelectItem>
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">

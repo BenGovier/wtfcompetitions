@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useEffect, useRef, useState, useCallback } from 'react'
+import { Component, Suspense, useEffect, useRef, useState, useCallback, type ReactNode } from 'react'
 import dynamic from 'next/dynamic'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { AlertCircle } from 'lucide-react'
 import { NormalCheckoutReveal } from '@/components/checkout/reveal/NormalCheckoutReveal'
+import { normalizeRevealType, type RevealType } from '@/lib/types/campaign'
 
 // Lazy-loaded so normal campaigns never download/parse the scratch-card
 // canvas + confetti bundle. The chunk is only fetched when a confirmed award
@@ -29,6 +30,47 @@ const ScratchCardReveal = dynamic(
   },
 )
 
+// Lazy-loaded so ONLY treasure_chest campaigns download/parse the chest
+// component + its images. The chunk is fetched only when a confirmed award
+// identifies the campaign as treasure_chest (see the reveal selector below).
+// Normal and Scratch Card customers never load any of this.
+const TreasureChestReveal = dynamic(
+  () =>
+    import('@/components/checkout/reveal/TreasureChestReveal').then(
+      (module) => module.TreasureChestReveal,
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <main className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-4 py-16 text-center">
+        <Spinner className="h-6 w-6 text-amber-400" />
+        <p className="text-sm text-muted-foreground">Preparing your treasure…</p>
+      </main>
+    ),
+  },
+)
+
+/**
+ * Isolated error boundary for optional reveal experiences. If the lazy chunk
+ * fails to load or the animation throws at runtime, we render the safe
+ * Normal-style fallback so the customer ALWAYS sees their confirmed result.
+ */
+class RevealErrorBoundary extends Component<
+  { fallback: ReactNode; children: ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false }
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+  componentDidCatch(error: unknown) {
+    console.log('[v0] reveal chunk failed, using safe fallback:', error)
+  }
+  render() {
+    return this.state.hasError ? this.props.fallback : this.props.children
+  }
+}
+
 type Prize = {
   award_id?: string | null
   title: string
@@ -47,15 +89,7 @@ type AwardPayload = {
   ticket_start?: number | null
   ticket_end?: number | null
   campaign_slug?: string | null
-  reveal_type?: 'normal' | 'scratch_card' | null
-}
-
-/**
- * Presentation-only selector. Any null/missing/unknown value falls back to
- * 'normal' so existing campaigns behave exactly as before.
- */
-function normalizeRevealType(value: unknown): 'normal' | 'scratch_card' {
-  return value === 'scratch_card' ? 'scratch_card' : 'normal'
+  reveal_type?: RevealType | null
 }
 
 type PageState =
@@ -205,15 +239,25 @@ function CheckoutSuccessClient() {
     confirm()
   }
 
-  // The normal reveal (WTF Result Reactor) is a full-screen experience, so it
-  // renders OUTSIDE the centered white card. The scratch-card path and all
-  // other states remain inside the card exactly as before. The reveal_type
-  // branch is unchanged — scratch_card still renders ScratchCardReveal.
-  if (
-    state.kind === 'confirmed' &&
-    normalizeRevealType(state.award.reveal_type) !== 'scratch_card'
-  ) {
-    return <NormalCheckoutReveal award={state.award} />
+  // Presentation-only reveal routing. The result in `state.award` is ALREADY
+  // final at this point (confirmPaymentAndAward has run server-side); these
+  // branches only choose how it is displayed.
+  //   - treasure_chest → full-screen TreasureChestReveal (lazy chunk), wrapped
+  //     in an error boundary that falls back to the normal reveal.
+  //   - normal (and any unknown/null value) → full-screen NormalCheckoutReveal.
+  //   - scratch_card → falls through to the card layout below (unchanged).
+  if (state.kind === 'confirmed') {
+    const revealType = normalizeRevealType(state.award.reveal_type)
+    if (revealType === 'treasure_chest') {
+      return (
+        <RevealErrorBoundary fallback={<NormalCheckoutReveal award={state.award} />}>
+          <TreasureChestReveal award={state.award} />
+        </RevealErrorBoundary>
+      )
+    }
+    if (revealType !== 'scratch_card') {
+      return <NormalCheckoutReveal award={state.award} />
+    }
   }
 
   return (

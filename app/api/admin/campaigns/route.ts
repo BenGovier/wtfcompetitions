@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { authorizeAdminApi } from '@/lib/admin/auth'
+import { normalizeRevealType } from '@/lib/types/campaign'
 
 function toDbRow(body: Record<string, any>) {
   return {
@@ -21,9 +22,10 @@ function toDbRow(body: Record<string, any>) {
     max_tickets_per_user: body.maxTicketsPerUser ?? null,
     bundles: body.bundles ?? null,
     presentation_type: body.presentation_type ?? body.presentationType ?? null,
-    // Presentation-only: only 'scratch_card' is accepted, everything else → 'normal'.
-    reveal_type:
-      (body.reveal_type ?? body.revealType) === 'scratch_card' ? 'scratch_card' : 'normal',
+    // Presentation-only. Explicit allow-list ('normal' | 'scratch_card' |
+    // 'treasure_chest'); any missing/null/invalid value safely → 'normal'.
+    // Applies to both create (insert) and update paths via this shared mapper.
+    reveal_type: normalizeRevealType(body.reveal_type ?? body.revealType),
     is_free_entry: body.is_free_entry ?? body.isFreeEntry ?? false,
     free_entry_limit_per_user: body.free_entry_limit_per_user ?? body.freeEntryLimitPerUser ?? 1,
   }

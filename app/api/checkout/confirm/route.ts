@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { confirmPaymentAndAward } from '@/lib/payments/confirmPaymentAndAward'
 import type { AwardPayload } from '@/lib/payments/confirmPaymentAndAward'
+import { normalizeRevealType, type RevealType } from '@/lib/types/campaign'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -389,7 +390,7 @@ export async function POST(request: Request) {
     // Uses service client to avoid auth issues, single indexed query
     let campaignSlug: string | null = null
     // Presentation-only: how the customer reveals their (already-decided) result.
-    let campaignRevealType: 'normal' | 'scratch_card' = 'normal'
+    let campaignRevealType: RevealType = 'normal'
     let intentForEmail: { id: string; user_id: string; campaign_id: string; qty: number } | null = null
     const svc = getServiceSupabase()
     try {
@@ -409,8 +410,10 @@ export async function POST(request: Request) {
           .single()
 
         campaignSlug = campaignData?.slug ?? null
-        campaignRevealType =
-          campaignData?.reveal_type === 'scratch_card' ? 'scratch_card' : 'normal'
+        // Explicit allow-list; unknown/null → 'normal'. This runs AFTER the
+        // award is fully determined and is attached to the response only for
+        // presentation — it never feeds allocation or win logic.
+        campaignRevealType = normalizeRevealType(campaignData?.reveal_type)
       }
     } catch {
       // Non-fatal - button just won't render
