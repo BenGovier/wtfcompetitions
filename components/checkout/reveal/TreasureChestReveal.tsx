@@ -14,13 +14,17 @@ import Image from "next/image"
  * NEVER mutates the award. The chest opening is pure theatre over an
  * already-final result.
  *
+ * VISUALS: two pre-rendered cinematic scenes (closed chest / open chest, shot
+ * with the chest in the SAME position) cross-fade so it reads as the chest
+ * bursting open. Both are opaque scenes — no transparency required.
+ *
  * PERFORMANCE / ISOLATION:
  *  - Rendered only for reveal_type === 'treasure_chest', and only ever imported
  *    lazily (next/dynamic, ssr:false) from the success page, so it adds ZERO
  *    bytes to the Normal and Scratch Card reveals.
  *  - Every animation uses transform / opacity ONLY (GPU compositable). Nothing
- *    animates width/height/top/left/box-shadow/filter. No canvas, no WebGL, no
- *    physics, no video, no Lottie, no third-party animation library.
+ *    animates layout (width/height/top/left). No canvas, WebGL, physics, video,
+ *    Lottie or third-party animation library.
  *  - Fully honours prefers-reduced-motion: no camera move, no shake, opens
  *    instantly, keeps the premium look.
  *  - Assets degrade gracefully (onError) and the whole component is wrapped in a
@@ -54,13 +58,13 @@ type Phase = "idle" | "charging" | "bursting" | "revealed"
 type TierKey = "jackpot" | "emerald" | "sapphire" | "credit"
 
 // Cosmetic timeline after the customer taps (ms from tap):
-//   0            tap → charging (chest shakes, energy builds)
-//   CHARGE_MS    → bursting (lock bursts, flash, lid opens, coins erupt)
+//   0            tap → charging (scene pushes in, energy builds)
+//   CHARGE_MS    → bursting (flash, cross-fade to open scene, coins erupt)
 //   REVEAL_MS    → revealed (reward plaque rises, celebration)
 //   CTA_MS       → the Continue button fades in (never before the reveal ends)
-const CHARGE_MS = 1000
-const REVEAL_MS = 1550
-const CTA_MS = 2750
+const CHARGE_MS = 900
+const REVEAL_MS = 1500
+const CTA_MS = 2650
 
 function usePrefersReducedMotion() {
   const [reduced] = useState(() => {
@@ -97,19 +101,26 @@ function seeded(count: number, salt: number) {
   })
 }
 
+const CONFETTI_COLORS = ["#ffd76a", "#ffb020", "#fff1c2", "#7ad0ff", "#ff8fae", "#8effc1"]
+
 export function TreasureChestReveal({ award }: { award: RevealAward }) {
   const reducedMotion = usePrefersReducedMotion()
   const [phase, setPhase] = useState<Phase>("idle")
   const [ctaVisible, setCtaVisible] = useState(false)
-  const [chestBroken, setChestBroken] = useState(false)
-  const [bgBroken, setBgBroken] = useState(false)
+  const [sceneBroken, setSceneBroken] = useState(false)
+  // Purely decorative seeded particles (dust) render with random-ish inline
+  // positions. Gate them behind mount so they never take part in SSR
+  // hydration — this avoids a server/client float-formatting mismatch while
+  // keeping the ambient effect (it simply fades in just after hydration).
+  const [mounted, setMounted] = useState(false)
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([])
+
+  useEffect(() => setMounted(true), [])
 
   const prizes = award.prizes ?? (award.prize ? [award.prize] : [])
   const isWin = award.won && prizes.length > 0
   const primaryPrize = prizes[0] ?? null
   const tier = useMemo(() => getPrizeTier(primaryPrize), [primaryPrize])
-  const showConfetti = phase === "revealed" && isWin && tier.confetti && !reducedMotion
   const headingId = "treasure-reveal-heading"
 
   useEffect(() => {
@@ -159,20 +170,13 @@ export function TreasureChestReveal({ award }: { award: RevealAward }) {
 
   const chestOpen = phase === "bursting" || phase === "revealed"
   const revealed = phase === "revealed"
-  const cameraClass =
-    phase === "idle"
-      ? "tcr-cam-idle"
-      : phase === "charging"
-        ? "tcr-cam-charge"
-        : phase === "bursting"
-          ? "tcr-cam-burst"
-          : "tcr-cam-reveal"
 
-  const dust = useMemo(() => seeded(14, 1), [])
-  const coins = useMemo(() => seeded(16, 2), [])
-  const sparks = useMemo(() => seeded(12, 3), [])
-  const embers = useMemo(() => seeded(10, 4), [])
-  const confetti = useMemo(() => seeded(30, 5), [])
+  const dust = useMemo(() => seeded(16, 1), [])
+  const coins = useMemo(() => seeded(18, 2), [])
+  const sparks = useMemo(() => seeded(14, 3), [])
+  const confetti = useMemo(() => seeded(34, 5), [])
+
+  const showConfetti = revealed && isWin && tier.confetti && !reducedMotion
 
   return (
     <main
@@ -180,52 +184,14 @@ export function TreasureChestReveal({ award }: { award: RevealAward }) {
       // Neutral gold until revealed so the aura colour never hints the outcome
       // before the customer opens the chest.
       data-tier={revealed ? tier.key : "idle"}
-      className="tcr-root relative flex min-h-[100dvh] w-full flex-col items-center justify-between overflow-hidden px-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-[calc(1.25rem+env(safe-area-inset-top))]"
+      data-phase={phase}
+      className="tcr-root relative flex min-h-[100dvh] w-full flex-col items-center justify-between overflow-hidden px-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-[calc(1rem+env(safe-area-inset-top))]"
     >
       <style>{treasureRevealCss}</style>
 
-      {/* ---- Cinematic environment (behind everything) ---- */}
-      <div aria-hidden="true" className="tcr-env pointer-events-none absolute inset-0 z-0 overflow-hidden">
-        {!bgBroken && (
-          <Image
-            src="/reveal/treasure-cavern-bg.png"
-            alt=""
-            fill
-            priority
-            sizes="100vw"
-            className="tcr-bg object-cover"
-            onError={() => setBgBroken(true)}
-          />
-        )}
-        {/* God-ray fan (opacity + slow rotate only) */}
-        <div className="tcr-rays" />
-        {/* Drifting fog layers */}
-        <div className="tcr-fog tcr-fog-a" />
-        <div className="tcr-fog tcr-fog-b" />
-        {/* Floating dust motes */}
-        {!reducedMotion &&
-          dust.map((r, i) => (
-            <span
-              key={`dust-${i}`}
-              className="tcr-dust"
-              style={
-                {
-                  left: `${6 + r * 88}%`,
-                  bottom: `${(dust[(i + 5) % dust.length] ?? 0.5) * 70}%`,
-                  "--d": `${(r * 6).toFixed(2)}s`,
-                  "--dur": `${(7 + r * 6).toFixed(2)}s`,
-                  "--sc": (0.5 + r).toFixed(2),
-                } as CSSProperties
-              }
-            />
-          ))}
-        {/* Vignette + warm floor glow (static) */}
-        <div className="tcr-vignette" />
-      </div>
-
       {/* Confetti (large wins only) — CSS particles, transform/opacity only */}
       {showConfetti && (
-        <div aria-hidden="true" className="tcr-confetti pointer-events-none fixed inset-0 z-40">
+        <div aria-hidden="true" className="tcr-confetti pointer-events-none fixed inset-0 z-50">
           {confetti.map((r, i) => (
             <span
               key={`cf-${i}`}
@@ -246,8 +212,8 @@ export function TreasureChestReveal({ award }: { award: RevealAward }) {
       )}
 
       {/* ---- Header ---- */}
-      <header className="relative z-20 flex flex-shrink-0 flex-col items-center pt-2 text-center">
-        <span className="tcr-eyebrow inline-flex items-center gap-2 rounded-full border border-amber-300/30 bg-black/30 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-200 backdrop-blur-sm">
+      <header className="relative z-20 flex flex-shrink-0 flex-col items-center text-center">
+        <span className="tcr-eyebrow inline-flex items-center gap-2 rounded-full border border-amber-300/30 bg-black/40 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-200 backdrop-blur-sm">
           <span className="size-1.5 rounded-full bg-emerald-400" />
           Tickets confirmed
         </span>
@@ -266,127 +232,122 @@ export function TreasureChestReveal({ award }: { award: RevealAward }) {
         </p>
       </header>
 
-      {/* ---- Chest stage (the camera) ---- */}
-      <div className="relative z-10 flex w-full flex-1 items-center justify-center">
-        <div className={`tcr-cam relative flex items-center justify-center ${cameraClass}`}>
-          {/* Aura pad behind the chest */}
-          <div aria-hidden="true" className={`tcr-aura ${chestOpen ? "tcr-aura-on" : ""}`} />
-
-          {/* Light burst rays that erupt on open */}
-          {chestOpen && <div aria-hidden="true" className="tcr-burst-rays" />}
-
-          <button
-            type="button"
-            onClick={handleOpen}
-            disabled={phase !== "idle"}
-            aria-label={revealed ? "Treasure chest opened" : "Tap to open your treasure chest"}
-            className="tcr-chest-btn relative flex items-center justify-center rounded-[2rem] outline-none focus-visible:ring-4 focus-visible:ring-amber-300/60 disabled:cursor-default"
-          >
-            <div
-              className={`tcr-chest relative ${phase === "idle" ? "tcr-chest-idle" : ""} ${
-                phase === "charging" ? "tcr-chest-shake" : ""
-              } ${phase === "bursting" ? "tcr-chest-pop" : ""}`}
-            >
-              {chestBroken ? (
-                // Graceful CSS fallback chest if the artwork fails to load.
-                <div className="tcr-chest-fallback" aria-hidden="true">
-                  <span className="tcr-chest-fallback-lid" />
-                  <span className="tcr-chest-fallback-lock" />
-                </div>
-              ) : (
-                <>
-                  <Image
-                    src="/reveal/treasure-chest-closed.png"
-                    alt=""
-                    aria-hidden="true"
-                    width={340}
-                    height={340}
-                    priority
-                    className={`tcr-chest-img ${chestOpen ? "tcr-fade-out" : ""}`}
-                    onError={() => setChestBroken(true)}
-                  />
-                  <Image
-                    src="/reveal/treasure-chest-open.png"
-                    alt="Open treasure chest overflowing with gold"
-                    width={340}
-                    height={340}
-                    className={`tcr-chest-img tcr-chest-img-open ${chestOpen ? "tcr-fade-in" : ""}`}
-                  />
-                </>
-              )}
-
-              {/* Lock glow — pulses idle, flares on charge, explodes on burst */}
-              <span
-                aria-hidden="true"
-                className={`tcr-lock ${phase === "charging" ? "tcr-lock-charge" : ""} ${
-                  phase === "bursting" ? "tcr-lock-burst" : ""
-                }`}
-              />
-
-              {/* White flash that masks the closed→open swap */}
-              {phase === "bursting" && <span aria-hidden="true" className="tcr-flash" />}
-
-              {/* Coins + sparks erupting from the chest mouth */}
-              {chestOpen && !reducedMotion && (
-                <div aria-hidden="true" className="tcr-particles">
-                  {coins.map((r, i) => (
-                    <span
-                      key={`coin-${i}`}
-                      className="tcr-coin"
-                      style={
-                        {
-                          "--tx": `${(r * 260 - 130).toFixed(0)}px`,
-                          "--ty": `${(-90 - r * 150).toFixed(0)}px`,
-                          "--r": `${(r * 720 - 360).toFixed(0)}deg`,
-                          "--d": `${(r * 0.18).toFixed(2)}s`,
-                        } as CSSProperties
-                      }
-                    />
-                  ))}
-                  {sparks.map((r, i) => (
-                    <span
-                      key={`spark-${i}`}
-                      className="tcr-spark"
-                      style={
-                        {
-                          "--tx": `${(r * 300 - 150).toFixed(0)}px`,
-                          "--ty": `${(-70 - r * 170).toFixed(0)}px`,
-                          "--d": `${(r * 0.2).toFixed(2)}s`,
-                        } as CSSProperties
-                      }
-                    />
-                  ))}
-                </div>
-              )}
-
-              {/* Gentle falling embers during the celebration */}
-              {revealed && !reducedMotion && (
-                <div aria-hidden="true" className="tcr-embers">
-                  {embers.map((r, i) => (
-                    <span
-                      key={`ember-${i}`}
-                      className="tcr-ember"
-                      style={
-                        {
-                          left: `${(r * 100).toFixed(1)}%`,
-                          "--d": `${(r * 2.2).toFixed(2)}s`,
-                          "--dur": `${(2.6 + r * 2).toFixed(2)}s`,
-                        } as CSSProperties
-                      }
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Tap hint (idle only) */}
-            {phase === "idle" && (
-              <span className="tcr-hint pointer-events-none absolute -bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-black/50 px-4 py-1.5 text-[11px] font-bold uppercase tracking-[0.25em] text-amber-100 backdrop-blur-sm">
-                Tap to open
-              </span>
+      {/* ---- Chest stage ---- */}
+      <div className="relative z-10 flex w-full flex-1 items-center justify-center py-4">
+        <button
+          type="button"
+          onClick={handleOpen}
+          disabled={phase !== "idle"}
+          aria-label={revealed ? "Treasure chest opened" : "Tap to open your treasure chest"}
+          className="tcr-stage-btn group relative block w-full max-w-[420px] outline-none disabled:cursor-default"
+        >
+          <div className="tcr-stage relative mx-auto aspect-[4/5] w-full overflow-hidden rounded-[1.75rem]">
+            {sceneBroken ? (
+              // Graceful CSS fallback if the artwork fails to load.
+              <div className="tcr-scene-fallback absolute inset-0" aria-hidden="true">
+                <span className="tcr-fallback-chest" />
+              </div>
+            ) : (
+              <>
+                {/* Closed scene (idle) */}
+                <Image
+                  src="/reveal/treasure-scene-closed.png"
+                  alt=""
+                  aria-hidden="true"
+                  fill
+                  priority
+                  sizes="(max-width: 480px) 92vw, 420px"
+                  className={`tcr-scene object-cover ${chestOpen ? "tcr-scene-hidden" : "tcr-scene-visible"}`}
+                  onError={() => setSceneBroken(true)}
+                />
+                {/* Open scene (revealed) */}
+                <Image
+                  src="/reveal/treasure-scene-open.png"
+                  alt="Open treasure chest overflowing with gold"
+                  fill
+                  sizes="(max-width: 480px) 92vw, 420px"
+                  className={`tcr-scene object-cover ${chestOpen ? "tcr-scene-visible" : "tcr-scene-hidden"}`}
+                />
+              </>
             )}
-          </button>
-        </div>
+
+            {/* Inner camera push toward the chest while charging/open */}
+            <div className="tcr-cam absolute inset-0" data-phase={phase} />
+
+            {/* Glow pulsing over the chest lock (idle + charge) */}
+            {!chestOpen && <span aria-hidden="true" className="tcr-lockglow" />}
+
+            {/* Light rays bursting upward on open */}
+            {chestOpen && <span aria-hidden="true" className="tcr-burst-rays" />}
+
+            {/* White flash masking the closed→open swap */}
+            {phase === "bursting" && <span aria-hidden="true" className="tcr-flash" />}
+
+            {/* Coins + sparks erupting from the chest mouth */}
+            {chestOpen && !reducedMotion && (
+              <div aria-hidden="true" className="tcr-particles">
+                {coins.map((r, i) => (
+                  <span
+                    key={`coin-${i}`}
+                    className="tcr-coin"
+                    style={
+                      {
+                        "--tx": `${(r * 300 - 150).toFixed(0)}px`,
+                        "--ty": `${(-120 - r * 170).toFixed(0)}px`,
+                        "--r": `${(r * 720 - 360).toFixed(0)}deg`,
+                        "--d": `${(r * 0.2).toFixed(2)}s`,
+                      } as CSSProperties
+                    }
+                  />
+                ))}
+                {sparks.map((r, i) => (
+                  <span
+                    key={`spark-${i}`}
+                    className="tcr-spark"
+                    style={
+                      {
+                        "--tx": `${(r * 340 - 170).toFixed(0)}px`,
+                        "--ty": `${(-90 - r * 200).toFixed(0)}px`,
+                        "--d": `${(r * 0.22).toFixed(2)}s`,
+                      } as CSSProperties
+                    }
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Floating dust motes (idle ambience) */}
+            {mounted && !reducedMotion && phase === "idle" && (
+              <div aria-hidden="true" className="tcr-dust-layer absolute inset-0">
+                {dust.map((r, i) => (
+                  <span
+                    key={`dust-${i}`}
+                    className="tcr-dust"
+                    style={
+                      {
+                        left: `${6 + r * 88}%`,
+                        bottom: `${(dust[(i + 5) % dust.length] ?? 0.5) * 70}%`,
+                        "--d": `${(r * 6).toFixed(2)}s`,
+                        "--dur": `${(7 + r * 6).toFixed(2)}s`,
+                        "--sc": (0.5 + r).toFixed(2),
+                      } as CSSProperties
+                    }
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Inner ring + vignette to frame the stage */}
+            <span aria-hidden="true" className="tcr-stage-ring" />
+          </div>
+
+          {/* Tap hint (idle only) */}
+          {phase === "idle" && (
+            <span className="tcr-hint pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/55 px-4 py-1.5 text-[11px] font-bold uppercase tracking-[0.25em] text-amber-100 backdrop-blur-sm">
+              Tap to open
+            </span>
+          )}
+        </button>
       </div>
 
       {/* ---- Reward plaque + actions (only once revealed) ---- */}
@@ -415,9 +376,7 @@ export function TreasureChestReveal({ award }: { award: RevealAward }) {
                   </span>
                 ) : null}
 
-                <span className="tcr-plaque-value">
-                  {primaryPrize?.value_text || primaryPrize?.title}
-                </span>
+                <span className="tcr-plaque-value">{primaryPrize?.value_text || primaryPrize?.title}</span>
                 {primaryPrize?.value_text ? (
                   <span className="tcr-plaque-title">{primaryPrize?.title}</span>
                 ) : null}
@@ -435,9 +394,7 @@ export function TreasureChestReveal({ award }: { award: RevealAward }) {
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-semibold text-amber-50">{p.title}</span>
-                        {p.value_text ? (
-                          <span className="block text-xs text-amber-200/70">{p.value_text}</span>
-                        ) : null}
+                        {p.value_text ? <span className="block text-xs text-amber-200/70">{p.value_text}</span> : null}
                       </span>
                     </li>
                   ))}
@@ -478,7 +435,7 @@ export function TreasureChestReveal({ award }: { award: RevealAward }) {
           </Link>
           <Link
             href="/me"
-            className="mt-2 flex w-full items-center justify-center rounded-2xl border border-amber-200/25 py-3 text-center text-sm font-semibold text-amber-100/90 transition-colors hover:bg-white/5"
+            className="mt-2 flex w-full items-center justify-center rounded-2xl border border-amber-200/25 py-3 text-center text-sm font-semibold text-amber-100 transition-colors hover:bg-white/5"
             tabIndex={ctaVisible ? 0 : -1}
           >
             View my account
@@ -489,301 +446,217 @@ export function TreasureChestReveal({ award }: { award: RevealAward }) {
   )
 }
 
-const CONFETTI_COLORS = ["#FFD700", "#FFC400", "#FBBF24", "#FFE680", "#FFFFFF", "#F59E0B"]
-
-// All animations use ONLY transform / opacity (GPU compositable). Static
-// box-shadow / filter are used for depth but are never animated. Everything is
-// disabled under prefers-reduced-motion.
+/**
+ * All animation is transform/opacity only. Layout properties are never
+ * animated, so every keyframe runs on the compositor. Colours are driven by
+ * data-tier on the root and the plaque.
+ */
 const treasureRevealCss = `
 .tcr-root {
-  background: radial-gradient(circle at 50% 42%, #241a0b 0%, #120d07 55%, #08060a 100%);
-  color: #fdf6e3;
+  background:
+    radial-gradient(120% 80% at 50% 12%, rgba(60,42,16,0.65), transparent 60%),
+    radial-gradient(140% 90% at 50% 108%, rgba(120,84,26,0.5), transparent 55%),
+    linear-gradient(180deg, #120c06 0%, #0b0805 55%, #060403 100%);
+  color: #fff;
   isolation: isolate;
 }
-.tcr-bg { opacity: 0.85; }
-.tcr-env::after { content: ""; }
 
-/* God rays */
-.tcr-rays {
-  position: absolute;
-  left: 50%; top: -10%;
-  width: 140%; height: 90%;
-  transform: translateX(-50%);
-  background: conic-gradient(from 180deg at 50% 0%,
-    transparent 0deg, rgba(255,214,120,0.10) 8deg, transparent 16deg,
-    transparent 26deg, rgba(255,214,120,0.08) 34deg, transparent 42deg,
-    transparent 52deg, rgba(255,214,120,0.10) 60deg, transparent 68deg,
-    transparent 300deg);
-  mix-blend-mode: screen;
-  opacity: 0.7;
-  animation: tcr-rays-rot 26s linear infinite;
-  transform-origin: 50% 0%;
-  will-change: transform;
+/* ---------------- Stage ---------------- */
+.tcr-stage {
+  background: radial-gradient(60% 50% at 50% 60%, #1a120a, #0a0705);
+  box-shadow:
+    0 30px 80px -30px rgba(0,0,0,0.9),
+    inset 0 0 0 1px rgba(255,214,120,0.14);
+  transform: translateZ(0);
 }
-@keyframes tcr-rays-rot {
-  from { transform: translateX(-50%) rotate(-6deg); }
-  50%  { transform: translateX(-50%) rotate(6deg); }
-  to   { transform: translateX(-50%) rotate(-6deg); }
+.tcr-stage-ring {
+  position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  box-shadow: inset 0 0 60px 10px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(255,220,140,0.18);
 }
+.tcr-scene {
+  transition: opacity 620ms ease;
+  will-change: opacity;
+}
+.tcr-scene-visible { opacity: 1; }
+.tcr-scene-hidden { opacity: 0; }
 
-/* Fog */
-.tcr-fog {
-  position: absolute; inset: -20% -30%;
-  background: radial-gradient(ellipse 50% 40% at 30% 60%, rgba(255,220,150,0.10), transparent 60%),
-              radial-gradient(ellipse 45% 35% at 72% 68%, rgba(255,200,120,0.08), transparent 60%);
-  opacity: 0.8; will-change: transform;
-}
-.tcr-fog-a { animation: tcr-fog-a 22s ease-in-out infinite alternate; }
-.tcr-fog-b { animation: tcr-fog-b 28s ease-in-out infinite alternate; }
-@keyframes tcr-fog-a { from { transform: translate3d(-3%,0,0); } to { transform: translate3d(4%,-2%,0); } }
-@keyframes tcr-fog-b { from { transform: translate3d(3%,1%,0); } to { transform: translate3d(-4%,-1%,0); } }
+/* Camera push — scales the stage image group toward the chest. Applied via a
+   sibling overlay transform on the parent using scale on the images' wrapper.
+   We scale the whole stage subtly instead of layout changes. */
+.tcr-stage-btn { -webkit-tap-highlight-color: transparent; }
+.tcr-stage { transition: transform 700ms cubic-bezier(0.22,1,0.36,1); transform-origin: 50% 62%; }
+.tcr-root[data-phase="idle"] .tcr-stage { animation: tcr-breathe 6s ease-in-out infinite; }
+.tcr-root[data-phase="charging"] .tcr-stage { transform: scale(1.08); animation: tcr-shake 0.9s ease-in-out; }
+.tcr-root[data-phase="bursting"] .tcr-stage { transform: scale(1.12); }
+.tcr-root[data-phase="revealed"] .tcr-stage { transform: scale(1.05); }
+.tcr-stage-btn:not(:disabled):hover .tcr-stage { transform: scale(1.03); }
+.tcr-stage-btn:focus-visible .tcr-stage { box-shadow: 0 0 0 4px rgba(255,214,120,0.6), 0 30px 80px -30px rgba(0,0,0,0.9); }
 
-/* Dust motes */
-.tcr-dust {
-  position: absolute;
-  width: 4px; height: 4px; border-radius: 9999px;
-  background: radial-gradient(circle, rgba(255,236,180,0.9), rgba(255,210,120,0));
-  opacity: 0; transform: scale(var(--sc, 1));
-  animation: tcr-dust-rise var(--dur,9s) ease-in-out var(--d,0s) infinite;
-  will-change: transform, opacity;
+@keyframes tcr-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.03); }
 }
-@keyframes tcr-dust-rise {
-  0% { opacity: 0; transform: translateY(0) scale(var(--sc,1)); }
-  20% { opacity: 0.9; }
-  80% { opacity: 0.7; }
-  100% { opacity: 0; transform: translateY(-120px) scale(var(--sc,1)); }
-}
-
-.tcr-vignette {
-  position: absolute; inset: 0;
-  background:
-    radial-gradient(ellipse 80% 55% at 50% 78%, rgba(255,170,60,0.16), transparent 60%),
-    radial-gradient(ellipse 120% 90% at 50% 50%, transparent 45%, rgba(0,0,0,0.55) 100%);
-}
-
-/* Camera */
-.tcr-cam {
-  will-change: transform;
-  transition: transform 650ms cubic-bezier(0.2,0.7,0.2,1);
-  transform: scale(1);
-}
-.tcr-cam-idle { animation: tcr-cam-breathe 9s ease-in-out infinite alternate; }
-@keyframes tcr-cam-breathe { from { transform: scale(1); } to { transform: scale(1.03); } }
-.tcr-cam-charge { transform: scale(1.06); transition-duration: 900ms; }
-.tcr-cam-burst { transform: scale(1.10); transition-duration: 220ms; }
-.tcr-cam-reveal { transform: scale(1.04); }
-
-/* Aura behind chest */
-.tcr-aura {
-  position: absolute; width: 320px; height: 320px; border-radius: 9999px;
-  background: radial-gradient(circle, rgba(255,196,60,0.45), rgba(255,150,40,0.12) 45%, transparent 70%);
-  opacity: 0.5; transform: scale(0.9);
-  transition: opacity 400ms ease, transform 400ms ease;
-  animation: tcr-aura-pulse 4s ease-in-out infinite;
-  will-change: transform, opacity;
-}
-.tcr-aura-on { opacity: 1; transform: scale(1.15); }
-@keyframes tcr-aura-pulse { 0%,100% { opacity: 0.42; } 50% { opacity: 0.62; } }
-
-/* Burst rays that erupt on open */
-.tcr-burst-rays {
-  position: absolute; width: 460px; height: 460px; left: 50%; top: 46%;
-  margin-left: -230px; margin-top: -230px;
-  background: conic-gradient(from 0deg,
-    rgba(255,220,120,0) 0deg, rgba(255,220,120,0.55) 4deg, rgba(255,220,120,0) 10deg,
-    rgba(255,220,120,0) 24deg, rgba(255,220,120,0.5) 28deg, rgba(255,220,120,0) 34deg,
-    rgba(255,220,120,0) 50deg, rgba(255,220,120,0.55) 54deg, rgba(255,220,120,0) 60deg,
-    rgba(255,220,120,0) 78deg, rgba(255,220,120,0.5) 82deg, rgba(255,220,120,0) 88deg,
-    rgba(255,220,120,0) 120deg, rgba(255,220,120,0.5) 124deg, rgba(255,220,120,0) 130deg,
-    rgba(255,220,120,0) 300deg);
-  mix-blend-mode: screen;
-  opacity: 0; transform: scale(0.4) rotate(0deg);
-  animation: tcr-burst-rays 1.6s ease-out forwards;
-  will-change: transform, opacity;
-}
-@keyframes tcr-burst-rays {
-  0% { opacity: 0; transform: scale(0.4) rotate(0deg); }
-  25% { opacity: 0.9; }
-  100% { opacity: 0.35; transform: scale(1.1) rotate(40deg); }
-}
-
-/* Chest */
-.tcr-chest-btn { -webkit-tap-highlight-color: transparent; }
-.tcr-chest { position: relative; width: 300px; height: 300px; will-change: transform; }
-@media (min-width: 640px) { .tcr-chest { width: 340px; height: 340px; } }
-.tcr-chest-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
-  filter: drop-shadow(0 24px 40px rgba(0,0,0,0.55)); }
-.tcr-chest-img-open { opacity: 0; }
-.tcr-fade-out { opacity: 0; transition: opacity 220ms ease 120ms; }
-.tcr-fade-in { opacity: 1; animation: tcr-open-pop 520ms cubic-bezier(0.22,1.3,0.36,1) both; }
-@keyframes tcr-open-pop { 0% { transform: scale(0.9); } 55% { transform: scale(1.05); } 100% { transform: scale(1); } }
-
-.tcr-chest-idle { animation: tcr-rock 3.4s ease-in-out infinite; }
-@keyframes tcr-rock { 0%,100% { transform: rotate(-1.4deg); } 50% { transform: rotate(1.4deg); } }
-.tcr-chest-shake { animation: tcr-shake 0.4s cubic-bezier(0.36,0.07,0.19,0.97) infinite; }
 @keyframes tcr-shake {
-  0%,100% { transform: translate(0,0) rotate(0); }
-  20% { transform: translate(-5px,1px) rotate(-2.4deg); }
-  40% { transform: translate(5px,-1px) rotate(2.4deg); }
-  60% { transform: translate(-4px,1px) rotate(-1.8deg); }
-  80% { transform: translate(4px,-1px) rotate(1.8deg); }
+  0%, 100% { transform: scale(1.08) translateX(0); }
+  20% { transform: scale(1.08) translateX(-5px) rotate(-0.5deg); }
+  40% { transform: scale(1.08) translateX(5px) rotate(0.5deg); }
+  60% { transform: scale(1.08) translateX(-4px) rotate(-0.4deg); }
+  80% { transform: scale(1.08) translateX(4px) rotate(0.4deg); }
 }
-.tcr-chest-pop { animation: tcr-chest-jolt 0.4s ease-out; }
-@keyframes tcr-chest-jolt { 0% { transform: scale(1.04) translateY(-4px); } 100% { transform: scale(1) translateY(0); } }
 
-/* Lock glow */
-.tcr-lock {
-  position: absolute; left: 50%; top: 52%; width: 60px; height: 60px;
-  margin-left: -30px; margin-top: -30px; border-radius: 9999px;
-  background: radial-gradient(circle, rgba(255,236,150,0.9), rgba(255,180,60,0.3) 45%, transparent 70%);
-  opacity: 0.45; transform: scale(0.7);
-  animation: tcr-lock-pulse 2.2s ease-in-out infinite;
-  will-change: transform, opacity;
+/* Lock glow over the chest keyhole (~50% / 62%) */
+.tcr-lockglow {
+  position: absolute; left: 50%; top: 62%; width: 26%; height: 26%;
+  transform: translate(-50%, -50%);
+  border-radius: 999px; pointer-events: none;
+  background: radial-gradient(circle, rgba(255,214,120,0.55), rgba(255,180,60,0.18) 45%, transparent 70%);
+  mix-blend-mode: screen;
+  animation: tcr-lockpulse 1.9s ease-in-out infinite;
 }
-@keyframes tcr-lock-pulse { 0%,100% { opacity: 0.3; transform: scale(0.6); } 50% { opacity: 0.6; transform: scale(0.8); } }
-.tcr-lock-charge { animation: tcr-lock-charge 1s ease-in forwards; }
-@keyframes tcr-lock-charge { 0% { opacity: 0.4; transform: scale(0.7); } 100% { opacity: 1; transform: scale(1.4); } }
-.tcr-lock-burst { animation: tcr-lock-burst 0.5s ease-out forwards; }
-@keyframes tcr-lock-burst { 0% { opacity: 1; transform: scale(1.4); } 60% { opacity: 1; transform: scale(2.4); } 100% { opacity: 0; transform: scale(3); } }
+.tcr-root[data-phase="charging"] .tcr-lockglow { animation: tcr-lockpulse 0.28s ease-in-out infinite; }
+@keyframes tcr-lockpulse {
+  0%, 100% { opacity: 0.5; transform: translate(-50%,-50%) scale(0.9); }
+  50% { opacity: 1; transform: translate(-50%,-50%) scale(1.12); }
+}
 
-/* Flash */
+/* Burst rays fanning up out of the open chest */
+.tcr-burst-rays {
+  position: absolute; left: 50%; top: 60%; width: 220%; height: 220%;
+  transform: translate(-50%, -50%);
+  pointer-events: none; mix-blend-mode: screen;
+  background: conic-gradient(from 0deg at 50% 50%,
+    rgba(255,225,150,0) 0deg, rgba(255,225,150,0.5) 6deg, rgba(255,225,150,0) 12deg,
+    rgba(255,225,150,0) 30deg, rgba(255,225,150,0.4) 36deg, rgba(255,225,150,0) 42deg,
+    rgba(255,225,150,0) 66deg, rgba(255,225,150,0.5) 72deg, rgba(255,225,150,0) 78deg,
+    rgba(255,225,150,0) 96deg, rgba(255,225,150,0.35) 102deg, rgba(255,225,150,0) 108deg,
+    rgba(255,225,150,0) 300deg, rgba(255,225,150,0.4) 306deg, rgba(255,225,150,0) 312deg,
+    rgba(255,225,150,0) 336deg, rgba(255,225,150,0.5) 342deg, rgba(255,225,150,0) 348deg);
+  -webkit-mask-image: radial-gradient(circle, #000 0%, #000 30%, transparent 66%);
+  mask-image: radial-gradient(circle, #000 0%, #000 30%, transparent 66%);
+  opacity: 0; animation: tcr-rays-in 700ms ease-out forwards, tcr-rays-spin 24s linear infinite;
+}
+@keyframes tcr-rays-in { to { opacity: 0.9; } }
+@keyframes tcr-rays-spin { to { transform: translate(-50%,-50%) rotate(360deg); } }
+
+/* White flash */
 .tcr-flash {
-  position: absolute; inset: -40%;
-  background: radial-gradient(circle, rgba(255,248,220,0.95), rgba(255,220,140,0.35) 40%, transparent 68%);
-  opacity: 0; pointer-events: none;
-  animation: tcr-flash 0.5s ease-out forwards; will-change: opacity;
+  position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+  background: radial-gradient(circle at 50% 60%, #fff, rgba(255,240,200,0.6) 40%, transparent 72%);
+  opacity: 0; animation: tcr-flash 620ms ease-out forwards;
 }
-@keyframes tcr-flash { 0% { opacity: 0; } 25% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes tcr-flash { 0% { opacity: 0; } 22% { opacity: 1; } 100% { opacity: 0; } }
 
-/* Coins + sparks */
-.tcr-particles, .tcr-embers { position: absolute; inset: 0; pointer-events: none; }
+/* Coins + sparks erupt from ~50%/60% */
+.tcr-particles { position: absolute; left: 50%; top: 60%; width: 0; height: 0; pointer-events: none; }
+.tcr-coin, .tcr-spark { position: absolute; left: 0; top: 0; border-radius: 999px; opacity: 0; }
 .tcr-coin {
-  position: absolute; left: 50%; top: 48%; width: 20px; height: 20px; margin: -10px 0 0 -10px;
-  border-radius: 9999px;
-  background: radial-gradient(circle at 35% 30%, #fff4c2, #f6c945 45%, #a9760c 100%);
-  box-shadow: inset 0 0 0 2px rgba(255,255,255,0.28), inset 0 -3px 4px rgba(120,70,0,0.5);
-  opacity: 0; transform: translate(0,0) scale(0.3);
-  animation: tcr-coin-fly 1.25s cubic-bezier(0.2,0.7,0.3,1) var(--d,0s) forwards;
-  will-change: transform, opacity;
-}
-@keyframes tcr-coin-fly {
-  0% { opacity: 0; transform: translate(0,0) scale(0.3) rotate(0deg); }
-  12% { opacity: 1; }
-  55% { transform: translate(var(--tx,0), var(--ty,-120px)) scale(1) rotate(var(--r,180deg)); opacity: 1; }
-  100% { opacity: 0; transform: translate(calc(var(--tx,0) * 1.15), 210px) scale(0.85) rotate(calc(var(--r,180deg) * 1.5)); }
+  width: 16px; height: 16px; margin: -8px;
+  background: radial-gradient(circle at 35% 30%, #fff3c4, #f2c14e 45%, #b9791d 100%);
+  box-shadow: 0 0 6px rgba(255,200,90,0.7);
+  animation: tcr-coin-fly 1.5s cubic-bezier(0.18,0.7,0.3,1) forwards;
+  animation-delay: var(--d);
 }
 .tcr-spark {
-  position: absolute; left: 50%; top: 48%; width: 6px; height: 6px; margin: -3px 0 0 -3px;
-  border-radius: 9999px; background: radial-gradient(circle, #fffbe8, rgba(255,220,140,0));
-  opacity: 0; transform: translate(0,0) scale(0.5);
-  animation: tcr-spark-fly 0.95s ease-out var(--d,0s) forwards; will-change: transform, opacity;
+  width: 6px; height: 6px; margin: -3px; background: #fff6d8;
+  box-shadow: 0 0 8px rgba(255,235,170,0.95);
+  animation: tcr-spark-fly 1.2s ease-out forwards; animation-delay: var(--d);
+}
+@keyframes tcr-coin-fly {
+  0% { opacity: 0; transform: translate(0,0) scale(0.4) rotate(0deg); }
+  15% { opacity: 1; }
+  70% { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--tx), calc(var(--ty) * -0.2)) scale(1) rotate(var(--r)); }
 }
 @keyframes tcr-spark-fly {
-  0% { opacity: 0; transform: translate(0,0) scale(0.4); }
-  20% { opacity: 1; transform: scale(1.2); }
-  100% { opacity: 0; transform: translate(var(--tx,0), var(--ty,-140px)) scale(0.2); }
+  0% { opacity: 0; transform: translate(0,0) scale(0.5); }
+  20% { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--tx), var(--ty)) scale(1); }
 }
 
-/* Embers */
-.tcr-ember {
-  position: absolute; top: -6%; width: 5px; height: 5px; border-radius: 9999px;
-  background: radial-gradient(circle, rgba(255,224,150,0.95), rgba(255,180,80,0));
-  opacity: 0; animation: tcr-ember-fall var(--dur,3s) linear var(--d,0s) infinite;
-  will-change: transform, opacity;
+/* Idle dust */
+.tcr-dust {
+  position: absolute; width: 4px; height: 4px; border-radius: 999px;
+  background: radial-gradient(circle, rgba(255,236,190,0.9), rgba(255,236,190,0) 70%);
+  opacity: 0; transform: scale(var(--sc, 1));
+  animation: tcr-dust-float var(--dur, 9s) ease-in-out var(--d, 0s) infinite;
 }
-@keyframes tcr-ember-fall {
-  0% { opacity: 0; transform: translateY(-10px) scale(1); }
-  15% { opacity: 0.9; }
-  100% { opacity: 0; transform: translateY(300px) scale(0.5); }
+@keyframes tcr-dust-float {
+  0% { opacity: 0; transform: translateY(0) scale(var(--sc,1)); }
+  20% { opacity: 0.8; }
+  80% { opacity: 0.5; }
+  100% { opacity: 0; transform: translateY(-38px) scale(var(--sc,1)); }
 }
 
-/* Confetti */
+/* ---------------- Headline ---------------- */
+.tcr-title { color: #ffe6a3; text-shadow: 0 2px 24px rgba(255,180,60,0.45); }
+.tcr-title, .tcr-sub, .tcr-eyebrow { animation: tcr-soft-in 0.5s ease-out both; }
+.tcr-sub { animation-delay: 0.08s; }
+@keyframes tcr-soft-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ---------------- Reward plaque ---------------- */
+.tcr-plaque-rise { animation: tcr-rise 0.6s cubic-bezier(0.18,0.9,0.3,1.2) both; }
+@keyframes tcr-rise { from { opacity: 0; transform: translateY(26px) scale(0.94); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+.tcr-plaque {
+  --a: #f2c14e; --b: #b9791d;
+  position: relative; width: 100%;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 18px 20px; border-radius: 20px; text-align: center;
+  background: linear-gradient(180deg, rgba(28,20,10,0.92), rgba(14,10,6,0.92));
+  border: 1px solid color-mix(in srgb, var(--a) 55%, transparent);
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.4), 0 20px 50px -22px color-mix(in srgb, var(--a) 60%, transparent), inset 0 1px 0 rgba(255,255,255,0.08);
+}
+.tcr-plaque[data-tier="jackpot"] { --a: #ffd257; --b: #d98a1f; }
+.tcr-plaque[data-tier="emerald"] { --a: #4fd39a; --b: #1f8a5c; }
+.tcr-plaque[data-tier="sapphire"] { --a: #5cc1ff; --b: #1f6fbf; }
+.tcr-plaque[data-tier="credit"] { --a: #c9a2ff; --b: #7a4fd9; }
+.tcr-plaque-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase; color: color-mix(in srgb, var(--a) 85%, #fff); }
+.tcr-plaque-img { width: 72px; height: 72px; overflow: hidden; border-radius: 14px; margin: 6px 0; border: 1px solid color-mix(in srgb, var(--a) 50%, transparent); }
+.tcr-plaque-value {
+  font-size: clamp(24px, 7vw, 34px); font-weight: 900; line-height: 1.05; text-transform: uppercase; letter-spacing: 0.01em;
+  color: #fff; text-shadow: 0 2px 20px color-mix(in srgb, var(--a) 60%, transparent);
+}
+.tcr-plaque-value--sm { font-size: clamp(20px, 6vw, 26px); }
+.tcr-plaque-title { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.72); }
+
+.tcr-tickets { animation: tcr-soft-in 0.5s ease-out 0.15s both; }
+
+/* ---------------- CTA ---------------- */
+.tcr-btn-primary {
+  background: linear-gradient(180deg, #ffd257, #e79a1e);
+  box-shadow: 0 12px 30px -12px rgba(231,154,30,0.8), inset 0 1px 0 rgba(255,255,255,0.5);
+}
+.tcr-cta { transition: opacity 0.5s ease, transform 0.5s ease; }
+.tcr-cta-hidden { opacity: 0; transform: translateY(10px); pointer-events: none; }
+.tcr-cta-in { opacity: 1; transform: translateY(0); }
+
+/* ---------------- Confetti ---------------- */
 .tcr-cf-piece {
-  position: absolute; top: -6vh; width: 10px; height: 14px; border-radius: 2px;
-  opacity: 0; transform: translateY(0) rotate(0deg);
-  animation: tcr-cf-fall var(--dur,2.6s) linear var(--d,0s) forwards;
-  will-change: transform, opacity;
+  position: absolute; top: -6vh; width: 9px; height: 14px; border-radius: 2px; opacity: 0;
+  animation: tcr-cf-fall var(--dur, 2.6s) linear var(--d, 0s) forwards;
 }
 @keyframes tcr-cf-fall {
-  0% { opacity: 0; transform: translate(0,-6vh) rotate(0deg); }
+  0% { opacity: 0; transform: translateY(0) translateX(0) rotate(0deg); }
   10% { opacity: 1; }
-  100% { opacity: 0; transform: translate(var(--x,0), 108vh) rotate(var(--r,360deg)); }
+  100% { opacity: 0; transform: translateY(112vh) translateX(var(--x, 0)) rotate(var(--r, 360deg)); }
 }
 
-/* Headline */
-.tcr-title {
-  color: #ffe6a3;
-  text-shadow: 0 2px 24px rgba(255,180,60,0.45);
-}
-.tcr-title, .tcr-sub, .tcr-eyebrow { animation: tcr-soft-in 0.5s ease-out both; }
-@keyframes tcr-soft-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
-
-/* Reward plaque */
-.tcr-plaque-rise { animation: tcr-plaque-rise 0.65s cubic-bezier(0.22,1.2,0.36,1) both; }
-@keyframes tcr-plaque-rise { 0% { opacity: 0; transform: translateY(40px) scale(0.9); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
-.tcr-plaque {
-  position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px;
-  width: 100%; padding: 16px 20px; border-radius: 20px; text-align: center;
-  background: linear-gradient(180deg, rgba(60,45,15,0.92), rgba(24,17,7,0.96));
-  border: 2px solid rgba(245,200,90,0.7);
-  box-shadow: 0 0 0 1px rgba(0,0,0,0.4), 0 18px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,236,170,0.35);
-}
-.tcr-plaque::before {
-  content: ""; position: absolute; inset: 4px; border-radius: 15px;
-  border: 1px solid rgba(255,236,170,0.18); pointer-events: none;
-}
-.tcr-plaque-eyebrow { font-size: 11px; font-weight: 800; letter-spacing: 0.28em; text-transform: uppercase; color: rgba(255,225,150,0.85); }
-.tcr-plaque-img { display: block; height: 68px; width: 68px; overflow: hidden; border-radius: 14px; margin: 6px 0; box-shadow: 0 0 0 2px rgba(245,200,90,0.6); }
-.tcr-plaque-value {
-  font-size: 34px; line-height: 1.05; font-weight: 900; letter-spacing: -0.01em;
-  background: linear-gradient(180deg, #fff6d8, #f6cf6a 55%, #d69a2b);
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-  text-shadow: 0 2px 18px rgba(255,190,70,0.3);
-}
-.tcr-plaque-value--sm { font-size: 26px; }
-.tcr-plaque-title { margin-top: 2px; font-size: 13px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,232,170,0.8); }
-
-/* Tier accents (colour treatment only — layout unchanged) */
-.tcr-root[data-tier="jackpot"] .tcr-aura,
-.tcr-plaque[data-tier="jackpot"] { --accent: 255,196,60; }
-.tcr-plaque[data-tier="emerald"] { border-color: rgba(52,211,153,0.7); box-shadow: 0 0 0 1px rgba(0,0,0,0.4), 0 18px 40px rgba(0,0,0,0.5), 0 0 30px rgba(16,185,129,0.25), inset 0 1px 0 rgba(255,236,170,0.35); }
-.tcr-plaque[data-tier="sapphire"] { border-color: rgba(96,165,250,0.7); box-shadow: 0 0 0 1px rgba(0,0,0,0.4), 0 18px 40px rgba(0,0,0,0.5), 0 0 30px rgba(59,130,246,0.25), inset 0 1px 0 rgba(255,236,170,0.35); }
-.tcr-plaque[data-tier="credit"] { border-color: rgba(196,150,255,0.7); box-shadow: 0 0 0 1px rgba(0,0,0,0.4), 0 18px 40px rgba(0,0,0,0.5), 0 0 30px rgba(168,85,247,0.28), inset 0 1px 0 rgba(255,236,170,0.35); }
-.tcr-root[data-tier="emerald"] .tcr-aura { background: radial-gradient(circle, rgba(52,211,153,0.4), rgba(255,196,60,0.14) 45%, transparent 70%); }
-.tcr-root[data-tier="sapphire"] .tcr-aura { background: radial-gradient(circle, rgba(96,165,250,0.4), rgba(255,196,60,0.14) 45%, transparent 70%); }
-.tcr-root[data-tier="credit"] .tcr-aura { background: radial-gradient(circle, rgba(196,150,255,0.4), rgba(255,196,60,0.16) 45%, transparent 70%); }
-
-/* Tickets + CTA */
-.tcr-tickets { animation: tcr-soft-in 0.5s ease-out 0.15s both; }
-.tcr-cta { transition: opacity 400ms ease, transform 400ms ease; }
-.tcr-cta-hidden { opacity: 0; transform: translateY(12px); pointer-events: none; }
-.tcr-cta-in { opacity: 1; transform: translateY(0); }
-.tcr-btn-primary {
-  background: linear-gradient(180deg, #ffe08a, #f5b829 55%, #e09a12);
-  box-shadow: 0 8px 24px rgba(240,170,20,0.35), inset 0 1px 0 rgba(255,255,255,0.5);
+/* ---------------- Fallback chest (art failed) ---------------- */
+.tcr-scene-fallback { background: radial-gradient(60% 50% at 50% 55%, #241708, #0b0705); display: grid; place-items: center; }
+.tcr-fallback-chest {
+  width: 44%; height: 32%; border-radius: 12px 12px 8px 8px;
+  background: linear-gradient(180deg, #6b4a22, #3c2a13);
+  box-shadow: inset 0 0 0 4px #caa24a, 0 0 50px rgba(255,190,80,0.35);
 }
 
-/* Fallback chest */
-.tcr-chest-fallback { position: relative; width: 240px; height: 200px; border-radius: 16px;
-  background: linear-gradient(180deg, #6b4a26, #3c2814); border: 3px solid #caa14a;
-  box-shadow: inset 0 0 30px rgba(0,0,0,0.6); }
-.tcr-chest-fallback-lid { position: absolute; left: -3px; right: -3px; top: -3px; height: 78px;
-  border-radius: 16px 16px 40px 40px / 16px 16px 60px 60px; background: linear-gradient(180deg,#7a5730,#4a3116); border: 3px solid #caa14a; }
-.tcr-chest-fallback-lock { position: absolute; left: 50%; top: 64px; width: 34px; height: 40px; margin-left: -17px;
-  border-radius: 6px; background: linear-gradient(180deg,#f0cf7a,#b8892e); }
-
-.tcr-hint { animation: tcr-hint 2.4s ease-in-out infinite; }
-@keyframes tcr-hint { 0%,100% { opacity: 0.7; transform: translate(-50%,0); } 50% { opacity: 1; transform: translate(-50%,-3px); } }
-
+/* ---------------- Reduced motion ---------------- */
 @media (prefers-reduced-motion: reduce) {
-  .tcr-cam-idle, .tcr-chest-idle, .tcr-chest-shake, .tcr-chest-pop, .tcr-rays, .tcr-fog-a, .tcr-fog-b,
-  .tcr-dust, .tcr-aura, .tcr-lock, .tcr-hint, .tcr-fade-in, .tcr-plaque-rise, .tcr-tickets,
-  .tcr-title, .tcr-sub, .tcr-eyebrow, .tcr-burst-rays, .tcr-coin, .tcr-spark, .tcr-ember, .tcr-cf-piece {
+  .tcr-stage, .tcr-scene, .tcr-plaque-rise, .tcr-title, .tcr-sub, .tcr-eyebrow,
+  .tcr-cta, .tcr-tickets, .tcr-lockglow, .tcr-burst-rays, .tcr-flash {
     animation: none !important;
+    transition: none !important;
   }
-  .tcr-cam { transition: none !important; transform: scale(1) !important; }
-  .tcr-cta { transition: none !important; }
-  .tcr-chest-img-open.tcr-fade-in { opacity: 1; }
-  .tcr-aura-on { opacity: 1; }
+  .tcr-root[data-phase] .tcr-stage { transform: none !important; }
+  .tcr-cta-hidden { opacity: 1; transform: none; pointer-events: auto; }
 }
 `

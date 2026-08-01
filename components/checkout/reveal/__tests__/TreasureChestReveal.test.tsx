@@ -67,8 +67,8 @@ describe('TreasureChestReveal — closed state (win award)', () => {
     expect(html).toContain('Tap the chest to reveal your prize')
   })
 
-  it('renders the closed chest image', () => {
-    expect(html).toContain('/reveal/treasure-chest-closed.png')
+  it('renders the closed treasure scene image', () => {
+    expect(html).toContain('/reveal/treasure-scene-closed.png')
   })
 
   it('does not leak the prize before the chest is opened', () => {
