@@ -24,6 +24,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import Link from 'next/link'
 import { ChevronDown, TicketCheck } from 'lucide-react'
+import type { RevealType } from '@/lib/types/campaign'
 
 type Prize = {
   award_id?: string | null
@@ -42,7 +43,7 @@ export type NormalRevealAward = {
   ticket_start?: number | null
   ticket_end?: number | null
   campaign_slug?: string | null
-  reveal_type?: 'normal' | 'scratch_card' | null
+  reveal_type?: RevealType | null
 }
 
 type Stage = 'locked' | 'surge' | 'opening' | 'result'
