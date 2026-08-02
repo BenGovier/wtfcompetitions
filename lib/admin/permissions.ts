@@ -49,6 +49,9 @@ export const OPERATIONS_ADMIN_ALLOWED_ROUTES = [
   '/admin/entries',
   '/admin/wallets',
   '/admin/live-feed',
+  // Operations Admin may VIEW discount codes (read-only). Mutations are still
+  // blocked at the page + API layer (admin-only), never by nav visibility alone.
+  '/admin/discount-codes',
 ]
 
 /** Normalizes an unknown value into a known AdminRole, or null. */
