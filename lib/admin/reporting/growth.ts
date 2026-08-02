@@ -76,8 +76,9 @@ export type CheckoutClass = 'confirmed' | 'failed' | 'inProgress' | 'abandoned' 
 
 /**
  * Classify a checkout intent for the health cohort. Mirrors the SQL exactly:
- * pending rows flip from in-progress to abandoned at exactly 30 minutes old
- * (strictly greater-than keeps the boundary row in-progress).
+ * a pending row is "in progress" only while strictly younger than 30 minutes
+ * (created_at > now - 30m); at exactly 30 minutes old it becomes "abandoned"
+ * (matching the SQL predicate created_at <= now - interval '30 minutes').
  */
 export function classifyCheckout(
   state: string,

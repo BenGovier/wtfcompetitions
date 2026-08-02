@@ -100,7 +100,9 @@ export function ReportsDashboard({ initialRange = 'today' as ReportRange }: { in
     {
       keepPreviousData: true, // retain last successful payload during refresh + on error
       revalidateOnFocus: false,
-      refreshInterval: REFRESH_INTERVAL_MS, // poll every 60s...
+      // poll every 60s while Overview is the active view; pause polling entirely
+      // when the Growth tab is open so only one view ever polls at a time.
+      refreshInterval: view === 'overview' ? REFRESH_INTERVAL_MS : 0,
       refreshWhenHidden: false, // ...but only while the tab is visible (pause when hidden)
       refreshWhenOffline: false,
       dedupingInterval: REFRESH_INTERVAL_MS, // never hit the API more than once per 60s window
@@ -139,8 +141,37 @@ export function ReportsDashboard({ initialRange = 'today' as ReportRange }: { in
   const comparisonLabel = data?.comparison.label ?? 'previous period'
   const exportHref = `/api/admin/reports/export?${query}`
 
+  const tabs: { id: DashboardView; label: string }[] = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'growth', label: 'Growth' },
+  ]
+
   return (
     <div className="flex flex-col gap-4">
+      {/* View tabs — shared filters apply to whichever view is active. */}
+      <div role="tablist" aria-label="Reporting views" className="flex items-center gap-1 border-b border-border">
+        {tabs.map((t) => {
+          const selected = view === t.id
+          return (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              onClick={() => selectView(t.id)}
+              className={cn(
+                '-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors',
+                selected
+                  ? 'border-primary text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {t.label}
+            </button>
+          )
+        })}
+      </div>
+
       <ReportFilterBar
         value={filters}
         onChange={setFilters}
@@ -148,8 +179,54 @@ export function ReportsDashboard({ initialRange = 'today' as ReportRange }: { in
         providers={data?.available.providers ?? []}
         exportHref={exportHref}
         disabled={isLoading && !data}
+        showExport={view === 'overview'}
       />
 
+      {view === 'growth' ? (
+        <GrowthDashboard active={view === 'growth'} ready={ready} query={query} range={filters.range} />
+      ) : (
+        <OverviewBody
+          data={data}
+          error={error}
+          isLoading={isLoading}
+          isValidating={isValidating}
+          refreshing={refreshing}
+          lastUpdated={lastUpdated}
+          totals={totals}
+          changes={changes}
+          comparisonLabel={comparisonLabel}
+          onRefresh={() => mutate()}
+        />
+      )}
+    </div>
+  )
+}
+
+function OverviewBody({
+  data,
+  error,
+  isLoading,
+  isValidating,
+  refreshing,
+  lastUpdated,
+  totals,
+  changes,
+  comparisonLabel,
+  onRefresh,
+}: {
+  data: DashboardPayload | undefined
+  error: unknown
+  isLoading: boolean
+  isValidating: boolean
+  refreshing: boolean
+  lastUpdated: number | null
+  totals: DashboardPayload['totals'] | undefined
+  changes: DashboardPayload['changes'] | undefined
+  comparisonLabel: string
+  onRefresh: () => void
+}) {
+  return (
+    <div className="flex flex-col gap-4">
       {/* Live-refresh status: "updated X ago" + manual refresh. */}
       <div className="flex items-center justify-between gap-2 px-1">
         <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground" aria-live="polite">
@@ -163,7 +240,7 @@ export function ReportsDashboard({ initialRange = 'today' as ReportRange }: { in
         </p>
         <button
           type="button"
-          onClick={() => mutate()}
+          onClick={onRefresh}
           disabled={isValidating}
           className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
         >
