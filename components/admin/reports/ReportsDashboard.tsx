@@ -7,8 +7,12 @@ import { KpiCard } from './KpiCard'
 import { ReportFilterBar, type FilterState } from './ReportFilterBar'
 import { RevenueChart } from './RevenueChart'
 import { CampaignTable } from './CampaignTable'
+import { GrowthDashboard } from './growth/GrowthDashboard'
 import { formatCount, formatPence } from '@/lib/admin/reporting/format'
 import type { DashboardPayload, ReportRange } from '@/lib/admin/reporting/types'
+import { cn } from '@/lib/utils'
+
+type DashboardView = 'overview' | 'growth'
 
 function todayISO(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
@@ -48,6 +52,23 @@ export function ReportsDashboard({ initialRange = 'today' as ReportRange }: { in
     campaign: '',
     provider: '',
   })
+
+  // Overview | Growth. Filters are shared and preserved across the switch.
+  const [view, setView] = useState<DashboardView>('overview')
+
+  // Adopt ?view=growth on mount (deep-link), without a hydration mismatch.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('view') === 'growth') setView('growth')
+  }, [])
+
+  const selectView = useCallback((next: DashboardView) => {
+    setView(next)
+    const url = new URL(window.location.href)
+    if (next === 'growth') url.searchParams.set('view', 'growth')
+    else url.searchParams.delete('view')
+    window.history.replaceState(null, '', url.toString())
+  }, [])
 
   const query = useMemo(() => buildQuery(filters), [filters])
   // Custom range only fires once both dates are set.
