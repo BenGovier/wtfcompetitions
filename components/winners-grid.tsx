@@ -7,14 +7,15 @@ interface WinnersGridProps {
 }
 
 /**
- * Responsive winners grid.
- * - very narrow: 1 column
- * - mobile / tablet: 2 columns
- * - desktop: 3 columns
+ * Recent winners feed.
+ * - below md: single-column vertical feed (never two columns), so every row
+ *   stays readable down to 320px wide
+ * - md: 2 columns
+ * - lg: 3 columns
  */
 export function WinnersGrid({ winners }: WinnersGridProps) {
   return (
-    <div className="grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 lg:grid-cols-3">
+    <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2 md:gap-3 lg:grid-cols-3 lg:gap-4">
       {winners.map((winner, i) => (
         <WinnerCard key={`${winnerKey(winner)}-${i}`} winner={winner} />
       ))}
