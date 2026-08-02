@@ -980,20 +980,6 @@ export function CheckoutReviewClient({
               </span>
             </div>
 
-            {/* Discount code — priced before WTF Credit, which applies to the
-                already-discounted total. */}
-            <div className="mt-4">
-              <DiscountCodeField
-                state={discountState}
-                discountPence={discountPence}
-                formatGBP={formatGBP}
-                disabled={submitting || nameFormOpen}
-                onInputChange={onDiscountInputChange}
-                onApply={applyDiscount}
-                onRemove={onRemoveDiscount}
-              />
-            </div>
-
             {selectedKey !== initialKey && (
               <button
                 type="button"
@@ -1005,84 +991,120 @@ export function CheckoutReviewClient({
               </button>
             )}
 
-            {/* WTF Credit — ALWAYS rendered for authenticated users, directly
-                below the order total. Premium panel when credit is available;
-                a compact, disabled row when the balance is £0. */}
+            {/* Ways to save — one unified module pairing the discount code and
+                WTF Credit as two controls in a shared branded system. Discount
+                is priced first; WTF Credit applies to the already-discounted
+                total. */}
             <div className="mt-4 border-t border-purple-500/15 pt-4">
-              {walletVisible ? (
-                <div className="rounded-2xl border border-yellow-500/40 bg-gradient-to-br from-yellow-500/15 to-amber-500/5 p-4 shadow-[0_0_30px_rgba(247,166,0,0.15)]">
-                  <div className="flex items-start justify-between gap-4">
-                    <label htmlFor="use-credit" className="flex min-w-0 cursor-pointer items-center gap-2.5">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-yellow-500/20">
-                        <Wallet className="h-5 w-5 text-yellow-300" aria-hidden="true" />
-                      </span>
-                      <span className="min-w-0 text-sm font-semibold text-yellow-100">
-                        Use WTF Credit
-                        <span className="block text-xs font-normal text-yellow-200/80">
-                          Available WTF Credit{' '}
-                          <span className="font-bold tabular-nums text-yellow-200">
-                            {formatGBP(availableWalletPence)}
-                          </span>
-                        </span>
-                      </span>
-                    </label>
-                    <Switch
-                      id="use-credit"
-                      checked={useCredit}
-                      onCheckedChange={setUseCredit}
-                      disabled={walletDisabled || submitting}
-                      aria-label="Use WTF Credit for this order"
-                    />
-                  </div>
+              <p className="mb-2.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-purple-300">
+                <Sparkles className="h-3.5 w-3.5 text-purple-300" aria-hidden="true" />
+                Ways to save
+              </p>
 
+              <div className="space-y-2">
+                <DiscountCodeField
+                  state={discountState}
+                  discountPence={discountPence}
+                  formatGBP={formatGBP}
+                  disabled={submitting || nameFormOpen}
+                  onInputChange={onDiscountInputChange}
+                  onApply={applyDiscount}
+                  onRemove={onRemoveDiscount}
+                />
+
+                {/* WTF Credit — ALWAYS rendered for authenticated users, styled
+                    as the second row in the savings pair. Gold active state when
+                    on; a compact, disabled row when the balance is £0. */}
+                {walletVisible ? (
                   <div
                     className={
-                      'grid overflow-hidden transition-all duration-300 ease-out ' +
-                      (useCredit ? 'mt-4 grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0')
+                      'rounded-xl border p-3 transition-colors ' +
+                      (useCredit
+                        ? 'border-yellow-400/45 bg-gradient-to-br from-yellow-500/15 to-amber-500/5 shadow-[0_0_24px_rgba(247,166,0,0.12)]'
+                        : 'border-purple-500/25 bg-purple-500/10')
                     }
                   >
-                    <div className="min-h-0">
-                      <div className="space-y-2 border-t border-yellow-500/20 pt-3 text-sm">
-                        <div className="flex items-center justify-between gap-4">
-                          <span className="text-yellow-200/90">WTF Credit applied</span>
-                          <span className="font-semibold tabular-nums text-yellow-100">
-                            −{formatGBP(previewCreditPence)}
+                    <div className="flex items-center justify-between gap-3">
+                      <label htmlFor="use-credit" className="flex min-w-0 cursor-pointer items-center gap-2.5">
+                        <span
+                          className={
+                            'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ' +
+                            (useCredit ? 'bg-yellow-500/25' : 'bg-purple-500/20')
+                          }
+                        >
+                          <Wallet
+                            className={'h-4 w-4 ' + (useCredit ? 'text-yellow-200' : 'text-purple-200')}
+                            aria-hidden="true"
+                          />
+                        </span>
+                        <span className="min-w-0 text-sm font-semibold text-white">
+                          Use WTF Credit
+                          <span className="block truncate text-xs font-normal text-purple-300">
+                            Available balance{' '}
+                            <span className="font-bold tabular-nums text-purple-100">
+                              {formatGBP(availableWalletPence)}
+                            </span>
                           </span>
-                        </div>
-                        <div className="flex items-center justify-between gap-4">
-                          <span className="text-yellow-200/90">
-                            {fullyFunded ? 'Nothing to pay by card' : 'To pay by card'}
-                          </span>
-                          <span className="font-semibold tabular-nums text-yellow-100">
-                            {fullyFunded ? '£0.00' : formatGBP(previewExternalPence)}
-                          </span>
+                        </span>
+                      </label>
+                      <Switch
+                        id="use-credit"
+                        checked={useCredit}
+                        onCheckedChange={setUseCredit}
+                        disabled={walletDisabled || submitting}
+                        aria-label="Use WTF Credit for this order"
+                      />
+                    </div>
+
+                    <div
+                      className={
+                        'grid overflow-hidden transition-all duration-300 ease-out ' +
+                        (useCredit ? 'mt-3 grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0')
+                      }
+                    >
+                      <div className="min-h-0">
+                        <div className="space-y-1.5 border-t border-yellow-500/20 pt-2.5 text-sm">
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="text-yellow-200/90">WTF Credit applied</span>
+                            <span className="font-semibold tabular-nums text-yellow-100">
+                              −{formatGBP(previewCreditPence)}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="text-yellow-200/90">
+                              {fullyFunded ? 'Nothing to pay by card' : 'To pay by card'}
+                            </span>
+                            <span className="font-semibold tabular-nums text-yellow-100">
+                              {fullyFunded ? '£0.00' : formatGBP(previewExternalPence)}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ) : (
-                <div className="flex items-center justify-between gap-3 rounded-xl border border-purple-500/20 bg-white/5 px-3 py-2.5">
-                  <div className="flex min-w-0 items-center gap-2.5">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10">
-                      <Wallet className="h-4 w-4 text-purple-200" aria-hidden="true" />
-                    </span>
-                    <span className="min-w-0 text-sm font-semibold text-white">
-                      WTF Credit
-                      <span className="block truncate text-xs font-normal text-purple-300">
-                        Balance <span className="font-bold tabular-nums">{formatGBP(0)}</span> · Win credit in
-                        selected instant-win competitions
+                ) : (
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-purple-500/25 bg-purple-500/10 px-3 py-2.5">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-purple-500/20">
+                        <Wallet className="h-4 w-4 text-purple-200" aria-hidden="true" />
                       </span>
-                    </span>
+                      <span className="min-w-0 text-sm font-semibold text-white">
+                        Use WTF Credit
+                        <span className="block truncate text-xs font-normal text-purple-300">
+                          Balance <span className="font-bold tabular-nums text-purple-100">{formatGBP(0)}</span> · win
+                          credit in instant-win games
+                        </span>
+                      </span>
+                    </div>
+                    <Switch
+                      id="use-credit"
+                      checked={false}
+                      disabled
+                      aria-label="WTF Credit unavailable — no balance"
+                    />
                   </div>
-                  <Switch
-                    id="use-credit"
-                    checked={false}
-                    disabled
-                    aria-label="WTF Credit unavailable — no balance"
-                  />
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
 
