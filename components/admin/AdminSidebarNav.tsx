@@ -3,33 +3,16 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { Radio, Wallet, Users, Tag } from "lucide-react"
-import { canAccessRoute, type AdminRole } from "@/lib/admin/permissions"
-
-const navItems = [
-  { href: "/admin", label: "Dashboard" },
-  { href: "/admin/live-feed", label: "Live Feed" },
-  { href: "/admin/campaigns", label: "Campaigns" },
-  { href: "/admin/instant-wins", label: "Instant Wins" },
-  { href: "/admin/discount-codes", label: "Discount Codes" },
-  { href: "/admin/entries", label: "Entries" },
-  { href: "/admin/wallets", label: "WTF Credit" },
-  { href: "/admin/payouts", label: "Payouts" },
-  { href: "/admin/reports", label: "Reports" },
-  { href: "/admin/audit-logs", label: "Audit Logs" },
-  { href: "/admin/hosts", label: "Team Access" },
-]
-
-function isRouteActive(pathname: string, href: string): boolean {
-  // "/admin" must match exactly, otherwise it would light up on every route.
-  if (href === "/admin") return pathname === "/admin"
-  return pathname === href || pathname.startsWith(`${href}/`)
-}
+import type { AdminRole } from "@/lib/admin/permissions"
+import { getVisibleNavGroups, isNavItemActive } from "@/lib/admin/navigation"
 
 /**
- * Reusable admin navigation link list. Shared by the fixed desktop sidebar and
- * the mobile slide-over drawer so both stay in sync. `onNavigate` lets the
- * drawer close itself after a link is tapped.
+ * Reusable admin navigation list. Shared by the fixed desktop sidebar and the
+ * mobile slide-over drawer so both render from the same registry and stay in
+ * sync. `onNavigate` lets the drawer close itself after a link is tapped.
+ *
+ * Visibility is delegated to `getVisibleNavGroups` -> `canAccessRoute`; this
+ * component never decides access on its own.
  */
 export function AdminNavLinks({
   role,
@@ -39,58 +22,85 @@ export function AdminNavLinks({
   onNavigate?: () => void
 }) {
   const pathname = usePathname()
-
-  // Hosts (ops) only see the routes they can access; admins see everything.
-  const visibleItems = navItems.filter((item) => canAccessRoute(role, item.href))
+  const groups = getVisibleNavGroups(role)
 
   return (
-    <nav className="space-y-1 p-4">
-      {visibleItems.map((item) => {
-        const isActive = isRouteActive(pathname, item.href)
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            onClick={onNavigate}
-            aria-current={isActive ? "page" : undefined}
-            className={cn(
-              "block rounded-md px-3 py-2 text-sm font-medium transition-colors",
-              isActive
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-            )}
-          >
-            {item.href === "/admin/live-feed" && (
-              <Radio className="mr-2 inline-block h-4 w-4" />
-            )}
-            {item.href === "/admin/wallets" && (
-              <Wallet className="mr-2 inline-block h-4 w-4" />
-            )}
-            {item.href === "/admin/discount-codes" && (
-              <Tag className="mr-2 inline-block h-4 w-4" />
-            )}
-            {item.href === "/admin/hosts" && (
-              <Users className="mr-2 inline-block h-4 w-4" />
-            )}
-            {item.label}
-          </Link>
-        )
-      })}
+    <nav className="flex flex-col gap-5 px-3 py-4" aria-label="Admin">
+      {groups.map((group) => (
+        <div key={group.section}>
+          <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            {group.label}
+          </p>
+          <ul className="space-y-0.5">
+            {group.items.map((item) => {
+              const isActive = isNavItemActive(pathname, item.href)
+              const Icon = item.icon
+              return (
+                <li key={item.href}>
+                  <Link
+                    href={item.href}
+                    onClick={onNavigate}
+                    aria-current={isActive ? "page" : undefined}
+                    className={cn(
+                      "group relative flex h-11 items-center gap-3 rounded-lg px-3 text-sm transition-colors",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
+                      isActive
+                        ? "bg-primary/10 font-semibold text-primary"
+                        : "font-medium text-foreground/70 hover:bg-accent hover:text-foreground",
+                    )}
+                  >
+                    {/* Left accent bar — a non-colour-only active cue alongside aria-current. */}
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        "absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary transition-opacity",
+                        isActive ? "opacity-100" : "opacity-0",
+                      )}
+                    />
+                    {/* Fixed-width icon column keeps every label aligned. */}
+                    <Icon
+                      aria-hidden="true"
+                      strokeWidth={2}
+                      className={cn(
+                        "h-[18px] w-[18px] shrink-0",
+                        isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground",
+                      )}
+                    />
+                    <span className="truncate">{item.label}</span>
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      ))}
     </nav>
   )
 }
 
 /**
- * Fixed sidebar — desktop only. On mobile the same links are rendered inside
- * the AdminShell slide-over drawer instead.
+ * Fixed sidebar — desktop only. On mobile the same links render inside the
+ * AdminShell slide-over drawer instead. The nav area scrolls independently so
+ * the brand header stays pinned on short viewports.
  */
 export function AdminSidebarNav({ role }: { role: AdminRole }) {
   return (
-    <aside className="hidden w-64 shrink-0 border-r border-border bg-card md:block">
-      <div className="flex h-16 items-center border-b border-border px-6">
-        <h2 className="text-lg font-semibold">WTF Admin</h2>
+    <aside className="hidden w-72 shrink-0 flex-col border-r border-border bg-card md:flex">
+      <div className="flex h-16 shrink-0 items-center gap-3 border-b border-border px-6">
+        <span
+          aria-hidden="true"
+          className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-sm font-bold tracking-tight text-primary-foreground"
+        >
+          WTF
+        </span>
+        <span className="leading-tight">
+          <span className="block text-sm font-semibold text-foreground">Admin Portal</span>
+          <span className="block text-xs text-muted-foreground">WTF Giveaways</span>
+        </span>
       </div>
-      <AdminNavLinks role={role} />
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <AdminNavLinks role={role} />
+      </div>
     </aside>
   )
 }
