@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
+import { useMemo, useReducer, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,6 +8,18 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Spinner } from '@/components/ui/spinner'
 import { validateCustomerName } from '@/lib/acquired/customer-name'
+import { DiscountCodeField } from '@/components/checkout/DiscountCodeField'
+import {
+  discountUiReducer,
+  initDiscountUiState,
+  selectEffectiveTotalPence,
+  selectDiscountPence,
+  buildCreateCheckoutBody,
+  type AppliedDiscount,
+} from '@/lib/checkout/discountUiState'
+import { createIdempotencyKey } from '@/lib/checkout/idempotencyKey'
+import { checkoutErrorMessage, isCheckoutExpired } from '@/lib/discounts/customerErrorCopy'
+import { normalizeDiscountCode } from '@/lib/discounts/discountCalc'
 import {
   AlertCircle,
   ArrowLeft,
@@ -144,6 +156,18 @@ export function CheckoutReviewClient({
   const [selectedKey, setSelectedKey] = useState(initialKey)
   const [showAllOptions, setShowAllOptions] = useState(false)
 
+  // ---- Discount code -------------------------------------------------------
+  // All apply / remove / invalidation / idempotency-key logic lives in the pure
+  // `discountUiState` reducer so it is unit-testable without a DOM.
+  const [discountState, dispatchDiscount] = useReducer(
+    discountUiReducer,
+    undefined,
+    () => initDiscountUiState(createIdempotencyKey()),
+  )
+  // Monotonic token so a slow validation response for a code the shopper has
+  // since changed/removed is ignored (prevents a stale "applied" flash).
+  const discountReqId = useRef(0)
+
   // Synchronous latch: set BEFORE the first await so a rapid double-click can
   // never create two checkout intents. React state alone is not synchronous
   // enough to guarantee this.
@@ -168,12 +192,19 @@ export function CheckoutReviewClient({
   const walletDisabled = availableWalletPence <= 0
   const walletVisible = availableWalletPence > 0
 
+  // Effective (discounted) total the shopper actually pays. When a discount is
+  // applied we use the server's authoritative discounted total; otherwise the
+  // base option total. Everything below prices against this value so the
+  // preview, WTF Credit split and CTA all reflect the discount.
+  const discountPence = selectDiscountPence(discountState)
+  const effectiveTotalPence = selectEffectiveTotalPence(discountState, displayTotalPence)
+
   // Display-only credit preview. This is NEVER treated as authoritative — the
   // create API (and the DB function) compute the real split. No API call and no
   // reservation happens when the toggle changes.
-  const previewCreditPence = useCredit ? Math.min(availableWalletPence, displayTotalPence) : 0
-  const previewExternalPence = displayTotalPence - previewCreditPence
-  const fullyFunded = useCredit && previewExternalPence <= 0 && displayTotalPence > 0
+  const previewCreditPence = useCredit ? Math.min(availableWalletPence, effectiveTotalPence) : 0
+  const previewExternalPence = effectiveTotalPence - previewCreditPence
+  const fullyFunded = useCredit && previewExternalPence <= 0 && effectiveTotalPence > 0
 
   // Recommend the smallest configured option that offers MORE chances at a
   // higher total (so "just £X more" is always a real, positive difference).
@@ -306,6 +337,103 @@ export function CheckoutReviewClient({
     setSelectedKey(key)
   }
 
+  function onDiscountInputChange(value: string) {
+    // Editing invalidates any applied code / shown error and rotates the
+    // idempotency key (pricing inputs are changing).
+    dispatchDiscount({ type: 'inputChanged', value, nextKey: createIdempotencyKey() })
+  }
+
+  function onRemoveDiscount() {
+    // Ignore in-flight validation results and revert to the base total.
+    discountReqId.current += 1
+    dispatchDiscount({ type: 'remove', nextKey: createIdempotencyKey() })
+    setError(null)
+  }
+
+  async function applyDiscount() {
+    const normalized = normalizeDiscountCode(discountState.input)
+    if (!normalized.ok || discountState.status === 'validating') return
+
+    const reqId = ++discountReqId.current
+    dispatchDiscount({ type: 'validateStart' })
+
+    let json: Record<string, unknown>
+    try {
+      const res = await fetch('/api/checkout/discount/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          campaignId,
+          qty,
+          ...(validatedBundlePricePence != null ? { bundlePricePence: validatedBundlePricePence } : {}),
+          code: normalized.code,
+        }),
+      })
+      if (res.status === 401) {
+        redirectToLogin()
+        return
+      }
+      json = (await res.json()) as Record<string, unknown>
+    } catch {
+      // Network/parse failure — treat as a transient validation failure.
+      if (reqId === discountReqId.current) {
+        dispatchDiscount({ type: 'validateError', code: 'discount_code_validation_failed' })
+      }
+      return
+    }
+
+    // The shopper changed/removed the code while this request was in flight —
+    // drop this stale response entirely.
+    if (reqId !== discountReqId.current) return
+
+    if (
+      json.ok === true &&
+      json.pricing &&
+      typeof json.pricing === 'object' &&
+      json.discount &&
+      typeof json.discount === 'object'
+    ) {
+      const pricing = json.pricing as Record<string, unknown>
+      const discount = json.discount as Record<string, unknown>
+      const toInt = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) ? v : Number.NaN)
+      const subtotalPence = toInt(pricing.subtotalPence)
+      const discPence = toInt(pricing.discountPence)
+      const totalPence = toInt(pricing.totalPence)
+
+      // Guard the authoritative shape before applying.
+      if (
+        discount &&
+        typeof discount.code === 'string' &&
+        (discount.discountType === 'fixed' || discount.discountType === 'percentage') &&
+        (discount.scope === 'site_wide' || discount.scope === 'campaign') &&
+        Number.isInteger(subtotalPence) &&
+        Number.isInteger(discPence) &&
+        discPence > 0 &&
+        Number.isInteger(totalPence) &&
+        totalPence > 0 &&
+        totalPence < subtotalPence
+      ) {
+        const applied: AppliedDiscount = {
+          code: discount.code,
+          discountType: discount.discountType,
+          discountValue: Number(discount.discountValue),
+          scope: discount.scope,
+          subtotalPence,
+          discountPence: discPence,
+          totalPence,
+        }
+        dispatchDiscount({ type: 'validateSuccess', applied, nextKey: createIdempotencyKey() })
+        return
+      }
+      // A success response we cannot trust — surface a safe generic error.
+      dispatchDiscount({ type: 'validateError', code: 'discount_code_validation_failed' })
+      return
+    }
+
+    const code = typeof json.error === 'string' ? json.error : 'discount_code_invalid'
+    dispatchDiscount({ type: 'validateError', code })
+  }
+
   async function handleConfirm() {
     // While the inline name form is open the pay button is inert — the form's
     // own "Save and continue" action drives the (single-request) continuation.
@@ -323,12 +451,15 @@ export function CheckoutReviewClient({
       const createRes = await fetch('/api/checkout/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          campaignId,
-          qty,
-          ...(validatedBundlePricePence != null ? { bundlePricePence: validatedBundlePricePence } : {}),
-          useCredit,
-        }),
+        body: JSON.stringify(
+          buildCreateCheckoutBody({
+            state: discountState,
+            campaignId,
+            qty,
+            bundlePricePence: validatedBundlePricePence ?? undefined,
+            useCredit,
+          }),
+        ),
       })
 
       if (createRes.status === 401) {
@@ -345,9 +476,37 @@ export function CheckoutReviewClient({
       }
 
       if (!createRes.ok || createJson.ok !== true) {
+        const code = typeof createJson.error === 'string' ? createJson.error : undefined
+        // A finalized/expired reservation means this checkout session is spent.
+        // Reset the discount (rotating the idempotency key to a fresh request)
+        // and show a clear "start again" message.
+        if (isCheckoutExpired(code)) {
+          discountReqId.current += 1
+          dispatchDiscount({ type: 'remove', nextKey: createIdempotencyKey() })
+          setError(checkoutErrorMessage(code))
+          setStatus(null)
+          setSubmitting(false)
+          submitLatch.current = false
+          return
+        }
+        // Discount rejections carry a discount_code_* code — surface friendly
+        // copy; other codes fall through to the existing name/transient handling.
+        if (code && code.startsWith('discount_code_')) {
+          setError(checkoutErrorMessage(code))
+          setStatus(null)
+          setSubmitting(false)
+          submitLatch.current = false
+          return
+        }
         releaseForRetry(createJson.error)
         return
       }
+
+      // Authoritative discounted total from the create response. Falls back to
+      // the display total for older responses without a pricing block.
+      const pricingBlock = createJson.pricing as Record<string, unknown> | undefined
+      const authoritativeTotalPence =
+        pricingBlock && isNonNegInt(pricingBlock.totalPence) ? pricingBlock.totalPence : displayTotalPence
 
       const ref = createJson.ref
       if (typeof ref !== 'string' || ref.length === 0 || ref.length > 128) {
@@ -395,7 +554,7 @@ export function CheckoutReviewClient({
         isNonNegInt(externalPaymentPence) &&
         typeof providerPaymentRequired === 'boolean' &&
         Number.isSafeInteger(sum) &&
-        sum === displayTotalPence
+        sum === authoritativeTotalPence
       if (!validWallet) {
         releaseForRetry()
         return
@@ -565,7 +724,7 @@ export function CheckoutReviewClient({
   // ---- Dynamic CTA wording (display only — the backend stays authoritative) --
   let ctaLabel: string
   if (!useCredit || previewCreditPence <= 0) {
-    ctaLabel = `Pay ${formatGBP(displayTotalPence)} securely`
+    ctaLabel = `Pay ${formatGBP(effectiveTotalPence)} securely`
   } else if (previewExternalPence > 0) {
     ctaLabel = `Use ${formatGBP(previewCreditPence)} credit & pay ${formatGBP(previewExternalPence)}`
   } else {
@@ -807,11 +966,32 @@ export function CheckoutReviewClient({
               )}
             </dl>
 
+            {discountPence > 0 && (
+              <div className="mt-2 flex items-center justify-between gap-4 text-sm text-emerald-300">
+                <span>Discount ({discountState.applied?.code})</span>
+                <span className="font-semibold tabular-nums">−{formatGBP(discountPence)}</span>
+              </div>
+            )}
+
             <div className="mt-3 flex items-center justify-between gap-4 rounded-xl bg-white/5 p-4">
               <span className="text-sm font-semibold text-purple-100">Order total</span>
               <span className="text-2xl font-extrabold tabular-nums text-yellow-300">
-                {formatGBP(displayTotalPence)}
+                {formatGBP(effectiveTotalPence)}
               </span>
+            </div>
+
+            {/* Discount code — priced before WTF Credit, which applies to the
+                already-discounted total. */}
+            <div className="mt-4">
+              <DiscountCodeField
+                state={discountState}
+                discountPence={discountPence}
+                formatGBP={formatGBP}
+                disabled={submitting || nameFormOpen}
+                onInputChange={onDiscountInputChange}
+                onApply={applyDiscount}
+                onRemove={onRemoveDiscount}
+              />
             </div>
 
             {selectedKey !== initialKey && (

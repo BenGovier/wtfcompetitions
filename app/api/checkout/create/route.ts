@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { randomUUID } from 'crypto'
+import { computeAuthoritativeSubtotal, normalizeBundlePence, normalizeQty } from '@/lib/checkout/pricing'
+import { validateDiscountCode } from '@/lib/discounts/validateDiscountCode'
+import type { AppliedDiscount } from '@/lib/discounts/discountCalc'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -75,21 +78,34 @@ export async function POST(request: Request) {
   }
 
   const campaignId = body.campaignId as string | undefined
-  const qty = typeof body.qty === 'number' ? body.qty : parseInt(String(body.qty || ''), 10)
+  const qty = normalizeQty(body.qty)
   // Optional WTF Credit opt-in. ONLY the literal boolean `true` counts as opting
   // in; missing/false/string/numeric/malformed values all behave as false. No
   // client currently sends this field, so existing checkouts are unaffected. A
   // wallet AMOUNT is never accepted from the client — the DB function computes it.
   const useCredit = body.useCredit === true
-  const bundlePricePenceRaw = (body as any).bundlePricePence
-  const bundlePricePenceParsed = typeof bundlePricePenceRaw === 'number' ? bundlePricePenceRaw : parseInt(String(bundlePricePenceRaw ?? ''), 10)
-  const bundlePricePence = Number.isFinite(bundlePricePenceParsed) && bundlePricePenceParsed > 0 ? bundlePricePenceParsed : undefined
+  const bundlePricePence = normalizeBundlePence((body as Record<string, unknown>).bundlePricePence)
+
+  // Optional discount code. We ONLY ever read the raw submitted STRING here; the
+  // amount/type/scope/id are computed server-side from the discount_codes row.
+  // Any client-supplied discountPence/discountType/discountValue/discountCodeId/
+  // subtotalPence/totalPence fields are deliberately ignored as authoritative.
+  const discountCodeRaw = (body as Record<string, unknown>).discountCode
+  const discountCode = typeof discountCodeRaw === 'string' ? discountCodeRaw : null
+
+  // Optional client idempotency key. When absent we keep the historical
+  // behaviour (a fresh server-generated key, so every request is a new intent).
+  const idempotencyKeyRaw = (body as Record<string, unknown>).idempotencyKey
+  const clientIdempotencyKey =
+    typeof idempotencyKeyRaw === 'string' && idempotencyKeyRaw.trim().length >= 8 && idempotencyKeyRaw.trim().length <= 200
+      ? idempotencyKeyRaw.trim()
+      : null
 
   if (!campaignId || typeof campaignId !== 'string') {
     return NextResponse.json({ ok: false, error: 'Missing or invalid campaignId' }, { status: 400, ...NO_STORE })
   }
 
-  if (!qty || qty < 1 || !Number.isFinite(qty)) {
+  if (qty == null) {
     return NextResponse.json({ ok: false, error: 'Missing or invalid qty' }, { status: 400, ...NO_STORE })
   }
 
@@ -146,49 +162,174 @@ export async function POST(request: Request) {
     }
   }
 
-  // Bundle validation
-  let totalPence: number
-  if (bundlePricePence != null && Number.isFinite(bundlePricePence)) {
-    if (!Array.isArray(campaign.bundles)) {
-      return NextResponse.json({ ok: false, error: 'Invalid bundle' }, { status: 400, ...NO_STORE })
-    }
-    const matched = (campaign.bundles as { quantity: number; price_pence: number }[]).find(
-      (b) => Number(b.quantity) === qty && Number(b.price_pence) === bundlePricePence
+  // Bundle validation + authoritative subtotal. The exact historical bundle
+  // rule is preserved by `computeAuthoritativeSubtotal` (match a configured
+  // { quantity, price_pence } bundle, else qty * ticket_price_pence).
+  const subtotalResult = computeAuthoritativeSubtotal(campaign, qty, bundlePricePence)
+  if (!subtotalResult.ok) {
+    const badBundle = subtotalResult.code === 'invalid_bundle'
+    return NextResponse.json(
+      { ok: false, error: badBundle ? 'Invalid bundle' : 'Invalid pricing' },
+      { status: 400, ...NO_STORE },
     )
-    if (!matched) {
-      return NextResponse.json({ ok: false, error: 'Invalid bundle' }, { status: 400, ...NO_STORE })
-    }
-    totalPence = bundlePricePence
-  } else {
-    totalPence = qty * (campaign.ticket_price_pence ?? 0)
+  }
+  const subtotalPence = subtotalResult.subtotalPence
+
+  // Validate + calculate the optional discount BEFORE inserting the intent and
+  // BEFORE any wallet reservation, so wallet_prepare_checkout (which reads the
+  // persisted total_pence) always splits against the discounted total.
+  const discountResult = await validateDiscountCode({
+    campaignId,
+    subtotalPence,
+    submittedCode: discountCode,
+  })
+
+  if (!discountResult.ok) {
+    // Client-safe stable error code only — never a raw DB error.
+    return NextResponse.json(
+      { ok: false, error: discountResult.code },
+      { status: discountResult.status, ...NO_STORE },
+    )
   }
 
-  const ref = `CHK-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-  const providerSessionId = randomUUID()
+  const appliedDiscount: AppliedDiscount | null = discountResult.discount
+  const discountPence = appliedDiscount?.discountPence ?? 0
+  const totalPence = discountResult.totalPence
 
-  // 4) Insert checkout_intent as the authenticated user (RLS-scoped client).
-  //    Select the new row's id so the wallet prepare RPC (below) can reference it.
-  const { data: checkoutIntent, error: insertErr } = await supabase
-    .from('checkout_intents')
-    .insert({
-      ref,
-      idempotency_key: randomUUID(),
-      user_id: resolvedUser.id,
-      campaign_id: campaignId,
-      giveaway_id: giveawayId,
-      qty,
-      total_pence: totalPence,
-      currency: 'GBP',
-      provider: 'debug',
-      provider_session_id: providerSessionId,
-      state: 'pending',
-    })
-    .select('id')
-    .single()
+  // The authoritative pricing snapshot persisted on the checkout intent. This is
+  // captured now and never depends on a later edit to the live discount record.
+  const discountSnapshot = {
+    subtotal_pence: subtotalPence,
+    discount_pence: discountPence,
+    discount_code_id: appliedDiscount?.id ?? null,
+    discount_code_entered: appliedDiscount ? appliedDiscount.code : null,
+    discount_type_applied: appliedDiscount?.discountType ?? null,
+    discount_value_applied: appliedDiscount?.discountValue ?? null,
+    discount_scope_applied: appliedDiscount?.scope ?? null,
+  }
 
-  if (insertErr || !checkoutIntent) {
-    console.error('[checkout/create] Insert error:', insertErr)
-    return NextResponse.json({ ok: false, error: 'Failed to create checkout intent' }, { status: 500, ...NO_STORE })
+  // Additive, backward-compatible pricing section returned to the client.
+  const pricingResponse = {
+    subtotalPence,
+    discountPence,
+    totalPence,
+    discount: appliedDiscount
+      ? {
+          code: appliedDiscount.code,
+          discountType: appliedDiscount.discountType,
+          discountValue: appliedDiscount.discountValue,
+          scope: appliedDiscount.scope,
+        }
+      : null,
+  }
+
+  // 4) Resolve the checkout intent — either reuse an existing one for a repeated
+  //    client idempotency key (only when the authoritative pricing inputs are
+  //    identical) or insert a fresh intent with the full pricing snapshot.
+  let checkoutIntentId: string
+  let ref: string
+  let providerSessionId: string
+
+  if (clientIdempotencyKey) {
+    const { data: existing, error: existingErr } = await supabase
+      .from('checkout_intents')
+      .select(
+        'id, ref, provider_session_id, state, campaign_id, qty, subtotal_pence, discount_pence, total_pence, discount_code_id, discount_code_entered',
+      )
+      .eq('user_id', resolvedUser.id)
+      .eq('idempotency_key', clientIdempotencyKey)
+      .maybeSingle()
+
+    if (existingErr) {
+      console.error('[checkout/create] idempotency lookup failed:', existingErr.message)
+      return NextResponse.json({ ok: false, error: 'Failed to create checkout intent' }, { status: 500, ...NO_STORE })
+    }
+
+    if (existing) {
+      // A confirmed/failed (non-pending) intent is TERMINAL. Never reuse, reprice
+      // or re-run wallet preparation against it — return a safe conflict so the
+      // finished checkout is left exactly as-is.
+      if (existing.state !== 'pending') {
+        return NextResponse.json({ ok: false, error: 'idempotency_conflict' }, { status: 409, ...NO_STORE })
+      }
+
+      // A repeated key must NEVER reuse an intent whose pricing inputs differ.
+      const samePricing =
+        existing.campaign_id === campaignId &&
+        Number(existing.qty) === qty &&
+        Number(existing.subtotal_pence) === subtotalPence &&
+        Number(existing.discount_pence) === discountPence &&
+        Number(existing.total_pence) === totalPence &&
+        (existing.discount_code_id ?? null) === (appliedDiscount?.id ?? null) &&
+        (existing.discount_code_entered ?? null) === (appliedDiscount?.code ?? null)
+
+      if (!samePricing) {
+        // Do not mutate the existing intent and do not create a wallet
+        // reservation against changed pricing.
+        return NextResponse.json({ ok: false, error: 'idempotency_conflict' }, { status: 409, ...NO_STORE })
+      }
+
+      checkoutIntentId = existing.id as string
+      ref = existing.ref as string
+      providerSessionId = existing.provider_session_id as string
+    } else {
+      ref = `CHK-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      providerSessionId = randomUUID()
+      const { data: inserted, error: insertErr } = await supabase
+        .from('checkout_intents')
+        .insert({
+          ref,
+          idempotency_key: clientIdempotencyKey,
+          user_id: resolvedUser.id,
+          campaign_id: campaignId,
+          giveaway_id: giveawayId,
+          qty,
+          total_pence: totalPence,
+          currency: 'GBP',
+          provider: 'debug',
+          provider_session_id: providerSessionId,
+          state: 'pending',
+          ...discountSnapshot,
+        })
+        .select('id')
+        .single()
+
+      if (insertErr || !inserted) {
+        console.error('[checkout/create] Insert error:', insertErr)
+        return NextResponse.json({ ok: false, error: 'Failed to create checkout intent' }, { status: 500, ...NO_STORE })
+      }
+      checkoutIntentId = inserted.id
+    }
+  } else {
+    ref = `CHK-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    providerSessionId = randomUUID()
+
+    // Insert checkout_intent as the authenticated user (RLS-scoped client).
+    // Select the new row's id so the wallet prepare RPC (below) can reference it.
+    const { data: inserted, error: insertErr } = await supabase
+      .from('checkout_intents')
+      .insert({
+        ref,
+        idempotency_key: randomUUID(),
+        user_id: resolvedUser.id,
+        campaign_id: campaignId,
+        giveaway_id: giveawayId,
+        qty,
+        total_pence: totalPence,
+        currency: 'GBP',
+        provider: 'debug',
+        provider_session_id: providerSessionId,
+        state: 'pending',
+        ...discountSnapshot,
+      })
+      .select('id')
+      .single()
+
+    if (insertErr || !inserted) {
+      console.error('[checkout/create] Insert error:', insertErr)
+      return NextResponse.json({ ok: false, error: 'Failed to create checkout intent' }, { status: 500, ...NO_STORE })
+    }
+    checkoutIntentId = inserted.id
   }
 
   // 4b) WTF Credit prepare — ONLY when the user explicitly opted in.
@@ -214,7 +355,7 @@ export async function POST(request: Request) {
 
   if (useCredit) {
     const { data: walletData, error: walletErr } = await supabase.rpc('wallet_prepare_checkout', {
-      p_checkout_intent_id: checkoutIntent.id,
+      p_checkout_intent_id: checkoutIntentId,
       p_user_id: resolvedUser.id,
       p_use_credit: true,
     })
@@ -222,6 +363,15 @@ export async function POST(request: Request) {
     if (walletErr) {
       // Do not expose the raw RPC/database error to the client.
       console.error(`[checkout/create] wallet_prepare_checkout RPC failed for ref ${ref}:`, walletErr.message)
+
+      // A finalized (released/expired/captured) reservation means this checkout
+      // intent can no longer be prepared — the session is spent. Surface a
+      // distinct, client-safe conflict so the UI can prompt a fresh start
+      // instead of showing a generic failure.
+      if (typeof walletErr.message === 'string' && walletErr.message.includes('wallet_checkout_reservation_finalized')) {
+        return NextResponse.json({ ok: false, error: 'checkout_expired' }, { status: 409, ...NO_STORE })
+      }
+
       return NextResponse.json({ ok: false, error: 'wallet_prepare_failed' }, { status: 500, ...NO_STORE })
     }
 
@@ -272,8 +422,8 @@ export async function POST(request: Request) {
 
   return NextResponse.json(
     walletResponse
-      ? { ok: true, ref, providerSessionId, wallet: walletResponse }
-      : { ok: true, ref, providerSessionId },
+      ? { ok: true, ref, providerSessionId, pricing: pricingResponse, wallet: walletResponse }
+      : { ok: true, ref, providerSessionId, pricing: pricingResponse },
     NO_STORE,
   )
 }

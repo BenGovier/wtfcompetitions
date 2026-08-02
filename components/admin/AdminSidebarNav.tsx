@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { Radio, Wallet, Users } from "lucide-react"
+import { Radio, Wallet, Users, Tag } from "lucide-react"
 import { canAccessRoute, type AdminRole } from "@/lib/admin/permissions"
 
 const navItems = [
@@ -11,6 +11,7 @@ const navItems = [
   { href: "/admin/live-feed", label: "Live Feed" },
   { href: "/admin/campaigns", label: "Campaigns" },
   { href: "/admin/instant-wins", label: "Instant Wins" },
+  { href: "/admin/discount-codes", label: "Discount Codes" },
   { href: "/admin/entries", label: "Entries" },
   { href: "/admin/wallets", label: "WTF Credit" },
   { href: "/admin/payouts", label: "Payouts" },
@@ -64,6 +65,9 @@ export function AdminNavLinks({
             )}
             {item.href === "/admin/wallets" && (
               <Wallet className="mr-2 inline-block h-4 w-4" />
+            )}
+            {item.href === "/admin/discount-codes" && (
+              <Tag className="mr-2 inline-block h-4 w-4" />
             )}
             {item.href === "/admin/hosts" && (
               <Users className="mr-2 inline-block h-4 w-4" />
