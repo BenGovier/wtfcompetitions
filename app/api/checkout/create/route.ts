@@ -363,6 +363,15 @@ export async function POST(request: Request) {
     if (walletErr) {
       // Do not expose the raw RPC/database error to the client.
       console.error(`[checkout/create] wallet_prepare_checkout RPC failed for ref ${ref}:`, walletErr.message)
+
+      // A finalized (released/expired/captured) reservation means this checkout
+      // intent can no longer be prepared — the session is spent. Surface a
+      // distinct, client-safe conflict so the UI can prompt a fresh start
+      // instead of showing a generic failure.
+      if (typeof walletErr.message === 'string' && walletErr.message.includes('wallet_checkout_reservation_finalized')) {
+        return NextResponse.json({ ok: false, error: 'checkout_expired' }, { status: 409, ...NO_STORE })
+      }
+
       return NextResponse.json({ ok: false, error: 'wallet_prepare_failed' }, { status: 500, ...NO_STORE })
     }
 
