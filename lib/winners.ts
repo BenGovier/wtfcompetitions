@@ -23,32 +23,70 @@ export const GRID_PAGE_SIZE = 24
  * The SINGLE shared PostgREST eligibility filter used by BOTH the initial server
  * load and the `/api/winners` route, so their rules can never drift.
  *
- * A winner is eligible when EITHER:
- *   1. it is a main-draw winner (`kind = 'main'`), OR
- *   2. it is an instant win fulfilled as cash (`kind = 'instant'` AND
- *      `fulfilment_type = 'cash'`). Balloon instant wins and cash instant wins
- *      both use `fulfilment_type = 'cash'`, so this single branch covers both.
+ * A winner is eligible when:
  *
- * This EXCLUDES all site-credit / wallet-credit instant wins
- * (`fulfilment_type = 'wallet_credit'`) regardless of numeric value, plus any
- * instant win with `fulfilment_type` of `manual` or NULL (fail-closed).
+ *   kind = 'main'
+ *   OR (
+ *     kind = 'instant'
+ *     AND NOT credit
+ *     AND (
+ *       fulfilment_type = 'cash'
+ *       OR prize_title ILIKE '%balloon%'
+ *       OR prize_title ILIKE '%ballon%'
+ *     )
+ *   )
  *
- * No prize-value thresholds, campaign-slug allow-lists, prize-title matching, or
- * prize-value-text matching are used. Applied BEFORE order/limit/peek so
- * featured, grid, hasMore and the cursor all derive from the eligible set.
+ * where "credit" means ANY of:
+ *   - fulfilment_type = 'wallet_credit'
+ *   - prize_title contains "credit"
+ *   - prize_value_text contains "credit"
+ *
+ * Balloon-format instant wins are recorded with `fulfilment_type = 'manual'`
+ * (not 'cash'), so they are matched by the prize-title "balloon"/"ballon"
+ * predicate — this recovers the balloon winners that a cash-only filter dropped.
+ *
+ * NULL-safety: each credit exclusion is written as
+ * `or(<col>.is.null,<col>.not.ilike.*credit*)` so that a NULL title / value-text
+ * counts as "not credit" (a bare `.not.ilike` against NULL evaluates to NULL and
+ * would otherwise drop legitimate winners). Likewise wallet-credit exclusion is
+ * `or(fulfilment_type.is.null,fulfilment_type.neq.wallet_credit)`.
+ *
+ * No prize-value thresholds, campaign-slug allow-lists, or campaign-specific
+ * exceptions are used. Applied BEFORE order/limit/peek so featured, grid,
+ * hasMore and the cursor all derive from the eligible set.
  */
 export function winnersEligibilityOrFilter(): string {
-  return "kind.eq.main,and(kind.eq.instant,fulfilment_type.eq.cash)"
+  return (
+    "kind.eq.main," +
+    "and(" +
+    "kind.eq.instant," +
+    "or(fulfilment_type.is.null,fulfilment_type.neq.wallet_credit)," +
+    "or(prize_title.is.null,prize_title.not.ilike.*credit*)," +
+    "or(prize_value_text.is.null,prize_value_text.not.ilike.*credit*)," +
+    "or(fulfilment_type.eq.cash,prize_title.ilike.*balloon*,prize_title.ilike.*ballon*)" +
+    ")"
+  )
 }
 
 /**
  * Client-safe mirror of the query eligibility rule, used ONLY by the mock
  * fallback (never for live rows, which are filtered at the query layer). Keeps
- * the fallback from surfacing an ineligible winner. Logically identical to
+ * the fallback from surfacing an ineligible winner. Logically IDENTICAL to
  * `winnersEligibilityOrFilter()`.
  */
 export function isWinnerEligible(w: WinnerSnapshot): boolean {
-  return w.kind === "main" || (w.kind === "instant" && w.fulfilmentType === "cash")
+  if (w.kind === "main") return true
+  if (w.kind !== "instant") return false
+
+  const title = (w.prizeTitle ?? "").toLowerCase()
+  const valueText = (w.prizeValueText ?? "").toLowerCase()
+
+  const isCredit =
+    w.fulfilmentType === "wallet_credit" || title.includes("credit") || valueText.includes("credit")
+  if (isCredit) return false
+
+  const isBalloon = title.includes("balloon") || title.includes("ballon")
+  return w.fulfilmentType === "cash" || isBalloon
 }
 
 /**
