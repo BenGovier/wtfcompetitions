@@ -73,7 +73,6 @@ export async function POST(request: Request) {
 
   // 5) Run the shared discount validator.
   const discountResult = await validateDiscountCode({
-    supabase,
     campaignId,
     subtotalPence,
     submittedCode: code,

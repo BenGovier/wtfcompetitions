@@ -179,7 +179,6 @@ export async function POST(request: Request) {
   // BEFORE any wallet reservation, so wallet_prepare_checkout (which reads the
   // persisted total_pence) always splits against the discounted total.
   const discountResult = await validateDiscountCode({
-    supabase,
     campaignId,
     subtotalPence,
     submittedCode: discountCode,
@@ -235,7 +234,7 @@ export async function POST(request: Request) {
     const { data: existing, error: existingErr } = await supabase
       .from('checkout_intents')
       .select(
-        'id, ref, provider_session_id, campaign_id, qty, subtotal_pence, discount_pence, total_pence, discount_code_id, discount_code_entered',
+        'id, ref, provider_session_id, state, campaign_id, qty, subtotal_pence, discount_pence, total_pence, discount_code_id, discount_code_entered',
       )
       .eq('user_id', resolvedUser.id)
       .eq('idempotency_key', clientIdempotencyKey)
@@ -247,6 +246,13 @@ export async function POST(request: Request) {
     }
 
     if (existing) {
+      // A confirmed/failed (non-pending) intent is TERMINAL. Never reuse, reprice
+      // or re-run wallet preparation against it — return a safe conflict so the
+      // finished checkout is left exactly as-is.
+      if (existing.state !== 'pending') {
+        return NextResponse.json({ ok: false, error: 'idempotency_conflict' }, { status: 409, ...NO_STORE })
+      }
+
       // A repeated key must NEVER reuse an intent whose pricing inputs differ.
       const samePricing =
         existing.campaign_id === campaignId &&

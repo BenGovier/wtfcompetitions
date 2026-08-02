@@ -16,7 +16,16 @@
 export type DiscountType = 'fixed' | 'percentage'
 export type DiscountScope = 'site_wide' | 'campaign'
 
-/** Stable, client-safe discount error codes with their HTTP status. */
+/**
+ * Stable, client-safe discount error codes with their HTTP status.
+ *
+ * This is the SINGLE public error vocabulary shared by BOTH the checkout-create
+ * route and the provisional validation endpoint. Malformed AND unknown codes
+ * both surface as `discount_code_invalid` so the API never reveals whether a
+ * guessed promotion code exists. `discount_code_validation_failed` is reserved
+ * for an unexpected server/database failure (never a bad code), so a transient
+ * outage is not mislabelled as an invalid code.
+ */
 export type DiscountErrorCode =
   | 'discount_code_invalid'
   | 'discount_code_inactive'
@@ -25,6 +34,7 @@ export type DiscountErrorCode =
   | 'discount_code_wrong_campaign'
   | 'discount_code_no_saving'
   | 'discount_code_exceeds_subtotal'
+  | 'discount_code_validation_failed'
 
 export const DISCOUNT_ERROR_STATUS: Record<DiscountErrorCode, number> = {
   discount_code_invalid: 400,
@@ -34,6 +44,7 @@ export const DISCOUNT_ERROR_STATUS: Record<DiscountErrorCode, number> = {
   discount_code_wrong_campaign: 409,
   discount_code_no_saving: 422,
   discount_code_exceeds_subtotal: 422,
+  discount_code_validation_failed: 500,
 }
 
 export interface AppliedDiscount {

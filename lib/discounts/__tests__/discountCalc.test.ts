@@ -116,6 +116,18 @@ describe('evaluateDiscount', () => {
     expect(r).toMatchObject({ ok: false, code: 'discount_code_no_saving', status: 422 })
   })
 
+  it('applies a fixed discount exactly one penny below the subtotal', () => {
+    const r = evaluateDiscount({
+      row: row({ discount_value: 999 }),
+      campaignId: CAMPAIGN,
+      subtotalPence: 1000,
+      now: NOW,
+    })
+    if (!r.ok) throw new Error('expected ok')
+    expect(r.discount?.discountPence).toBe(999)
+    expect(r.totalPence).toBe(1) // final total stays > 0
+  })
+
   it('rejects a fixed discount equal to the subtotal', () => {
     const r = evaluateDiscount({
       row: row({ discount_value: 1000 }),
