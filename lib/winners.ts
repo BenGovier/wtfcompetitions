@@ -20,82 +20,35 @@ export const FEATURED_COUNT = 4
 export const GRID_PAGE_SIZE = 24
 
 /**
- * Minimum numeric prize value (in pence) shown on the PUBLIC winners page.
- *
- * Enforced as a `>= 2000` predicate on `prize_value_pence` at the QUERY layer
- * in both the initial server load and the `/api/winners` route, applied before
- * ordering / limiting / the peek row / hasMore / nextCursor. Because SQL
- * comparisons against NULL evaluate to false, rows with a missing numeric value
- * fail closed and are excluded — we never infer a value from titles or text.
- */
-export const MIN_PUBLIC_PRIZE_PENCE = 2000
-
-/**
- * Approved Balloon competition campaign slugs.
- *
- * Confirmed balloon campaigns currently use MIXED `presentation_type` /
- * `reveal_type` values (some `balloon_pop`, some `instant_cash`), so those
- * columns cannot be trusted to detect balloons — and campaign TITLES must never
- * be used either. This explicit slug allow-list is the single source of truth
- * for balloon eligibility. Slug casing is exact and MUST be preserved (PostgREST
- * `in.(...)` matching is case-sensitive).
- */
-export const BALLOON_WINNER_CAMPAIGN_SLUGS = [
-  "salli3",
-  "rosslizzy",
-  "rosslizzy2",
-  "Salli2",
-  "Salli",
-  "ch8june",
-  "grandballoon",
-] as const
-
-/**
  * The SINGLE shared PostgREST eligibility filter used by BOTH the initial server
  * load and the `/api/winners` route, so their rules can never drift.
  *
  * A winner is eligible when EITHER:
- *   1. `prize_value_pence >= 2000` (a proven, meaningful numeric value), OR
- *   2. it is a genuine, NON-wallet-credit balloon win, i.e. `campaign_slug` is in
- *      the approved balloon list AND `fulfilment_type` IS DISTINCT FROM
- *      'wallet_credit'. This lets balloon cash / manual / Balloon-Pop prizes
- *      through (including NULL numeric value) while still EXCLUDING sub-£20 WTF
- *      Credit even when it belongs to a balloon campaign.
+ *   1. it is a main-draw winner (`kind = 'main'`), OR
+ *   2. it is an instant win fulfilled as cash (`kind = 'instant'` AND
+ *      `fulfilment_type = 'cash'`). Balloon instant wins and cash instant wins
+ *      both use `fulfilment_type = 'cash'`, so this single branch covers both.
  *
- * Because a NULL `fulfilment_type` must be treated as distinct from
- * 'wallet_credit' (IS DISTINCT FROM), branch 2 uses
- * `or(fulfilment_type.is.null,fulfilment_type.neq.wallet_credit)` — a plain
- * `.neq` would drop NULL rows since `NULL <> 'wallet_credit'` is NULL/false.
+ * This EXCLUDES all site-credit / wallet-credit instant wins
+ * (`fulfilment_type = 'wallet_credit'`) regardless of numeric value, plus any
+ * instant win with `fulfilment_type` of `manual` or NULL (fail-closed).
  *
- * Non-balloon rows with a NULL numeric value fail branch 1 (NULL comparisons are
- * false) and are not in branch 2, so they remain excluded (fail-closed). Applied
- * BEFORE order/limit/peek so featured, grid, hasMore and the cursor all derive
- * from the eligible set. The slugs are plain alphanumerics, so no PostgREST
- * quoting/escaping is required inside `in.(...)`.
+ * No prize-value thresholds, campaign-slug allow-lists, prize-title matching, or
+ * prize-value-text matching are used. Applied BEFORE order/limit/peek so
+ * featured, grid, hasMore and the cursor all derive from the eligible set.
  */
 export function winnersEligibilityOrFilter(): string {
-  const slugList = BALLOON_WINNER_CAMPAIGN_SLUGS.join(",")
-  const balloonNonCredit = `and(campaign_slug.in.(${slugList}),or(fulfilment_type.is.null,fulfilment_type.neq.wallet_credit))`
-  return `prize_value_pence.gte.${MIN_PUBLIC_PRIZE_PENCE},${balloonNonCredit}`
+  return "kind.eq.main,and(kind.eq.instant,fulfilment_type.eq.cash)"
 }
 
 /**
  * Client-safe mirror of the query eligibility rule, used ONLY by the mock
  * fallback (never for live rows, which are filtered at the query layer). Keeps
- * the fallback from surfacing an ineligible winner.
+ * the fallback from surfacing an ineligible winner. Logically identical to
+ * `winnersEligibilityOrFilter()`.
  */
 export function isWinnerEligible(w: WinnerSnapshot): boolean {
-  const meetsValue =
-    typeof w.prizeValuePence === "number" &&
-    Number.isFinite(w.prizeValuePence) &&
-    w.prizeValuePence >= MIN_PUBLIC_PRIZE_PENCE
-  const isBalloonSlug =
-    typeof w.giveawaySlug === "string" &&
-    (BALLOON_WINNER_CAMPAIGN_SLUGS as readonly string[]).includes(w.giveawaySlug)
-  // IS DISTINCT FROM 'wallet_credit': NULL/undefined counts as distinct (eligible),
-  // so only an explicit "wallet_credit" is excluded on the balloon branch.
-  const isNonCreditBalloon = isBalloonSlug && w.fulfilmentType !== "wallet_credit"
-  return meetsValue || isNonCreditBalloon
+  return w.kind === "main" || (w.kind === "instant" && w.fulfilmentType === "cash")
 }
 
 /**
