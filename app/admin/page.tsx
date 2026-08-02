@@ -1,11 +1,16 @@
 import { redirect } from 'next/navigation'
 import { getAdminContext } from '@/lib/admin/auth'
-import { ReportsDashboard } from '@/components/admin/reports/ReportsDashboard'
+import { DashboardView } from '@/components/admin/reports/DashboardView'
+import { parseDashboardView } from '@/lib/admin/reporting/growth'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-export default async function AdminDashboard() {
+export default async function AdminDashboard({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string }>
+}) {
   // Preserve existing role routing: hosts (ops) land on the live feed and
   // operations admins land on payouts rather than an unauthorized page; only
   // full Super Admins see finance figures. The role branch runs BEFORE any
@@ -25,6 +30,9 @@ export default async function AdminDashboard() {
     redirect('/auth/unauthorized')
   }
 
+  const { view } = await searchParams
+  const initialView = parseDashboardView(view)
+
   return (
     <div className="flex flex-col gap-4">
       <div>
@@ -33,7 +41,7 @@ export default async function AdminDashboard() {
           External payment revenue, gross ticket sales, and WTF Credit redeemed — never blended.
         </p>
       </div>
-      <ReportsDashboard initialRange="today" />
+      <DashboardView initialView={initialView} />
     </div>
   )
 }
