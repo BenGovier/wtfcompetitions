@@ -26,6 +26,8 @@ interface ReportFilterBarProps {
   providers: string[]
   exportHref: string
   disabled?: boolean
+  /** Growth v1 has no CSV export; hide the button without touching Overview. */
+  showExport?: boolean
 }
 
 export function ReportFilterBar({
@@ -35,6 +37,7 @@ export function ReportFilterBar({
   providers,
   exportHref,
   disabled = false,
+  showExport = true,
 }: ReportFilterBarProps) {
   return (
     <div className="sticky top-0 z-20 -mx-4 border-b border-border bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:mx-0 sm:rounded-xl sm:border">
@@ -120,17 +123,19 @@ export function ReportFilterBar({
           </SelectContent>
         </Select>
 
-        <a
-          href={disabled ? undefined : exportHref}
-          aria-disabled={disabled}
-          className={cn(
-            'inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-border bg-card px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted sm:ml-auto',
-            disabled && 'pointer-events-none opacity-50',
-          )}
-        >
-          <Download className="h-4 w-4" aria-hidden="true" />
-          Export CSV
-        </a>
+        {showExport && (
+          <a
+            href={disabled ? undefined : exportHref}
+            aria-disabled={disabled}
+            className={cn(
+              'inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-border bg-card px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted sm:ml-auto',
+              disabled && 'pointer-events-none opacity-50',
+            )}
+          >
+            <Download className="h-4 w-4" aria-hidden="true" />
+            Export CSV
+          </a>
+        )}
       </div>
     </div>
   )

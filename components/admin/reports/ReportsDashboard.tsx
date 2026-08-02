@@ -40,7 +40,14 @@ function buildQuery(f: FilterState): string {
   return p.toString()
 }
 
-export function ReportsDashboard({ initialRange = 'today' as ReportRange }: { initialRange?: ReportRange }) {
+export function ReportsDashboard({
+  initialRange = 'today' as ReportRange,
+  active = true,
+}: {
+  initialRange?: ReportRange
+  /** When false (Growth tab showing), pause polling so only one view polls. */
+  active?: boolean
+}) {
   const [filters, setFilters] = useState<FilterState>({
     range: initialRange,
     from: todayISO(),
@@ -74,12 +81,12 @@ export function ReportsDashboard({ initialRange = 'today' as ReportRange }: { in
   }, [])
 
   const { data, error, isLoading, isValidating, mutate } = useSWR<DashboardPayload>(
-    ready ? `/api/admin/reports?${query}` : null,
+    ready && active ? `/api/admin/reports?${query}` : null,
     fetcher,
     {
       keepPreviousData: true, // retain last successful payload during refresh + on error
       revalidateOnFocus: false,
-      refreshInterval: REFRESH_INTERVAL_MS, // poll every 60s...
+      refreshInterval: active ? REFRESH_INTERVAL_MS : 0, // poll every 60s while active only...
       refreshWhenHidden: false, // ...but only while the tab is visible (pause when hidden)
       refreshWhenOffline: false,
       dedupingInterval: REFRESH_INTERVAL_MS, // never hit the API more than once per 60s window
