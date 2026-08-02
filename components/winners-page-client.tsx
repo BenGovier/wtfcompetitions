@@ -16,6 +16,42 @@ interface WinnersPageClientProps {
   initialHasMore: boolean
   loadError: boolean
   liveGiveaway?: LiveGiveaway | null
+  /** Exact count of eligible winners (server-cached). null when unavailable. */
+  verifiedWinsCount?: number | null
+}
+
+/** Format an integer with locale thousands separators (e.g. 1377 -> "1,377"). */
+function formatCount(n: number): string {
+  return n.toLocaleString("en-GB")
+}
+
+/**
+ * Relative "time ago" for the newest winner's `announcedAt`. Pure formatting of
+ * a value already on the page — no fetch, no interval, no live ticking. Computed
+ * once per render from a fixed timestamp. Returns null for missing/invalid input.
+ */
+function formatRelativeTime(iso: string | null | undefined): string | null {
+  if (!iso) return null
+  const then = new Date(iso).getTime()
+  if (Number.isNaN(then)) return null
+
+  const diffMs = Date.now() - then
+  const diffSec = Math.max(0, Math.floor(diffMs / 1000))
+  const minute = 60
+  const hour = 3600
+  const day = 86400
+
+  if (diffSec < minute) return "Just now"
+  if (diffSec < hour) {
+    const m = Math.floor(diffSec / minute)
+    return `${m} min${m === 1 ? "" : "s"} ago`
+  }
+  if (diffSec < day) {
+    const h = Math.floor(diffSec / hour)
+    return `${h} hour${h === 1 ? "" : "s"} ago`
+  }
+  const d = Math.floor(diffSec / day)
+  return `${d} day${d === 1 ? "" : "s"} ago`
 }
 
 export function WinnersPageClient({
@@ -24,6 +60,7 @@ export function WinnersPageClient({
   initialHasMore,
   loadError,
   liveGiveaway,
+  verifiedWinsCount,
 }: WinnersPageClientProps) {
   const router = useRouter()
 
@@ -40,6 +77,13 @@ export function WinnersPageClient({
   // The server query already enforces eligibility, so no client filtering.
   const featured = winners.slice(0, Math.min(FEATURED_COUNT, winners.length))
   const gridWinners = winners.slice(FEATURED_COUNT)
+
+  // Proof-strip values, derived only from data already on the page.
+  // Verified wins: exact server count (comma-formatted) or "Thousands" fallback.
+  const verifiedWinsValue =
+    typeof verifiedWinsCount === "number" ? formatCount(verifiedWinsCount) : "Thousands"
+  // Latest win: relative time of the NEWEST rendered winner, or "Recently".
+  const latestWinnerTime = formatRelativeTime(initialWinners[0]?.announcedAt) ?? "Recently"
 
   async function loadMore() {
     if (loading || !hasMore || !cursor) return
@@ -116,20 +160,29 @@ export function WinnersPageClient({
         </div>
       </section>
 
-      {/* 2. Proof strip — static trust statements. No metrics are calculated. */}
+      {/* 2. Proof strip — three authentic proof points derived from real winner
+          data already on the page. No fetch / interval / polling / per-winner
+          request lives here; values are passed in as props and formatted once.
+          Same connected three-column layout, dimensions and border as before. */}
       <section aria-label="Why you can trust WTF Giveaways" className="mt-3 md:mt-4">
         <dl className="grid grid-cols-3 divide-x divide-white/10 overflow-hidden rounded-2xl border border-white/10 bg-[#1a0a2e]/70">
           <div className="flex flex-col items-center px-2 py-3 text-center md:py-5">
-            <dt className="text-lg font-black tabular-nums text-yellow-300 md:text-2xl">£200,000+</dt>
-            <dd className="mt-0.5 text-[11px] text-white/60 md:text-xs">Paid out</dd>
+            <dt className="whitespace-nowrap text-[18px] font-black tabular-nums leading-tight text-yellow-300 min-[380px]:text-[20px] md:text-2xl">
+              £200,000+
+            </dt>
+            <dd className="mt-0.5 whitespace-nowrap text-[11px] text-white/60 md:text-xs">Paid out</dd>
           </div>
           <div className="flex flex-col items-center px-2 py-3 text-center md:py-5">
-            <dt className="text-lg font-black text-white md:text-2xl">Real people</dt>
-            <dd className="mt-0.5 text-[11px] text-white/60 md:text-xs">Verified winners</dd>
+            <dt className="whitespace-nowrap text-[18px] font-black tabular-nums leading-tight text-yellow-300 min-[380px]:text-[20px] md:text-2xl">
+              {verifiedWinsValue}
+            </dt>
+            <dd className="mt-0.5 whitespace-nowrap text-[11px] text-white/60 md:text-xs">Verified wins</dd>
           </div>
           <div className="flex flex-col items-center px-2 py-3 text-center md:py-5">
-            <dt className="text-lg font-black text-white md:text-2xl">Every week</dt>
-            <dd className="mt-0.5 text-[11px] text-white/60 md:text-xs">New winners</dd>
+            <dt className="text-balance text-[18px] font-black leading-tight text-yellow-300 min-[380px]:text-[20px] md:text-2xl">
+              Latest win
+            </dt>
+            <dd className="mt-0.5 whitespace-nowrap text-[11px] text-white/60 md:text-xs">{latestWinnerTime}</dd>
           </div>
         </dl>
       </section>
