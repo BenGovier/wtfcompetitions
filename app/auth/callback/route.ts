@@ -1,5 +1,9 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { setMarketingEmailPreference } from '@/lib/marketing/service'
+import { MARKETING_CONSENT_SOURCE } from '@/lib/marketing/consent'
+
+export const runtime = 'nodejs'
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl
@@ -39,6 +43,37 @@ export async function GET(request: NextRequest) {
   if (error) {
     console.error('[auth/callback] exchangeCodeForSession error:', error.message)
     return NextResponse.redirect(new URL('/auth/login?error=confirm_failed', request.url))
+  }
+
+  // A valid authenticated user now exists. If they ticked the optional marketing
+  // consent box at signup (carried on the signUp request as user metadata), turn
+  // it into a real, gated marketing preference now. This is best-effort: if it
+  // fails, the account is still confirmed and the user simply remains ineligible
+  // (we never silently retry or opt them in later). We log only a safe message,
+  // never the full email address.
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (user?.email && user.user_metadata?.marketing_opt_in === true) {
+      const result = await setMarketingEmailPreference({
+        userId: user.id,
+        emailLc: user.email,
+        enabled: true,
+        source: MARKETING_CONSENT_SOURCE.signup,
+      })
+      if (result.ok) {
+        // Clear the one-shot flag so re-visiting the link cannot re-apply it.
+        await supabase.auth.updateUser({ data: { marketing_opt_in: null } })
+      } else {
+        console.error('[auth/callback] marketing consent apply failed for user', user.id)
+      }
+    }
+  } catch (consentErr) {
+    console.error(
+      '[auth/callback] marketing consent step threw:',
+      consentErr instanceof Error ? consentErr.message : 'unknown_error',
+    )
   }
 
   return supabaseResponse

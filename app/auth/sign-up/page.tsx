@@ -11,9 +11,11 @@ import {
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
 import { useState } from 'react'
 import Link from 'next/link'
 import { validateCustomerName } from '@/lib/acquired/customer-name'
+import { MARKETING_CONSENT_LABEL } from '@/lib/marketing/consent'
 
 export default function SignUpPage() {
   const [email, setEmail] = useState('')
@@ -22,6 +24,11 @@ export default function SignUpPage() {
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [mobile, setMobile] = useState('')
+  // Marketing consent is OPTIONAL and unchecked by default. It never blocks
+  // account creation. The choice is carried on the existing signUp call via
+  // user metadata and only turned into a real, gated marketing preference
+  // server-side once a valid authenticated user exists (see app/auth/callback).
+  const [marketingOptIn, setMarketingOptIn] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [mobileError, setMobileError] = useState<string | null>(null)
   const [firstNameError, setFirstNameError] = useState<string | null>(null)
@@ -93,6 +100,10 @@ export default function SignUpPage() {
             first_name: normalizedFirstName,
             last_name: normalizedLastName,
             mobile: mobile.trim(),
+            // Carried on the existing registration request (no extra network
+            // call). Applied to the gated marketing tables only after the user
+            // is authenticated. Absent/false => user stays ineligible.
+            marketing_opt_in: marketingOptIn,
           },
         },
       })
@@ -237,6 +248,20 @@ export default function SignUpPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                   />
+                </div>
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    id="marketing-opt-in"
+                    checked={marketingOptIn}
+                    onCheckedChange={(v) => setMarketingOptIn(v === true)}
+                    className="mt-0.5"
+                  />
+                  <Label
+                    htmlFor="marketing-opt-in"
+                    className="text-sm font-normal leading-relaxed text-muted-foreground"
+                  >
+                    {MARKETING_CONSENT_LABEL}
+                  </Label>
                 </div>
                 {error && <p className="text-sm text-destructive">{error}</p>}
                 <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700" disabled={isLoading}>
