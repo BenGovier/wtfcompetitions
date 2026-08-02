@@ -303,7 +303,9 @@ $$;
 --   FALSE when a NON-unsubscribe suppression (hard_bounce / complaint / manual /
 --   invalid_address) is active for the email or user id. A normal unsubscribe
 --   never blocks re-enabling. Returns a boolean only — the account UI must not
---   learn the specific suppression reason.
+--   learn the specific suppression reason. Consumed by lib/marketing/service.ts
+--   (getMarketingPreferenceState) so the "what blocks re-enable" rule lives in
+--   exactly one place, next to the suppression data.
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.marketing_can_reenable(
   p_user_id  uuid,

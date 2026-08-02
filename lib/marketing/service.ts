@@ -40,7 +40,13 @@ export interface MarketingPreferenceState {
 /**
  * Read the customer's current marketing state for the account UI.
  * Returns ONLY two booleans — never any suppression reason or provider detail.
- * Fails closed (enabled:false) on error.
+ *
+ * Both booleans come from SECURITY DEFINER functions that own the suppression
+ * semantics (verified present in the live database):
+ *   - is_marketing_email_eligible -> enabled AND no active suppression at all
+ *   - marketing_can_reenable      -> no active NON-unsubscribe suppression
+ * Keeping this logic in the database avoids a second source of truth for what
+ * blocks re-enabling. Fails closed (enabled:false, canEnable:false) on error.
  */
 export async function getMarketingPreferenceState(
   userId: string,
