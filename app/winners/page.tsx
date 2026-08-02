@@ -1,3 +1,5 @@
+import { unstable_cache } from "next/cache"
+import { createClient as createSupabaseClient } from "@supabase/supabase-js"
 import { WinnersPageClient } from "@/components/winners-page-client"
 import { mockWinners } from "@/lib/mock-data"
 import { createClient } from "@/lib/supabase/server"
@@ -15,6 +17,45 @@ import {
 export const dynamic = "force-dynamic"
 export const revalidate = 0
 
+/**
+ * Exact count of PUBLIC-eligible winners, cached server-side for 60 seconds.
+ *
+ * Uses the SAME `winnersEligibilityOrFilter()` as the winners query, so the
+ * "Verified wins" figure always matches the corrected public eligibility rule
+ * (site-credit rows are excluded by that filter). `head: true` + `count: exact`
+ * fetches only the count, not any rows.
+ *
+ * Wrapped in `unstable_cache` so at most one count query runs per 60s window
+ * regardless of how many visitors load the page. IMPORTANT: `unstable_cache`
+ * runs OUTSIDE the request scope, so it must NOT call the cookie-based server
+ * client (`@/lib/supabase/server`, which awaits `cookies()`). This is a purely
+ * public aggregate over an already-public view, so we build a cookie-free anon
+ * client here instead. Returns null on any failure so the page never crashes.
+ */
+const getVerifiedWinsCount = unstable_cache(
+  async (): Promise<number | null> => {
+    try {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+      if (!supabaseUrl || !supabaseAnonKey) return null
+
+      const supabase = createSupabaseClient(supabaseUrl, supabaseAnonKey, {
+        auth: { persistSession: false },
+      })
+      const { count, error } = await supabase
+        .from("winners_feed")
+        .select("*", { count: "exact", head: true })
+        .or(winnersEligibilityOrFilter())
+      if (error || typeof count !== "number") return null
+      return count
+    } catch {
+      return null
+    }
+  },
+  ["winners-verified-wins-count"],
+  { revalidate: 60 },
+)
+
 export interface LiveGiveaway {
   slug: string
   title: string
@@ -29,6 +70,10 @@ export default async function WinnersPage() {
   let loadError = false
   let usingMock = false
   let liveGiveaway: LiveGiveaway | null = null
+
+  // Cached exact count of eligible winners (server-side, 60s). Independent of
+  // the bounded winners fetch below; never throws (returns null on failure).
+  const verifiedWinsCount = await getVerifiedWinsCount()
 
   // Initial bounded fetch: featured winners + one grid page (+1 peek row).
   const initialLimit = FEATURED_COUNT + GRID_PAGE_SIZE
@@ -109,6 +154,7 @@ export default async function WinnersPage() {
           initialHasMore={hasMore}
           loadError={loadError}
           liveGiveaway={liveGiveaway}
+          verifiedWinsCount={verifiedWinsCount}
         />
       </div>
     </div>
