@@ -66,9 +66,9 @@ export function DashboardView({ initialView = 'overview' as View }: { initialVie
         })}
       </div>
 
-      {/* Overview stays mounted + unchanged. */}
+      {/* Overview stays mounted; polling pauses while it is not the active view. */}
       <div className={cn(view !== 'overview' && 'hidden')}>
-        <ReportsDashboard initialRange="today" />
+        <ReportsDashboard initialRange="today" active={view === 'overview'} />
       </div>
 
       {/* Growth mounts but only fetches while it is the active view. */}
