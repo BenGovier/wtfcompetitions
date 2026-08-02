@@ -24,11 +24,14 @@ export default function SignUpPage() {
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [mobile, setMobile] = useState('')
-  // Marketing consent is OPTIONAL and unchecked by default. It never blocks
-  // account creation. The choice is carried on the existing signUp call via
-  // user metadata and only turned into a real, gated marketing preference
-  // server-side once a valid authenticated user exists (see app/auth/callback).
-  const [marketingOptIn, setMarketingOptIn] = useState(false)
+  // Marketing consent is OPTIONAL and CHECKED by default. It never blocks
+  // account creation and the customer can untick it before submitting. The
+  // choice is carried on the existing signUp call via user metadata and only
+  // turned into a real, gated marketing preference server-side once a valid
+  // authenticated user exists (see app/auth/callback), using consent source
+  // 'signup' and the current consent version. Unticking means no enabled
+  // preference is ever created.
+  const [marketingOptIn, setMarketingOptIn] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [mobileError, setMobileError] = useState<string | null>(null)
   const [firstNameError, setFirstNameError] = useState<string | null>(null)
