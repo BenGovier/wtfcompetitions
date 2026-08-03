@@ -435,10 +435,16 @@ BEGIN
         FROM auth.users u
        WHERE u.updated_at >= v_since
       UNION
+      -- Candidate DETECTION is intentionally broad: any changed checkout row for
+      -- a user (by confirmed_at OR updated_at) makes that user a candidate, so a
+      -- confirmed order that later leaves 'confirmed' (e.g. refunded/voided) still
+      -- forces a recompute. We only exclude purely-simulated rows so they never
+      -- cause churn. The strict eligible scope (state='confirmed', not debug, not
+      -- SIM) is RE-APPLIED in refresh_customer_marketing_profiles_batch when the
+      -- aggregates are computed, so widening detection here cannot corrupt totals.
       SELECT ci.user_id
         FROM public.checkout_intents ci
        WHERE ci.user_id IS NOT NULL
-         AND ci.state = 'confirmed'
          AND ci.provider IS DISTINCT FROM 'debug'
          AND (ci.ref IS NULL OR ci.ref NOT LIKE 'SIM-%')
          AND (ci.confirmed_at >= v_since OR ci.updated_at >= v_since)

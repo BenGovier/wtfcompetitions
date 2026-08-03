@@ -196,6 +196,16 @@ describe('003 migration — refresh RPC contract', () => {
     expect(FLAT).toMatch(/FROM public\.marketing_preferences mp WHERE mp\.updated_at >= v_since/)
     expect(FLAT).toMatch(/s\.created_at >= v_since OR s\.revoked_at >= v_since/)
   })
+
+  it('detects checkout candidates by any row change (not only currently-confirmed) so refund/void transitions are recomputed', () => {
+    // The checkout-intents DETECTION branch must key on confirmed_at/updated_at
+    // and must NOT be gated on ci.state = 'confirmed' (that gate would strand a
+    // profile whose latest order later leaves the confirmed state). The strict
+    // eligible scope is re-applied when aggregates are computed.
+    expect(FLAT).toMatch(
+      /FROM public\.checkout_intents ci WHERE ci\.user_id IS NOT NULL AND ci\.provider IS DISTINCT FROM 'debug' AND \(ci\.ref IS NULL OR ci\.ref NOT LIKE 'SIM-%'\) AND \(ci\.confirmed_at >= v_since OR ci\.updated_at >= v_since\)/,
+    )
+  })
 })
 
 describe('003 migration — writes nowhere but the two profile tables', () => {
