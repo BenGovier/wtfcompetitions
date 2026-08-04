@@ -5,6 +5,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { SignOutButton } from './sign-out-button'
+import { MarketingEmailPreference } from './marketing-email-preference'
 import { createClient } from '@/lib/supabase/client'
 import { Ticket } from 'lucide-react'
 
@@ -407,18 +408,6 @@ export function AccountTabs({ email, entries, entriesError, allocationMap, campa
               </div>
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-white">Marketing Emails</p>
-                  <p className="text-sm text-white/60">Get notified about new giveaways and promotions</p>
-                </div>
-                <Switch
-                  checked={prefs.marketing_emails}
-                  onCheckedChange={(v) => updatePref('marketing_emails', v)}
-                  disabled={saving}
-                  className="data-[state=checked]:bg-yellow-500"
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
                   <p className="text-sm font-medium text-white">Partner Emails</p>
                   <p className="text-sm text-white/60">Receive offers from our trusted partners</p>
                 </div>
@@ -428,6 +417,15 @@ export function AccountTabs({ email, entries, entriesError, allocationMap, campa
                   disabled={saving}
                   className="data-[state=checked]:bg-yellow-500"
                 />
+              </div>
+
+              {/* Email preferences — gated marketing consent (Stage 0).
+                  Backed by the authenticated /api/account/marketing-preferences
+                  API, NOT the legacy user_preferences table. The browser never
+                  writes the marketing_* tables directly. */}
+              <div className="space-y-2 pt-2">
+                <p className="text-sm font-semibold text-white/80">Email preferences</p>
+                <MarketingEmailPreference />
               </div>
 
               {/* Email Delivery Reminder */}
