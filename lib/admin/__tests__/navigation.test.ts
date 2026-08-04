@@ -23,6 +23,7 @@ import type { AdminRole } from '@/lib/admin/permissions'
 const EXPECTED = [
   { href: '/admin', label: 'Dashboard', section: 'overview' },
   { href: '/admin/live-feed', label: 'Live Feed', section: 'overview' },
+  { href: '/admin/marketing', label: 'Marketing', section: 'overview' },
   { href: '/admin/campaigns', label: 'Campaigns', section: 'operations' },
   { href: '/admin/instant-wins', label: 'Instant Wins', section: 'operations' },
   { href: '/admin/discount-codes', label: 'Discount Codes', section: 'operations' },
@@ -35,14 +36,14 @@ const EXPECTED = [
 ] as const
 
 describe('admin nav registry', () => {
-  it('contains exactly the 11 items in the expected order, labels and sections', () => {
+  it('contains exactly the 12 items in the expected order, labels and sections', () => {
     expect(ADMIN_NAV_ITEMS.map((i) => ({ href: i.href, label: i.label, section: i.section }))).toEqual(
       EXPECTED.map((e) => ({ href: e.href, label: e.label, section: e.section })),
     )
   })
 
   it('gives every item exactly one icon (a renderable component)', () => {
-    expect(ADMIN_NAV_ITEMS).toHaveLength(11)
+    expect(ADMIN_NAV_ITEMS).toHaveLength(12)
     for (const item of ADMIN_NAV_ITEMS) {
       // lucide icons are forwardRef objects or functions — both are valid.
       const t = typeof item.icon
@@ -110,7 +111,7 @@ describe('getVisibleNavGroups — visibility mirrors canAccessRoute exactly', ()
   // Flatten helper.
   const hrefs = (role: AdminRole | null) => getVisibleNavGroups(role).flatMap((g) => g.items.map((i) => i.href))
 
-  it('admin sees all 11 items across all 4 groups, in order', () => {
+  it('admin sees all 12 items across all 4 groups, in order', () => {
     const groups = getVisibleNavGroups('admin')
     expect(groups.map((g) => g.section)).toEqual(['overview', 'operations', 'finance', 'system'])
     expect(hrefs('admin')).toEqual(ADMIN_NAV_ITEMS.map((i) => i.href))
@@ -127,8 +128,15 @@ describe('getVisibleNavGroups — visibility mirrors canAccessRoute exactly', ()
         '/admin/payouts',
       ]),
     )
-    // Dashboard, campaigns, reports, audit logs, team access must NOT appear.
-    for (const denied of ['/admin', '/admin/campaigns', '/admin/reports', '/admin/audit-logs', '/admin/hosts']) {
+    // Dashboard, marketing, campaigns, reports, audit logs, team access must NOT appear.
+    for (const denied of [
+      '/admin',
+      '/admin/marketing',
+      '/admin/campaigns',
+      '/admin/reports',
+      '/admin/audit-logs',
+      '/admin/hosts',
+    ]) {
       expect(hrefs('operations_admin')).not.toContain(denied)
     }
   })
