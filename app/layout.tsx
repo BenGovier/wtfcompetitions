@@ -9,6 +9,7 @@ import { SiteHeader } from "@/components/site-header"
 import { MobileNav } from "@/components/mobile-nav"
 import { SiteFooter } from "@/components/site-footer"
 import { AnnouncementBar } from "@/components/announcement-bar"
+import { MetaPixel } from "@/components/meta/MetaPixel"
 
 const _geist = Geist({ subsets: ["latin"] })
 const _geistMono = Geist_Mono({ subsets: ["latin"] })
@@ -85,6 +86,7 @@ export default async function RootLayout({
         <main className={isBarePage ? "" : "min-h-[calc(100vh-4rem)]"}>{children}</main>
         {!isBarePage && <SiteFooter />}
         {!isBarePage && <MobileNav />}
+        <MetaPixel />
         <Analytics />
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-X74JFX5GVM"
