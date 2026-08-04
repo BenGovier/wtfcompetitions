@@ -397,12 +397,14 @@ export async function POST(request: Request) {
       campaign_id: string
       qty: number
       external_payment_pence: number | null
+      total_pence: number | null
+      wallet_credit_pence: number | null
     } | null = null
     const svc = getServiceSupabase()
     try {
       const { data: intentData } = await svc
         .from('checkout_intents')
-        .select('id, user_id, campaign_id, qty, external_payment_pence')
+        .select('id, user_id, campaign_id, qty, external_payment_pence, total_pence, wallet_credit_pence')
         .eq('ref', ref)
         .single()
 
@@ -413,6 +415,8 @@ export async function POST(request: Request) {
           campaign_id: string
           qty: number
           external_payment_pence: number | null
+          total_pence: number | null
+          wallet_credit_pence: number | null
         }
 
         const { data: campaignData } = await svc
@@ -438,9 +442,14 @@ export async function POST(request: Request) {
       // Additive, presentation/analytics-only fields sourced from the same
       // already-loaded checkout_intents row (no extra query). Used by the
       // browser Meta Pixel Purchase event. Null when the intent lookup missed;
-      // the client only fires when both are present and valid.
+      // the client only fires when the derived paid amount is present and valid.
+      // total_pence is the final checkout total; wallet_credit_pence is the
+      // wallet portion; external_payment_pence (when set) is the externally
+      // paid amount. The client derives the paid amount from these.
       campaign_id: intentForEmail?.campaign_id ?? null,
       external_payment_pence: intentForEmail?.external_payment_pence ?? null,
+      total_pence: intentForEmail?.total_pence ?? null,
+      wallet_credit_pence: intentForEmail?.wallet_credit_pence ?? null,
     }
 
     // === POST-PURCHASE CONFIRMATION EMAIL (best-effort, non-blocking) ===
