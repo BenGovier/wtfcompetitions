@@ -391,17 +391,29 @@ export async function POST(request: Request) {
     let campaignSlug: string | null = null
     // Presentation-only: how the customer reveals their (already-decided) result.
     let campaignRevealType: RevealType = 'normal'
-    let intentForEmail: { id: string; user_id: string; campaign_id: string; qty: number } | null = null
+    let intentForEmail: {
+      id: string
+      user_id: string
+      campaign_id: string
+      qty: number
+      external_payment_pence: number | null
+    } | null = null
     const svc = getServiceSupabase()
     try {
       const { data: intentData } = await svc
         .from('checkout_intents')
-        .select('id, user_id, campaign_id, qty')
+        .select('id, user_id, campaign_id, qty, external_payment_pence')
         .eq('ref', ref)
         .single()
 
       if (intentData?.campaign_id) {
-        intentForEmail = intentData as { id: string; user_id: string; campaign_id: string; qty: number }
+        intentForEmail = intentData as {
+          id: string
+          user_id: string
+          campaign_id: string
+          qty: number
+          external_payment_pence: number | null
+        }
 
         const { data: campaignData } = await svc
           .from('campaigns')
@@ -419,7 +431,17 @@ export async function POST(request: Request) {
       // Non-fatal - button just won't render
     }
 
-    const awardWithSlug = { ...award, campaign_slug: campaignSlug, reveal_type: campaignRevealType }
+    const awardWithSlug = {
+      ...award,
+      campaign_slug: campaignSlug,
+      reveal_type: campaignRevealType,
+      // Additive, presentation/analytics-only fields sourced from the same
+      // already-loaded checkout_intents row (no extra query). Used by the
+      // browser Meta Pixel Purchase event. Null when the intent lookup missed;
+      // the client only fires when both are present and valid.
+      campaign_id: intentForEmail?.campaign_id ?? null,
+      external_payment_pence: intentForEmail?.external_payment_pence ?? null,
+    }
 
     // === POST-PURCHASE CONFIRMATION EMAIL (best-effort, non-blocking) ===
     // Runs after successful confirmPaymentAndAward(), cannot fail checkout

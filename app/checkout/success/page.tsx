@@ -90,6 +90,9 @@ type AwardPayload = {
   ticket_end?: number | null
   campaign_slug?: string | null
   reveal_type?: RevealType | null
+  /** Additive, analytics-only. Present when the confirm route resolved them. */
+  campaign_id?: string | null
+  external_payment_pence?: number | null
 }
 
 type PageState =
@@ -144,6 +147,9 @@ function CheckoutSuccessClient() {
   const abortRef = useRef<AbortController | null>(null)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const doneRef = useRef(false)
+  // In-memory guard so the Meta Pixel Purchase event fires at most once per
+  // mounted page, regardless of re-renders or confirmation polling.
+  const purchaseFiredRef = useRef(false)
 
   // Auth-aware header refresh (UI only).
   //
@@ -163,6 +169,77 @@ function CheckoutSuccessClient() {
     refreshedRef.current = true
     router.refresh()
   }, [router])
+
+  // Best-effort Meta Pixel Purchase tracking. Browser-only (no Conversions
+  // API here). Fires exactly once per confirmed, non-zero external payment,
+  // deduped in-memory AND via localStorage (keyed by checkout ref) so polling,
+  // re-renders, refreshes and URL revisits cannot re-fire. eventID === the
+  // checkout ref for future browser/server dedup. Any failure is swallowed:
+  // it must never change checkout state, block the reveal, or log PII.
+  useEffect(() => {
+    if (state.kind !== 'confirmed') return
+    if (purchaseFiredRef.current) return
+
+    const award = state.award
+    const checkoutRef = award.checkout_ref
+    const campaignId = award.campaign_id
+    const qty = award.qty
+    const pence = award.external_payment_pence
+
+    if (
+      award.confirmed !== true ||
+      typeof checkoutRef !== 'string' ||
+      checkoutRef.length === 0 ||
+      typeof campaignId !== 'string' ||
+      campaignId.length === 0 ||
+      typeof qty !== 'number' ||
+      !Number.isFinite(qty) ||
+      qty <= 0 ||
+      typeof pence !== 'number' ||
+      !Number.isFinite(pence) ||
+      pence <= 0 ||
+      typeof window.fbq !== 'function'
+    ) {
+      return
+    }
+
+    const storageKey = `meta_purchase_fired:${checkoutRef}`
+
+    try {
+      // 1) in-memory guard (checked above) → 2) persistent guard.
+      if (typeof window.localStorage !== 'undefined' && window.localStorage.getItem(storageKey)) {
+        purchaseFiredRef.current = true
+        return
+      }
+
+      // 3) fire the event.
+      window.fbq(
+        'track',
+        'Purchase',
+        {
+          value: pence / 100,
+          currency: 'GBP',
+          content_ids: [campaignId],
+          content_type: 'product',
+          num_items: qty,
+          order_id: checkoutRef,
+        },
+        {
+          eventID: checkoutRef,
+        },
+      )
+
+      // 4) only after fbq() returned without throwing, persist both markers.
+      purchaseFiredRef.current = true
+      try {
+        window.localStorage?.setItem(storageKey, '1')
+      } catch {
+        // localStorage unavailable (private mode / quota); in-memory guard stands.
+      }
+    } catch {
+      // Best-effort only: never disrupt the confirmed reveal.
+    }
+  }, [state])
 
   const confirm = useCallback(async () => {
     if (!ref) return
