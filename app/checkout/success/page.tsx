@@ -90,6 +90,9 @@ type AwardPayload = {
   ticket_end?: number | null
   campaign_slug?: string | null
   reveal_type?: RevealType | null
+  /** Additive, analytics-only. Present when the confirm route resolved them. */
+  campaign_id?: string | null
+  external_payment_pence?: number | null
 }
 
 type PageState =
@@ -144,6 +147,9 @@ function CheckoutSuccessClient() {
   const abortRef = useRef<AbortController | null>(null)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const doneRef = useRef(false)
+  // In-memory guard so the Meta Pixel Purchase event fires at most once per
+  // mounted page, regardless of re-renders or confirmation polling.
+  const purchaseFiredRef = useRef(false)
 
   // Auth-aware header refresh (UI only).
   //
@@ -163,6 +169,121 @@ function CheckoutSuccessClient() {
     refreshedRef.current = true
     router.refresh()
   }, [router])
+
+  // Best-effort Meta Pixel Purchase tracking. Browser-only (no Conversions
+  // API here). Fires exactly once per confirmed, non-zero external payment,
+  // deduped in-memory AND via localStorage (keyed by checkout ref) so polling,
+  // re-renders, refreshes and URL revisits cannot re-fire. eventID === the
+  // checkout ref for future browser/server dedup. Any failure is swallowed:
+  // it must never change checkout state, block the reveal, or log PII.
+  useEffect(() => {
+    if (state.kind !== 'confirmed') return
+    if (purchaseFiredRef.current) return
+
+    const award = state.award
+    const checkoutRef = award.checkout_ref
+    const campaignId = award.campaign_id
+    const qty = award.qty
+    const pence = award.external_payment_pence
+
+    // Validate the confirmed Purchase values ONCE. If anything is missing or
+    // invalid we never fire and never retry (the retry loop below only waits
+    // for the Pixel, not for data). Note: window.fbq availability is
+    // intentionally NOT part of this gate — it is handled by the bounded retry.
+    if (
+      award.confirmed !== true ||
+      typeof checkoutRef !== 'string' ||
+      checkoutRef.length === 0 ||
+      typeof campaignId !== 'string' ||
+      campaignId.length === 0 ||
+      typeof qty !== 'number' ||
+      !Number.isFinite(qty) ||
+      qty <= 0 ||
+      typeof pence !== 'number' ||
+      !Number.isFinite(pence) ||
+      pence <= 0
+    ) {
+      return
+    }
+
+    const storageKey = `meta_purchase_fired:${checkoutRef}`
+
+    // Attempts to fire once. Returns true when the work is finished (fired OR
+    // already-fired), false only when fbq is not yet available and we should
+    // keep waiting. Preserves both duplicate guards and never sets the
+    // localStorage marker unless fbq was actually called.
+    const tryFirePurchase = (): boolean => {
+      if (purchaseFiredRef.current) return true
+      if (typeof window.fbq !== 'function') return false
+
+      try {
+        // 1) in-memory guard (checked above) → 2) persistent guard.
+        if (typeof window.localStorage !== 'undefined' && window.localStorage.getItem(storageKey)) {
+          purchaseFiredRef.current = true
+          return true
+        }
+
+        // 3) fire the event.
+        window.fbq(
+          'track',
+          'Purchase',
+          {
+            value: pence / 100,
+            currency: 'GBP',
+            content_ids: [campaignId],
+            content_type: 'product',
+            num_items: qty,
+            order_id: checkoutRef,
+          },
+          {
+            eventID: checkoutRef,
+          },
+        )
+
+        // 4) only after fbq() returned without throwing, persist both markers.
+        purchaseFiredRef.current = true
+        try {
+          window.localStorage?.setItem(storageKey, '1')
+        } catch {
+          // localStorage unavailable (private mode / quota); in-memory guard stands.
+        }
+      } catch {
+        // Best-effort only: never disrupt the confirmed reveal. Treat as done
+        // so we do not spin retrying a throwing fbq.
+        purchaseFiredRef.current = true
+      }
+      return true
+    }
+
+    // Fast path: Pixel already initialised.
+    if (tryFirePurchase()) return
+
+    // Slow path: values are valid but the Meta Pixel has not finished loading
+    // yet. Poll ONLY the Pixel availability, ~every 250ms for at most 5s. This
+    // does NOT re-run confirmation, does not touch state, and does not block the
+    // reveal. The single interval lives for this effect run; the cleanup clears
+    // it so React re-renders cannot stack multiple simultaneous loops.
+    const RETRY_INTERVAL_MS = 250
+    const MAX_WAIT_MS = 5000
+    const startedAt = Date.now()
+    let intervalId: ReturnType<typeof setInterval> | null = null
+
+    intervalId = setInterval(() => {
+      if (tryFirePurchase() || Date.now() - startedAt >= MAX_WAIT_MS) {
+        if (intervalId !== null) {
+          clearInterval(intervalId)
+          intervalId = null
+        }
+      }
+    }, RETRY_INTERVAL_MS)
+
+    return () => {
+      if (intervalId !== null) {
+        clearInterval(intervalId)
+        intervalId = null
+      }
+    }
+  }, [state])
 
   const confirm = useCallback(async () => {
     if (!ref) return
