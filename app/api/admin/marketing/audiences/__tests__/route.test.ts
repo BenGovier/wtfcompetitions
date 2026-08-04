@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
+// The route transitively imports `server-only` (via the auth chain). Neutralise
+// it so the module can be imported in vitest's node environment. Matches the
+// established pattern used by other route tests in this repo.
+vi.mock('server-only', () => ({}))
+
 // ---- Mocks -----------------------------------------------------------------
 // Auth is mocked so we can drive role/error without a database. The route calls
 // authorizeAdminApi({ roles: ['admin'] }); anything other than an admin returns
