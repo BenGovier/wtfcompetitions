@@ -18,6 +18,7 @@
 import {
   LayoutDashboard,
   Radio,
+  Megaphone,
   Trophy,
   Zap,
   Tag,
@@ -52,16 +53,17 @@ export interface AdminNavItem {
 }
 
 /**
- * The 11 admin navigation items.
+ * The 12 admin navigation items.
  *
- * Order and grouping are authoritative; every item has exactly one icon. Route
- * names and labels are unchanged from the previous flat `navItems` list — only
- * icons and section metadata were added.
+ * Order and grouping are authoritative; every item has exactly one icon.
+ * Visibility is enforced by `canAccessRoute`, so admin-only items (e.g.
+ * Marketing) never surface for operations_admin / ops regardless of section.
  */
 export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   // OVERVIEW
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard, section: 'overview' },
   { href: '/admin/live-feed', label: 'Live Feed', icon: Radio, section: 'overview' },
+  { href: '/admin/marketing', label: 'Marketing', icon: Megaphone, section: 'overview' },
   // OPERATIONS
   { href: '/admin/campaigns', label: 'Campaigns', icon: Trophy, section: 'operations' },
   { href: '/admin/instant-wins', label: 'Instant Wins', icon: Zap, section: 'operations' },
