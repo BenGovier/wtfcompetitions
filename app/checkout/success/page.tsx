@@ -93,6 +93,8 @@ type AwardPayload = {
   /** Additive, analytics-only. Present when the confirm route resolved them. */
   campaign_id?: string | null
   external_payment_pence?: number | null
+  total_pence?: number | null
+  wallet_credit_pence?: number | null
 }
 
 type PageState =
@@ -184,7 +186,21 @@ function CheckoutSuccessClient() {
     const checkoutRef = award.checkout_ref
     const campaignId = award.campaign_id
     const qty = award.qty
-    const pence = award.external_payment_pence
+
+    // Externally paid amount for the Purchase `value`. Prefer the explicit
+    // external_payment_pence when the provider set it; otherwise derive it from
+    // the final checkout total minus the wallet-credit portion (Acquired
+    // currently leaves external_payment_pence null even on success). Never use
+    // subtotal_pence and never add the discount back — total_pence is already
+    // the final total, and wallet_credit_pence is subtracted only to isolate
+    // the externally paid amount.
+    const paidPence =
+      typeof award.external_payment_pence === 'number'
+        ? award.external_payment_pence
+        : typeof award.total_pence === 'number' &&
+            typeof award.wallet_credit_pence === 'number'
+          ? Math.max(award.total_pence - award.wallet_credit_pence, 0)
+          : null
 
     // Validate the confirmed Purchase values ONCE. If anything is missing or
     // invalid we never fire and never retry (the retry loop below only waits
@@ -199,9 +215,9 @@ function CheckoutSuccessClient() {
       typeof qty !== 'number' ||
       !Number.isFinite(qty) ||
       qty <= 0 ||
-      typeof pence !== 'number' ||
-      !Number.isFinite(pence) ||
-      pence <= 0
+      typeof paidPence !== 'number' ||
+      !Number.isFinite(paidPence) ||
+      paidPence <= 0
     ) {
       return
     }
@@ -228,7 +244,7 @@ function CheckoutSuccessClient() {
           'track',
           'Purchase',
           {
-            value: pence / 100,
+            value: paidPence / 100,
             currency: 'GBP',
             content_ids: [campaignId],
             content_type: 'product',
