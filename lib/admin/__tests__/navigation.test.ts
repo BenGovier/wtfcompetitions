@@ -1,13 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import {
   ADMIN_NAV_ITEMS,
+  ADMIN_HIDDEN_NAV_ITEMS,
   ADMIN_NAV_SECTIONS,
   getVisibleNavGroups,
   isNavItemActive,
   resolveActiveNavItem,
   resolveSectionLabel,
 } from '@/lib/admin/navigation'
-import type { AdminRole } from '@/lib/admin/permissions'
+import { canAccessRoute, type AdminRole } from '@/lib/admin/permissions'
 
 /**
  * Presentation-layer navigation registry tests.
@@ -23,7 +24,8 @@ import type { AdminRole } from '@/lib/admin/permissions'
 const EXPECTED = [
   { href: '/admin', label: 'Dashboard', section: 'overview' },
   { href: '/admin/live-feed', label: 'Live Feed', section: 'overview' },
-  { href: '/admin/marketing', label: 'Marketing', section: 'overview' },
+  // Marketing is intentionally absent — it is a hidden route (see the dedicated
+  // "hidden Marketing route" suite below), reachable only by direct URL.
   { href: '/admin/campaigns', label: 'Campaigns', section: 'operations' },
   { href: '/admin/instant-wins', label: 'Instant Wins', section: 'operations' },
   { href: '/admin/discount-codes', label: 'Discount Codes', section: 'operations' },
@@ -36,14 +38,14 @@ const EXPECTED = [
 ] as const
 
 describe('admin nav registry', () => {
-  it('contains exactly the 12 items in the expected order, labels and sections', () => {
+  it('contains exactly the 11 visible items in the expected order, labels and sections', () => {
     expect(ADMIN_NAV_ITEMS.map((i) => ({ href: i.href, label: i.label, section: i.section }))).toEqual(
       EXPECTED.map((e) => ({ href: e.href, label: e.label, section: e.section })),
     )
   })
 
   it('gives every item exactly one icon (a renderable component)', () => {
-    expect(ADMIN_NAV_ITEMS).toHaveLength(12)
+    expect(ADMIN_NAV_ITEMS).toHaveLength(11)
     for (const item of ADMIN_NAV_ITEMS) {
       // lucide icons are forwardRef objects or functions — both are valid.
       const t = typeof item.icon
@@ -111,10 +113,12 @@ describe('getVisibleNavGroups — visibility mirrors canAccessRoute exactly', ()
   // Flatten helper.
   const hrefs = (role: AdminRole | null) => getVisibleNavGroups(role).flatMap((g) => g.items.map((i) => i.href))
 
-  it('admin sees all 12 items across all 4 groups, in order', () => {
+  it('admin sees all 11 visible items across all 4 groups, in order', () => {
     const groups = getVisibleNavGroups('admin')
     expect(groups.map((g) => g.section)).toEqual(['overview', 'operations', 'finance', 'system'])
     expect(hrefs('admin')).toEqual(ADMIN_NAV_ITEMS.map((i) => i.href))
+    // Even the super admin never sees Marketing in the navigation.
+    expect(hrefs('admin')).not.toContain('/admin/marketing')
   })
 
   it('operations_admin sees exactly its authorised routes (no more, no less)', () => {
@@ -166,5 +170,51 @@ describe('getVisibleNavGroups — visibility mirrors canAccessRoute exactly', ()
         expect(group.items.length, `${role} / ${group.section}`).toBeGreaterThan(0)
       }
     }
+  })
+})
+
+describe('Marketing is hidden from navigation but reachable by direct URL', () => {
+  const ROLES = ['admin', 'operations_admin', 'ops', 'read_only', null] as (AdminRole | null)[]
+  const allVisibleHrefs = (role: AdminRole | null) =>
+    getVisibleNavGroups(role).flatMap((g) => g.items.map((i) => i.href))
+
+  it('is absent from the visible registry (desktop sidebar + mobile drawer share this source)', () => {
+    // AdminSidebarNav (desktop) and AdminNavLinks (mobile drawer) both render
+    // from getVisibleNavGroups(ADMIN_NAV_ITEMS), so one assertion covers both.
+    expect(ADMIN_NAV_ITEMS.some((i) => i.href === '/admin/marketing')).toBe(false)
+    expect(ADMIN_NAV_ITEMS.some((i) => i.label === 'Marketing')).toBe(false)
+  })
+
+  it('is absent from every generated navigation group, for every role', () => {
+    for (const role of ROLES) {
+      expect(allVisibleHrefs(role), `${role}`).not.toContain('/admin/marketing')
+      // No group carries an item labelled Marketing either.
+      const labels = getVisibleNavGroups(role).flatMap((g) => g.items.map((i) => i.label))
+      expect(labels, `${role}`).not.toContain('Marketing')
+    }
+  })
+
+  it('lives only in the hidden-route list (label metadata, renders no link/prefetch)', () => {
+    expect(ADMIN_HIDDEN_NAV_ITEMS.map((i) => i.href)).toEqual(['/admin/marketing'])
+    // Hidden items and visible items never overlap.
+    const visible = new Set(ADMIN_NAV_ITEMS.map((i) => i.href))
+    for (const hidden of ADMIN_HIDDEN_NAV_ITEMS) {
+      expect(visible.has(hidden.href)).toBe(false)
+    }
+  })
+
+  it('permissions are unchanged: admin may reach it, all other roles are denied', () => {
+    // Route permissions are untouched by hiding the nav item.
+    expect(canAccessRoute('admin', '/admin/marketing')).toBe(true)
+    for (const denied of ['operations_admin', 'ops', 'read_only', null] as (AdminRole | null)[]) {
+      expect(canAccessRoute(denied, '/admin/marketing'), `${denied}`).toBe(false)
+    }
+  })
+
+  it('still resolves the header label so a direct-URL visit is titled "Marketing"', () => {
+    expect(resolveActiveNavItem('/admin/marketing')?.label).toBe('Marketing')
+    expect(resolveSectionLabel('/admin/marketing')).toBe('Marketing')
+    // Nested marketing routes resolve to the same label.
+    expect(resolveSectionLabel('/admin/marketing/anything')).toBe('Marketing')
   })
 })

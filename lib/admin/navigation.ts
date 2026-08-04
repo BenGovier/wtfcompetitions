@@ -53,17 +53,20 @@ export interface AdminNavItem {
 }
 
 /**
- * The 12 admin navigation items.
+ * The 11 VISIBLE admin navigation items.
  *
  * Order and grouping are authoritative; every item has exactly one icon.
- * Visibility is enforced by `canAccessRoute`, so admin-only items (e.g.
- * Marketing) never surface for operations_admin / ops regardless of section.
+ * Visibility is enforced by `canAccessRoute`, so admin-only items never surface
+ * for operations_admin / ops regardless of section.
+ *
+ * NOTE: Marketing is intentionally NOT in this list. It is a hidden route
+ * (see ADMIN_HIDDEN_NAV_ITEMS) — reachable by direct URL for authorised admins
+ * but deliberately absent from every navigation surface and from any prefetch.
  */
 export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   // OVERVIEW
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard, section: 'overview' },
   { href: '/admin/live-feed', label: 'Live Feed', icon: Radio, section: 'overview' },
-  { href: '/admin/marketing', label: 'Marketing', icon: Megaphone, section: 'overview' },
   // OPERATIONS
   { href: '/admin/campaigns', label: 'Campaigns', icon: Trophy, section: 'operations' },
   { href: '/admin/instant-wins', label: 'Instant Wins', icon: Zap, section: 'operations' },
@@ -76,6 +79,24 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   // SYSTEM
   { href: '/admin/audit-logs', label: 'Audit Logs', icon: ScrollText, section: 'system' },
   { href: '/admin/hosts', label: 'Team Access', icon: Users, section: 'system' },
+]
+
+/**
+ * Hidden admin routes.
+ *
+ * These pages are reachable by direct URL for authorised admins (server-side
+ * guards still enforce access), but are DELIBERATELY excluded from every
+ * navigation surface. They are NOT part of `ADMIN_NAV_ITEMS`, so
+ * `getVisibleNavGroups` — the single source for both the desktop sidebar and
+ * the mobile drawer — never renders a link (and therefore never a prefetch) for
+ * them. They participate ONLY in header label / active-route resolution so the
+ * shell can still title the page correctly when an admin opens it by URL.
+ *
+ * This is metadata only: nothing here renders an anchor, so it is not a hidden
+ * or disguised navigation link.
+ */
+export const ADMIN_HIDDEN_NAV_ITEMS: AdminNavItem[] = [
+  { href: '/admin/marketing', label: 'Marketing', icon: Megaphone, section: 'overview' },
 ]
 
 /**
@@ -116,11 +137,15 @@ export function getVisibleNavGroups(role: AdminRole | null): AdminNavGroup[] {
  * longest-prefix matching so nested routes (e.g. /admin/campaigns/123/tickets)
  * resolve to their nearest parent nav item (/admin/campaigns). Returns null
  * when nothing matches so callers can fall back to a safe default label.
+ *
+ * Hidden routes (ADMIN_HIDDEN_NAV_ITEMS) are considered here for LABEL/active
+ * resolution only — this function feeds the header title, never the rendered
+ * navigation lists, so no hidden link or prefetch is produced.
  */
 export function resolveActiveNavItem(pathname: string): AdminNavItem | null {
   let best: AdminNavItem | null = null
   let bestLen = -1
-  for (const item of ADMIN_NAV_ITEMS) {
+  for (const item of [...ADMIN_NAV_ITEMS, ...ADMIN_HIDDEN_NAV_ITEMS]) {
     if (isNavItemActive(pathname, item.href) && item.href.length > bestLen) {
       best = item
       bestLen = item.href.length
