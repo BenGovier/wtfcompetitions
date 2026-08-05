@@ -289,6 +289,110 @@ describe('Stage 3A — no email route / Resend call added to the app surface', (
   })
 })
 
+describe('Stage 3A migration — live-production safety corrections', () => {
+  const seedBlock = FLAT.slice(FLAT.indexOf('INSERT INTO public.marketing_automations'))
+  // Extract a single seeded automation VALUES tuple by key. Column order:
+  // (key, name, enabled, priority, first_delay, follow_up, cooldown, min_wallet, max_recipients)
+  const tupleOf = (key: string): string =>
+    new RegExp(`\\('${key}',[^)]*\\)`, 'i').exec(seedBlock)?.[0] ?? ''
+
+  it('is atomic: wraps the whole migration in BEGIN ... COMMIT', () => {
+    expect(/\bBEGIN;/i.test(CODE)).toBe(true)
+    expect(/\bCOMMIT;/i.test(CODE)).toBe(true)
+    // BEGIN comes before COMMIT.
+    expect(CODE.search(/\bBEGIN;/i)).toBeLessThan(CODE.search(/\bCOMMIT;/i))
+  })
+
+  it('fails fast with LOCAL lock_timeout and statement_timeout', () => {
+    expect(/SET LOCAL lock_timeout\s*=\s*'5s'/i.test(CODE)).toBe(true)
+    expect(/SET LOCAL statement_timeout\s*=\s*'60s'/i.test(CODE)).toBe(true)
+  })
+
+  it('takes a migration-specific transaction advisory lock and raises if held', () => {
+    expect(/pg_try_advisory_xact_lock\(\s*hashtext\('wtf_marketing_stage_3a_migration'\)\s*\)/i.test(CODE)).toBe(true)
+    expect(/another execution is already in progress/i.test(CODE)).toBe(true)
+  })
+
+  it('preflights every required dependency via to_regclass and raises when missing', () => {
+    for (const dep of [
+      'public.campaigns',
+      'public.discount_codes',
+      'public.marketing_preferences',
+      'public.marketing_suppressions',
+      'public.customer_marketing_profiles',
+    ]) {
+      expect(FLAT, dep).toContain(`'${dep}'`)
+    }
+    expect(/to_regclass\(/i.test(CODE)).toBe(true)
+    expect(/required dependency .* is missing/i.test(CODE)).toBe(true)
+  })
+
+  it('performs NO global extension DDL (no CREATE EXTENSION at all)', () => {
+    expect(/CREATE\s+EXTENSION/i.test(CODE)).toBe(false)
+    expect(/pgcrypto/i.test(CODE)).toBe(false)
+  })
+
+  it('de-dupes delivery by email within a run: unique (run_id, email_lc)', () => {
+    expect(
+      /CREATE UNIQUE INDEX[^;]*marketing_recipients[^;]*\(\s*run_id,\s*email_lc\s*\)/i.test(CODE),
+    ).toBe(true)
+  })
+
+  it('forbids an external contact being enabled AND unsubscribed at once', () => {
+    expect(/marketing_enabled\s*=\s*false\s+OR\s+unsubscribed_at IS NULL/i.test(FLAT)).toBe(true)
+  })
+
+  it('seeds abandoned_checkout with first_delay 45 and follow_up 1200 minutes', () => {
+    const t = tupleOf('abandoned_checkout')
+    // (key, name, false, 2, 45, 1200, 168, NULL, 200)
+    expect(t).toMatch(/'abandoned_checkout',\s*'[^']*',\s*false,\s*2,\s*45,\s*1200,\s*168,\s*NULL,\s*200/i)
+  })
+
+  it('seeds wtf_credit_waiting with a minimum wallet of exactly 1 penny', () => {
+    const t = tupleOf('wtf_credit_waiting')
+    // (key, name, false, 3, 0, NULL, 336, 1, 200) — min_wallet is the 8th value.
+    expect(t).toMatch(/'wtf_credit_waiting',\s*'[^']*',\s*false,\s*3,\s*0,\s*NULL,\s*336,\s*1,\s*200/i)
+  })
+
+  it('seeds lapsed_14_days with a ZERO first delay (14-day rule is in the trigger)', () => {
+    const t = tupleOf('lapsed_14_days')
+    // (key, name, false, 6, 0, NULL, 720, NULL, 200)
+    expect(t).toMatch(/'lapsed_14_days',\s*'[^']*',\s*false,\s*6,\s*0,\s*NULL,\s*720,\s*NULL,\s*200/i)
+    // Explicitly assert no lingering 20160-minute (14-day) delivery delay.
+    expect(t).not.toMatch(/20160/)
+  })
+
+  it('keeps every seeded automation disabled', () => {
+    for (const key of AUTOMATION_KEYS) {
+      expect(tupleOf(key), key).toMatch(/,\s*false,/i)
+    }
+    // No seeded automation is enabled.
+    expect(/'[a-z_]+',\s*'[^']*',\s*true,/i.test(seedBlock)).toBe(false)
+  })
+
+  it('still alters no existing application table and adds no trigger / sending / Resend capability', () => {
+    // Re-assert the core safety invariants after the corrections.
+    for (const re of [
+      /ALTER TABLE[^;]*\bcheckout_intents\b/i,
+      /ALTER TABLE[^;]*\bwallet_accounts\b/i,
+      /ALTER TABLE[^;]*\bcampaigns\b/i,
+      /ALTER TABLE[^;]*\bdiscount_codes\b/i,
+      /ALTER TABLE[^;]*\bmarketing_preferences\b/i,
+      /ALTER TABLE[^;]*\bmarketing_suppressions\b/i,
+      /ALTER TABLE[^;]*\bcustomer_marketing_profiles\b/i,
+      /ALTER TABLE[^;]*\bauth\.users\b/i,
+    ]) {
+      expect(re.test(CODE), re.source).toBe(false)
+    }
+    expect(/\bCREATE\s+(OR REPLACE\s+)?TRIGGER\b/i.test(CODE)).toBe(false)
+    expect(/resend/i.test(CODE)).toBe(false)
+    expect(/api\.resend\.com/i.test(CODE)).toBe(false)
+    expect(/RESEND_API_KEY/i.test(CODE)).toBe(false)
+    // No sending/discovery/leasing function is introduced.
+    expect(/FUNCTION public\.\w*(discover|enqueue|lease|claim|send)\w*/i.test(CODE)).toBe(false)
+  })
+})
+
 describe('Stage 3A — Marketing remains absent from visible admin navigation', () => {
   it('is not present in the visible ADMIN_NAV_ITEMS registry', () => {
     const nav = readFileSync(join(ROOT, 'lib/admin/navigation.ts'), 'utf8')

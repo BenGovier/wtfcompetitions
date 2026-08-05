@@ -14,9 +14,17 @@
 --     * all six seeded automations                 enabled = false
 --
 -- SCOPE / SAFETY
+--   * ATOMIC. The whole migration runs inside a single BEGIN/COMMIT: any
+--     failure rolls the entire thing back, so Stage 3A can never be left half
+--     installed on the live database.
+--   * FAIL FAST. lock_timeout + statement_timeout are set LOCAL so the install
+--     aborts quickly instead of blocking a busy production database.
 --   * ADDITIVE ONLY. Creates NEW tables/functions; touches migrations 001-004
 --     not at all. Safe to run once; IF NOT EXISTS / CREATE OR REPLACE make a
 --     re-run a practical no-op.
+--   * NO global extension DDL. gen_random_uuid() is already used across this
+--     database, so pgcrypto is present; this migration does NOT run
+--     CREATE EXTENSION.
 --   * NO data backfill. NO recipients inserted. NO existing customers activated.
 --     NO pre-registration contacts imported.
 --   * NO triggers on checkout, customer-facing, or any existing table.
@@ -39,8 +47,52 @@
 --   SQL editor (or psql), AFTER migrations 001, 002, 003 and 004.
 -- ============================================================================
 
--- gen_random_uuid() lives in pgcrypto. Supabase ships it; ensure it is present.
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+BEGIN;
+
+-- Fail fast rather than block on a busy production database, and never let the
+-- install run away. LOCAL = scoped to this transaction only; nothing global.
+SET LOCAL lock_timeout = '5s';
+SET LOCAL statement_timeout = '60s';
+
+-- ----------------------------------------------------------------------------
+-- Preflight (read-only): refuse to run unless every required dependency already
+-- exists, and refuse to overlap with a concurrent execution of THIS migration.
+--   * to_regclass() is a pure lookup (NULL when absent). We create/alter NONE
+--     of these objects here.
+--   * pg_try_advisory_xact_lock() takes a transaction-scoped lock, released
+--     automatically at COMMIT/ROLLBACK. We RAISE rather than wait, so two
+--     simultaneous runs can never interleave.
+-- ----------------------------------------------------------------------------
+DO $preflight$
+DECLARE
+  v_missing text[] := ARRAY[]::text[];
+  v_dep     text;
+BEGIN
+  FOREACH v_dep IN ARRAY ARRAY[
+    'public.campaigns',
+    'public.discount_codes',
+    'public.marketing_preferences',
+    'public.marketing_suppressions',
+    'public.customer_marketing_profiles'
+  ] LOOP
+    IF to_regclass(v_dep) IS NULL THEN
+      v_missing := array_append(v_missing, v_dep);
+    END IF;
+  END LOOP;
+
+  IF array_length(v_missing, 1) IS NOT NULL THEN
+    RAISE EXCEPTION
+      'Stage 3A migration aborted: required dependency % is missing. Run migrations 001-004 first.',
+      array_to_string(v_missing, ', ');
+  END IF;
+
+  -- Migration-specific advisory key (fixed for THIS migration only).
+  IF NOT pg_try_advisory_xact_lock(hashtext('wtf_marketing_stage_3a_migration')) THEN
+    RAISE EXCEPTION
+      'Stage 3A migration aborted: another execution is already in progress (advisory lock held).';
+  END IF;
+END
+$preflight$;
 
 -- ============================================================================
 -- 1) marketing_external_contacts
@@ -72,7 +124,12 @@ CREATE TABLE IF NOT EXISTS public.marketing_external_contacts (
   CONSTRAINT marketing_external_contacts_last_len_chk    CHECK (last_name       IS NULL OR char_length(last_name)      <= 200),
   CONSTRAINT marketing_external_contacts_source_len_chk  CHECK (char_length(source)          <= 100),
   CONSTRAINT marketing_external_contacts_csource_len_chk CHECK (char_length(consent_source)  <= 100),
-  CONSTRAINT marketing_external_contacts_cver_len_chk    CHECK (char_length(consent_version) <= 50)
+  CONSTRAINT marketing_external_contacts_cver_len_chk    CHECK (char_length(consent_version) <= 50),
+  -- An external contact can NEVER be simultaneously enabled AND unsubscribed:
+  -- an unsubscribe (unsubscribed_at set) must force marketing_enabled = false.
+  CONSTRAINT marketing_external_contacts_enabled_not_unsub_chk CHECK (
+    marketing_enabled = false OR unsubscribed_at IS NULL
+  )
 );
 
 -- One contact per normalised email.
@@ -379,6 +436,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS marketing_recipients_run_external_uidx
   ON public.marketing_recipients (run_id, external_contact_id)
   WHERE external_contact_id IS NOT NULL;
 
+-- Belt-and-braces address de-dupe: even across the user/external split, one
+-- email address can be queued at most ONCE per run. This prevents an Auth user
+-- and an external contact that happen to share an email from both being
+-- delivered the same run.
+CREATE UNIQUE INDEX IF NOT EXISTS marketing_recipients_run_email_uidx
+  ON public.marketing_recipients (run_id, email_lc);
+
 -- Queue claim index: find the next due, unlocked work fast.
 CREATE INDEX IF NOT EXISTS marketing_recipients_queue_idx
   ON public.marketing_recipients (status, run_after, locked_until);
@@ -448,12 +512,12 @@ INSERT INTO public.marketing_automations (
   first_delay_minutes, follow_up_delay_minutes, cooldown_hours,
   minimum_wallet_pence, maximum_recipients_per_run
 ) VALUES
-  ('vip_early_access',             'VIP Early Access',             false, 1,     0, NULL, 168, NULL, 100),
-  ('abandoned_checkout',           'Abandoned Checkout',           false, 2,    60, 1440, 168, NULL, 200),
-  ('wtf_credit_waiting',           'WTF Credit Waiting',           false, 3,   120, 2880, 336,  500, 200),
-  ('regular_buyer_campaign_alert', 'Regular Buyer Campaign Alert', false, 4,     0, NULL, 168, NULL, 500),
-  ('new_account_no_purchase',      'New Account, No Purchase',     false, 5,  1440, NULL, 336, NULL, 200),
-  ('lapsed_14_days',               'Lapsed 14 Days',               false, 6, 20160, NULL, 720, NULL, 200)
+  ('vip_early_access',             'VIP Early Access',             false, 1,    0, NULL, 168, NULL, 100),
+  ('abandoned_checkout',           'Abandoned Checkout',           false, 2,   45, 1200, 168, NULL, 200),
+  ('wtf_credit_waiting',           'WTF Credit Waiting',           false, 3,    0, NULL, 336,    1, 200),
+  ('regular_buyer_campaign_alert', 'Regular Buyer Campaign Alert', false, 4,    0, NULL, 168, NULL, 500),
+  ('new_account_no_purchase',      'New Account, No Purchase',     false, 5, 1440, NULL, 336, NULL, 200),
+  ('lapsed_14_days',               'Lapsed 14 Days',               false, 6,    0, NULL, 720, NULL, 200)
 ON CONFLICT (automation_key) DO NOTHING;
 
 -- Singleton control row, seeded fully PAUSED.
@@ -596,10 +660,15 @@ REVOKE ALL ON FUNCTION public.get_admin_marketing_control_state() FROM public, a
 GRANT EXECUTE ON FUNCTION public.get_admin_marketing_configuration() TO service_role;
 GRANT EXECUTE ON FUNCTION public.get_admin_marketing_control_state() TO service_role;
 
+COMMIT;
+
 -- ============================================================================
 -- End of Stage 3A migration.
+--   * Wrapped in a single atomic BEGIN/COMMIT with fail-fast lock/statement
+--     timeouts and a dependency + advisory-lock preflight.
 --   * 7 new tables, all RLS enabled + forced, service-role only.
 --   * 6 automations seeded DISABLED; control state seeded fully PAUSED.
 --   * NO recipients inserted, NO customers activated, NO contacts imported.
 --   * NO triggers, NO email, NO sending/discovery/leasing capability.
+--   * NO CREATE EXTENSION, NO ALTER of any existing table.
 -- ============================================================================
