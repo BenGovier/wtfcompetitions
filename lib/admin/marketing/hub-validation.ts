@@ -240,6 +240,45 @@ export interface ValidatedTemplateInput {
   is_active: boolean
 }
 
+/**
+ * Per-field maximum lengths, mirroring the DB CHECK constraints. Exposed so the
+ * client editor can apply the same maxLength caps it will be validated against.
+ */
+export const TEMPLATE_LIMITS = {
+  name: 200,
+  templateKey: 100,
+  subject: 300,
+  previewText: 300,
+  heading: 300,
+  bodyText: 5000,
+  ctaLabel: 100,
+  defaultUrl: 2048,
+} as const
+
+/**
+ * Convenience wrapper for the client editor: given the camelCase draft fields,
+ * return the sorted list of placeholder tokens that are NOT allowed across any
+ * rendered slot. Reuses the same pure engine the server validator uses, so the
+ * editor's live warning and the server's rejection can never diverge.
+ */
+export function findUnknownPlaceholdersForForm(fields: {
+  subject?: string | null
+  previewText?: string | null
+  heading?: string | null
+  bodyText?: string | null
+  ctaLabel?: string | null
+  defaultUrl?: string | null
+}): string[] {
+  return findUnknownPlaceholders([
+    fields.subject,
+    fields.previewText,
+    fields.heading,
+    fields.bodyText,
+    fields.ctaLabel,
+    fields.defaultUrl,
+  ])
+}
+
 const TEMPLATE_KEY_RE = /^[a-z][a-z0-9_]*$/
 
 export function validateTemplateKey(raw: unknown): Result<string> {
