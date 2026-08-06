@@ -5,21 +5,22 @@
  *
  * INTERACTION MODEL (per the refinement spec — do not regress):
  *  - `tickets` is the purchased-ticket list. Each ticket is ONE shot and shows
- *    as ONE numbered football (#1..#N) in the tray. The signature demo is five
- *    tickets = five footballs.
+ *    as ONE numbered football (#1..#N) in the tray.
  *  - The customer picks a numbered football to shoot. That ticket's outcome is
- *    PREDETERMINED (`tickets[n-1].outcome`); the pick never decides the result.
- *  - After a shot the used football visibly LEAVES the tray and the remaining
- *    footballs slide inward. "SHOT X OF Y" tracks tickets played.
+ *    PREDETERMINED (`tickets[n-1].outcome`); the pick / flick never decides it.
+ *  - BALL INTO DG'S MOUTH = INSTANT WIN. BALL MISSES = NO INSTANT WIN. The
+ *    flight branch is derived from the predetermined outcome, not from skill.
+ *  - After a shot the used football visibly LEAVES the tray. "SHOT X OF Y"
+ *    tracks tickets played.
  *
- * Phase is a single typed reducer:
- *   intro → choosing → selected → aiming → launching → pre_impact → impact →
- *   suspense → revealing → revealed → transitioning_next → (choosing | complete)
+ * Phase is a single typed reducer. The Stage owns the launch→flight timeline
+ * and reports each phase up via `onPhase`; the parent owns intro, the reveal
+ * panel timing and the between-shots transition.
  */
 
 import { useCallback, useEffect, useMemo, useReducer } from "react"
-import type { DemoSettings, GameState, SoundCue, Ticket } from "./types"
-import { revealCopyFor, TIMING } from "./config"
+import type { DemoSettings, GameState, MissVariant, Outcome, ShotPath, SoundCue, Ticket } from "./types"
+import { isBigWin, missVariantForIndex, revealCopyFor, TIMING } from "./config"
 import { DgFootballStage } from "./DgFootballStage"
 import { PrizeReveal, SummaryPanel, type RunSummary } from "./PrizeReveal"
 
@@ -39,13 +40,22 @@ type Action =
   | { type: "AIM_START" }
   | { type: "AIM_CANCEL" }
   | { type: "LAUNCH" }
-  | { type: "PRE_IMPACT" }
-  | { type: "IMPACT" }
-  | { type: "SUSPENSE" }
+  | { type: "PHASE"; phase: GameState }
   | { type: "REVEAL" }
   | { type: "REVEALED" }
   | { type: "NEXT" }
   | { type: "ADVANCE" }
+
+/** Phases the Stage is allowed to drive between LAUNCH and SUSPENSE. */
+const STAGE_PHASES: GameState[] = [
+  "winning_entry",
+  "miss_flight",
+  "win_impact",
+  "win_celebration_transition",
+  "win_celebration",
+  "miss_reaction",
+  "suspense",
+]
 
 function makeInitial(ticketCount: number, skipIntro: boolean): RevealStateShape {
   return {
@@ -61,34 +71,27 @@ function reducer(s: RevealStateShape, a: Action): RevealStateShape {
     case "INTRO_DONE":
       return s.state === "intro" ? { ...s, state: "choosing" } : s
     case "SELECT":
-      // Guard: only choose from the choosing phase (prevents double-select).
       return s.state === "choosing" ? { ...s, state: "selected", selectedNumber: a.number } : s
     case "AIM_START":
       return s.state === "selected" ? { ...s, state: "aiming" } : s
     case "AIM_CANCEL":
       return s.state === "aiming" ? { ...s, state: "selected" } : s
     case "LAUNCH":
-      // Guard: block duplicate launches.
       return s.state === "selected" || s.state === "aiming" ? { ...s, state: "launching" } : s
-    case "PRE_IMPACT":
-      return s.state === "launching" ? { ...s, state: "pre_impact" } : s
-    case "IMPACT":
-      // Accept from launching or pre_impact (pre_impact is a short visual beat).
-      return s.state === "launching" || s.state === "pre_impact" ? { ...s, state: "impact" } : s
-    case "SUSPENSE":
-      return s.state === "impact" ? { ...s, state: "suspense" } : s
+    case "PHASE":
+      // The Stage is the single animator; trust its ordering for the flight
+      // phases. Ignore anything outside the allowed set.
+      return STAGE_PHASES.includes(a.phase) ? { ...s, state: a.phase } : s
     case "REVEAL":
       return s.state === "suspense" ? { ...s, state: "revealing" } : s
     case "REVEALED":
       return s.state === "revealing" ? { ...s, state: "revealed" } : s
     case "NEXT":
-      // Begin the transition: mark the current ball as leaving the tray.
       return s.state === "revealed"
         ? { ...s, state: "transitioning_next", leavingNumber: s.selectedNumber }
         : s
     case "ADVANCE": {
       if (s.state !== "transitioning_next") return s
-      // Commit the played ticket, then either reset for the next shot or finish.
       const played = s.played.slice()
       if (s.selectedNumber != null) played[s.selectedNumber - 1] = true
       const hasMore = played.some((p) => !p)
@@ -101,8 +104,12 @@ function reducer(s: RevealStateShape, a: Action): RevealStateShape {
   }
 }
 
+const MISS_VARIANTS: MissVariant[] = ["left_cheek", "right_cheek", "top", "edge_clip", "shoulder_bounce"]
+function isMissVariant(p: ShotPath): p is MissVariant {
+  return (MISS_VARIANTS as string[]).includes(p)
+}
+
 interface DgFootballRevealProps {
-  /** The predetermined ticket list = one numbered football per ticket. */
   tickets: Ticket[]
   settings: DemoSettings
   playSound: (cue: SoundCue) => void
@@ -110,7 +117,7 @@ interface DgFootballRevealProps {
 }
 
 export function DgFootballReveal({ tickets, settings, playSound, onFinish }: DgFootballRevealProps) {
-  const slow = settings.slowMotion ? 3 : 1
+  const slow = settings.timeScale
 
   const [s, dispatch] = useReducer(reducer, undefined, () =>
     makeInitial(tickets.length, settings.skipIntro),
@@ -119,18 +126,25 @@ export function DgFootballReveal({ tickets, settings, playSound, onFinish }: DgF
   /* ---- derived values -------------------------------------------------- */
   const total = tickets.length
   const playedCount = s.played.filter(Boolean).length
-  // Remaining ball numbers (1-based) in tray order.
   const remainingNumbers = useMemo(
     () => s.played.map((p, i) => (p ? -1 : i + 1)).filter((n) => n > 0),
     [s.played],
   )
   const activeTicketIndex = s.selectedNumber != null ? s.selectedNumber - 1 : null
   const activeTicket = activeTicketIndex != null ? (tickets[activeTicketIndex] ?? null) : null
+  const activeOutcome: Outcome | null = activeTicket ? activeTicket.outcome : null
 
-  // 1-based shot number for the shot in progress / just revealed.
+  // Derive the flight branch from the PREDETERMINED outcome (never from skill).
+  // Dev `shotPath` can force a path for testing.
+  const forceScore = settings.shotPath === "score"
+  const forcedMiss = isMissVariant(settings.shotPath) ? settings.shotPath : null
+  const isWin = forceScore ? true : forcedMiss ? false : activeOutcome ? activeOutcome.kind !== "none" : false
+  const missVariant: MissVariant = forcedMiss ?? missVariantForIndex(activeTicketIndex ?? 0)
+  const bigWin = activeOutcome ? isBigWin(activeOutcome) : false
+  const creditWin = activeOutcome ? activeOutcome.kind === "credit" : false
+
   const shotCurrent = Math.min(playedCount + 1, total)
   const shotTotal = total
-  // Is this the final remaining ticket?
   const isLastShot = playedCount + 1 >= total
   const nextShotNumber = Math.min(playedCount + 2, total)
 
@@ -141,16 +155,10 @@ export function DgFootballReveal({ tickets, settings, playSound, onFinish }: DgF
     return () => window.clearTimeout(id)
   }, [s.state, slow])
 
-  /* ---- impact → suspense → revealing → revealed ----------------------- */
-  useEffect(() => {
-    if (s.state !== "impact") return
-    const id = window.setTimeout(() => dispatch({ type: "SUSPENSE" }), TIMING.impactMs * slow)
-    return () => window.clearTimeout(id)
-  }, [s.state, slow])
-
+  /* ---- suspense → revealing → revealed -------------------------------- */
   useEffect(() => {
     if (s.state !== "suspense") return
-    const id = window.setTimeout(() => dispatch({ type: "REVEAL" }), TIMING.suspenseMs * slow)
+    const id = window.setTimeout(() => dispatch({ type: "REVEAL" }), TIMING.pauseBeforePanelMs * slow)
     return () => window.clearTimeout(id)
   }, [s.state, slow])
 
@@ -180,8 +188,7 @@ export function DgFootballReveal({ tickets, settings, playSound, onFinish }: DgF
   const onAimStart = useCallback(() => dispatch({ type: "AIM_START" }), [])
   const onAimCancel = useCallback(() => dispatch({ type: "AIM_CANCEL" }), [])
   const onLaunch = useCallback(() => dispatch({ type: "LAUNCH" }), [])
-  const onPreImpact = useCallback(() => dispatch({ type: "PRE_IMPACT" }), [])
-  const onImpact = useCallback(() => dispatch({ type: "IMPACT" }), [])
+  const onPhase = useCallback((phase: GameState) => dispatch({ type: "PHASE", phase }), [])
   const onNext = useCallback(() => dispatch({ type: "NEXT" }), [])
 
   /* ---- run summary ----------------------------------------------------- */
@@ -211,12 +218,15 @@ export function DgFootballReveal({ tickets, settings, playSound, onFinish }: DgF
         settings={settings}
         shotCurrent={shotCurrent}
         shotTotal={shotTotal}
+        isWin={isWin}
+        missVariant={missVariant}
+        bigWin={bigWin}
+        creditWin={creditWin}
         onSelectBall={onSelectBall}
         onAimStart={onAimStart}
         onAimCancel={onAimCancel}
         onLaunch={onLaunch}
-        onPreImpact={onPreImpact}
-        onImpact={onImpact}
+        onPhase={onPhase}
         playSound={playSound}
       />
 

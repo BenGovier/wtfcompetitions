@@ -1,20 +1,25 @@
 "use client"
 
 /**
- * DgCharacter — the two supplied character photos (neutral + mouth-open) sharing
- * one identical absolute frame. They cross-fade with no change of scale or
- * position, and the swap is always masked by effects (a rising head glow, a
- * short light sweep across the face and the incoming ball + impact particles),
- * so it never reads as a plain image swap. If an asset is missing we show a
- * clear dev-only notice naming the file — never a substitute person.
+ * DgCharacter — the NORMAL character frame (Layer 2). It holds the two
+ * identically-framed supplied photos, dg-mouth-open.png (active/waiting) and
+ * dg-neutral.png (between shots / non-winning / summary), and cross-fades
+ * between them with no change of scale or position. The winning celebration
+ * asset dg-scored.png is deliberately NOT handled here — it is a separate
+ * full-stage takeover (see ScoredTakeover) because its framing and pose differ.
+ *
+ * If an asset is missing we show a clear dev-only notice naming the exact file,
+ * never a substitute person.
  */
 
 import { useState } from "react"
 import { ASSETS, TIMING } from "./config"
 
 interface DgCharacterProps {
-  /** Show the open-mouth asset (cross-fade target). */
+  /** Show the open-mouth asset (true) or the neutral asset (false). */
   mouthOpen: boolean
+  /** Fade the whole normal frame out while the scored takeover owns the stage. */
+  hidden: boolean
   /** Ramp the green glow behind DG's head (begins ~220ms before impact). */
   headGlow: boolean
   /** Fire a short green light sweep across the face (~170ms before impact). */
@@ -23,11 +28,11 @@ interface DgCharacterProps {
   chestGlow: boolean
   reducedMotion: boolean
   slowFactor: number
-  /** Debug: outline the character image frame. */
+  /** Debug: outline the normal character image frame. */
   showBounds?: boolean
 }
 
-function MissingAssetNotice({ file }: { file: string }) {
+export function MissingAssetNotice({ file }: { file: string }) {
   return (
     <div className="dgf-missing" role="status">
       <span className="dgf-missing-badge">DEV: MISSING ASSET</span>
@@ -39,6 +44,7 @@ function MissingAssetNotice({ file }: { file: string }) {
 
 export function DgCharacter({
   mouthOpen,
+  hidden,
   headGlow,
   faceSweep,
   chestGlow,
@@ -53,7 +59,11 @@ export function DgCharacter({
   const breatheStyle = reducedMotion ? undefined : ({ animationDuration: `${6 * slowFactor}s` } as const)
 
   return (
-    <div className={`dgf-character ${showBounds ? "dgf-character-bounds" : ""}`} aria-hidden="true">
+    <div
+      className={`dgf-character ${showBounds ? "dgf-character-bounds" : ""}`}
+      style={{ opacity: hidden ? 0 : 1, transition: `opacity ${TIMING.darkTransitionMs * slowFactor}ms ease` }}
+      aria-hidden="true"
+    >
       {/* Green rim light behind the shoulders */}
       <div className="dgf-rim" />
 

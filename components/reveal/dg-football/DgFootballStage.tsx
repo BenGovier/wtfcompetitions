@@ -1,30 +1,38 @@
 "use client"
 
 /**
- * DgFootballStage — the interactive portrait stage for the CURRENT shot.
+ * DgFootballStage — the interactive portrait stage for the CURRENT shot, built
+ * as one fixed stage with explicit absolute layers:
+ *   1 environment · 2 DG normal character · 3 mouth depth/mask ·
+ *   4 football + trajectory · 5 impact · 6 scored celebration takeover ·
+ *   (7 result panel lives in PrizeReveal, above this stage)
  *
- * Owns geometry (measured mouth target + launch home via getBoundingClientRect),
- * the single Pointer-Events flick gesture, the launch flight (rAF cubic-bezier),
- * the pre-impact tell, the expression cross-fade and the impact micro-sequence
- * (flash / rings / particles + screen-shake + camera punch). It NEVER decides
- * the result — the outcome is predetermined and only revealed after the ball
- * reaches DG. Each core transition is reported up so the parent keeps one typed
- * GameState.
+ * It owns geometry (measured mouth target + launch home), the single flick
+ * gesture, and the launch → flight timeline which BRANCHES on the predetermined
+ * outcome:
+ *   WIN  — ball flies into the mouth, passes behind the mouth mask, is absorbed,
+ *          fires a mouth-centred impact, then hands to the cinematic scored
+ *          takeover.
+ *   MISS — ball flies convincingly at the mouth, clearly misses on its assigned
+ *          deterministic path, continues beyond, then DG cross-fades to neutral.
+ * It NEVER decides the result — the gesture only starts the reveal. Each phase
+ * is reported up via `onPhase` so the parent keeps one typed GameState.
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
-import type { GameState, DemoSettings, SoundCue } from "./types"
+import type { GameState, DemoSettings, MissVariant, SoundCue } from "./types"
 import {
   INSTRUCTIONS,
-  SELECTED_SUBHINT,
   LAUNCH_DRAG_THRESHOLD,
   LAUNCH_HOME,
+  MISS_OFFSETS,
   MOUTH_TARGET,
   TIMING,
   BALL_SIZE_SELECTED,
 } from "./config"
 import { useFlickGesture } from "./useFlickGesture"
 import { DgCharacter } from "./DgCharacter"
+import { ScoredTakeover } from "./ScoredTakeover"
 import { BallTray } from "./BallTray"
 import { LaunchLane } from "./LaunchLane"
 import { FlickableFootball } from "./FlickableFootball"
@@ -38,26 +46,30 @@ interface Pt {
 
 interface DgFootballStageProps {
   state: GameState
-  /** Remaining ticket ball numbers (1-based) in tray order. */
   remainingNumbers: number[]
-  /** The ball number chosen for THIS shot (presentation only), or null. */
   selectedNumber: number | null
-  /** The ball number leaving the tray during the next-shot transition. */
   leavingNumber: number | null
   settings: DemoSettings
-  /** 1-based shot number in progress, and total tickets. */
   shotCurrent: number
   shotTotal: number
+  /** Predetermined branch: true = ball scores, false = ball misses. */
+  isWin: boolean
+  /** Deterministic miss path for this shot. */
+  missVariant: MissVariant
+  /** Top-prize win → stronger, longer celebration. */
+  bigWin: boolean
+  /** Site-credit win → lighter gold celebration. */
+  creditWin: boolean
   onSelectBall: (n: number) => void
   onAimStart: () => void
   onAimCancel: () => void
   onLaunch: () => void
-  onPreImpact: () => void
-  onImpact: () => void
+  onPhase: (phase: GameState) => void
   playSound: (cue: SoundCue) => void
 }
 
 const easeInOutCubic = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
+const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3)
 
 export function DgFootballStage(props: DgFootballStageProps) {
   const {
@@ -68,17 +80,21 @@ export function DgFootballStage(props: DgFootballStageProps) {
     settings,
     shotCurrent,
     shotTotal,
+    isWin,
+    missVariant,
+    bigWin,
+    creditWin,
     onSelectBall,
     onAimStart,
     onAimCancel,
     onLaunch,
-    onPreImpact,
-    onImpact,
+    onPhase,
     playSound,
   } = props
 
-  const slow = settings.slowMotion ? 3 : 1
+  const slow = settings.timeScale
   const reduced = settings.reducedMotion
+  const preview = settings.charPreview
 
   const stageRef = useRef<HTMLDivElement>(null)
   const mouthRef = useRef<HTMLDivElement>(null)
@@ -121,11 +137,13 @@ export function DgFootballStage(props: DgFootballStageProps) {
   const [flight, setFlight] = useState<{ pos: Pt; rot: number; scale: number; opacity: number } | null>(
     null,
   )
-  const [mouthOpen, setMouthOpen] = useState(false)
   const [preImpact, setPreImpact] = useState(false)
   const [impactActive, setImpactActive] = useState(false)
   const [shake, setShake] = useState(false)
   const [punch, setPunch] = useState(false)
+  const [mouthEntry, setMouthEntry] = useState(false)
+  const [missRipple, setMissRipple] = useState<Pt | null>(null)
+  const [scoredEntering, setScoredEntering] = useState(false)
   const [showTapHint, setShowTapHint] = useState(false)
 
   const flightRafRef = useRef<number | null>(null)
@@ -148,14 +166,17 @@ export function DgFootballStage(props: DgFootballStageProps) {
 
   // Reset per-shot visuals whenever we return to choosing / restart.
   useEffect(() => {
-    if (state === "choosing" || state === "transitioning_next" || state === "intro") {
+    if (state === "choosing" || state === "intro") {
       launchingRef.current = false
+      clearTimers()
       setFlight(null)
-      setMouthOpen(false)
       setPreImpact(false)
       setImpactActive(false)
       setShake(false)
       setPunch(false)
+      setMouthEntry(false)
+      setMissRipple(null)
+      setScoredEntering(false)
       setShowTapHint(false)
       flickReset()
     }
@@ -174,13 +195,11 @@ export function DgFootballStage(props: DgFootballStageProps) {
     return () => window.clearTimeout(id)
   }, [state, slow])
 
-  /* ---- impact sequence ------------------------------------------------- */
-  const runImpact = useCallback(() => {
-    setPreImpact(false)
-    setMouthOpen(true)
-    setFlight(null)
+  /* ---- WIN: mouth impact → dark transition → scored takeover ---------- */
+  const runWinCelebration = useCallback(() => {
+    // Impact micro-sequence originates at the MOUTH (never the chest).
+    onPhase("win_impact")
     setImpactActive(true)
-    onImpact()
     playSound("impact")
     if (typeof navigator !== "undefined" && "vibrate" in navigator && settings.soundOn) {
       try {
@@ -195,12 +214,42 @@ export function DgFootballStage(props: DgFootballStageProps) {
       addTimer(() => setShake(false), TIMING.shakeMs * slow)
       addTimer(() => setPunch(false), TIMING.cameraPunchMs * slow)
     }
-    // Let the impact burst play; the parent drives impact→suspense→reveal.
-    addTimer(() => setImpactActive(false), TIMING.impactMs * slow)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reduced, slow, settings.soundOn, onImpact, playSound])
+    addTimer(() => setImpactActive(false), TIMING.winImpactMs * slow)
 
-  /* ---- the launch flight ---------------------------------------------- */
+    // After the impact: brief screen darken, then the scored image punches in.
+    addTimer(() => {
+      onPhase("win_celebration_transition")
+    }, TIMING.winImpactMs * slow)
+
+    addTimer(
+      () => {
+        onPhase("win_celebration")
+        setScoredEntering(true)
+        playSound("prize")
+      },
+      (TIMING.winImpactMs + TIMING.darkTransitionMs) * slow,
+    )
+
+    // Once the celebration image has settled, hand to the reveal.
+    const takeover = TIMING.scoredTakeoverMs + (bigWin ? TIMING.topPrizeExtraMs : 0)
+    addTimer(
+      () => onPhase("suspense"),
+      (TIMING.winImpactMs + TIMING.darkTransitionMs + takeover) * slow,
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reduced, slow, bigWin, settings.soundOn, onPhase, playSound])
+
+  /* ---- MISS: near-miss ripple → cross-fade to neutral ----------------- */
+  const runMissReaction = useCallback(() => {
+    onPhase("miss_reaction")
+    playSound("nowin")
+    // DG cross-fades open → neutral (handled by derived pose); a soft green
+    // side sweep helps hide the expression change.
+    addTimer(() => onPhase("suspense"), (TIMING.missReactionMs + TIMING.missSettleMs) * slow)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slow, onPhase, playSound])
+
+  /* ---- the launch flight (branches on win/miss) ----------------------- */
   const startLaunch = useCallback(
     (startPos: Pt) => {
       if (launchingRef.current) return
@@ -209,48 +258,90 @@ export function DgFootballStage(props: DgFootballStageProps) {
       playSound("launch")
       onLaunch()
 
-      const duration =
-        (reduced ? TIMING.reducedLaunchMs : (TIMING.launchMinMs + TIMING.launchMaxMs) / 2) * slow
+      const win = isWin
+      const baseDur = win ? TIMING.winFlightMs : TIMING.missFlightMs
+      const duration = (reduced ? TIMING.reducedLaunchMs : baseDur) * slow
       const glowAt = Math.max(0, duration - TIMING.preImpactGlowLeadMs * slow)
-      const crossfadeAt = Math.max(0, duration - TIMING.crossfadeMs * slow)
       const start = performance.now()
       const from = startPos
-      const to = mouthCenter
 
-      // Pre-impact tell: green head-glow ramp + short face light-sweep.
-      addTimer(() => {
-        setPreImpact(true)
-        onPreImpact()
-      }, glowAt)
-      // Expression cross-fade completes just as the ball is absorbed.
-      addTimer(() => setMouthOpen(true), crossfadeAt)
+      // Win → into the mouth. Miss → toward an assigned point, continuing beyond.
+      const off = MISS_OFFSETS[missVariant]
+      const missTarget: Pt = { x: mouthCenter.x + off.dx, y: mouthCenter.y + off.dy }
+      const to: Pt = win
+        ? mouthCenter
+        : { x: from.x + (missTarget.x - from.x) * 1.45, y: from.y + (missTarget.y - from.y) * 1.45 }
+      // Fraction of the flight at which the ball is closest to the mouth (miss).
+      const closestT = 1 / 1.45
 
+      // Announce the branch phase as the ball leaves.
+      onPhase(win ? "winning_entry" : "miss_flight")
+
+      // Pre-impact tell only applies to a scoring shot.
+      if (win) {
+        addTimer(() => setPreImpact(true), glowAt)
+      }
+
+      let rippled = false
       const tick = (now: number) => {
         const elapsed = now - start
         const t = Math.min(1, elapsed / duration)
         const e = reduced ? t : easeInOutCubic(t)
         const x = from.x + (to.x - from.x) * e
-        const arc = reduced ? 0 : Math.sin(Math.PI * t) * -Math.min(84, stageSize.h * 0.1)
+        const arcH = Math.min(84, stageSize.h * 0.1)
+        const arc = reduced ? 0 : Math.sin(Math.PI * Math.min(1, t / (win ? 1 : 1.1))) * -arcH
         const y = from.y + (to.y - from.y) * e + arc
         const rot = reduced ? 0 : t * 1080
-        // Ball shrinks as it travels away toward DG, then is absorbed.
-        const scale = 1 - t * 0.62
-        const opacity = t > 0.9 ? Math.max(0, 1 - (t - 0.9) / 0.1) : 1
-        setFlight({ pos: { x, y }, rot, scale, opacity })
+
+        if (win) {
+          // Enters the mouth: from ~72% the ball goes behind the mask, compresses.
+          const entering = t > 0.72
+          if (entering && !mouthEntry) setMouthEntry(true)
+          const scale = entering ? 1 - 0.62 * ((t - 0.72) / 0.28) * 0.75 - 0.25 * (t) : 1 - t * 0.25
+          const opacity = t > 0.92 ? Math.max(0, 1 - (t - 0.92) / 0.08) : 1
+          setFlight({ pos: { x, y }, rot, scale: Math.max(0.18, scale), opacity })
+        } else {
+          // Miss: stays visible, shrinks slightly with perspective, exits frame.
+          if (!rippled && t >= closestT) {
+            rippled = true
+            setMissRipple({ x: mouthCenter.x + off.dx * 0.6, y: mouthCenter.y + off.dy * 0.6 })
+            playSound("impact")
+            addTimer(() => setMissRipple(null), 420 * slow)
+          }
+          const scale = 1 - Math.min(0.5, t * 0.5)
+          const opacity = t > 0.82 ? Math.max(0, 1 - (t - 0.82) / 0.18) : 1
+          setFlight({ pos: { x, y }, rot, scale, opacity })
+        }
+
         if (t < 1) {
           flightRafRef.current = requestAnimationFrame(tick)
         } else {
           flightRafRef.current = null
-          runImpact()
+          setFlight(null)
+          if (win) runWinCelebration()
+          else runMissReaction()
         }
       }
-      // Brief tension-release beat, then fly.
+
       addTimer(() => {
         flightRafRef.current = requestAnimationFrame(tick)
       }, TIMING.tensionReleaseMs * slow)
       // eslint-disable-next-line react-hooks/exhaustive-deps
     },
-    [mouthCenter, reduced, slow, stageSize.h, onLaunch, onPreImpact, playSound, runImpact],
+    [
+      isWin,
+      missVariant,
+      mouthCenter,
+      reduced,
+      slow,
+      stageSize.h,
+      onLaunch,
+      onPhase,
+      playSound,
+      runWinCelebration,
+      runMissReaction,
+      mouthEntry,
+    ],
   )
 
   /* ---- flick gesture --------------------------------------------------- */
@@ -261,7 +352,7 @@ export function DgFootballStage(props: DgFootballStageProps) {
     upDistance,
     reset: flickReset,
   } = useFlickGesture({
-    enabled: (state === "selected" || state === "aiming") && !launchingRef.current,
+    enabled: (state === "selected" || state === "aiming") && !launchingRef.current && preview === "off",
     threshold: LAUNCH_DRAG_THRESHOLD,
     horizontalDamp: 0.4,
     onDragStart: () => {
@@ -288,8 +379,12 @@ export function DgFootballStage(props: DgFootballStageProps) {
 
   /* ---- derived render values ------------------------------------------ */
   const inFlightPhase =
-    state === "selected" || state === "aiming" || state === "launching" || state === "pre_impact"
-  const showActiveBall = selectedNumber != null && inFlightPhase
+    state === "selected" ||
+    state === "aiming" ||
+    state === "launching" ||
+    state === "winning_entry" ||
+    state === "miss_flight"
+  const showActiveBall = selectedNumber != null && inFlightPhase && preview === "off"
   const charge = Math.min(1, upDistance / LAUNCH_DRAG_THRESHOLD)
 
   const aimCenter: Pt = { x: homePos.x + offset.x, y: homePos.y + offset.y }
@@ -305,15 +400,41 @@ export function DgFootballStage(props: DgFootballStageProps) {
   }
 
   const laneActive = selectedNumber != null && inFlightPhase
-  const dimCharacter = state === "revealing" || state === "revealed"
-  const instruction = INSTRUCTIONS[state]
+
+  /* ---- character pose (derived from the single GameState) ------------- */
+  // Scored celebration owns the stage for the win branch.
+  const scoredVisible =
+    preview === "scored" ||
+    state === "win_celebration_transition" ||
+    state === "win_celebration" ||
+    (state === "revealed" && isWin) ||
+    (state === "transitioning_next" && isWin)
+  const scoredIn =
+    preview === "scored" ||
+    state === "win_celebration" ||
+    (state === "revealed" && isWin)
+  // Normal frame shows the open mouth except after a miss / between shots.
+  const showMouthOpen =
+    preview === "mouth_open"
+      ? true
+      : preview === "neutral"
+        ? false
+        : !(
+            state === "miss_reaction" ||
+            (state === "revealed" && !isWin) ||
+            state === "transitioning_next" ||
+            state === "complete"
+          )
+  const dimCharacter = (state === "revealing" || state === "revealed") && !isWin
+  const darkTransition = state === "win_celebration_transition"
+  const instruction = preview === "off" ? INSTRUCTIONS[state] : null
 
   return (
     <div
       ref={stageRef}
       className={`dgf-stage ${shake ? "dgf-shake" : ""} ${punch ? "dgf-punch" : ""}`}
     >
-      {/* ---------- stadium environment (back) ---------- */}
+      {/* ---------- Layer 1: stadium environment ---------- */}
       <div className="dgf-env" aria-hidden="true">
         <div className="dgf-floodlights" />
         <div className="dgf-dg-glow" />
@@ -341,24 +462,34 @@ export function DgFootballStage(props: DgFootballStageProps) {
         </p>
       </header>
 
-      {/* ---------- character area ---------- */}
+      {/* ---------- Layer 2: DG normal character ---------- */}
       <div className={`dgf-character-area ${dimCharacter ? "dgf-dim" : ""}`}>
         <DgCharacter
-          mouthOpen={mouthOpen}
+          mouthOpen={showMouthOpen}
+          hidden={scoredVisible}
           headGlow={preImpact || impactActive}
           faceSweep={preImpact}
-          chestGlow={impactActive || state === "suspense" || dimCharacter}
+          chestGlow={impactActive}
           reducedMotion={reduced}
           slowFactor={slow}
-          showBounds={settings.showImageBounds}
+          showBounds={settings.showCharBounds}
         />
-        {/* measured mouth target */}
+        {/* measured mouth target (Layer 3 anchor) */}
         <div
           ref={mouthRef}
           className={`dgf-mouth-target ${settings.showMouthTarget ? "dgf-mouth-visible" : ""}`}
           style={{ left: `${MOUTH_TARGET.xPct * 100}%`, top: `${MOUTH_TARGET.yPct * 100}%` }}
         />
       </div>
+
+      {/* ---------- Layer 3: mouth depth + foreground mask ---------- */}
+      <div
+        className={`dgf-mouth-mask ${mouthEntry ? "dgf-mouth-mask-on" : ""} ${
+          settings.showMouthMask ? "dgf-mouth-mask-debug" : ""
+        }`}
+        style={{ left: mouthCenter.x, top: mouthCenter.y }}
+        aria-hidden="true"
+      />
 
       {/* ---------- active launch lane (between DG and tray) ---------- */}
       <LaunchLane
@@ -376,12 +507,12 @@ export function DgFootballStage(props: DgFootballStageProps) {
         {instruction && (
           <p key={state} className="dgf-instruction">
             {instruction.text} <span className="dgf-instruction-key">{instruction.key}</span>
-            {state === "selected" && <span className="dgf-instruction-sub">{SELECTED_SUBHINT}</span>}
+            {instruction.sub && <span className="dgf-instruction-sub">{instruction.sub}</span>}
           </p>
         )}
       </div>
 
-      {/* ---------- trajectory (while aiming) ---------- */}
+      {/* ---------- Layer 4: trajectory (while aiming) ---------- */}
       {state === "aiming" && dragging && (
         <TrajectoryGuide
           width={stageSize.w}
@@ -394,7 +525,7 @@ export function DgFootballStage(props: DgFootballStageProps) {
         />
       )}
 
-      {/* ---------- active football ---------- */}
+      {/* ---------- Layer 4: active football ---------- */}
       {showActiveBall && (
         <FlickableFootball
           size={ballSize}
@@ -408,7 +539,7 @@ export function DgFootballStage(props: DgFootballStageProps) {
       )}
 
       {/* ---------- tap-to-shoot fallback (also the keyboard shoot control) ---------- */}
-      {(state === "selected" || state === "aiming") && (
+      {(state === "selected" || state === "aiming") && preview === "off" && (
         <button
           type="button"
           className={`dgf-tap-shoot ${showTapHint || state === "aiming" ? "dgf-tap-visible" : ""}`}
@@ -420,43 +551,64 @@ export function DgFootballStage(props: DgFootballStageProps) {
         </button>
       )}
 
-      {/* ---------- impact ---------- */}
+      {/* ---------- Layer 5: mouth impact ---------- */}
       <ImpactSequence active={impactActive} reducedMotion={reduced} slowFactor={slow} center={mouthCenter} />
 
+      {/* ---------- near-miss ripple ---------- */}
+      {missRipple && (
+        <div className="dgf-miss-ripple" style={{ left: missRipple.x, top: missRipple.y }} aria-hidden="true" />
+      )}
+
+      {/* ---------- brief screen darken before the celebration ---------- */}
+      <div className={`dgf-dark-transition ${darkTransition ? "dgf-dark-on" : ""}`} aria-hidden="true" />
+
+      {/* ---------- Layer 6: scored celebration takeover ---------- */}
+      <ScoredTakeover
+        visible={scoredVisible}
+        entering={scoredIn}
+        bigWin={bigWin}
+        credit={creditWin}
+        reducedMotion={reduced}
+        slowFactor={slow}
+        showBounds={settings.showScoredBounds}
+      />
+
       {/* ---------- ball tray: numbered footballs, one per ticket ---------- */}
-      <div className="dgf-tray-wrap">
-        <BallTray
-          numbers={remainingNumbers}
-          selectedNumber={selectedNumber}
-          leavingNumber={leavingNumber}
-          disabled={state !== "choosing"}
-          reducedMotion={reduced}
-          slowFactor={slow}
-          onSelect={onSelectBall}
-        />
-      </div>
+      {preview === "off" && (
+        <div className="dgf-tray-wrap">
+          <BallTray
+            numbers={remainingNumbers}
+            selectedNumber={selectedNumber}
+            leavingNumber={leavingNumber}
+            disabled={state !== "choosing"}
+            reducedMotion={reduced}
+            slowFactor={slow}
+            onSelect={onSelectBall}
+          />
+        </div>
+      )}
+
+      {/* ---------- dev preview badge ---------- */}
+      {preview !== "off" && (
+        <div className="dgf-preview-badge" aria-hidden="true">
+          PREVIEW: {preview.replace("_", " ").toUpperCase()}
+        </div>
+      )}
+
+      {/* ---------- prize safe-area guide ---------- */}
+      {settings.showPrizeSafe && <div className="dgf-prize-safe" aria-hidden="true" />}
 
       {/* ---------- debug overlays (dev only) ---------- */}
-      {(settings.showEndpoint || settings.showViewportCentre) && (
+      {settings.showEndpoint && (
         <svg className="dgf-guides" width={stageSize.w} height={stageSize.h} aria-hidden="true">
-          {settings.showViewportCentre && (
-            <>
-              <line x1={stageSize.w / 2} y1={0} x2={stageSize.w / 2} y2={stageSize.h} stroke="#5DFF00" strokeDasharray="4 6" />
-              <line x1={0} y1={stageSize.h / 2} x2={stageSize.w} y2={stageSize.h / 2} stroke="#5DFF00" strokeDasharray="4 6" />
-            </>
-          )}
-          {settings.showEndpoint && (
-            <>
-              <circle cx={mouthCenter.x} cy={mouthCenter.y} r={12} fill="none" stroke="#FFD84A" strokeWidth={1.5} />
-              <line x1={mouthCenter.x - 16} y1={mouthCenter.y} x2={mouthCenter.x + 16} y2={mouthCenter.y} stroke="#FFD84A" />
-              <line x1={mouthCenter.x} y1={mouthCenter.y - 16} x2={mouthCenter.x} y2={mouthCenter.y + 16} stroke="#FFD84A" />
-              <circle cx={homePos.x} cy={homePos.y} r={ballSize / 2} fill="none" stroke="#A8FF19" strokeDasharray="3 4" />
-            </>
-          )}
+          <circle cx={mouthCenter.x} cy={mouthCenter.y} r={12} fill="none" stroke="#FFD84A" strokeWidth={1.5} />
+          <line x1={mouthCenter.x - 16} y1={mouthCenter.y} x2={mouthCenter.x + 16} y2={mouthCenter.y} stroke="#FFD84A" />
+          <line x1={mouthCenter.x} y1={mouthCenter.y - 16} x2={mouthCenter.x} y2={mouthCenter.y + 16} stroke="#FFD84A" />
+          <circle cx={homePos.x} cy={homePos.y} r={ballSize / 2} fill="none" stroke="#A8FF19" strokeDasharray="3 4" />
         </svg>
       )}
 
-      {settings.showAnimState && (
+      {settings.showState && (
         <div className="dgf-anim-state" aria-hidden="true">
           {state}
         </div>

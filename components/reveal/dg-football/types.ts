@@ -5,20 +5,50 @@
  * no API routes. Every value here is mock/presentation data.
  */
 
-/** The single, typed game state. Never model this with loose booleans. */
+/**
+ * The single, typed game state. Never model this with loose booleans.
+ *
+ * The flight branches after `launching`:
+ *   WIN:  launching → winning_entry → win_impact →
+ *         win_celebration_transition → win_celebration → suspense →
+ *         revealing → revealed
+ *   MISS: launching → miss_flight → miss_reaction → suspense →
+ *         revealing → revealed
+ * Both branches converge at `suspense`, then continue to
+ *   revealed → transitioning_next → (choosing | complete).
+ */
 export type GameState =
   | "intro"
   | "choosing"
   | "selected"
   | "aiming"
   | "launching"
-  | "pre_impact"
-  | "impact"
+  | "winning_entry"
+  | "miss_flight"
+  | "win_impact"
+  | "win_celebration_transition"
+  | "win_celebration"
+  | "miss_reaction"
   | "suspense"
   | "revealing"
   | "revealed"
   | "transitioning_next"
   | "complete"
+
+/** Which supplied photo DG is showing. Derived from GameState — never ad-hoc. */
+export type CharacterPose = "mouth_open" | "neutral" | "scored"
+
+/** Deterministic miss trajectories. Fixed per shot — never randomised. */
+export type MissVariant = "left_cheek" | "right_cheek" | "top" | "edge_clip" | "shoulder_bounce"
+
+/** Dev "shot path" override. `auto` derives win/miss from the ticket outcome. */
+export type ShotPath = "auto" | "score" | MissVariant
+
+/** Dev static character preview (inspect a single asset), or "off" for live. */
+export type CharPreview = "off" | "mouth_open" | "neutral" | "scored"
+
+/** Dev timing multiplier: 1 = normal, 2 = 0.5×, 4 = 0.25×. */
+export type TimeScale = 1 | 2 | 4
 
 /** The kind of instant-win outcome for a single ticket. */
 export type OutcomeKind = "none" | "credit" | "cash" | "mystery"
@@ -41,15 +71,17 @@ export interface Ticket {
 
 /** Copy shown on the prize-reveal panel, derived from an Outcome.
  *  `amount` is the single dominant line (e.g. "£100" or, for non-money results,
- *  a headline like "STILL IN THE FINAL DRAW"). `unit` is the large word beneath
- *  a money value (e.g. "CASH", "SITE CREDIT"). `isMoney` switches the panel from
- *  the giant-currency treatment to the headline treatment. */
+ *  a headline like "NO INSTANT WIN"). `unit` is the large word beneath a money
+ *  value (e.g. "CASH", "SITE CREDIT"). `isMoney` switches the panel from the
+ *  giant-currency treatment to the headline treatment. `support2` is an
+ *  optional second reassurance line (used by the non-winning result). */
 export interface RevealCopy {
   tone: "big" | "cash" | "credit" | "mystery" | "none"
   eyebrow: string
   amount: string
   unit: string
   support: string
+  support2?: string
   isMoney: boolean
 }
 
@@ -76,14 +108,21 @@ export interface DemoSettings {
   ticketCount: TicketCount
   soundOn: boolean
   reducedMotion: boolean
-  slowMotion: boolean
+  /** 1 = normal, 2 = 0.5×, 4 = 0.25×. Drives every animation duration. */
+  timeScale: TimeScale
   skipIntro: boolean
-  /* Debug overlays (all default off; invisible in normal gameplay). */
+  /** Force the flight path (win/miss variant) regardless of outcome. */
+  shotPath: ShotPath
+  /** Static pose preview for asset inspection; "off" = live gameplay. */
+  charPreview: CharPreview
+  /* ---- guide overlays (all default off; invisible in normal gameplay) ---- */
   showMouthTarget: boolean
-  showImageBounds: boolean
+  showMouthMask: boolean
+  showCharBounds: boolean
+  showScoredBounds: boolean
+  showPrizeSafe: boolean
   showEndpoint: boolean
-  showViewportCentre: boolean
-  showAnimState: boolean
+  showState: boolean
 }
 
 /** Conceptual sound cues. No external audio files are required. */
