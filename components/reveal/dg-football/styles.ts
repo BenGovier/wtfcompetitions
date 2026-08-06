@@ -878,13 +878,17 @@ export const DG_FOOTBALL_CSS = String.raw`
 }
 .dgf-panel-amount {
   margin: 0; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  width: 100%; padding: 0 16px; box-sizing: border-box;
   transform: scale(0.6); opacity: 0;
   text-shadow: 0 0 30px rgba(0,0,0,0.6);
 }
 .dgf-panel-amount-value {
   font-weight: 900; line-height: 0.9;
-  font-size: clamp(46px, 17vw, 88px);
-  letter-spacing: -0.01em;
+  /* Fits £5,000 and £100 alike without clipping the panel edge. */
+  font-size: clamp(42px, 15vw, 76px);
+  letter-spacing: -0.02em;
+  max-width: 100%;
+  white-space: nowrap;
 }
 .dgf-panel-amount-unit {
   font-weight: 900; text-transform: uppercase;
