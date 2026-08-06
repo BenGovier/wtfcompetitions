@@ -77,7 +77,13 @@ export const DG_FOOTBALL_CSS = String.raw`
   }
 }
 
-.dgf-reveal-root, .dgf-stage { position: absolute; inset: 0; }
+.dgf-reveal-root {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  overflow: hidden;
+}
+.dgf-stage { position: absolute; inset: 0; }
 
 .dgf-stage {
   padding-top: env(safe-area-inset-top);

@@ -7,8 +7,34 @@
  */
 
 import type { CSSProperties } from "react"
+import { useEffect, useRef } from "react"
 import type { RevealCopy } from "./types"
 import { COLORS, formatGBP } from "./config"
+
+/**
+ * Focus a button only while its panel is actually visible. Using React's
+ * `autoFocus` on an always-mounted, off-screen panel makes the browser scroll
+ * the (overflow:hidden) stage to reveal the focused control, which shoved the
+ * whole game up by ~448px. A visibility-gated, scroll-suppressed focus avoids
+ * that entirely while keeping keyboard users landing on the primary action.
+ */
+function useVisibleFocus(visible: boolean) {
+  const ref = useRef<HTMLButtonElement | null>(null)
+  useEffect(() => {
+    if (!visible) return
+    const el = ref.current
+    if (!el) return
+    const id = window.setTimeout(() => {
+      try {
+        el.focus({ preventScroll: true })
+      } catch {
+        el.focus()
+      }
+    }, 40)
+    return () => window.clearTimeout(id)
+  }, [visible])
+  return ref
+}
 
 /* -------------------------------------------------------------------------- */
 /*  Confetti (lightweight DOM burst, deterministic)                           */
@@ -82,6 +108,8 @@ export function PrizeReveal({
         ? COLORS.neon
         : COLORS.white
 
+  const btnRef = useVisibleFocus(visible)
+
   return (
     <div
       className={`dgf-panel ${visible ? "dgf-panel-in" : ""} ${reducedMotion ? "dgf-panel-reduced" : ""}`}
@@ -89,6 +117,8 @@ export function PrizeReveal({
       role="dialog"
       aria-modal="false"
       aria-label={`${copy.eyebrow} ${copy.value}`}
+      aria-hidden={!visible}
+      inert={!visible}
     >
       <div className="dgf-panel-edge" />
       {visible && !reducedMotion && <Confetti tone={copy.tone} slowFactor={slowFactor} />}
@@ -110,7 +140,7 @@ export function PrizeReveal({
 
         <p className="dgf-panel-support">{copy.support}</p>
 
-        <button type="button" className="dgf-next-btn" onClick={onNext} autoFocus>
+        <button ref={btnRef} type="button" className="dgf-next-btn" onClick={onNext}>
           {isLast ? "SEE RESULTS" : "NEXT SHOT"}
           <span className="dgf-next-sub">{shotLabel}</span>
         </button>
@@ -139,6 +169,7 @@ interface SummaryPanelProps {
 
 export function SummaryPanel({ summary, visible, reducedMotion, slowFactor, onFinish }: SummaryPanelProps) {
   const wonSomething = summary.instantWins > 0
+  const btnRef = useVisibleFocus(visible)
   return (
     <div
       className={`dgf-panel dgf-summary ${visible ? "dgf-panel-in" : ""} ${
@@ -148,6 +179,8 @@ export function SummaryPanel({ summary, visible, reducedMotion, slowFactor, onFi
       role="dialog"
       aria-modal="false"
       aria-label="All shots complete"
+      aria-hidden={!visible}
+      inert={!visible}
     >
       <div className="dgf-panel-edge" />
       {visible && wonSomething && !reducedMotion && <Confetti tone="big" slowFactor={slowFactor} />}
@@ -173,7 +206,7 @@ export function SummaryPanel({ summary, visible, reducedMotion, slowFactor, onFi
           Every ticket is still in the final draw — good luck!
         </p>
 
-        <button type="button" className="dgf-next-btn" onClick={onFinish} autoFocus>
+        <button ref={btnRef} type="button" className="dgf-next-btn" onClick={onFinish}>
           FINISH
         </button>
       </div>
