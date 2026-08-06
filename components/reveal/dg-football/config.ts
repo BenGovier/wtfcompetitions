@@ -78,13 +78,6 @@ export const SLOW_FACTOR = 3
 /** Minimum upward drag (px) required to trigger a launch on release. */
 export const LAUNCH_DRAG_THRESHOLD = 70
 
-/**
- * The five reusable footballs. This is a FIXED presentation constant and must
- * never scale with the number of purchased tickets. One ticket or five hundred
- * tickets — the customer always chooses from the same five footballs.
- */
-export const BALL_COUNT = 5
-
 /** Tray football diameter (px) at a 390px stage — unselected balls. */
 export const BALL_SIZE = 60
 

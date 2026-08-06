@@ -85,6 +85,10 @@ interface PrizeRevealProps {
   reducedMotion: boolean
   slowFactor: number
   isLast: boolean
+  /** 1-based index of the ticket just revealed, and the run total. */
+  shotIndex: number
+  shotTotal: number
+  /** Label of the NEXT shot (only meaningful when !isLast). */
   shotLabel: string
   onNext: () => void
 }
@@ -95,6 +99,8 @@ export function PrizeReveal({
   reducedMotion,
   slowFactor,
   isLast,
+  shotIndex,
+  shotTotal,
   shotLabel,
   onNext,
 }: PrizeRevealProps) {
@@ -112,11 +118,13 @@ export function PrizeReveal({
 
   return (
     <div
-      className={`dgf-panel ${visible ? "dgf-panel-in" : ""} ${reducedMotion ? "dgf-panel-reduced" : ""}`}
-      style={{ transitionDuration: `${520 * slowFactor}ms` }}
+      className={`dgf-panel dgf-panel-${copy.tone} ${visible ? "dgf-panel-in" : ""} ${
+        reducedMotion ? "dgf-panel-reduced" : ""
+      }`}
+      style={{ transitionDuration: `${820 * slowFactor}ms` }}
       role="dialog"
       aria-modal="false"
-      aria-label={`${copy.eyebrow} ${copy.value}`}
+      aria-label={`${copy.eyebrow} ${copy.amount} ${copy.unit}`.trim()}
       aria-hidden={!visible}
       inert={!visible}
     >
@@ -130,25 +138,40 @@ export function PrizeReveal({
           {copy.eyebrow}
         </p>
 
-        <p
-          className={`dgf-panel-value ${visible ? "dgf-value-pop" : ""}`}
-          style={{ color: valueColor }}
-          aria-live="assertive"
-        >
-          {copy.value}
-        </p>
+        {copy.isMoney ? (
+          <p
+            className={`dgf-panel-amount ${visible ? "dgf-value-pop" : ""}`}
+            style={{ color: valueColor }}
+            aria-live="assertive"
+          >
+            <span className="dgf-panel-amount-value">{copy.amount}</span>
+            {copy.unit && <span className="dgf-panel-amount-unit">{copy.unit}</span>}
+          </p>
+        ) : (
+          <p
+            className={`dgf-panel-headline text-balance ${visible ? "dgf-value-pop" : ""}`}
+            style={{ color: valueColor }}
+            aria-live="assertive"
+          >
+            {copy.amount}
+          </p>
+        )}
 
-        <p className="dgf-panel-support">{copy.support}</p>
+        <p className="dgf-panel-support text-balance">{copy.support}</p>
 
         {/*
           If more reveals remain, point the customer at the shot they are ABOUT
           to open (shotLabel = the NEXT shot). On the final reveal there is no
-          next shot — go straight to the results.
+          next shot — go straight to the final result.
         */}
         <button ref={btnRef} type="button" className="dgf-next-btn" onClick={onNext}>
-          {isLast ? "VIEW RESULTS" : "NEXT SHOT"}
+          {isLast ? "SEE FINAL RESULT" : "NEXT SHOT"}
           {!isLast && <span className="dgf-next-sub">{shotLabel}</span>}
         </button>
+
+        <p className="dgf-panel-progress" aria-hidden="true">
+          {shotIndex} / {shotTotal} TICKETS PLAYED
+        </p>
       </div>
     </div>
   )

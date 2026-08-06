@@ -1,99 +1,108 @@
 "use client"
 
 /**
- * DgFootballReveal — the orchestrator.
+ * DgFootballReveal — the orchestrator and single source of truth for game phase.
  *
- * CORRECT INTERACTION MODEL (do not regress):
- *  - `tickets` is the PURCHASED-TICKET reveal queue. Its length is the total
- *    number of shots (1 → hundreds). It is supplied via props / reveal data.
- *  - There are always exactly FIVE reusable footballs. The customer picks one
- *    football per shot; that choice is PRESENTATION ONLY and never decides the
- *    result. The result for shot N is `tickets[N].outcome`, predetermined.
- *  - After each shot the five footballs reset for the next shot.
+ * INTERACTION MODEL (per the refinement spec — do not regress):
+ *  - `tickets` is the purchased-ticket list. Each ticket is ONE shot and shows
+ *    as ONE numbered football (#1..#N) in the tray. The signature demo is five
+ *    tickets = five footballs.
+ *  - The customer picks a numbered football to shoot. That ticket's outcome is
+ *    PREDETERMINED (`tickets[n-1].outcome`); the pick never decides the result.
+ *  - After a shot the used football visibly LEAVES the tray and the remaining
+ *    footballs slide inward. "SHOT X OF Y" tracks tickets played.
  *
- * State is a single typed reducer keyed on:
- *    currentRevealIndex  — which ticket in the queue we are revealing
- *    selectedBallIndex   — which of the five footballs is chosen (visual only)
- *    (game phase)        — choosing → selected → aiming → launched → impact →
- *                          revealing → revealed → next_ticket → complete
+ * Phase is a single typed reducer:
+ *   intro → choosing → selected → aiming → launching → pre_impact → impact →
+ *   suspense → revealing → revealed → transitioning_next → (choosing | complete)
  */
 
 import { useCallback, useEffect, useMemo, useReducer } from "react"
 import type { DemoSettings, GameState, SoundCue, Ticket } from "./types"
-import { BALL_COUNT, revealCopyFor, TIMING } from "./config"
+import { revealCopyFor, TIMING } from "./config"
 import { DgFootballStage } from "./DgFootballStage"
 import { PrizeReveal, SummaryPanel, type RunSummary } from "./PrizeReveal"
 
 interface RevealStateShape {
   state: GameState
-  /** Index into the reveal queue (0-based). */
-  currentRevealIndex: number
-  /** Chosen football for the current shot (0-based), or null. Visual only. */
-  selectedBallIndex: number | null
+  /** Per-ticket "played" flags (index = ticket index). */
+  played: boolean[]
+  /** 1-based ball number chosen for the CURRENT shot (= ticket index + 1). */
+  selectedNumber: number | null
+  /** Ball number leaving the tray during the next-shot transition. */
+  leavingNumber: number | null
 }
 
 type Action =
   | { type: "INTRO_DONE" }
-  | { type: "SELECT"; ballIndex: number }
+  | { type: "SELECT"; number: number }
   | { type: "AIM_START" }
   | { type: "AIM_CANCEL" }
   | { type: "LAUNCH" }
+  | { type: "PRE_IMPACT" }
   | { type: "IMPACT" }
-  | { type: "IMPACT_COMPLETE" }
+  | { type: "SUSPENSE" }
+  | { type: "REVEAL" }
   | { type: "REVEALED" }
   | { type: "NEXT" }
-  | { type: "ADVANCE"; hasMore: boolean }
-  | { type: "RESET"; skipIntro: boolean }
+  | { type: "ADVANCE" }
+
+function makeInitial(ticketCount: number, skipIntro: boolean): RevealStateShape {
+  return {
+    state: skipIntro ? "choosing" : "intro",
+    played: Array.from({ length: ticketCount }, () => false),
+    selectedNumber: null,
+    leavingNumber: null,
+  }
+}
 
 function reducer(s: RevealStateShape, a: Action): RevealStateShape {
   switch (a.type) {
     case "INTRO_DONE":
       return s.state === "intro" ? { ...s, state: "choosing" } : s
     case "SELECT":
-      // Guard: only choose from the choosing state (prevents double-select).
-      return s.state === "choosing"
-        ? { ...s, state: "selected", selectedBallIndex: a.ballIndex }
-        : s
+      // Guard: only choose from the choosing phase (prevents double-select).
+      return s.state === "choosing" ? { ...s, state: "selected", selectedNumber: a.number } : s
     case "AIM_START":
       return s.state === "selected" ? { ...s, state: "aiming" } : s
     case "AIM_CANCEL":
       return s.state === "aiming" ? { ...s, state: "selected" } : s
     case "LAUNCH":
       // Guard: block duplicate launches.
-      return s.state === "selected" || s.state === "aiming" ? { ...s, state: "launched" } : s
+      return s.state === "selected" || s.state === "aiming" ? { ...s, state: "launching" } : s
+    case "PRE_IMPACT":
+      return s.state === "launching" ? { ...s, state: "pre_impact" } : s
     case "IMPACT":
-      return s.state === "launched" ? { ...s, state: "impact" } : s
-    case "IMPACT_COMPLETE":
-      // Guard: never reset/reveal twice during impact.
-      return s.state === "impact" ? { ...s, state: "revealing" } : s
+      // Accept from launching or pre_impact (pre_impact is a short visual beat).
+      return s.state === "launching" || s.state === "pre_impact" ? { ...s, state: "impact" } : s
+    case "SUSPENSE":
+      return s.state === "impact" ? { ...s, state: "suspense" } : s
+    case "REVEAL":
+      return s.state === "suspense" ? { ...s, state: "revealing" } : s
     case "REVEALED":
       return s.state === "revealing" ? { ...s, state: "revealed" } : s
     case "NEXT":
-      return s.state === "revealed" ? { ...s, state: "next_ticket" } : s
-    case "ADVANCE":
-      if (s.state !== "next_ticket") return s
-      // Advance the reveal queue and RESET the five ball choices for the next
-      // shot so no previous selection carries over.
-      return a.hasMore
-        ? {
-            state: "choosing",
-            currentRevealIndex: s.currentRevealIndex + 1,
-            selectedBallIndex: null,
-          }
-        : { ...s, state: "complete" }
-    case "RESET":
-      return {
-        state: a.skipIntro ? "choosing" : "intro",
-        currentRevealIndex: 0,
-        selectedBallIndex: null,
-      }
+      // Begin the transition: mark the current ball as leaving the tray.
+      return s.state === "revealed"
+        ? { ...s, state: "transitioning_next", leavingNumber: s.selectedNumber }
+        : s
+    case "ADVANCE": {
+      if (s.state !== "transitioning_next") return s
+      // Commit the played ticket, then either reset for the next shot or finish.
+      const played = s.played.slice()
+      if (s.selectedNumber != null) played[s.selectedNumber - 1] = true
+      const hasMore = played.some((p) => !p)
+      return hasMore
+        ? { state: "choosing", played, selectedNumber: null, leavingNumber: null }
+        : { state: "complete", played, selectedNumber: null, leavingNumber: null }
+    }
     default:
       return s
   }
 }
 
 interface DgFootballRevealProps {
-  /** The predetermined reveal queue = one entry per purchased ticket. */
+  /** The predetermined ticket list = one numbered football per ticket. */
   tickets: Ticket[]
   settings: DemoSettings
   playSound: (cue: SoundCue) => void
@@ -103,24 +112,27 @@ interface DgFootballRevealProps {
 export function DgFootballReveal({ tickets, settings, playSound, onFinish }: DgFootballRevealProps) {
   const slow = settings.slowMotion ? 3 : 1
 
-  const [s, dispatch] = useReducer(reducer, undefined, () => ({
-    state: settings.skipIntro ? ("choosing" as GameState) : ("intro" as GameState),
-    currentRevealIndex: 0,
-    selectedBallIndex: null,
-  }))
+  const [s, dispatch] = useReducer(reducer, undefined, () =>
+    makeInitial(tickets.length, settings.skipIntro),
+  )
 
-  /* ---- reveal-queue derived values ------------------------------------ */
-  const totalRevealCount = tickets.length
-  const currentRevealIndex = Math.min(s.currentRevealIndex, Math.max(0, totalRevealCount - 1))
-  const activeTicket = tickets[currentRevealIndex] ?? null
+  /* ---- derived values -------------------------------------------------- */
+  const total = tickets.length
+  const playedCount = s.played.filter(Boolean).length
+  // Remaining ball numbers (1-based) in tray order.
+  const remainingNumbers = useMemo(
+    () => s.played.map((p, i) => (p ? -1 : i + 1)).filter((n) => n > 0),
+    [s.played],
+  )
+  const activeTicketIndex = s.selectedNumber != null ? s.selectedNumber - 1 : null
+  const activeTicket = activeTicketIndex != null ? (tickets[activeTicketIndex] ?? null) : null
 
-  // 1-based shot numbers driven entirely by the reveal queue (dynamic total).
-  const shotCurrent = currentRevealIndex + 1
-  const shotTotal = totalRevealCount
-  // Is the ticket currently being revealed the final one in the queue?
-  const isLastShot = currentRevealIndex + 1 >= totalRevealCount
-  // The shot the NEXT-SHOT button is about to open (only meaningful if !isLast).
-  const nextRevealNumber = currentRevealIndex + 2
+  // 1-based shot number for the shot in progress / just revealed.
+  const shotCurrent = Math.min(playedCount + 1, total)
+  const shotTotal = total
+  // Is this the final remaining ticket?
+  const isLastShot = playedCount + 1 >= total
+  const nextShotNumber = Math.min(playedCount + 2, total)
 
   /* ---- intro auto-advance --------------------------------------------- */
   useEffect(() => {
@@ -129,7 +141,19 @@ export function DgFootballReveal({ tickets, settings, playSound, onFinish }: DgF
     return () => window.clearTimeout(id)
   }, [s.state, slow])
 
-  /* ---- revealing -> revealed after the panel rises -------------------- */
+  /* ---- impact → suspense → revealing → revealed ----------------------- */
+  useEffect(() => {
+    if (s.state !== "impact") return
+    const id = window.setTimeout(() => dispatch({ type: "SUSPENSE" }), TIMING.impactMs * slow)
+    return () => window.clearTimeout(id)
+  }, [s.state, slow])
+
+  useEffect(() => {
+    if (s.state !== "suspense") return
+    const id = window.setTimeout(() => dispatch({ type: "REVEAL" }), TIMING.suspenseMs * slow)
+    return () => window.clearTimeout(id)
+  }, [s.state, slow])
+
   useEffect(() => {
     if (s.state !== "revealing") return
     playSound(activeTicket && activeTicket.outcome.kind !== "none" ? "prize" : "nowin")
@@ -138,34 +162,29 @@ export function DgFootballReveal({ tickets, settings, playSound, onFinish }: DgF
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.state, slow])
 
-  /* ---- next_ticket -> choosing/complete after reflow ------------------ */
+  /* ---- transitioning_next → choosing / complete after reflow ---------- */
   useEffect(() => {
-    if (s.state !== "next_ticket") return
-    const hasMore = s.currentRevealIndex + 1 < totalRevealCount
-    const id = window.setTimeout(
-      () => dispatch({ type: "ADVANCE", hasMore }),
-      TIMING.reflowMs * slow,
-    )
+    if (s.state !== "transitioning_next") return
+    const id = window.setTimeout(() => dispatch({ type: "ADVANCE" }), TIMING.reflowMs * slow)
     return () => window.clearTimeout(id)
-  }, [s.state, s.currentRevealIndex, totalRevealCount, slow])
+  }, [s.state, slow])
 
   /* ---- callbacks down to the stage ------------------------------------ */
   const onSelectBall = useCallback(
-    (ballIndex: number) => {
+    (n: number) => {
       playSound("select")
-      dispatch({ type: "SELECT", ballIndex })
+      dispatch({ type: "SELECT", number: n })
     },
     [playSound],
   )
   const onAimStart = useCallback(() => dispatch({ type: "AIM_START" }), [])
   const onAimCancel = useCallback(() => dispatch({ type: "AIM_CANCEL" }), [])
   const onLaunch = useCallback(() => dispatch({ type: "LAUNCH" }), [])
+  const onPreImpact = useCallback(() => dispatch({ type: "PRE_IMPACT" }), [])
   const onImpact = useCallback(() => dispatch({ type: "IMPACT" }), [])
-  const onImpactComplete = useCallback(() => dispatch({ type: "IMPACT_COMPLETE" }), [])
   const onNext = useCallback(() => dispatch({ type: "NEXT" }), [])
 
   /* ---- run summary ----------------------------------------------------- */
-  // Reaching "complete" means every ticket in the queue was revealed in order.
   const summary: RunSummary = useMemo(() => {
     let instantWins = 0
     let cashPence = 0
@@ -186,8 +205,9 @@ export function DgFootballReveal({ tickets, settings, playSound, onFinish }: DgF
     <div className="dgf-reveal-root">
       <DgFootballStage
         state={s.state}
-        ballCount={BALL_COUNT}
-        selectedBallIndex={s.selectedBallIndex}
+        remainingNumbers={remainingNumbers}
+        selectedNumber={s.selectedNumber}
+        leavingNumber={s.leavingNumber}
         settings={settings}
         shotCurrent={shotCurrent}
         shotTotal={shotTotal}
@@ -195,15 +215,15 @@ export function DgFootballReveal({ tickets, settings, playSound, onFinish }: DgF
         onAimStart={onAimStart}
         onAimCancel={onAimCancel}
         onLaunch={onLaunch}
+        onPreImpact={onPreImpact}
         onImpact={onImpact}
-        onImpactComplete={onImpactComplete}
         playSound={playSound}
       />
 
       {/* Live region for the result (screen-reader announcement). */}
       <div className="sr-only" role="status" aria-live="polite">
         {s.state === "revealed" && revealCopy
-          ? `${revealCopy.eyebrow} ${revealCopy.value}. ${revealCopy.support}.`
+          ? `${revealCopy.eyebrow} ${revealCopy.amount} ${revealCopy.unit}. ${revealCopy.support}.`
           : s.state === "complete"
             ? `All shots complete. ${summary.instantWins} instant wins.`
             : ""}
@@ -216,7 +236,9 @@ export function DgFootballReveal({ tickets, settings, playSound, onFinish }: DgF
           reducedMotion={settings.reducedMotion}
           slowFactor={slow}
           isLast={isLastShot}
-          shotLabel={`SHOT ${nextRevealNumber} OF ${shotTotal}`}
+          shotIndex={shotCurrent}
+          shotTotal={shotTotal}
+          shotLabel={`SHOT ${nextShotNumber} OF ${shotTotal}`}
           onNext={onNext}
         />
       )}

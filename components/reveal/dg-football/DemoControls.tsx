@@ -88,15 +88,36 @@ export function DemoControls({ settings, onChange, onReset, variant }: DemoContr
             onChange={(v) => onChange({ reducedMotion: v })}
           />
           <Toggle label="Slow animation" checked={settings.slowMotion} onChange={(v) => onChange({ slowMotion: v })} />
+        </div>
+      </fieldset>
+
+      <fieldset className="dgf-ctl-group">
+        <legend>Debug overlays</legend>
+        <div className="dgf-ctl-toggles">
           <Toggle
-            label="Show mouth target"
+            label="Mouth target"
             checked={settings.showMouthTarget}
             onChange={(v) => onChange({ showMouthTarget: v })}
           />
           <Toggle
-            label="Show alignment guides"
-            checked={settings.showGuides}
-            onChange={(v) => onChange({ showGuides: v })}
+            label="Image bounding box"
+            checked={settings.showImageBounds}
+            onChange={(v) => onChange({ showImageBounds: v })}
+          />
+          <Toggle
+            label="Ball endpoint"
+            checked={settings.showEndpoint}
+            onChange={(v) => onChange({ showEndpoint: v })}
+          />
+          <Toggle
+            label="Viewport centre"
+            checked={settings.showViewportCentre}
+            onChange={(v) => onChange({ showViewportCentre: v })}
+          />
+          <Toggle
+            label="Animation state"
+            checked={settings.showAnimState}
+            onChange={(v) => onChange({ showAnimState: v })}
           />
         </div>
       </fieldset>

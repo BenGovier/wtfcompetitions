@@ -683,6 +683,227 @@ export const DG_FOOTBALL_CSS = String.raw`
   .dgf-page .dgf-dg-glow,
   .dgf-page .dgf-particle,
   .dgf-page .dgf-rays,
+  .dgf-page .dgf-ball-idle .dgf-ball-inner,
+  .dgf-page .dgf-lane-mote,
   .dgf-page .dgf-rotate-icon { animation: none !important; }
 }
+
+/* -------------------------------------------------------------------------- */
+/*  Camera punch-in (impact)                                                  */
+/* -------------------------------------------------------------------------- */
+.dgf-punch { animation: dgf-punch 320ms cubic-bezier(0.2, 0.9, 0.3, 1); }
+@keyframes dgf-punch {
+  0% { transform: scale(1); }
+  28% { transform: scale(1.045); }
+  100% { transform: scale(1); }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Debug: image bounds + animation-state badge                               */
+/* -------------------------------------------------------------------------- */
+.dgf-character-bounds .dgf-character-inner { outline: 1px dashed rgba(255,216,74,0.7); outline-offset: -1px; }
+.dgf-character-bounds .dgf-dg-img { outline: 1px solid rgba(93,255,0,0.5); }
+.dgf-anim-state {
+  position: absolute; z-index: 45;
+  left: 8px; bottom: calc(env(safe-area-inset-bottom) + 8px);
+  padding: 4px 8px; border-radius: 6px;
+  background: rgba(5,7,5,0.8); border: 1px solid rgba(168,255,25,0.4);
+  color: var(--dg-neon); font-size: 10px; font-weight: 800; letter-spacing: 0.12em;
+  text-transform: uppercase; font-family: var(--font-mono, monospace);
+  pointer-events: none;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Pre-impact tell — head glow, chest glow, face sweep                       */
+/* -------------------------------------------------------------------------- */
+.dgf-head-glow {
+  position: absolute; left: 50%; top: 30%;
+  width: 60%; height: 40%; transform: translate(-50%, -50%) scale(0.7);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(168,255,25,0.6), transparent 68%);
+  filter: blur(10px);
+  opacity: 0; transition: opacity 200ms ease, transform 200ms ease;
+  pointer-events: none;
+}
+.dgf-head-glow-on { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+.dgf-chest-glow {
+  position: absolute; left: 50%; top: 62%;
+  width: 44%; height: 22%; transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(168,255,25,0.5), transparent 70%);
+  filter: blur(8px);
+  opacity: 0; transition: opacity 260ms ease;
+  pointer-events: none;
+}
+.dgf-chest-glow-on { opacity: 1; }
+.dgf-face-sweep {
+  position: absolute; left: 0; top: 22%; width: 100%; height: 34%;
+  background: linear-gradient(115deg, transparent 40%, rgba(223,255,166,0.55) 50%, transparent 60%);
+  mix-blend-mode: screen;
+  animation: dgf-face-sweep 200ms ease-out forwards;
+  pointer-events: none;
+}
+@keyframes dgf-face-sweep {
+  from { transform: translateX(-40%); opacity: 0; }
+  40% { opacity: 1; }
+  to { transform: translateX(40%); opacity: 0; }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Launch lane (active zone between DG and tray)                             */
+/* -------------------------------------------------------------------------- */
+.dgf-lane { position: absolute; inset: 0; z-index: 1; pointer-events: none; transition: opacity 260ms ease; }
+.dgf-lane-svg { position: absolute; inset: 0; }
+.dgf-lane-idle { opacity: 0.45; }
+.dgf-lane-active { opacity: 0.85; }
+.dgf-lane-charging { opacity: 1; }
+.dgf-lane-floor { transition: opacity 260ms ease; }
+.dgf-lane-charging .dgf-lane-floor { opacity: 1; }
+.dgf-lane-core {
+  position: absolute; width: 3px; transform: translateX(-50%);
+  background: linear-gradient(to top, rgba(168,255,25,0.55), rgba(168,255,25,0));
+  filter: blur(2px);
+  transition: opacity 200ms ease;
+}
+.dgf-lane-idle .dgf-lane-core { opacity: 0.4; }
+.dgf-lane-target {
+  position: absolute; width: 26px; height: 26px; transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(168,255,25,0.35), transparent 70%);
+}
+.dgf-lane-charging .dgf-lane-target { animation: dgf-lane-target 700ms ease-in-out infinite; }
+@keyframes dgf-lane-target {
+  0%,100% { transform: translate(-50%, -50%) scale(1); opacity: 0.7; }
+  50% { transform: translate(-50%, -50%) scale(1.35); opacity: 1; }
+}
+.dgf-lane-dust { position: absolute; inset: 0; }
+.dgf-lane-mote {
+  position: absolute; width: 3px; height: 3px; border-radius: 50%;
+  background: var(--dg-neon); box-shadow: 0 0 6px var(--dg-neon);
+  opacity: 0; animation: dgf-lane-mote linear infinite;
+}
+@keyframes dgf-lane-mote {
+  0% { transform: translateY(0); opacity: 0; }
+  20% { opacity: 0.8; }
+  100% { transform: translateY(-160px); opacity: 0; }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Ball tray — platform, numbered footballs, depth + used-ball state         */
+/* -------------------------------------------------------------------------- */
+.dgf-tray-platform {
+  position: relative;
+  padding: 14px 10px 8px;
+  border-radius: 20px;
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(168,255,25,0.10), transparent 60%),
+    linear-gradient(180deg, rgba(17,23,18,0.5), rgba(5,7,5,0.2));
+  box-shadow: inset 0 1px 0 rgba(168,255,25,0.18);
+}
+.dgf-tray-platform::before {
+  content: ""; position: absolute; left: 8%; right: 8%; top: 0; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--dg-neon), transparent);
+  opacity: 0.6;
+}
+.dgf-tray-slot {
+  width: auto; max-width: 84px;
+  overflow: visible;
+  transition-property: transform, opacity, max-width, margin;
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+.dgf-slot-collapsed { max-width: 0; opacity: 0; margin-left: -6px; margin-right: -6px; pointer-events: none; }
+.dgf-slot-leaving .dgf-ball-btn {
+  transform: translateY(26px) scale(0.65);
+  opacity: 0;
+  transition: transform 380ms ease-in, opacity 380ms ease-in;
+}
+.dgf-ball-outer { filter: drop-shadow(0 8px 10px rgba(0,0,0,0.6)) blur(0.4px); opacity: 0.92; }
+.dgf-ball-badge {
+  position: absolute; right: -2px; bottom: -2px;
+  min-width: 18px; height: 18px; padding: 0 4px;
+  display: grid; place-items: center;
+  border-radius: 999px;
+  background: var(--dg-black); color: var(--dg-neon);
+  border: 1px solid var(--dg-neon);
+  font-size: 10px; font-weight: 900; line-height: 1;
+  box-shadow: 0 0 8px var(--dg-glow);
+}
+.dgf-ball-ring {
+  position: absolute; inset: -6px; border-radius: 50%;
+  border: 2px solid var(--dg-neon);
+  animation: dgf-ball-pulse 500ms ease-out forwards;
+}
+.dgf-ball-num {
+  font-size: 11px; font-weight: 800; letter-spacing: 0.1em;
+  color: var(--dg-muted);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Impact — added core punch, second ring, lingering bloom                   */
+/* -------------------------------------------------------------------------- */
+.dgf-impact-core {
+  position: absolute; left: 0; top: 0; width: 120px; height: 120px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(247,247,242,0.98), rgba(247,247,242,0.4) 40%, transparent 66%);
+  animation: dgf-core ease-out forwards;
+}
+@keyframes dgf-core {
+  0% { opacity: 0; transform: translate(-50%,-50%) scale(0.2); }
+  25% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%,-50%) scale(0.9); }
+}
+.dgf-impact-ring-2 { border-color: var(--dg-white); }
+.dgf-impact-bloom {
+  position: absolute; left: 0; top: 0; width: 220px; height: 220px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--dg-glow), transparent 70%);
+  filter: blur(8px);
+  animation: dgf-bloom ease-out forwards;
+}
+@keyframes dgf-bloom {
+  0% { opacity: 0; transform: translate(-50%,-50%) scale(0.5); }
+  40% { opacity: 0.9; }
+  100% { opacity: 0; transform: translate(-50%,-50%) scale(1.3); }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Prize panel — dominant amount, unit line, headline, tones, progress       */
+/* -------------------------------------------------------------------------- */
+.dgf-instruction-sub {
+  display: block; margin-top: 6px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.22em;
+  color: var(--dg-muted);
+}
+.dgf-panel-amount {
+  margin: 0; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  transform: scale(0.6); opacity: 0;
+  text-shadow: 0 0 30px rgba(0,0,0,0.6);
+}
+.dgf-panel-amount-value {
+  font-weight: 900; line-height: 0.9;
+  font-size: clamp(46px, 17vw, 88px);
+  letter-spacing: -0.01em;
+}
+.dgf-panel-amount-unit {
+  font-weight: 900; text-transform: uppercase;
+  font-size: clamp(13px, 4vw, 18px); letter-spacing: 0.28em;
+  color: var(--dg-white); opacity: 0.9;
+}
+.dgf-panel-headline {
+  margin: 0; font-weight: 900; text-transform: uppercase; line-height: 0.98;
+  font-size: clamp(24px, 8vw, 40px);
+  transform: scale(0.6); opacity: 0;
+  text-shadow: 0 0 30px rgba(0,0,0,0.6);
+  max-width: 12ch;
+}
+.dgf-panel-progress {
+  margin-top: 6px; color: var(--dg-muted);
+  font-size: 10px; font-weight: 800; letter-spacing: 0.24em; text-transform: uppercase;
+}
+/* Tone accents on the panel top border + edge glow. */
+.dgf-panel-big { border-top-color: var(--dg-gold); box-shadow: 0 -20px 60px rgba(0,0,0,0.7), 0 -2px 34px rgba(255,216,74,0.5); }
+.dgf-panel-cash { border-top-color: var(--dg-cash); }
+.dgf-panel-none { border-top-color: rgba(255,255,255,0.35); box-shadow: 0 -20px 60px rgba(0,0,0,0.7); }
 `

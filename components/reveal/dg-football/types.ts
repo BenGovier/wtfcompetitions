@@ -63,9 +63,10 @@ export type OutcomePreset =
   | "mixed5"
 
 /**
- * The number of purchased tickets = the length of the reveal queue.
- * This is intentionally an open number (1 → hundreds). It is NOT the number of
- * footballs on screen — there are always exactly five reusable footballs.
+ * The number of purchased tickets. Each ticket is one shot and shows as one
+ * numbered football in the tray; a used football leaves the tray after its
+ * shot. The signature demo is five tickets, so this stays a small, legible
+ * count in the dev controls (1 / 3 / 5).
  */
 export type TicketCount = number
 

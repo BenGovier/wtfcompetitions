@@ -146,6 +146,9 @@ export const FlickableFootball = forwardRef<HTMLDivElement, FlickableFootballPro
       position: "absolute",
       left: 0,
       top: 0,
+      // Above the lane, character and trajectory so the flying ball clearly
+      // crosses in front of DG's mouth before it is absorbed.
+      zIndex: 8,
       width: size,
       height: size,
       transform,
