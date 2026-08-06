@@ -5,25 +5,28 @@
  *
  * Owns geometry (measured mouth target + launch home via getBoundingClientRect),
  * the single Pointer-Events flick gesture, the launch flight (rAF cubic-bezier),
- * the expression cross-fade timing and the impact micro-sequence. It NEVER
- * decides the result — the outcome is predetermined and only revealed after the
- * ball reaches DG. Each core transition is reported up via a callback so the
- * parent keeps one typed GameState.
+ * the pre-impact tell, the expression cross-fade and the impact micro-sequence
+ * (flash / rings / particles + screen-shake + camera punch). It NEVER decides
+ * the result — the outcome is predetermined and only revealed after the ball
+ * reaches DG. Each core transition is reported up so the parent keeps one typed
+ * GameState.
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import type { GameState, DemoSettings, SoundCue } from "./types"
 import {
   INSTRUCTIONS,
+  SELECTED_SUBHINT,
   LAUNCH_DRAG_THRESHOLD,
   LAUNCH_HOME,
   MOUTH_TARGET,
   TIMING,
-  BALL_SIZE,
+  BALL_SIZE_SELECTED,
 } from "./config"
 import { useFlickGesture } from "./useFlickGesture"
 import { DgCharacter } from "./DgCharacter"
 import { BallTray } from "./BallTray"
+import { LaunchLane } from "./LaunchLane"
 import { FlickableFootball } from "./FlickableFootball"
 import { TrajectoryGuide } from "./TrajectoryGuide"
 import { ImpactSequence } from "./ImpactSequence"
@@ -35,21 +38,22 @@ interface Pt {
 
 interface DgFootballStageProps {
   state: GameState
-  /** How many footballs to render (always five). */
-  ballCount: number
-  /** The chosen football index for THIS shot (presentation only), or null. */
-  selectedBallIndex: number | null
+  /** Remaining ticket ball numbers (1-based) in tray order. */
+  remainingNumbers: number[]
+  /** The ball number chosen for THIS shot (presentation only), or null. */
+  selectedNumber: number | null
+  /** The ball number leaving the tray during the next-shot transition. */
+  leavingNumber: number | null
   settings: DemoSettings
-  /** 1-based index of the ticket being revealed. */
+  /** 1-based shot number in progress, and total tickets. */
   shotCurrent: number
-  /** Total tickets in the reveal queue (1 → hundreds). */
   shotTotal: number
-  onSelectBall: (index: number) => void
+  onSelectBall: (n: number) => void
   onAimStart: () => void
   onAimCancel: () => void
   onLaunch: () => void
+  onPreImpact: () => void
   onImpact: () => void
-  onImpactComplete: () => void
   playSound: (cue: SoundCue) => void
 }
 
@@ -58,8 +62,9 @@ const easeInOutCubic = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2
 export function DgFootballStage(props: DgFootballStageProps) {
   const {
     state,
-    ballCount,
-    selectedBallIndex,
+    remainingNumbers,
+    selectedNumber,
+    leavingNumber,
     settings,
     shotCurrent,
     shotTotal,
@@ -67,8 +72,8 @@ export function DgFootballStage(props: DgFootballStageProps) {
     onAimStart,
     onAimCancel,
     onLaunch,
+    onPreImpact,
     onImpact,
-    onImpactComplete,
     playSound,
   } = props
 
@@ -79,9 +84,9 @@ export function DgFootballStage(props: DgFootballStageProps) {
   const mouthRef = useRef<HTMLDivElement>(null)
 
   const [stageSize, setStageSize] = useState({ w: 390, h: 844 })
-  const [mouthCenter, setMouthCenter] = useState<Pt>({ x: 195, y: 384 })
+  const [mouthCenter, setMouthCenter] = useState<Pt>({ x: 195, y: 380 })
 
-  const ballSize = BALL_SIZE
+  const ballSize = BALL_SIZE_SELECTED
   const homePos: Pt = { x: stageSize.w * LAUNCH_HOME.xPct, y: stageSize.h * LAUNCH_HOME.yPct }
 
   /* ---- geometry measurement ------------------------------------------- */
@@ -109,18 +114,18 @@ export function DgFootballStage(props: DgFootballStageProps) {
   }, [measure])
 
   useEffect(() => {
-    // Re-measure whenever we re-enter an interactive shot.
     if (state === "selected") measure()
   }, [state, measure])
 
-  /* ---- flight animation state ----------------------------------------- */
-  // Ball centre while flying (stage-local). Null when not flying.
+  /* ---- flight + impact visual state ----------------------------------- */
   const [flight, setFlight] = useState<{ pos: Pt; rot: number; scale: number; opacity: number } | null>(
     null,
   )
   const [mouthOpen, setMouthOpen] = useState(false)
+  const [preImpact, setPreImpact] = useState(false)
   const [impactActive, setImpactActive] = useState(false)
   const [shake, setShake] = useState(false)
+  const [punch, setPunch] = useState(false)
   const [showTapHint, setShowTapHint] = useState(false)
 
   const flightRafRef = useRef<number | null>(null)
@@ -141,14 +146,16 @@ export function DgFootballStage(props: DgFootballStageProps) {
     timersRef.current.push(id)
   }
 
-  // Reset per-shot visuals whenever we leave the reveal/return to choosing.
+  // Reset per-shot visuals whenever we return to choosing / restart.
   useEffect(() => {
-    if (state === "choosing" || state === "next_ticket" || state === "intro") {
+    if (state === "choosing" || state === "transitioning_next" || state === "intro") {
       launchingRef.current = false
       setFlight(null)
       setMouthOpen(false)
+      setPreImpact(false)
       setImpactActive(false)
       setShake(false)
+      setPunch(false)
       setShowTapHint(false)
       flickReset()
     }
@@ -167,50 +174,9 @@ export function DgFootballStage(props: DgFootballStageProps) {
     return () => window.clearTimeout(id)
   }, [state, slow])
 
-  /* ---- the launch flight ---------------------------------------------- */
-  const startLaunch = useCallback(
-    (startPos: Pt) => {
-      if (launchingRef.current) return
-      launchingRef.current = true
-      setShowTapHint(false)
-      playSound("launch")
-      onLaunch()
-
-      const duration = (reduced ? TIMING.reducedLaunchMs : (TIMING.launchMinMs + TIMING.launchMaxMs) / 2) * slow
-      const crossfadeAt = Math.max(0, duration - TIMING.crossfadeLeadMs * slow)
-      const start = performance.now()
-      const from = startPos
-      const to = mouthCenter
-
-      // schedule the mouth-open cross-fade ~180ms before impact
-      addTimer(() => setMouthOpen(true), crossfadeAt)
-
-      const tick = (now: number) => {
-        const elapsed = now - start
-        const t = Math.min(1, elapsed / duration)
-        const e = reduced ? t : easeInOutCubic(t)
-        const x = from.x + (to.x - from.x) * e
-        // add a slight arc lift on the way (non-reduced only)
-        const arc = reduced ? 0 : Math.sin(Math.PI * t) * -Math.min(70, stageSize.h * 0.09)
-        const y = from.y + (to.y - from.y) * e + arc
-        const rot = reduced ? 0 : t * 1080
-        const scale = 1 - t * 0.55
-        const opacity = t > 0.9 ? Math.max(0, 1 - (t - 0.9) / 0.1) : 1
-        setFlight({ pos: { x, y }, rot, scale, opacity })
-        if (t < 1) {
-          flightRafRef.current = requestAnimationFrame(tick)
-        } else {
-          flightRafRef.current = null
-          runImpact()
-        }
-      }
-      flightRafRef.current = requestAnimationFrame(tick)
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    },
-    [mouthCenter, reduced, slow, stageSize.h, onLaunch, playSound],
-  )
-
+  /* ---- impact sequence ------------------------------------------------- */
   const runImpact = useCallback(() => {
+    setPreImpact(false)
     setMouthOpen(true)
     setFlight(null)
     setImpactActive(true)
@@ -225,17 +191,67 @@ export function DgFootballStage(props: DgFootballStageProps) {
     }
     if (!reduced) {
       setShake(true)
+      setPunch(true)
       addTimer(() => setShake(false), TIMING.shakeMs * slow)
+      addTimer(() => setPunch(false), TIMING.cameraPunchMs * slow)
     }
-    addTimer(() => {
-      setImpactActive(false)
-      addTimer(() => {
-        launchingRef.current = false
-        onImpactComplete()
-      }, TIMING.holdMs * slow)
-    }, TIMING.impactMs * slow)
+    // Let the impact burst play; the parent drives impact→suspense→reveal.
+    addTimer(() => setImpactActive(false), TIMING.impactMs * slow)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reduced, slow, settings.soundOn, onImpact, onImpactComplete, playSound])
+  }, [reduced, slow, settings.soundOn, onImpact, playSound])
+
+  /* ---- the launch flight ---------------------------------------------- */
+  const startLaunch = useCallback(
+    (startPos: Pt) => {
+      if (launchingRef.current) return
+      launchingRef.current = true
+      setShowTapHint(false)
+      playSound("launch")
+      onLaunch()
+
+      const duration =
+        (reduced ? TIMING.reducedLaunchMs : (TIMING.launchMinMs + TIMING.launchMaxMs) / 2) * slow
+      const glowAt = Math.max(0, duration - TIMING.preImpactGlowLeadMs * slow)
+      const crossfadeAt = Math.max(0, duration - TIMING.crossfadeMs * slow)
+      const start = performance.now()
+      const from = startPos
+      const to = mouthCenter
+
+      // Pre-impact tell: green head-glow ramp + short face light-sweep.
+      addTimer(() => {
+        setPreImpact(true)
+        onPreImpact()
+      }, glowAt)
+      // Expression cross-fade completes just as the ball is absorbed.
+      addTimer(() => setMouthOpen(true), crossfadeAt)
+
+      const tick = (now: number) => {
+        const elapsed = now - start
+        const t = Math.min(1, elapsed / duration)
+        const e = reduced ? t : easeInOutCubic(t)
+        const x = from.x + (to.x - from.x) * e
+        const arc = reduced ? 0 : Math.sin(Math.PI * t) * -Math.min(84, stageSize.h * 0.1)
+        const y = from.y + (to.y - from.y) * e + arc
+        const rot = reduced ? 0 : t * 1080
+        // Ball shrinks as it travels away toward DG, then is absorbed.
+        const scale = 1 - t * 0.62
+        const opacity = t > 0.9 ? Math.max(0, 1 - (t - 0.9) / 0.1) : 1
+        setFlight({ pos: { x, y }, rot, scale, opacity })
+        if (t < 1) {
+          flightRafRef.current = requestAnimationFrame(tick)
+        } else {
+          flightRafRef.current = null
+          runImpact()
+        }
+      }
+      // Brief tension-release beat, then fly.
+      addTimer(() => {
+        flightRafRef.current = requestAnimationFrame(tick)
+      }, TIMING.tensionReleaseMs * slow)
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    },
+    [mouthCenter, reduced, slow, stageSize.h, onLaunch, onPreImpact, playSound, runImpact],
+  )
 
   /* ---- flick gesture --------------------------------------------------- */
   const {
@@ -271,29 +287,32 @@ export function DgFootballStage(props: DgFootballStageProps) {
   }, [state, homePos, startLaunch])
 
   /* ---- derived render values ------------------------------------------ */
-  const showActiveBall =
-    selectedBallIndex != null && (state === "selected" || state === "aiming" || state === "launched")
+  const inFlightPhase =
+    state === "selected" || state === "aiming" || state === "launching" || state === "pre_impact"
+  const showActiveBall = selectedNumber != null && inFlightPhase
   const charge = Math.min(1, upDistance / LAUNCH_DRAG_THRESHOLD)
 
-  // Active ball centre while aiming/selected (drag offset applied).
   const aimCenter: Pt = { x: homePos.x + offset.x, y: homePos.y + offset.y }
   const ballCenter: Pt = flight ? flight.pos : aimCenter
   const ballRot = flight ? flight.rot : offset.x * 0.4 - upDistance * 0.6
   const ballScale = flight ? flight.scale : 1
   const ballOpacity = flight ? flight.opacity : 1
-
   const ballTransform = `translate(${ballCenter.x}px, ${ballCenter.y}px) translate(-50%, -50%) rotate(${ballRot}deg) scale(${ballScale})`
 
-  // Trajectory control point: bow the path to the side of the straight line.
   const trajControl: Pt = {
-    x: (aimCenter.x + mouthCenter.x) / 2 + 46,
-    y: (aimCenter.y + mouthCenter.y) / 2 - 30,
+    x: (aimCenter.x + mouthCenter.x) / 2 + 40,
+    y: (aimCenter.y + mouthCenter.y) / 2 - 28,
   }
 
+  const laneActive = selectedNumber != null && inFlightPhase
+  const dimCharacter = state === "revealing" || state === "revealed"
   const instruction = INSTRUCTIONS[state]
 
   return (
-    <div ref={stageRef} className={`dgf-stage ${shake ? "dgf-shake" : ""}`}>
+    <div
+      ref={stageRef}
+      className={`dgf-stage ${shake ? "dgf-shake" : ""} ${punch ? "dgf-punch" : ""}`}
+    >
       {/* ---------- stadium environment (back) ---------- */}
       <div className="dgf-env" aria-hidden="true">
         <div className="dgf-floodlights" />
@@ -323,8 +342,16 @@ export function DgFootballStage(props: DgFootballStageProps) {
       </header>
 
       {/* ---------- character area ---------- */}
-      <div className={`dgf-character-area ${state === "revealing" || state === "revealed" ? "dgf-dim" : ""}`}>
-        <DgCharacter mouthOpen={mouthOpen} reducedMotion={reduced} slowFactor={slow} />
+      <div className={`dgf-character-area ${dimCharacter ? "dgf-dim" : ""}`}>
+        <DgCharacter
+          mouthOpen={mouthOpen}
+          headGlow={preImpact || impactActive}
+          faceSweep={preImpact}
+          chestGlow={impactActive || state === "suspense" || dimCharacter}
+          reducedMotion={reduced}
+          slowFactor={slow}
+          showBounds={settings.showImageBounds}
+        />
         {/* measured mouth target */}
         <div
           ref={mouthRef}
@@ -333,11 +360,23 @@ export function DgFootballStage(props: DgFootballStageProps) {
         />
       </div>
 
+      {/* ---------- active launch lane (between DG and tray) ---------- */}
+      <LaunchLane
+        width={stageSize.w}
+        height={stageSize.h}
+        mouth={mouthCenter}
+        home={homePos}
+        active={laneActive}
+        charging={dragging}
+        reducedMotion={reduced}
+      />
+
       {/* ---------- instruction ---------- */}
       <div className="dgf-instruction-wrap" aria-hidden={instruction ? undefined : true}>
         {instruction && (
           <p key={state} className="dgf-instruction">
             {instruction.text} <span className="dgf-instruction-key">{instruction.key}</span>
+            {state === "selected" && <span className="dgf-instruction-sub">{SELECTED_SUBHINT}</span>}
           </p>
         )}
       </div>
@@ -355,29 +394,16 @@ export function DgFootballStage(props: DgFootballStageProps) {
         />
       )}
 
-      {/* ---------- alignment guides (dev) ---------- */}
-      {settings.showGuides && (
-        <svg className="dgf-guides" width={stageSize.w} height={stageSize.h} aria-hidden="true">
-          <line x1={stageSize.w / 2} y1={0} x2={stageSize.w / 2} y2={stageSize.h} stroke="#5DFF00" strokeDasharray="4 6" />
-          <circle cx={mouthCenter.x} cy={mouthCenter.y} r={10} fill="none" stroke="#FFD84A" strokeWidth={1.5} />
-          <line x1={mouthCenter.x - 14} y1={mouthCenter.y} x2={mouthCenter.x + 14} y2={mouthCenter.y} stroke="#FFD84A" />
-          <line x1={mouthCenter.x} y1={mouthCenter.y - 14} x2={mouthCenter.x} y2={mouthCenter.y + 14} stroke="#FFD84A" />
-          <circle cx={homePos.x} cy={homePos.y} r={ballSize / 2} fill="none" stroke="#A8FF19" strokeDasharray="3 4" />
-        </svg>
-      )}
-
       {/* ---------- active football ---------- */}
       {showActiveBall && (
         <FlickableFootball
           size={ballSize}
           transform={ballTransform}
-          charged={dragging && charge > 0.2}
+          charge={charge}
           animating={dragging || flight != null}
           opacity={ballOpacity}
           interactive={state === "selected" || state === "aiming"}
-          onPointerDown={
-            state === "selected" || state === "aiming" ? bind.onPointerDown : undefined
-          }
+          onPointerDown={state === "selected" || state === "aiming" ? bind.onPointerDown : undefined}
         />
       )}
 
@@ -386,7 +412,7 @@ export function DgFootballStage(props: DgFootballStageProps) {
         <button
           type="button"
           className={`dgf-tap-shoot ${showTapHint || state === "aiming" ? "dgf-tap-visible" : ""}`}
-          style={{ left: homePos.x, top: homePos.y + ballSize / 2 + 30 }}
+          style={{ left: homePos.x, top: homePos.y + ballSize / 2 + 26 }}
           onClick={handleTapShoot}
           aria-label="Tap to shoot the ball at DG"
         >
@@ -397,17 +423,44 @@ export function DgFootballStage(props: DgFootballStageProps) {
       {/* ---------- impact ---------- */}
       <ImpactSequence active={impactActive} reducedMotion={reduced} slowFactor={slow} center={mouthCenter} />
 
-      {/* ---------- ball tray: five reusable, unlabelled footballs ---------- */}
+      {/* ---------- ball tray: numbered footballs, one per ticket ---------- */}
       <div className="dgf-tray-wrap">
         <BallTray
-          ballCount={ballCount}
-          selectedIndex={selectedBallIndex}
+          numbers={remainingNumbers}
+          selectedNumber={selectedNumber}
+          leavingNumber={leavingNumber}
           disabled={state !== "choosing"}
           reducedMotion={reduced}
           slowFactor={slow}
           onSelect={onSelectBall}
         />
       </div>
+
+      {/* ---------- debug overlays (dev only) ---------- */}
+      {(settings.showEndpoint || settings.showViewportCentre) && (
+        <svg className="dgf-guides" width={stageSize.w} height={stageSize.h} aria-hidden="true">
+          {settings.showViewportCentre && (
+            <>
+              <line x1={stageSize.w / 2} y1={0} x2={stageSize.w / 2} y2={stageSize.h} stroke="#5DFF00" strokeDasharray="4 6" />
+              <line x1={0} y1={stageSize.h / 2} x2={stageSize.w} y2={stageSize.h / 2} stroke="#5DFF00" strokeDasharray="4 6" />
+            </>
+          )}
+          {settings.showEndpoint && (
+            <>
+              <circle cx={mouthCenter.x} cy={mouthCenter.y} r={12} fill="none" stroke="#FFD84A" strokeWidth={1.5} />
+              <line x1={mouthCenter.x - 16} y1={mouthCenter.y} x2={mouthCenter.x + 16} y2={mouthCenter.y} stroke="#FFD84A" />
+              <line x1={mouthCenter.x} y1={mouthCenter.y - 16} x2={mouthCenter.x} y2={mouthCenter.y + 16} stroke="#FFD84A" />
+              <circle cx={homePos.x} cy={homePos.y} r={ballSize / 2} fill="none" stroke="#A8FF19" strokeDasharray="3 4" />
+            </>
+          )}
+        </svg>
+      )}
+
+      {settings.showAnimState && (
+        <div className="dgf-anim-state" aria-hidden="true">
+          {state}
+        </div>
+      )}
     </div>
   )
 }
