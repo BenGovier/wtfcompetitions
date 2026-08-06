@@ -102,7 +102,7 @@ export const DG_FOOTBALL_CSS = String.raw`
 /* -------------------------------------------------------------------------- */
 /*  Stadium environment                                                       */
 /* -------------------------------------------------------------------------- */
-.dgf-env { position: absolute; inset: 0; z-index: 0; overflow: hidden; }
+.dgf-env { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
 .dgf-floodlights {
   position: absolute; inset: 0;
   background:
@@ -145,7 +145,7 @@ export const DG_FOOTBALL_CSS = String.raw`
   position: absolute; inset: 0; opacity: 0.05; mix-blend-mode: overlay;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/></filter><rect width='120' height='120' filter='url(%23n)'/></svg>");
 }
-.dgf-particles { position: absolute; inset: 0; }
+.dgf-particles { position: absolute; inset: 0; pointer-events: none; }
 .dgf-particle {
   position: absolute;
   width: 3px; height: 3px; border-radius: 50%;
