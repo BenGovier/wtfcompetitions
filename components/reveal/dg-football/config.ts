@@ -42,18 +42,35 @@ export const ASSETS = {
 /* -------------------------------------------------------------------------- */
 export const TIMING = {
   introMs: 900,
-  ballLiftMs: 260,
-  tapHintDelayMs: 1500,
-  launchMinMs: 620,
-  launchMaxMs: 780,
-  crossfadeLeadMs: 180,
+  ballLiftMs: 250,
+  /** Ball moves to the central launch point ~250ms after selection. */
+  ballToLaunchMs: 250,
+  tapHintDelayMs: 1400,
+  /** Launch flight window (spec: 680–760ms). We use the midpoint. */
+  launchMinMs: 680,
+  launchMaxMs: 760,
+  /** Tension-release pause after a valid flick, before flight begins. */
+  tensionReleaseMs: 100,
+  /** Green head-glow ramp starts ~220ms before impact. */
+  preImpactGlowLeadMs: 220,
+  /** Short light sweep across the face ~170ms before impact. */
+  preImpactSweepLeadMs: 170,
+  /** Expression cross-fade duration (spec: 100–130ms). */
   crossfadeMs: 120,
-  impactMs: 450,
-  shakeMs: 220,
-  holdMs: 180,
-  panelRiseMs: 520,
-  reducedLaunchMs: 280,
-  reflowMs: 380,
+  /** Impact micro-sequence total. */
+  impactMs: 420,
+  /** Screen-shake duration (spec: 180–220ms). */
+  shakeMs: 200,
+  /** Camera punch-in total (spec: ~320ms). */
+  cameraPunchMs: 320,
+  /** Suspense hold before the prize panel rises (spec: 500–650ms). */
+  suspenseMs: 560,
+  /** Prize-panel entrance (spec: 700–900ms). */
+  panelRiseMs: 820,
+  /** Reduced-motion straight-line launch. */
+  reducedLaunchMs: 300,
+  /** Return-to-choosing reflow after a shot (spec: 500–700ms). */
+  reflowMs: 600,
 } as const
 
 export const SLOW_FACTOR = 3
@@ -68,15 +85,20 @@ export const LAUNCH_DRAG_THRESHOLD = 70
  */
 export const BALL_COUNT = 5
 
-/** Ball geometry (px). Sized so all five footballs fit a 360px viewport with
- *  comfortable spacing while staying well above the 44px min tap target. */
-export const BALL_SIZE = 58
+/** Tray football diameter (px) at a 390px stage — unselected balls. */
+export const BALL_SIZE = 60
 
-/** Mouth target position as a fraction of the stage (fallback-independent). */
-export const MOUTH_TARGET = { xPct: 0.5, yPct: 0.455 } as const
+/** The selected launch football is dramatically larger and dominant
+ *  (spec: 96–112px). It sits alone in the central launch lane. */
+export const BALL_SIZE_SELECTED = 104
 
-/** Home (launch) position of the active football as a fraction of the stage. */
-export const LAUNCH_HOME = { xPct: 0.5, yPct: 0.74 } as const
+/** Mouth target position as a fraction of the stage. DG's mouth sits ~43–47%
+ *  down the viewport; we centre on 45%. */
+export const MOUTH_TARGET = { xPct: 0.5, yPct: 0.45 } as const
+
+/** Home (launch) position of the active football as a fraction of the stage
+ *  (spec: 68–74% down before drag). */
+export const LAUNCH_HOME = { xPct: 0.5, yPct: 0.71 } as const
 
 /* -------------------------------------------------------------------------- */
 /*  Outcome helpers                                                           */
@@ -115,37 +137,47 @@ export function revealCopyFor(o: Outcome): RevealCopy {
         return {
           tone: "big",
           eyebrow: "INSTANT WIN!",
-          value: `${formatGBP(o.amountPence)} CASH`,
-          support: "YOU'VE JUST HIT THE BIG ONE",
+          amount: formatGBP(o.amountPence),
+          unit: "CASH",
+          support: "YOU'VE HIT THE BIG ONE!",
+          isMoney: true,
         }
       }
       return {
         tone: "cash",
         eyebrow: "INSTANT WIN!",
-        value: `${formatGBP(o.amountPence)} CASH`,
+        amount: formatGBP(o.amountPence),
+        unit: "CASH",
         support: "WHAT A SHOT!",
+        isMoney: true,
       }
     case "credit":
       return {
         tone: "credit",
         eyebrow: "BONUS WIN!",
-        value: `${formatGBP(o.amountPence)} SITE CREDIT`,
+        amount: formatGBP(o.amountPence),
+        unit: "SITE CREDIT",
         support: "ADDED TO YOUR WALLET",
+        isMoney: true,
       }
     case "mystery":
       return {
         tone: "mystery",
         eyebrow: "YOU'VE WON!",
-        value: "MYSTERY PRIZE",
+        amount: "MYSTERY PRIZE",
+        unit: "",
         support: "OUR TEAM WILL CONTACT YOU",
+        isMoney: false,
       }
     case "none":
     default:
       return {
         tone: "none",
         eyebrow: "NO INSTANT WIN",
-        value: "STILL IN THE DRAW",
-        support: "BUT YOU'RE STILL IN THE FINAL DRAW",
+        amount: "YOU'RE STILL IN THE FINAL DRAW",
+        unit: "",
+        support: "KEEP GOING — YOUR NEXT SHOT IS READY",
+        isMoney: false,
       }
   }
 }
@@ -158,13 +190,18 @@ export const INSTRUCTIONS: Record<string, { text: string; key?: string } | null>
   choosing: { text: "CHOOSE YOUR", key: "BALL" },
   selected: { text: "FLICK IT TO", key: "DG" },
   aiming: { text: "RELEASE TO", key: "SHOOT" },
-  launched: { text: "HERE WE", key: "GO!" },
+  launching: { text: "HERE WE", key: "GO!" },
+  pre_impact: { text: "HERE WE", key: "GO!" },
   impact: null,
+  suspense: null,
   revealing: null,
   revealed: null,
-  next_ticket: null,
+  transitioning_next: null,
   complete: null,
 }
+
+/** Secondary line shown under the selected football before a flick. */
+export const SELECTED_SUBHINT = "SWIPE UP TO SHOOT"
 
 /* -------------------------------------------------------------------------- */
 /*  Deterministic mock ticket sequences                                       */
@@ -219,22 +256,24 @@ export const OUTCOME_PRESET_OPTIONS: { value: OutcomePreset; label: string }[] =
 ]
 
 /**
- * Demo reveal-queue lengths. These are the number of PURCHASED TICKETS, i.e.
- * the length of the reveal queue — NOT the number of footballs. 1 proves the
- * single-ticket "VIEW RESULTS" path; 500 proves the five footballs never
- * multiply with ticket quantity.
+ * Demo ticket counts. Each ticket is one shot and one numbered football in the
+ * tray; a used football leaves the tray after its shot. The signature demo is
+ * the five-ticket mixed sequence, so counts stay small and legible as an arc.
  */
-export const TICKET_COUNT_OPTIONS: TicketCount[] = [1, 5, 12, 500]
+export const TICKET_COUNT_OPTIONS: TicketCount[] = [1, 3, 5]
 
 export const DEFAULT_SETTINGS: DemoSettings = {
   preset: "mixed5",
   ticketCount: 5,
   soundOn: false,
   reducedMotion: false,
-  showMouthTarget: false,
-  showGuides: false,
   slowMotion: false,
   skipIntro: false,
+  showMouthTarget: false,
+  showImageBounds: false,
+  showEndpoint: false,
+  showViewportCentre: false,
+  showAnimState: false,
 }
 
 /** Human labels for outcome kinds (dev summary use). */

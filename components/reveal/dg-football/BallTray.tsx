@@ -1,16 +1,15 @@
 "use client"
 
 /**
- * BallTray — the FIVE reusable footballs the customer chooses from for the
- * current shot. Fully keyboard accessible.
+ * BallTray — the physical set of numbered footballs waiting to be used, laid
+ * out in a shallow perspective arc on a dark platform.
  *
- * IMPORTANT interaction model:
- *  - There are always exactly five footballs, regardless of how many tickets
- *    were purchased (1 or 500). They are NOT tickets and carry NO ticket number.
- *  - Choosing a football is PRESENTATION ONLY. It never decides the result —
- *    the outcome comes from the predetermined reveal queue held by the parent.
- *  - The only visible accessibility affordance is an sr-only aria-label
- *    ("Choose ball 1" … "Choose ball 5"); nothing is rendered under the balls.
+ * Interaction model (per the refinement spec):
+ *  - One numbered football per remaining TICKET (#1..#N). Each ticket is one
+ *    shot; a used football visibly leaves the tray and the rest slide inward.
+ *  - Choosing a football is PRESENTATION ONLY — it never decides the result.
+ *    The outcome for the current shot is predetermined by the reveal queue.
+ *  - While a ball is in play it lives on the stage, so its tray slot collapses.
  */
 
 import { useState } from "react"
@@ -18,90 +17,108 @@ import { BALL_SIZE, TIMING } from "./config"
 import { Football } from "./FlickableFootball"
 
 interface BallTrayProps {
-  /** How many footballs to show. Always five in this prototype. */
-  ballCount: number
-  /** The ball index currently in play (hidden — it lives on the stage). */
-  selectedIndex: number | null
+  /** Remaining ticket ball NUMBERS in tray order (e.g. [2,3,4,5]). */
+  numbers: number[]
+  /** The number currently in play (on the stage) — its slot collapses. */
+  selectedNumber: number | null
+  /** The number leaving the tray during the next-shot transition. */
+  leavingNumber: number | null
+  /** Only choosable while the game is in the choosing phase. */
   disabled: boolean
   reducedMotion: boolean
   slowFactor: number
-  onSelect: (index: number) => void
+  onSelect: (n: number) => void
 }
 
 /** Shallow arc: outer balls sit slightly lower than the centre ball. */
 function arcOffset(indexFromCentre: number): number {
-  return Math.abs(indexFromCentre) * 7
+  return Math.abs(indexFromCentre) * 8
 }
 
 export function BallTray({
-  ballCount,
-  selectedIndex,
+  numbers,
+  selectedNumber,
+  leavingNumber,
   disabled,
   reducedMotion,
   slowFactor,
   onSelect,
 }: BallTrayProps) {
-  const [selectingIndex, setSelectingIndex] = useState<number | null>(null)
+  const [selecting, setSelecting] = useState<number | null>(null)
 
-  const centre = (ballCount - 1) / 2
+  const centre = (numbers.length - 1) / 2
 
-  const handleSelect = (index: number) => {
-    if (disabled || selectingIndex !== null) return
-    setSelectingIndex(index)
+  const handleSelect = (n: number) => {
+    if (disabled || selecting !== null) return
+    setSelecting(n)
     if (typeof navigator !== "undefined" && "vibrate" in navigator) {
       try {
         navigator.vibrate?.(12)
       } catch {
-        /* vibration is best-effort */
+        /* best effort */
       }
     }
     window.setTimeout(() => {
-      onSelect(index)
-      setSelectingIndex(null)
+      onSelect(n)
+      setSelecting(null)
     }, TIMING.ballLiftMs * slowFactor)
   }
 
   return (
-    <div className="dgf-tray" role="group" aria-label="Choose your ball">
-      {Array.from({ length: ballCount }).map((_, i) => {
-        const isInPlay = i === selectedIndex
-        const isSelecting = i === selectingIndex
-        const dimmed = selectingIndex !== null && !isSelecting
-        // The in-play ball is hidden from the tray (it is on the stage).
-        const hidden = isInPlay
-        return (
-          <div
-            key={i}
-            className="dgf-tray-slot"
-            style={{
-              transform: `translateY(${arcOffset(i - centre)}px)`,
-              transitionDuration: `${TIMING.reflowMs * slowFactor}ms`,
-              opacity: hidden ? 0 : 1,
-              pointerEvents: hidden ? "none" : undefined,
-            }}
-          >
-            <button
-              type="button"
-              className={`dgf-ball-btn ${isSelecting ? "dgf-ball-selecting" : ""} ${
-                dimmed ? "dgf-ball-dim" : ""
-              } ${!reducedMotion && !disabled && selectingIndex === null ? "dgf-ball-idle" : ""}`}
+    <div className="dgf-tray-platform">
+      <div className="dgf-tray" role="group" aria-label="Choose your ball">
+        {numbers.map((n, i) => {
+          const isSelecting = n === selecting
+          const inPlay = n === selectedNumber
+          const leaving = n === leavingNumber
+          const dimmed = selecting !== null && !isSelecting
+          // Depth cue: outer balls sit lower and blur very slightly.
+          const dist = Math.abs(i - centre)
+          const outer = dist >= 2
+          // A ball on the stage or already leaving collapses its slot so the
+          // remaining balls slide smoothly inward.
+          const collapsed = (inPlay && !leaving) || leaving
+
+          return (
+            <div
+              key={n}
+              className={`dgf-tray-slot ${collapsed ? "dgf-slot-collapsed" : ""} ${leaving ? "dgf-slot-leaving" : ""}`}
               style={{
-                width: BALL_SIZE,
-                height: BALL_SIZE,
-                transitionDuration: `${TIMING.ballLiftMs * slowFactor}ms`,
+                transform: `translateY(${arcOffset(i - centre)}px)`,
+                transitionDuration: `${TIMING.reflowMs * slowFactor}ms`,
               }}
-              onClick={() => handleSelect(i)}
-              disabled={disabled || hidden}
-              aria-label={`Choose ball ${i + 1}`}
             >
-              <span className="dgf-ball-inner">
-                <Football size={BALL_SIZE} idPrefix={`dgf-tray-${i}`} />
+              <button
+                type="button"
+                className={`dgf-ball-btn ${isSelecting ? "dgf-ball-selecting" : ""} ${
+                  dimmed ? "dgf-ball-dim" : ""
+                } ${outer ? "dgf-ball-outer" : ""} ${
+                  !reducedMotion && !disabled && selecting === null ? "dgf-ball-idle" : ""
+                }`}
+                style={{
+                  width: BALL_SIZE,
+                  height: BALL_SIZE,
+                  transitionDuration: `${TIMING.ballLiftMs * slowFactor}ms`,
+                }}
+                onClick={() => handleSelect(n)}
+                disabled={disabled || inPlay || leaving}
+                aria-label={`Choose football number ${n}`}
+              >
+                <span className="dgf-ball-inner">
+                  <Football size={BALL_SIZE} idPrefix={`dgf-tray-${n}`} />
+                  <span className="dgf-ball-badge" aria-hidden="true">
+                    {n}
+                  </span>
+                </span>
+                {!reducedMotion && isSelecting && <span className="dgf-ball-ring" aria-hidden="true" />}
+              </button>
+              <span className="dgf-ball-num" aria-hidden="true">
+                #{n}
               </span>
-              {!reducedMotion && isSelecting && <span className="dgf-ball-pulse" aria-hidden="true" />}
-            </button>
-          </div>
-        )
-      })}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }

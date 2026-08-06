@@ -11,11 +11,13 @@ export type GameState =
   | "choosing"
   | "selected"
   | "aiming"
-  | "launched"
+  | "launching"
+  | "pre_impact"
   | "impact"
+  | "suspense"
   | "revealing"
   | "revealed"
-  | "next_ticket"
+  | "transitioning_next"
   | "complete"
 
 /** The kind of instant-win outcome for a single ticket. */
@@ -37,12 +39,18 @@ export interface Ticket {
   outcome: Outcome
 }
 
-/** Copy shown on the prize-reveal panel, derived from an Outcome. */
+/** Copy shown on the prize-reveal panel, derived from an Outcome.
+ *  `amount` is the single dominant line (e.g. "£100" or, for non-money results,
+ *  a headline like "STILL IN THE FINAL DRAW"). `unit` is the large word beneath
+ *  a money value (e.g. "CASH", "SITE CREDIT"). `isMoney` switches the panel from
+ *  the giant-currency treatment to the headline treatment. */
 export interface RevealCopy {
   tone: "big" | "cash" | "credit" | "mystery" | "none"
   eyebrow: string
-  value: string
+  amount: string
+  unit: string
   support: string
+  isMoney: boolean
 }
 
 /** Dev-only demo control preset for the outcome selector. */
@@ -67,10 +75,14 @@ export interface DemoSettings {
   ticketCount: TicketCount
   soundOn: boolean
   reducedMotion: boolean
-  showMouthTarget: boolean
-  showGuides: boolean
   slowMotion: boolean
   skipIntro: boolean
+  /* Debug overlays (all default off; invisible in normal gameplay). */
+  showMouthTarget: boolean
+  showImageBounds: boolean
+  showEndpoint: boolean
+  showViewportCentre: boolean
+  showAnimState: boolean
 }
 
 /** Conceptual sound cues. No external audio files are required. */

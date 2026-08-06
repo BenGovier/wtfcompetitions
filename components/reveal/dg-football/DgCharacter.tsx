@@ -1,19 +1,30 @@
 "use client"
 
 /**
- * DgCharacter — the two central character photos (neutral + mouth-open) sharing
+ * DgCharacter — the two supplied character photos (neutral + mouth-open) sharing
  * one identical absolute frame. They cross-fade with no change of scale or
- * position. If either asset is missing, a clear development-only warning is
- * shown naming the file — we never silently substitute another person/graphic.
+ * position, and the swap is always masked by effects (a rising head glow, a
+ * short light sweep across the face and the incoming ball + impact particles),
+ * so it never reads as a plain image swap. If an asset is missing we show a
+ * clear dev-only notice naming the file — never a substitute person.
  */
 
 import { useState } from "react"
-import { ASSETS } from "./config"
+import { ASSETS, TIMING } from "./config"
 
 interface DgCharacterProps {
+  /** Show the open-mouth asset (cross-fade target). */
   mouthOpen: boolean
+  /** Ramp the green glow behind DG's head (begins ~220ms before impact). */
+  headGlow: boolean
+  /** Fire a short green light sweep across the face (~170ms before impact). */
+  faceSweep: boolean
+  /** Keep the shirt-logo / chest area glowing (impact + suspense). */
+  chestGlow: boolean
   reducedMotion: boolean
   slowFactor: number
+  /** Debug: outline the character image frame. */
+  showBounds?: boolean
 }
 
 function MissingAssetNotice({ file }: { file: string }) {
@@ -26,19 +37,28 @@ function MissingAssetNotice({ file }: { file: string }) {
   )
 }
 
-export function DgCharacter({ mouthOpen, reducedMotion, slowFactor }: DgCharacterProps) {
+export function DgCharacter({
+  mouthOpen,
+  headGlow,
+  faceSweep,
+  chestGlow,
+  reducedMotion,
+  slowFactor,
+  showBounds,
+}: DgCharacterProps) {
   const [neutralError, setNeutralError] = useState(false)
   const [openError, setOpenError] = useState(false)
 
-  const crossfadeMs = 120 * slowFactor
-  const breatheStyle = reducedMotion
-    ? undefined
-    : ({ animationDuration: `${6 * slowFactor}s` } as const)
+  const crossfadeMs = TIMING.crossfadeMs * slowFactor
+  const breatheStyle = reducedMotion ? undefined : ({ animationDuration: `${6 * slowFactor}s` } as const)
 
   return (
-    <div className="dgf-character" aria-hidden="true">
+    <div className={`dgf-character ${showBounds ? "dgf-character-bounds" : ""}`} aria-hidden="true">
       {/* Green rim light behind the shoulders */}
       <div className="dgf-rim" />
+
+      {/* Rising green glow behind the head (pre-impact) */}
+      <div className={`dgf-head-glow ${headGlow ? "dgf-head-glow-on" : ""}`} />
 
       <div className={`dgf-character-inner ${reducedMotion ? "" : "dgf-breathe"}`} style={breatheStyle}>
         {/* Both images share the exact same frame; only opacity differs. */}
@@ -67,6 +87,12 @@ export function DgCharacter({ mouthOpen, reducedMotion, slowFactor }: DgCharacte
             draggable={false}
           />
         )}
+
+        {/* Chest / shirt-logo glow over the real DG logo (impact + suspense) */}
+        <div className={`dgf-chest-glow ${chestGlow ? "dgf-chest-glow-on" : ""}`} />
+
+        {/* Short light sweep across the face, masking the expression swap */}
+        {!reducedMotion && faceSweep && <div className="dgf-face-sweep" />}
       </div>
     </div>
   )
