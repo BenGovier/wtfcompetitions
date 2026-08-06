@@ -250,16 +250,6 @@ export const DG_FOOTBALL_CSS = String.raw`
   mask-composite: intersect;
   filter: brightness(0.97) contrast(1.03);
 }
-.dgf-shirt-logo {
-  position: absolute; left: 50%; top: 74%;
-  transform: translateX(-50%);
-  font-weight: 900; font-size: 13px; letter-spacing: 0.04em;
-  color: var(--dg-neon); opacity: 0.5;
-  text-shadow: 0 0 6px var(--dg-glow);
-  transition: opacity 160ms ease, text-shadow 160ms ease;
-}
-.dgf-shirt-logo-flash { opacity: 1; text-shadow: 0 0 22px var(--dg-neon), 0 0 40px var(--dg-glow); }
-
 .dgf-missing {
   position: absolute; left: 50%; top: 40%;
   transform: translate(-50%, -50%);

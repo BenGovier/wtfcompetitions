@@ -71,7 +71,6 @@ export const BALL_COUNT = 5
 /** Ball geometry (px). Sized so all five footballs fit a 360px viewport with
  *  comfortable spacing while staying well above the 44px min tap target. */
 export const BALL_SIZE = 58
-export const BALL_SIZE_SMALL = 52
 
 /** Mouth target position as a fraction of the stage (fallback-independent). */
 export const MOUTH_TARGET = { xPct: 0.5, yPct: 0.455 } as const

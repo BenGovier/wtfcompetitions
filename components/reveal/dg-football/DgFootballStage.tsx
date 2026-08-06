@@ -120,7 +120,6 @@ export function DgFootballStage(props: DgFootballStageProps) {
   )
   const [mouthOpen, setMouthOpen] = useState(false)
   const [impactActive, setImpactActive] = useState(false)
-  const [logoFlash, setLogoFlash] = useState(false)
   const [shake, setShake] = useState(false)
   const [showTapHint, setShowTapHint] = useState(false)
 
@@ -149,7 +148,6 @@ export function DgFootballStage(props: DgFootballStageProps) {
       setFlight(null)
       setMouthOpen(false)
       setImpactActive(false)
-      setLogoFlash(false)
       setShake(false)
       setShowTapHint(false)
       flickReset()
@@ -216,7 +214,6 @@ export function DgFootballStage(props: DgFootballStageProps) {
     setMouthOpen(true)
     setFlight(null)
     setImpactActive(true)
-    setLogoFlash(true)
     onImpact()
     playSound("impact")
     if (typeof navigator !== "undefined" && "vibrate" in navigator && settings.soundOn) {
@@ -230,7 +227,6 @@ export function DgFootballStage(props: DgFootballStageProps) {
       setShake(true)
       addTimer(() => setShake(false), TIMING.shakeMs * slow)
     }
-    addTimer(() => setLogoFlash(false), 320 * slow)
     addTimer(() => {
       setImpactActive(false)
       addTimer(() => {
@@ -328,7 +324,7 @@ export function DgFootballStage(props: DgFootballStageProps) {
 
       {/* ---------- character area ---------- */}
       <div className={`dgf-character-area ${state === "revealing" || state === "revealed" ? "dgf-dim" : ""}`}>
-        <DgCharacter mouthOpen={mouthOpen} reducedMotion={reduced} slowFactor={slow} logoFlash={logoFlash} />
+        <DgCharacter mouthOpen={mouthOpen} reducedMotion={reduced} slowFactor={slow} />
         {/* measured mouth target */}
         <div
           ref={mouthRef}
