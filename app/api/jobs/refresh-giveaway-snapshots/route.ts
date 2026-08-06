@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { loadCampaignAwardCounts } from '@/lib/server/giveaway-snapshot-awards'
 
 export const dynamic = 'force-dynamic'
 
@@ -41,22 +42,38 @@ export async function GET(request: NextRequest) {
   }
 
   // 5) Fetch instant win prizes + awards
-  const { data: prizes } = await supabase
+  const { data: prizes, error: prizesErr } = await supabase
     .from('instant_win_prizes')
     .select('id, prize_title, image_url, quantity, created_at')
     .eq('campaign_id', campaign.id)
     .order('created_at', { ascending: true })
 
-  const { data: awards } = await supabase
-    .from('instant_win_awards')
-    .select('prize_id')
-    .eq('campaign_id', campaign.id)
-
-  // Count awards per prize_id for grouped quantity tracking
-  const awardCountByPrize: Record<string, number> = {}
-  for (const a of awards ?? []) {
-    awardCountByPrize[a.prize_id] = (awardCountByPrize[a.prize_id] || 0) + 1
+  if (prizesErr) {
+    // Fail closed: do NOT write a snapshot from incomplete prize data.
+    console.error('[refresh-giveaway-snapshots] prize load failed', campaign.id, prizesErr)
+    return NextResponse.json({ error: 'Failed to load instant-win prizes' }, { status: 500 })
   }
+
+  // Count ALL awards per prize_id via the shared paginated helper. This throws
+  // on any Supabase error so we never build counts from a truncated result set.
+  let awardCountByPrize: Record<string, number>
+  let awardTotals: { totalAwards: number; pageCount: number; prizeIdCount: number }
+  try {
+    const counts = await loadCampaignAwardCounts(supabase, campaign.id)
+    awardCountByPrize = counts.awardCountByPrize
+    awardTotals = counts
+  } catch (err) {
+    console.error('[refresh-giveaway-snapshots] award load failed', campaign.id, err)
+    return NextResponse.json({ error: 'Failed to load instant-win awards' }, { status: 500 })
+  }
+
+  console.log(
+    '[refresh-giveaway-snapshots] awards loaded',
+    'campaignId=', campaign.id,
+    'totalAwards=', awardTotals.totalAwards,
+    'pages=', awardTotals.pageCount,
+    'prizeIds=', awardTotals.prizeIdCount,
+  )
 
   const instantWins = (prizes ?? []).map((p: any) => {
     const quantity = p.quantity ?? 1
@@ -189,5 +206,10 @@ export async function GET(request: NextRequest) {
 
   console.log('[refresh-giveaway-snapshots] wrote list+detail snapshots')
 
-  return NextResponse.json({ ok: true, campaignId: campaign.id, instantWinsCount: instantWins.length })
+  return NextResponse.json({
+    ok: true,
+    campaignId: campaign.id,
+    instantWinsCount: instantWins.length,
+    totalAwards: awardTotals.totalAwards,
+  })
 }

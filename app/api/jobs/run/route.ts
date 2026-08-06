@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { loadCampaignAwardCounts } from '@/lib/server/giveaway-snapshot-awards'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -309,22 +310,32 @@ async function processRefreshSnapshots(
   // Process each campaign
   for (const campaign of campaigns) {
     // Fetch instant win prizes for this campaign
-    const { data: prizes } = await supabase
+    const { data: prizes, error: prizesError } = await supabase
       .from('instant_win_prizes')
       .select('id, prize_title, image_url, quantity, created_at')
       .eq('campaign_id', campaign.id)
       .order('created_at', { ascending: true })
 
-    // Fetch awards and count per prize_id for grouped quantity tracking
-    const { data: awards } = await supabase
-      .from('instant_win_awards')
-      .select('prize_id')
-      .eq('campaign_id', campaign.id)
-
-    const awardCountByPrize: Record<string, number> = {}
-    for (const a of awards ?? []) {
-      awardCountByPrize[a.prize_id] = (awardCountByPrize[a.prize_id] || 0) + 1
+    if (prizesError) {
+      // Fail closed: throwing skips the snapshot write for this campaign and
+      // surfaces the error to the job runner rather than persisting partial data.
+      throw new Error(
+        `Failed to load instant-win prizes for campaign ${campaign.id}: ${prizesError.message}`,
+      )
     }
+
+    // Count ALL awards per prize_id via the shared paginated helper (throws on
+    // any Supabase error, so a truncated/failed read never becomes zero awards).
+    const { awardCountByPrize, totalAwards, pageCount, prizeIdCount } =
+      await loadCampaignAwardCounts(supabase, campaign.id)
+
+    console.log(
+      '[snapshots] awards loaded',
+      'campaignId=', campaign.id,
+      'totalAwards=', totalAwards,
+      'pages=', pageCount,
+      'prizeIds=', prizeIdCount,
+    )
 
     const instantWins = (prizes ?? []).map((p: any) => {
       const quantity = p.quantity ?? 1
