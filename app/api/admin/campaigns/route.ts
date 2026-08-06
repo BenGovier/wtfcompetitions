@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { authorizeAdminApi } from '@/lib/admin/auth'
 import { normalizeRevealType } from '@/lib/types/campaign'
+import { loadCampaignAwardCounts } from '@/lib/server/giveaway-snapshot-awards'
 
 function toDbRow(body: Record<string, any>) {
   return {
@@ -51,22 +52,29 @@ async function refreshSnapshotsNow(campaignId: string) {
   if (!c) return
 
   // Fetch instant win prizes + awards for this campaign
-  const { data: prizes } = await svc
+  const { data: prizes, error: prizesError } = await svc
     .from('instant_win_prizes')
     .select('id, prize_title, image_url, quantity, created_at')
     .eq('campaign_id', c.id)
     .order('created_at', { ascending: true })
 
-  const { data: awards } = await svc
-    .from('instant_win_awards')
-    .select('prize_id')
-    .eq('campaign_id', c.id)
-
-  // Count awards per prize_id
-  const awardCountByPrize: Record<string, number> = {}
-  for (const a of awards ?? []) {
-    awardCountByPrize[a.prize_id] = (awardCountByPrize[a.prize_id] ?? 0) + 1
+  if (prizesError) {
+    // Fail closed: throwing prevents overwriting a valid snapshot with partial data.
+    throw new Error(`Failed to load instant-win prizes for campaign ${c.id}: ${prizesError.message}`)
   }
+
+  // Count ALL awards per prize_id via the shared paginated helper (throws on
+  // any Supabase error, so a truncated/failed read never becomes zero awards).
+  const { awardCountByPrize, totalAwards, pageCount, prizeIdCount } =
+    await loadCampaignAwardCounts(svc, c.id)
+
+  console.log(
+    '[admin/campaigns/refreshSnapshotsNow] awards loaded',
+    'campaignId=', c.id,
+    'totalAwards=', totalAwards,
+    'pages=', pageCount,
+    'prizeIds=', prizeIdCount,
+  )
 
   // Fetch ticket counter for this campaign
   const { data: counter } = await svc
