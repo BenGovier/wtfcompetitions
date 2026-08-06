@@ -427,6 +427,15 @@ export function DgFootballStage(props: DgFootballStageProps) {
           )
   const dimCharacter = (state === "revealing" || state === "revealed") && !isWin
   const darkTransition = state === "win_celebration_transition"
+  // Hide the brand bar under the win takeover and once the result is up, so it
+  // never bleeds through the celebration image or competes with the panel.
+  const brandHidden =
+    scoredVisible ||
+    darkTransition ||
+    state === "win_impact" ||
+    state === "revealing" ||
+    state === "revealed" ||
+    state === "complete"
   const instruction = preview === "off" ? INSTRUCTIONS[state] : null
 
   return (
@@ -450,8 +459,8 @@ export function DgFootballStage(props: DgFootballStageProps) {
         <div className="dgf-vignette" />
       </div>
 
-      {/* ---------- brand bar ---------- */}
-      <header className="dgf-brand">
+      {/* ---------- brand bar (hidden under the win takeover / result) ---------- */}
+      <header className={`dgf-brand ${brandHidden ? "dgf-brand-hidden" : ""}`}>
         <div className="dgf-brand-titles">
           <span className="dgf-brand-1">DG&apos;S</span>
           <span className="dgf-brand-2">BIG BALLERS</span>

@@ -2,13 +2,27 @@
 
 /**
  * DemoControls — development-only control panel for the /dgfootballidea
- * prototype. Lets a designer force outcomes, ticket counts and rendering
- * options. These controls never touch production code paths — they only drive
+ * prototype. Lets a designer force outcomes, ticket counts, shot paths and
+ * rendering options, plus static character-pose previews and alignment
+ * overlays. These controls never touch production code paths — they only drive
  * this isolated demo's local state.
  */
 
-import type { DemoSettings, OutcomePreset, TicketCount } from "./types"
-import { OUTCOME_PRESET_OPTIONS, TICKET_COUNT_OPTIONS } from "./config"
+import type {
+  CharPreview,
+  DemoSettings,
+  OutcomePreset,
+  ShotPath,
+  TicketCount,
+  TimeScale,
+} from "./types"
+import {
+  CHAR_PREVIEW_OPTIONS,
+  OUTCOME_PRESET_OPTIONS,
+  SHOT_PATH_OPTIONS,
+  TICKET_COUNT_OPTIONS,
+  TIME_SCALE_OPTIONS,
+} from "./config"
 
 interface DemoControlsProps {
   settings: DemoSettings
@@ -78,6 +92,56 @@ export function DemoControls({ settings, onChange, onReset, variant }: DemoContr
       </fieldset>
 
       <fieldset className="dgf-ctl-group">
+        <legend>Shot path</legend>
+        <div className="dgf-ctl-chips">
+          {SHOT_PATH_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              className={`dgf-chip ${settings.shotPath === opt.value ? "dgf-chip-on" : ""}`}
+              onClick={() => onChange({ shotPath: opt.value as ShotPath })}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        <p className="dgf-ctl-note">Forces the flight regardless of the outcome (win still shows the winning prize).</p>
+      </fieldset>
+
+      <fieldset className="dgf-ctl-group">
+        <legend>Time scale</legend>
+        <div className="dgf-ctl-chips">
+          {TIME_SCALE_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              className={`dgf-chip ${settings.timeScale === opt.value ? "dgf-chip-on" : ""}`}
+              onClick={() => onChange({ timeScale: opt.value as TimeScale })}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </fieldset>
+
+      <fieldset className="dgf-ctl-group">
+        <legend>Character preview</legend>
+        <div className="dgf-ctl-chips">
+          {CHAR_PREVIEW_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              className={`dgf-chip ${settings.charPreview === opt.value ? "dgf-chip-on" : ""}`}
+              onClick={() => onChange({ charPreview: opt.value as CharPreview })}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        <p className="dgf-ctl-note">Freezes DG on a single pose so you can inspect each asset&apos;s framing.</p>
+      </fieldset>
+
+      <fieldset className="dgf-ctl-group">
         <legend>Options</legend>
         <div className="dgf-ctl-toggles">
           <Toggle label="Skip intro" checked={settings.skipIntro} onChange={(v) => onChange({ skipIntro: v })} />
@@ -87,7 +151,6 @@ export function DemoControls({ settings, onChange, onReset, variant }: DemoContr
             checked={settings.reducedMotion}
             onChange={(v) => onChange({ reducedMotion: v })}
           />
-          <Toggle label="Slow animation" checked={settings.slowMotion} onChange={(v) => onChange({ slowMotion: v })} />
         </div>
       </fieldset>
 
@@ -95,30 +158,36 @@ export function DemoControls({ settings, onChange, onReset, variant }: DemoContr
         <legend>Debug overlays</legend>
         <div className="dgf-ctl-toggles">
           <Toggle
-            label="Mouth target"
+            label="Mouth target point"
             checked={settings.showMouthTarget}
             onChange={(v) => onChange({ showMouthTarget: v })}
           />
           <Toggle
-            label="Image bounding box"
-            checked={settings.showImageBounds}
-            onChange={(v) => onChange({ showImageBounds: v })}
+            label="Mouth entry mask"
+            checked={settings.showMouthMask}
+            onChange={(v) => onChange({ showMouthMask: v })}
+          />
+          <Toggle
+            label="Character bounds"
+            checked={settings.showCharBounds}
+            onChange={(v) => onChange({ showCharBounds: v })}
+          />
+          <Toggle
+            label="Scored image bounds"
+            checked={settings.showScoredBounds}
+            onChange={(v) => onChange({ showScoredBounds: v })}
+          />
+          <Toggle
+            label="Prize safe-area"
+            checked={settings.showPrizeSafe}
+            onChange={(v) => onChange({ showPrizeSafe: v })}
           />
           <Toggle
             label="Ball endpoint"
             checked={settings.showEndpoint}
             onChange={(v) => onChange({ showEndpoint: v })}
           />
-          <Toggle
-            label="Viewport centre"
-            checked={settings.showViewportCentre}
-            onChange={(v) => onChange({ showViewportCentre: v })}
-          />
-          <Toggle
-            label="Animation state"
-            checked={settings.showAnimState}
-            onChange={(v) => onChange({ showAnimState: v })}
-          />
+          <Toggle label="Animation state" checked={settings.showState} onChange={(v) => onChange({ showState: v })} />
         </div>
       </fieldset>
 

@@ -117,8 +117,14 @@ export function DgFootballDemo() {
       const next = { ...s, ...p }
       return next
     })
-    // Changing the outcome/ticket config restarts the run.
-    if (p.preset !== undefined || p.ticketCount !== undefined || p.skipIntro !== undefined) {
+    // Changing the outcome/ticket config or a forced shot path restarts the run
+    // so the new setting applies cleanly from the top.
+    if (
+      p.preset !== undefined ||
+      p.ticketCount !== undefined ||
+      p.skipIntro !== undefined ||
+      p.shotPath !== undefined
+    ) {
       setRunNonce((n) => n + 1)
     }
   }, [])
@@ -133,7 +139,7 @@ export function DgFootballDemo() {
   }, [])
 
   // Remount key: rebuild the whole run when config changes or on reset.
-  const runKey = `${settings.preset}-${settings.ticketCount}-${settings.skipIntro}-${runNonce}`
+  const runKey = `${settings.preset}-${settings.ticketCount}-${settings.skipIntro}-${settings.shotPath}-${runNonce}`
 
   return (
     <div className="dgf-page">

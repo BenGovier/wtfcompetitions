@@ -132,13 +132,31 @@ export function DgFootballReveal({ tickets, settings, playSound, onFinish }: DgF
   )
   const activeTicketIndex = s.selectedNumber != null ? s.selectedNumber - 1 : null
   const activeTicket = activeTicketIndex != null ? (tickets[activeTicketIndex] ?? null) : null
-  const activeOutcome: Outcome | null = activeTicket ? activeTicket.outcome : null
+  const ticketOutcome: Outcome | null = activeTicket ? activeTicket.outcome : null
 
   // Derive the flight branch from the PREDETERMINED outcome (never from skill).
   // Dev `shotPath` can force a path for testing.
   const forceScore = settings.shotPath === "score"
   const forcedMiss = isMissVariant(settings.shotPath) ? settings.shotPath : null
-  const isWin = forceScore ? true : forcedMiss ? false : activeOutcome ? activeOutcome.kind !== "none" : false
+
+  // The displayed outcome MUST agree with the flight branch. When a dev forces
+  // a path that contradicts the ticket, coerce the shown outcome so a scored
+  // takeover never plays over a "no win" panel (and vice-versa). In `auto`
+  // (production) mode this is exactly the ticket's real outcome.
+  const activeOutcome: Outcome | null = useMemo<Outcome | null>(() => {
+    if (!ticketOutcome) return null
+    if (forceScore && ticketOutcome.kind === "none") {
+      const win: Outcome = { kind: "cash", amountPence: 10000 } // representative £100 win
+      return win
+    }
+    if (forcedMiss && ticketOutcome.kind !== "none") {
+      const miss: Outcome = { kind: "none", amountPence: 0 }
+      return miss
+    }
+    return ticketOutcome
+  }, [ticketOutcome, forceScore, forcedMiss])
+
+  const isWin = activeOutcome ? activeOutcome.kind !== "none" : false
   const missVariant: MissVariant = forcedMiss ?? missVariantForIndex(activeTicketIndex ?? 0)
   const bigWin = activeOutcome ? isBigWin(activeOutcome) : false
   const creditWin = activeOutcome ? activeOutcome.kind === "credit" : false
@@ -164,7 +182,7 @@ export function DgFootballReveal({ tickets, settings, playSound, onFinish }: DgF
 
   useEffect(() => {
     if (s.state !== "revealing") return
-    playSound(activeTicket && activeTicket.outcome.kind !== "none" ? "prize" : "nowin")
+    playSound(isWin ? "prize" : "nowin")
     const id = window.setTimeout(() => dispatch({ type: "REVEALED" }), TIMING.panelRiseMs * slow)
     return () => window.clearTimeout(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -206,7 +224,7 @@ export function DgFootballReveal({ tickets, settings, playSound, onFinish }: DgF
   }, [tickets])
 
   const revealVisible = s.state === "revealing" || s.state === "revealed"
-  const revealCopy = activeTicket ? revealCopyFor(activeTicket.outcome) : null
+  const revealCopy = activeOutcome ? revealCopyFor(activeOutcome) : null
 
   return (
     <div className="dgf-reveal-root">
