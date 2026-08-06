@@ -209,15 +209,18 @@ export const DG_FOOTBALL_CSS = String.raw`
   transition: opacity 260ms ease, filter 260ms ease;
   pointer-events: none;
 }
-.dgf-character-area.dgf-dim { opacity: 0.4; filter: saturate(0.7) brightness(0.7); }
+/* Keep DG clearly visible behind the risen result panel — dim, never hidden. */
+.dgf-character-area.dgf-dim { opacity: 0.82; filter: saturate(0.85) brightness(0.82); }
 
 .dgf-character { position: absolute; left: 0; right: 0; top: 9%; height: 68%; }
 .dgf-rim {
   position: absolute; left: 50%; top: 52%;
-  width: 76%; height: 60%;
+  width: 82%; height: 66%;
   transform: translate(-50%, -50%);
-  background: radial-gradient(circle, rgba(168,255,25,0.28), transparent 62%);
-  filter: blur(12px);
+  background:
+    radial-gradient(60% 70% at 50% 42%, rgba(168,255,25,0.30), transparent 66%),
+    radial-gradient(closest-side, rgba(93,255,0,0.10), transparent 72%);
+  filter: blur(14px);
 }
 .dgf-character-inner { position: absolute; inset: 0; }
 .dgf-breathe { animation: dgf-breathe 6s ease-in-out infinite; transform-origin: bottom center; }
@@ -229,10 +232,23 @@ export const DG_FOOTBALL_CSS = String.raw`
   position: absolute; inset: 0;
   width: 100%; height: 100%;
   object-fit: contain;
+  /* Keep DG's head, hands and boots in frame; he is the focal point. */
   object-position: center top;
   transition-property: opacity;
   transition-timing-function: ease;
   pointer-events: none;
+  /* The supplied portraits sit on a bright studio backdrop. Feather the
+     rectangular edges into the stadium so DG reads as spotlit on the pitch,
+     not pasted into a hard photo box. Elliptical + bottom fade, no cropping. */
+  -webkit-mask-image:
+    radial-gradient(72% 82% at 50% 44%, #000 58%, rgba(0,0,0,0.5) 78%, transparent 94%),
+    linear-gradient(to bottom, #000 72%, transparent 99%);
+  mask-image:
+    radial-gradient(72% 82% at 50% 44%, #000 58%, rgba(0,0,0,0.5) 78%, transparent 94%),
+    linear-gradient(to bottom, #000 72%, transparent 99%);
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+  filter: brightness(0.97) contrast(1.03);
 }
 .dgf-shirt-logo {
   position: absolute; left: 50%; top: 74%;
@@ -323,11 +339,11 @@ export const DG_FOOTBALL_CSS = String.raw`
 /* -------------------------------------------------------------------------- */
 .dgf-tray-wrap {
   position: absolute; left: 0; right: 0; bottom: 0; z-index: 5;
-  padding: 10px 12px calc(env(safe-area-inset-bottom) + 14px);
+  padding: 10px 8px calc(env(safe-area-inset-bottom) + 14px);
 }
 .dgf-tray {
   display: flex; align-items: flex-end; justify-content: center;
-  gap: clamp(6px, 2.4vw, 14px);
+  gap: clamp(6px, 2vw, 14px);
 }
 .dgf-tray-slot {
   display: flex; flex-direction: column; align-items: center; gap: 6px;
@@ -345,6 +361,17 @@ export const DG_FOOTBALL_CSS = String.raw`
 .dgf-ball-inner { display: block; transition: inherit; }
 .dgf-ball-btn:focus-visible { outline: 3px solid var(--dg-neon); outline-offset: 4px; border-radius: 50%; }
 .dgf-ball-btn:hover:not(:disabled) { transform: translateY(-4px); }
+/* Subtle idle "waiting" bob so the five choices feel alive before a tap. */
+.dgf-ball-idle .dgf-ball-inner { animation: dgf-ball-idle 2.6s ease-in-out infinite; }
+.dgf-tray-slot:nth-child(1) .dgf-ball-idle .dgf-ball-inner { animation-delay: 0ms; }
+.dgf-tray-slot:nth-child(2) .dgf-ball-idle .dgf-ball-inner { animation-delay: 180ms; }
+.dgf-tray-slot:nth-child(3) .dgf-ball-idle .dgf-ball-inner { animation-delay: 360ms; }
+.dgf-tray-slot:nth-child(4) .dgf-ball-idle .dgf-ball-inner { animation-delay: 540ms; }
+.dgf-tray-slot:nth-child(5) .dgf-ball-idle .dgf-ball-inner { animation-delay: 720ms; }
+@keyframes dgf-ball-idle {
+  0%, 100% { transform: translateY(0) rotate(-3deg); }
+  50% { transform: translateY(-5px) rotate(3deg); }
+}
 .dgf-ball-selecting {
   transform: translateY(-14px) scale(1.16);
   filter: drop-shadow(0 0 16px var(--dg-glow)) drop-shadow(0 10px 14px rgba(0,0,0,0.6));
@@ -605,15 +632,17 @@ export const DG_FOOTBALL_CSS = String.raw`
 .dgf-ctl-reset:hover { border-color: var(--dg-neon); color: var(--dg-neon); }
 
 /* Mobile controls trigger + sheet */
+/* Kept in the TOP-LEFT corner, clear of the footballs, result button and
+   primary copy which all live lower in the stage. */
 .dgf-controls-trigger {
   position: absolute; z-index: 40;
-  left: 50%; bottom: calc(env(safe-area-inset-bottom) + 6px);
-  transform: translateX(-50%);
-  padding: 6px 14px; min-height: 30px;
+  left: 8px; top: calc(env(safe-area-inset-top) + 8px);
+  padding: 5px 10px; min-height: 28px;
   border-radius: 999px;
   border: 1px solid rgba(255,255,255,0.16);
   background: rgba(5,7,5,0.7);
-  color: var(--dg-muted); font-size: 10px; font-weight: 800; letter-spacing: 0.16em;
+  backdrop-filter: blur(4px);
+  color: var(--dg-muted); font-size: 9px; font-weight: 800; letter-spacing: 0.14em;
   cursor: pointer;
 }
 @media (min-width: 900px) { .dgf-controls-trigger { display: none; } }

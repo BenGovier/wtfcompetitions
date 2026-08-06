@@ -140,9 +140,14 @@ export function PrizeReveal({
 
         <p className="dgf-panel-support">{copy.support}</p>
 
+        {/*
+          If more reveals remain, point the customer at the shot they are ABOUT
+          to open (shotLabel = the NEXT shot). On the final reveal there is no
+          next shot — go straight to the results.
+        */}
         <button ref={btnRef} type="button" className="dgf-next-btn" onClick={onNext}>
-          {isLast ? "SEE RESULTS" : "NEXT SHOT"}
-          <span className="dgf-next-sub">{shotLabel}</span>
+          {isLast ? "VIEW RESULTS" : "NEXT SHOT"}
+          {!isLast && <span className="dgf-next-sub">{shotLabel}</span>}
         </button>
       </div>
     </div>
