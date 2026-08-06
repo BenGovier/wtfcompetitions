@@ -1,117 +1,61 @@
 'use client'
 
-import { useCallback, useRef } from 'react'
-import useSWR from 'swr'
-import { RefreshCw } from 'lucide-react'
-import {
-  marketingAudiencesSwrKey,
-  type MarketingAudienceOverview,
-} from '@/lib/admin/marketing/audiences'
-import {
-  AudienceCatalogue,
-  AudienceHealth,
-  OpportunityCards,
-  ProfileStatus,
-} from './MarketingSections'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { OverviewPanel } from './OverviewPanel'
+import { AutomationsPanel } from './AutomationsPanel'
+import { TemplatesPanel } from './TemplatesPanel'
+import { PromotionsPanel } from './PromotionsPanel'
+import { ControlPanel } from './ControlPanel'
 
 /**
- * Client Marketing dashboard.
+ * Client Marketing hub shell.
  *
- * Makes EXACTLY ONE browser request to /api/admin/marketing/audiences when the
- * page opens, then never polls: no refreshInterval, no revalidate-on-focus and
- * no revalidate-when-hidden/offline. The user can re-fetch on demand with the
- * Refresh button, and previous data is kept on screen while a manual refresh is
- * in flight. Stale requests are aborted before a new one begins.
+ * Five tabbed sections: Overview (audience opportunities), Automations,
+ * Templates, Promotions and Controls. Each tab owns its own data fetching and
+ * mounts lazily, so opening the hub still makes a single request (Overview) and
+ * the configuration tabs only fetch when first opened.
  *
- * This component owns the only network call; the sections it renders are pure
- * and display aggregate counts only. There is no send capability here.
+ * Nothing in this hub can send email. Every panel edits configuration only; the
+ * global control state (Controls tab) stays authoritative and defaults fully
+ * paused. This entire route remains a HIDDEN admin route — never linked from
+ * the admin navigation.
  */
 export function MarketingDashboard() {
-  const abortRef = useRef<AbortController | null>(null)
-
-  const fetcher = useCallback(async (url: string) => {
-    abortRef.current?.abort()
-    const controller = new AbortController()
-    abortRef.current = controller
-    const res = await fetch(url, {
-      headers: { accept: 'application/json' },
-      signal: controller.signal,
-    })
-    const json = await res.json().catch(() => null)
-    if (!res.ok || !json?.ok) {
-      throw new Error(json?.error ?? `request_failed_${res.status}`)
-    }
-    return json.data as MarketingAudienceOverview
-  }, [])
-
-  const { data, error, isValidating, mutate } = useSWR<MarketingAudienceOverview>(
-    marketingAudiencesSwrKey(true),
-    fetcher,
-    {
-      keepPreviousData: true,
-      revalidateOnFocus: false,
-      revalidateOnReconnect: false,
-      refreshInterval: 0,
-      refreshWhenHidden: false,
-      refreshWhenOffline: false,
-    },
-  )
-
-  const refreshing = isValidating && Boolean(data)
-
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Marketing</h1>
-          <p className="max-w-prose text-sm text-muted-foreground text-pretty">
-            Audience opportunities based on current customer activity, WTF Credit and marketing
-            eligibility.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => mutate()}
-          disabled={isValidating}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
-          Refresh
-        </button>
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">Marketing</h1>
+        <p className="max-w-prose text-sm text-muted-foreground text-pretty">
+          Configure marketing automations, email templates and campaign promotions. Sending stays
+          paused until the global controls are turned on.
+        </p>
       </div>
 
-      {error && !data ? (
-        <div
-          role="alert"
-          className="rounded-xl border border-red-500/40 bg-red-500/5 p-4 text-sm text-red-600 dark:text-red-400"
-        >
-          Could not load marketing audiences. Please refresh and try again.
-        </div>
-      ) : !data ? (
-        <div className="flex flex-col gap-5" aria-hidden="true">
-          <div className="h-24 animate-pulse rounded-xl border border-border bg-card" />
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="h-20 animate-pulse rounded-xl border border-border bg-card" />
-            ))}
-          </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="h-36 animate-pulse rounded-xl border border-border bg-card" />
-            ))}
-          </div>
-        </div>
-      ) : (
-        <>
-          <ProfileStatus freshness={data.freshness} />
-          <AudienceHealth health={data.health} />
-          <OpportunityCards audiences={data.audiences} />
-          <AudienceCatalogue audiences={data.audiences} />
-          <p className="text-[11px] text-muted-foreground">
-            Times shown in Europe/London. Sending capability is not part of this stage.
-          </p>
-        </>
-      )}
+      <Tabs defaultValue="overview" className="gap-5">
+        <TabsList className="flex-wrap">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="automations">Automations</TabsTrigger>
+          <TabsTrigger value="templates">Templates</TabsTrigger>
+          <TabsTrigger value="promotions">Promotions</TabsTrigger>
+          <TabsTrigger value="controls">Controls</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview">
+          <OverviewPanel />
+        </TabsContent>
+        <TabsContent value="automations">
+          <AutomationsPanel />
+        </TabsContent>
+        <TabsContent value="templates">
+          <TemplatesPanel />
+        </TabsContent>
+        <TabsContent value="promotions">
+          <PromotionsPanel />
+        </TabsContent>
+        <TabsContent value="controls">
+          <ControlPanel />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
