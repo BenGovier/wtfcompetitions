@@ -181,6 +181,8 @@ export const DG_FOOTBALL_CSS = String.raw`
   text-align: center;
   pointer-events: none;
 }
+.dgf-brand { transition: opacity 200ms ease; }
+.dgf-brand-hidden { opacity: 0; }
 .dgf-brand-titles { display: flex; flex-direction: column; line-height: 0.82; }
 .dgf-brand-1, .dgf-brand-2 {
   font-weight: 900;
@@ -910,4 +912,146 @@ export const DG_FOOTBALL_CSS = String.raw`
 .dgf-panel-big { border-top-color: var(--dg-gold); box-shadow: 0 -20px 60px rgba(0,0,0,0.7), 0 -2px 34px rgba(255,216,74,0.5); }
 .dgf-panel-cash { border-top-color: var(--dg-cash); }
 .dgf-panel-none { border-top-color: rgba(255,255,255,0.35); box-shadow: 0 -20px 60px rgba(0,0,0,0.7); }
+.dgf-panel-support2 {
+  margin-top: 2px; color: var(--dg-muted);
+  font-size: 12px; font-weight: 700; letter-spacing: 0.06em;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Mouth-entry mask — the ball disappears BEHIND DG's face at the mouth      */
+/* -------------------------------------------------------------------------- */
+/*
+  A soft radial clip centred on the measured mouth point. When active, the
+  flying ball's tail is occluded so it reads as entering the mouth rather than
+  sliding over the face. Rendered above the character but below the scored
+  takeover.
+*/
+.dgf-mouth-mask {
+  position: absolute; z-index: 9;
+  width: 120px; height: 96px; transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(5,7,5,0.0) 46%, rgba(5,7,5,0.9) 72%, rgba(5,7,5,1) 100%);
+  opacity: 0; transition: opacity 120ms ease;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+}
+.dgf-mouth-mask-on { opacity: 1; }
+.dgf-mouth-mask-debug { outline: 1px dashed rgba(255,90,90,0.9); background: rgba(255,90,90,0.12); }
+
+/* -------------------------------------------------------------------------- */
+/*  Dark transition veil — brief blackout before the celebration takeover     */
+/* -------------------------------------------------------------------------- */
+.dgf-dark-transition {
+  position: absolute; inset: 0; z-index: 18;
+  background: radial-gradient(circle at 50% 42%, rgba(5,7,5,0.2), rgba(5,7,5,0.96));
+  opacity: 0; transition: opacity 120ms ease;
+  pointer-events: none;
+}
+.dgf-dark-on { opacity: 1; }
+
+/* -------------------------------------------------------------------------- */
+/*  Miss ripple — subtle deflection where the ball glances off               */
+/* -------------------------------------------------------------------------- */
+.dgf-miss-ripple {
+  position: absolute; z-index: 9;
+  width: 46px; height: 46px; transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 2px solid rgba(247,247,242,0.7);
+  animation: dgf-miss-ripple 360ms ease-out forwards;
+  pointer-events: none;
+}
+@keyframes dgf-miss-ripple {
+  0% { opacity: 0.8; transform: translate(-50%,-50%) scale(0.3); }
+  100% { opacity: 0; transform: translate(-50%,-50%) scale(1.5); }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Scored takeover — full cinematic win overlay (dg-scored.png)              */
+/* -------------------------------------------------------------------------- */
+.dgf-scored {
+  position: absolute; inset: 0; z-index: 20;
+  display: flex; align-items: stretch; justify-content: center;
+  opacity: 0; transform: scale(1.06);
+  transition: opacity 200ms ease, transform 380ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  pointer-events: none; overflow: hidden;
+}
+.dgf-scored-in { opacity: 1; transform: scale(1); }
+.dgf-scored-frame { position: absolute; inset: 0; }
+.dgf-scored-img {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover; object-position: 50% 42%;
+}
+.dgf-scored-vignette {
+  position: absolute; inset: 0;
+  background: radial-gradient(120% 90% at 50% 40%, transparent 46%, rgba(5,7,5,0.55) 100%);
+}
+.dgf-scored-floor {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 34%;
+  background: linear-gradient(to top, rgba(5,7,5,0.85), transparent);
+}
+.dgf-scored-burst {
+  position: absolute; left: 50%; top: 40%; width: 60%; height: 40%;
+  transform: translate(-50%, -50%) scale(0.6);
+  background: radial-gradient(circle, rgba(168,255,25,0.55), transparent 66%);
+  filter: blur(6px);
+  animation: dgf-scored-burst 460ms ease-out forwards;
+}
+@keyframes dgf-scored-burst {
+  0% { opacity: 0; transform: translate(-50%,-50%) scale(0.5); }
+  40% { opacity: 1; }
+  100% { opacity: 0.5; transform: translate(-50%,-50%) scale(1.15); }
+}
+.dgf-scored-rays {
+  position: absolute; left: 50%; top: 40%; width: 150%; height: 150%;
+  transform: translate(-50%, -50%);
+  background: conic-gradient(from 0deg,
+    rgba(168,255,25,0.18) 0deg, transparent 12deg, transparent 30deg,
+    rgba(255,216,74,0.14) 42deg, transparent 54deg, transparent 90deg,
+    rgba(168,255,25,0.18) 102deg, transparent 114deg, transparent 150deg,
+    rgba(255,216,74,0.14) 162deg, transparent 174deg, transparent 360deg);
+  animation: dgf-slow-spin 9s linear infinite;
+  opacity: 0.7; mix-blend-mode: screen;
+}
+.dgf-scored-logo-sweep {
+  position: absolute; left: 50%; top: 60%; width: 60%; height: 16%;
+  transform: translate(-50%, -50%);
+  background: linear-gradient(115deg, transparent 42%, rgba(223,255,166,0.7) 50%, transparent 58%);
+  mix-blend-mode: screen;
+  animation: dgf-face-sweep 460ms ease-out 120ms both;
+}
+/* Tone accents for the takeover edge glow. */
+.dgf-scored-big { box-shadow: inset 0 0 120px rgba(255,216,74,0.5); }
+.dgf-scored-cash { box-shadow: inset 0 0 120px rgba(93,255,0,0.35); }
+.dgf-scored-credit { box-shadow: inset 0 0 120px rgba(168,255,25,0.3); }
+.dgf-scored-reduced { transition: opacity 160ms ease; transform: none; }
+.dgf-scored-reduced.dgf-scored-in { transform: none; }
+.dgf-scored-reduced .dgf-scored-burst,
+.dgf-scored-reduced .dgf-scored-rays,
+.dgf-scored-reduced .dgf-scored-logo-sweep { animation: none; }
+.dgf-scored-bounds .dgf-scored-img { outline: 2px dashed rgba(93,255,0,0.8); outline-offset: -2px; }
+@keyframes dgf-slow-spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
+
+/* -------------------------------------------------------------------------- */
+/*  Dev-only: preview badge, prize safe-area                                  */
+/* -------------------------------------------------------------------------- */
+.dgf-preview-badge {
+  position: absolute; z-index: 46;
+  left: 50%; top: 8px; transform: translateX(-50%);
+  padding: 3px 10px; border-radius: 999px;
+  background: rgba(5,7,5,0.85); border: 1px solid rgba(255,216,74,0.6);
+  color: var(--dg-gold); font-size: 10px; font-weight: 900; letter-spacing: 0.16em;
+  text-transform: uppercase; font-family: var(--font-mono, monospace);
+  pointer-events: none;
+}
+.dgf-prize-safe {
+  position: absolute; z-index: 44; left: 6%; right: 6%; bottom: 0; height: 46%;
+  border: 1px dashed rgba(93,255,0,0.5);
+  background: rgba(93,255,0,0.05);
+  pointer-events: none;
+}
+.dgf-ctl-note {
+  margin: 6px 0 0; color: var(--dg-muted);
+  font-size: 11px; line-height: 1.4;
+}
 `

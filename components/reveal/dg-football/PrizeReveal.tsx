@@ -158,6 +158,7 @@ export function PrizeReveal({
         )}
 
         <p className="dgf-panel-support text-balance">{copy.support}</p>
+        {copy.support2 && <p className="dgf-panel-support2 text-balance">{copy.support2}</p>}
 
         {/*
           If more reveals remain, point the customer at the shot they are ABOUT

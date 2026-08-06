@@ -4,13 +4,17 @@
  */
 
 import type {
+  CharPreview,
   DemoSettings,
+  MissVariant,
   Outcome,
   OutcomeKind,
   OutcomePreset,
   RevealCopy,
+  ShotPath,
   Ticket,
   TicketCount,
+  TimeScale,
 } from "./types"
 
 /* -------------------------------------------------------------------------- */
@@ -33,8 +37,12 @@ export const COLORS = {
 /*  Asset paths (real character photos — supplied separately)                 */
 /* -------------------------------------------------------------------------- */
 export const ASSETS = {
+  /** Between shots, non-winning reaction and final summary. */
   dgNeutral: "/reveal/dg-football/dg-neutral.png",
+  /** Active/waiting pose — shown from intro through aiming, launch and flight. */
   dgMouthOpen: "/reveal/dg-football/dg-mouth-open.png",
+  /** Winning celebration takeover ONLY — after the ball enters the mouth. */
+  dgScored: "/reveal/dg-football/dg-scored.png",
 } as const
 
 /* -------------------------------------------------------------------------- */
@@ -71,6 +79,33 @@ export const TIMING = {
   reducedLaunchMs: 300,
   /** Return-to-choosing reflow after a shot (spec: 500–700ms). */
   reflowMs: 600,
+
+  /* ---- winning shot branch (spec-exact windows) ---------------------- */
+  /** Winning flight home → mouth (spec: 700–820ms). */
+  winFlightMs: 760,
+  /** Final mouth-entry sequence — ball behind the mask, compress + vanish
+   *  (spec: 180–240ms). */
+  mouthEntryMs: 210,
+  /** Mouth impact micro-sequence — shockwave + particles (spec: 280–380ms). */
+  winImpactMs: 330,
+  /** Screen briefly darkens before the scored image (spec: 100–140ms). */
+  darkTransitionMs: 120,
+  /** dg-scored.png punch-in takeover (spec: 320–420ms). */
+  scoredTakeoverMs: 380,
+  /** Pause after the celebration settles, before the prize panel rises
+   *  (spec: 220–320ms). */
+  pauseBeforePanelMs: 270,
+  /** Top-prize (£5,000) extends the celebration takeover by this much. */
+  topPrizeExtraMs: 180,
+
+  /* ---- miss shot branch ---------------------------------------------- */
+  /** Miss flight home → past the mouth (kept in the winning flight range). */
+  missFlightMs: 760,
+  /** Cross-fade from mouth-open → neutral after a visible miss
+   *  (spec: 140–180ms). */
+  missReactionMs: 160,
+  /** Brief beat on the near-miss ripple before the neutral swap. */
+  missSettleMs: 220,
 } as const
 
 export const SLOW_FACTOR = 3
@@ -92,6 +127,27 @@ export const MOUTH_TARGET = { xPct: 0.5, yPct: 0.45 } as const
 /** Home (launch) position of the active football as a fraction of the stage
  *  (spec: 68–74% down before drag). */
 export const LAUNCH_HOME = { xPct: 0.5, yPct: 0.71 } as const
+
+/**
+ * Deterministic miss endpoints, expressed as an offset (in px, at a ~390px
+ * stage) from the MEASURED mouth centre. The ball travels convincingly toward
+ * the mouth, clearly misses at this point, then continues beyond it. These are
+ * fixed per variant — never randomised on render.
+ */
+export const MISS_OFFSETS: Record<MissVariant, { dx: number; dy: number }> = {
+  left_cheek: { dx: -78, dy: 4 },
+  right_cheek: { dx: 78, dy: 4 },
+  top: { dx: 6, dy: -84 },
+  edge_clip: { dx: 46, dy: -18 },
+  shoulder_bounce: { dx: -104, dy: 96 },
+}
+
+const MISS_ORDER: MissVariant[] = ["left_cheek", "right_cheek", "top", "edge_clip", "shoulder_bounce"]
+
+/** Deterministic miss variant for a given ticket index (stable per shot). */
+export function missVariantForIndex(index: number): MissVariant {
+  return MISS_ORDER[index % MISS_ORDER.length]
+}
 
 /* -------------------------------------------------------------------------- */
 /*  Outcome helpers                                                           */
@@ -132,7 +188,7 @@ export function revealCopyFor(o: Outcome): RevealCopy {
           eyebrow: "INSTANT WIN!",
           amount: formatGBP(o.amountPence),
           unit: "CASH",
-          support: "YOU'VE HIT THE BIG ONE!",
+          support: "STRAIGHT IN!",
           isMoney: true,
         }
       }
@@ -150,7 +206,7 @@ export function revealCopyFor(o: Outcome): RevealCopy {
         eyebrow: "BONUS WIN!",
         amount: formatGBP(o.amountPence),
         unit: "SITE CREDIT",
-        support: "ADDED TO YOUR WALLET",
+        support: "IT'S IN!",
         isMoney: true,
       }
     case "mystery":
@@ -164,12 +220,15 @@ export function revealCopyFor(o: Outcome): RevealCopy {
       }
     case "none":
     default:
+      // Non-winning: never a loss. "JUST WIDE!" keeps it playful, then the
+      // reassurance that the ticket is still live in the final draw.
       return {
         tone: "none",
-        eyebrow: "NO INSTANT WIN",
-        amount: "YOU'RE STILL IN THE FINAL DRAW",
+        eyebrow: "JUST WIDE!",
+        amount: "NO INSTANT WIN",
         unit: "",
-        support: "KEEP GOING — YOUR NEXT SHOT IS READY",
+        support: "YOU'RE STILL IN THE FINAL DRAW",
+        support2: "YOUR NEXT SHOT IS READY",
         isMoney: false,
       }
   }
@@ -178,23 +237,24 @@ export function revealCopyFor(o: Outcome): RevealCopy {
 /* -------------------------------------------------------------------------- */
 /*  Instruction copy per state                                                */
 /* -------------------------------------------------------------------------- */
-export const INSTRUCTIONS: Record<string, { text: string; key?: string } | null> = {
+export const INSTRUCTIONS: Record<string, { text: string; key?: string; sub?: string } | null> = {
   intro: null,
-  choosing: { text: "CHOOSE YOUR", key: "BALL" },
-  selected: { text: "FLICK IT TO", key: "DG" },
+  choosing: { text: "CHOOSE YOUR", key: "BALL", sub: "FLICK IT INTO DG'S MOUTH" },
+  selected: { text: "FLICK TO", key: "SHOOT", sub: "GET IT IN HIS MOUTH" },
   aiming: { text: "RELEASE TO", key: "SHOOT" },
   launching: { text: "HERE WE", key: "GO!" },
-  pre_impact: { text: "HERE WE", key: "GO!" },
-  impact: null,
+  winning_entry: null,
+  miss_flight: null,
+  win_impact: null,
+  win_celebration_transition: null,
+  win_celebration: null,
+  miss_reaction: null,
   suspense: null,
   revealing: null,
   revealed: null,
   transitioning_next: null,
   complete: null,
 }
-
-/** Secondary line shown under the selected football before a flick. */
-export const SELECTED_SUBHINT = "SWIPE UP TO SHOOT"
 
 /* -------------------------------------------------------------------------- */
 /*  Deterministic mock ticket sequences                                       */
@@ -260,14 +320,44 @@ export const DEFAULT_SETTINGS: DemoSettings = {
   ticketCount: 5,
   soundOn: false,
   reducedMotion: false,
-  slowMotion: false,
+  timeScale: 1,
   skipIntro: false,
+  shotPath: "auto",
+  charPreview: "off",
   showMouthTarget: false,
-  showImageBounds: false,
+  showMouthMask: false,
+  showCharBounds: false,
+  showScoredBounds: false,
+  showPrizeSafe: false,
   showEndpoint: false,
-  showViewportCentre: false,
-  showAnimState: false,
+  showState: false,
 }
+
+/** Dev "shot path" options. `auto` derives win/miss from the ticket outcome. */
+export const SHOT_PATH_OPTIONS: { value: ShotPath; label: string }[] = [
+  { value: "auto", label: "Automatic" },
+  { value: "score", label: "Force score" },
+  { value: "left_cheek", label: "Left miss" },
+  { value: "right_cheek", label: "Right miss" },
+  { value: "top", label: "Top miss" },
+  { value: "edge_clip", label: "Edge clip" },
+  { value: "shoulder_bounce", label: "Shoulder bounce" },
+]
+
+/** Dev timing-scale options (1× / 0.5× / 0.25×). */
+export const TIME_SCALE_OPTIONS: { value: TimeScale; label: string }[] = [
+  { value: 1, label: "Normal" },
+  { value: 2, label: "0.5×" },
+  { value: 4, label: "0.25×" },
+]
+
+/** Dev character-preview poses (static inspection of each asset). */
+export const CHAR_PREVIEW_OPTIONS: { value: CharPreview; label: string }[] = [
+  { value: "off", label: "Live game" },
+  { value: "mouth_open", label: "Mouth open" },
+  { value: "neutral", label: "Neutral" },
+  { value: "scored", label: "Scored" },
+]
 
 /** Human labels for outcome kinds (dev summary use). */
 export const KIND_LABEL: Record<OutcomeKind, string> = {
