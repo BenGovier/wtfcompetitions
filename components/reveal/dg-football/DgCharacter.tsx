@@ -14,8 +14,6 @@ interface DgCharacterProps {
   mouthOpen: boolean
   reducedMotion: boolean
   slowFactor: number
-  /** Brightens the DG shirt logo briefly at impact. */
-  logoFlash: boolean
 }
 
 function MissingAssetNotice({ file }: { file: string }) {
@@ -28,7 +26,7 @@ function MissingAssetNotice({ file }: { file: string }) {
   )
 }
 
-export function DgCharacter({ mouthOpen, reducedMotion, slowFactor, logoFlash }: DgCharacterProps) {
+export function DgCharacter({ mouthOpen, reducedMotion, slowFactor }: DgCharacterProps) {
   const [neutralError, setNeutralError] = useState(false)
   const [openError, setOpenError] = useState(false)
 
@@ -69,9 +67,6 @@ export function DgCharacter({ mouthOpen, reducedMotion, slowFactor, logoFlash }:
             draggable={false}
           />
         )}
-
-        {/* Shirt logo flash accent (kept subtle, sits low-centre on the chest) */}
-        <div className={`dgf-shirt-logo ${logoFlash ? "dgf-shirt-logo-flash" : ""}`}>DG</div>
       </div>
     </div>
   )

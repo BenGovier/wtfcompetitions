@@ -61,9 +61,16 @@ export const SLOW_FACTOR = 3
 /** Minimum upward drag (px) required to trigger a launch on release. */
 export const LAUNCH_DRAG_THRESHOLD = 70
 
-/** Ball geometry (px) on a 390px stage. */
-export const BALL_SIZE = 64
-export const BALL_SIZE_SMALL = 56
+/**
+ * The five reusable footballs. This is a FIXED presentation constant and must
+ * never scale with the number of purchased tickets. One ticket or five hundred
+ * tickets — the customer always chooses from the same five footballs.
+ */
+export const BALL_COUNT = 5
+
+/** Ball geometry (px). Sized so all five footballs fit a 360px viewport with
+ *  comfortable spacing while staying well above the 44px min tap target. */
+export const BALL_SIZE = 58
 
 /** Mouth target position as a fraction of the stage (fallback-independent). */
 export const MOUTH_TARGET = { xPct: 0.5, yPct: 0.455 } as const
@@ -211,7 +218,13 @@ export const OUTCOME_PRESET_OPTIONS: { value: OutcomePreset; label: string }[] =
   { value: "mixed5", label: "Mixed five-ticket sequence" },
 ]
 
-export const TICKET_COUNT_OPTIONS: TicketCount[] = [1, 3, 5, 10]
+/**
+ * Demo reveal-queue lengths. These are the number of PURCHASED TICKETS, i.e.
+ * the length of the reveal queue — NOT the number of footballs. 1 proves the
+ * single-ticket "VIEW RESULTS" path; 500 proves the five footballs never
+ * multiply with ticket quantity.
+ */
+export const TICKET_COUNT_OPTIONS: TicketCount[] = [1, 5, 12, 500]
 
 export const DEFAULT_SETTINGS: DemoSettings = {
   preset: "mixed5",

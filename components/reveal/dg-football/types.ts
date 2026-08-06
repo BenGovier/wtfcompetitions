@@ -54,7 +54,12 @@ export type OutcomePreset =
   | "mystery"
   | "mixed5"
 
-export type TicketCount = 1 | 3 | 5 | 10
+/**
+ * The number of purchased tickets = the length of the reveal queue.
+ * This is intentionally an open number (1 → hundreds). It is NOT the number of
+ * footballs on screen — there are always exactly five reusable footballs.
+ */
+export type TicketCount = number
 
 /** Dev-only settings. These never affect production code paths. */
 export interface DemoSettings {

@@ -12,7 +12,7 @@
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
-import type { GameState, DemoSettings, Ticket, SoundCue } from "./types"
+import type { GameState, DemoSettings, SoundCue } from "./types"
 import {
   INSTRUCTIONS,
   LAUNCH_DRAG_THRESHOLD,
@@ -20,7 +20,6 @@ import {
   MOUTH_TARGET,
   TIMING,
   BALL_SIZE,
-  BALL_SIZE_SMALL,
 } from "./config"
 import { useFlickGesture } from "./useFlickGesture"
 import { DgCharacter } from "./DgCharacter"
@@ -36,14 +35,16 @@ interface Pt {
 
 interface DgFootballStageProps {
   state: GameState
-  activeTicket: Ticket | null
-  tickets: Ticket[]
-  playedIds: Set<string>
+  /** How many footballs to render (always five). */
+  ballCount: number
+  /** The chosen football index for THIS shot (presentation only), or null. */
+  selectedBallIndex: number | null
   settings: DemoSettings
+  /** 1-based index of the ticket being revealed. */
   shotCurrent: number
+  /** Total tickets in the reveal queue (1 → hundreds). */
   shotTotal: number
-  compact: boolean
-  onSelectBall: (t: Ticket) => void
+  onSelectBall: (index: number) => void
   onAimStart: () => void
   onAimCancel: () => void
   onLaunch: () => void
@@ -57,13 +58,11 @@ const easeInOutCubic = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2
 export function DgFootballStage(props: DgFootballStageProps) {
   const {
     state,
-    activeTicket,
-    tickets,
-    playedIds,
+    ballCount,
+    selectedBallIndex,
     settings,
     shotCurrent,
     shotTotal,
-    compact,
     onSelectBall,
     onAimStart,
     onAimCancel,
@@ -82,7 +81,7 @@ export function DgFootballStage(props: DgFootballStageProps) {
   const [stageSize, setStageSize] = useState({ w: 390, h: 844 })
   const [mouthCenter, setMouthCenter] = useState<Pt>({ x: 195, y: 384 })
 
-  const ballSize = compact ? BALL_SIZE_SMALL : BALL_SIZE
+  const ballSize = BALL_SIZE
   const homePos: Pt = { x: stageSize.w * LAUNCH_HOME.xPct, y: stageSize.h * LAUNCH_HOME.yPct }
 
   /* ---- geometry measurement ------------------------------------------- */
@@ -121,7 +120,6 @@ export function DgFootballStage(props: DgFootballStageProps) {
   )
   const [mouthOpen, setMouthOpen] = useState(false)
   const [impactActive, setImpactActive] = useState(false)
-  const [logoFlash, setLogoFlash] = useState(false)
   const [shake, setShake] = useState(false)
   const [showTapHint, setShowTapHint] = useState(false)
 
@@ -150,7 +148,6 @@ export function DgFootballStage(props: DgFootballStageProps) {
       setFlight(null)
       setMouthOpen(false)
       setImpactActive(false)
-      setLogoFlash(false)
       setShake(false)
       setShowTapHint(false)
       flickReset()
@@ -217,7 +214,6 @@ export function DgFootballStage(props: DgFootballStageProps) {
     setMouthOpen(true)
     setFlight(null)
     setImpactActive(true)
-    setLogoFlash(true)
     onImpact()
     playSound("impact")
     if (typeof navigator !== "undefined" && "vibrate" in navigator && settings.soundOn) {
@@ -231,7 +227,6 @@ export function DgFootballStage(props: DgFootballStageProps) {
       setShake(true)
       addTimer(() => setShake(false), TIMING.shakeMs * slow)
     }
-    addTimer(() => setLogoFlash(false), 320 * slow)
     addTimer(() => {
       setImpactActive(false)
       addTimer(() => {
@@ -277,7 +272,7 @@ export function DgFootballStage(props: DgFootballStageProps) {
 
   /* ---- derived render values ------------------------------------------ */
   const showActiveBall =
-    activeTicket != null && (state === "selected" || state === "aiming" || state === "launched")
+    selectedBallIndex != null && (state === "selected" || state === "aiming" || state === "launched")
   const charge = Math.min(1, upDistance / LAUNCH_DRAG_THRESHOLD)
 
   // Active ball centre while aiming/selected (drag offset applied).
@@ -322,16 +317,14 @@ export function DgFootballStage(props: DgFootballStageProps) {
           <span className="dgf-brand-2">BIG BALLERS</span>
         </div>
         <p className="dgf-brand-sub">EVERY TICKET TAKES A SHOT</p>
-        {shotTotal > 1 && (
-          <p className="dgf-progress" aria-hidden="true">
-            SHOT {shotCurrent} OF {shotTotal}
-          </p>
-        )}
+        <p className="dgf-progress" aria-hidden="true">
+          SHOT {shotCurrent} OF {shotTotal}
+        </p>
       </header>
 
       {/* ---------- character area ---------- */}
       <div className={`dgf-character-area ${state === "revealing" || state === "revealed" ? "dgf-dim" : ""}`}>
-        <DgCharacter mouthOpen={mouthOpen} reducedMotion={reduced} slowFactor={slow} logoFlash={logoFlash} />
+        <DgCharacter mouthOpen={mouthOpen} reducedMotion={reduced} slowFactor={slow} />
         {/* measured mouth target */}
         <div
           ref={mouthRef}
@@ -404,13 +397,11 @@ export function DgFootballStage(props: DgFootballStageProps) {
       {/* ---------- impact ---------- */}
       <ImpactSequence active={impactActive} reducedMotion={reduced} slowFactor={slow} center={mouthCenter} />
 
-      {/* ---------- ball tray ---------- */}
+      {/* ---------- ball tray: five reusable, unlabelled footballs ---------- */}
       <div className="dgf-tray-wrap">
         <BallTray
-          tickets={tickets}
-          playedIds={playedIds}
-          inPlayId={activeTicket?.id ?? null}
-          compact={compact}
+          ballCount={ballCount}
+          selectedIndex={selectedBallIndex}
           disabled={state !== "choosing"}
           reducedMotion={reduced}
           slowFactor={slow}
