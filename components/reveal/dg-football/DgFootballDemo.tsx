@@ -19,10 +19,12 @@ import { DemoControls } from "./DemoControls"
 /* -------------------------------------------------------------------------- */
 const CUE_TONE: Record<SoundCue, { freq: number; dur: number; type: OscillatorType }> = {
   select: { freq: 520, dur: 0.08, type: "triangle" },
-  charge: { freq: 320, dur: 0.12, type: "sawtooth" },
   launch: { freq: 180, dur: 0.18, type: "sawtooth" },
+  whoosh: { freq: 260, dur: 0.16, type: "sawtooth" },
+  drop: { freq: 140, dur: 0.14, type: "sine" },
   impact: { freq: 90, dur: 0.22, type: "square" },
   prize: { freq: 720, dur: 0.35, type: "triangle" },
+  credit: { freq: 620, dur: 0.28, type: "triangle" },
   nowin: { freq: 440, dur: 0.22, type: "sine" },
 }
 
@@ -97,6 +99,7 @@ export function DgFootballDemo() {
   const [settings, setSettings] = useState<DemoSettings>(DEFAULT_SETTINGS)
   const [runNonce, setRunNonce] = useState(0)
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
 
   const play = useSound(settings.soundOn)
   const landscape = useIsLandscape()
@@ -117,14 +120,9 @@ export function DgFootballDemo() {
       const next = { ...s, ...p }
       return next
     })
-    // Changing the outcome/ticket config or a forced shot path restarts the run
-    // so the new setting applies cleanly from the top.
-    if (
-      p.preset !== undefined ||
-      p.ticketCount !== undefined ||
-      p.skipIntro !== undefined ||
-      p.shotPath !== undefined
-    ) {
+    // Changing the outcome/ticket config restarts the run so the new setting
+    // applies cleanly from the top.
+    if (p.preset !== undefined || p.ticketCount !== undefined || p.skipIntro !== undefined) {
       setRunNonce((n) => n + 1)
     }
   }, [])
@@ -139,7 +137,7 @@ export function DgFootballDemo() {
   }, [])
 
   // Remount key: rebuild the whole run when config changes or on reset.
-  const runKey = `${settings.preset}-${settings.ticketCount}-${settings.skipIntro}-${settings.shotPath}-${runNonce}`
+  const runKey = `${settings.preset}-${settings.ticketCount}-${settings.skipIntro}-${runNonce}`
 
   return (
     <div className="dgf-page">
@@ -148,7 +146,68 @@ export function DgFootballDemo() {
       <div className="dgf-layout">
         {/* Portrait game viewport */}
         <div className="dgf-viewport">
-          <DgFootballReveal key={runKey} tickets={tickets} settings={settings} playSound={play} onFinish={handleFinish} />
+          <DgFootballReveal
+            key={runKey}
+            tickets={tickets}
+            settings={settings}
+            playSound={play}
+            onFinish={handleFinish}
+            onHelp={() => setHelpOpen(true)}
+          />
+
+          {/* How-it-works overlay */}
+          {helpOpen && (
+            <div
+              className="dgf-help-scrim"
+              role="dialog"
+              aria-modal="true"
+              aria-label="How DG'S BIG BALLERS works"
+              onClick={() => setHelpOpen(false)}
+            >
+              <div className="dgf-help-card" onClick={(e) => e.stopPropagation()}>
+                <button
+                  type="button"
+                  className="dgf-help-close"
+                  onClick={() => setHelpOpen(false)}
+                  aria-label="Close"
+                >
+                  ✕
+                </button>
+                <p className="dgf-help-title">HOW IT WORKS</p>
+                <ol className="dgf-help-steps">
+                  <li>
+                    <span className="dgf-help-step-n">1</span>
+                    <span>
+                      <strong>Choose a ball</strong> — tap any of the five footballs. It&apos;s just for fun; every
+                      ball plays the same.
+                    </span>
+                  </li>
+                  <li>
+                    <span className="dgf-help-step-n">2</span>
+                    <span>
+                      <strong>We take the shot</strong> — your ball fires itself into the board and drops into one of
+                      five mystery holes.
+                    </span>
+                  </li>
+                  <li>
+                    <span className="dgf-help-step-n">3</span>
+                    <span>
+                      <strong>See where it lands</strong> — the hole reveals your result instantly.
+                    </span>
+                  </li>
+                </ol>
+                <div className="dgf-help-results">
+                  <p className="dgf-help-results-title">POSSIBLE RESULTS</p>
+                  <ul>
+                    <li>Instant win — cash</li>
+                    <li>Instant win — site credit</li>
+                    <li>No instant win — you&apos;re still in the final draw</li>
+                  </ul>
+                </div>
+                <p className="dgf-help-foot">Every ticket is entered into the final draw, win or not.</p>
+              </div>
+            </div>
+          )}
 
           {/* Sound toggle (top-right, unobtrusive) */}
           <button
