@@ -539,4 +539,5 @@ export const KIND_LABEL: Record<OutcomeKind, string> = {
   none: "No win",
   credit: "Site credit",
   cash: "Cash",
+  manual: "Prize",
 }

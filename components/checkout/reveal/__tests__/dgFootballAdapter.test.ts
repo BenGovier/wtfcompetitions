@@ -67,6 +67,99 @@ describe('classifyPrize — presentation category (never fabricates value)', () 
   it('treats "credit" with no parseable amount as a manual/named award', () => {
     expect(classifyPrize({ title: 'Store Credit Voucher', value_text: 'credit' }).kind).toBe('manual')
   })
+
+  // Spec §3 — the required, named classification cases.
+  it('§3: "£100 CASH" → cash', () => {
+    expect(classifyPrize({ title: 'CASH', value_text: '£100 CASH' })).toMatchObject({
+      kind: 'cash',
+      amountPence: 10000,
+    })
+  })
+
+  it('§3: "£5 SITE CREDIT" → credit', () => {
+    expect(classifyPrize({ title: 'SITE CREDIT', value_text: '£5 SITE CREDIT' })).toMatchObject({
+      kind: 'credit',
+      amountPence: 500,
+    })
+  })
+
+  it('§3: `55" TV` → manual', () => {
+    expect(classifyPrize({ title: '55" TV', value_text: null }).kind).toBe('manual')
+  })
+
+  it('§3: manual prize with image_url retains title + image', () => {
+    const out = classifyPrize({ title: 'Nintendo Switch', value_text: null, image_url: 'https://cdn/switch.png' })
+    expect(out.kind).toBe('manual')
+    expect(out.title).toBe('Nintendo Switch')
+    expect(out.imageUrl).toBe('https://cdn/switch.png')
+    expect(out.amountPence).toBe(0)
+  })
+})
+
+/**
+ * Spec §2/§3 — CANONICAL fulfilment_type is authoritative and overrides the
+ * money text. A physical prize whose name/value contains "£" MUST NOT be shown
+ * as cash when production explicitly marks it manual.
+ */
+describe('classifyPrize — canonical fulfilment_type overrides title parsing', () => {
+  it('§3: "£500 TV Bundle" marked manual → manual (NOT cash)', () => {
+    const out = classifyPrize({
+      title: '£500 TV Bundle',
+      value_text: '£500',
+      image_url: 'https://cdn/tv.png',
+      fulfilment_type: 'manual',
+    })
+    expect(out.kind).toBe('manual')
+    expect(out.amountPence).toBe(0)
+    expect(out.title).toBe('£500 TV Bundle')
+    expect(out.imageUrl).toBe('https://cdn/tv.png')
+  })
+
+  it('§3: "£1,000 Holiday Voucher" marked manual → manual (NOT cash)', () => {
+    const out = classifyPrize({
+      title: '£1,000 Holiday Voucher',
+      value_text: '£1,000',
+      fulfilment_type: 'manual',
+    })
+    expect(out.kind).toBe('manual')
+    expect(out.amountPence).toBe(0)
+  })
+
+  it('uses authoritative prize_value_pence for cash, never the title amount', () => {
+    // Title says "£5" but the canonical pence value is £100 → trust the pence.
+    const out = classifyPrize({
+      title: 'Cash £5',
+      value_text: '£5',
+      fulfilment_type: 'cash',
+      prize_value_pence: 10000,
+    })
+    expect(out).toMatchObject({ kind: 'cash', amountPence: 10000 })
+  })
+
+  it('maps wallet_credit → credit using the authoritative pence value', () => {
+    const out = classifyPrize({
+      title: 'Site Credit',
+      value_text: '£10',
+      fulfilment_type: 'wallet_credit',
+      prize_value_pence: 1000,
+    })
+    expect(out).toMatchObject({ kind: 'credit', amountPence: 1000 })
+  })
+
+  it('cash/credit declared with no positive amount anywhere → manual (never £0)', () => {
+    const out = classifyPrize({ title: 'Mystery', value_text: null, fulfilment_type: 'cash' })
+    expect(out.kind).toBe('manual')
+    expect(out.amountPence).toBe(0)
+  })
+
+  it('DOCUMENTS the fallback risk: money-titled manual WITHOUT canonical type → cash', () => {
+    // With no fulfilment_type present (today's AwardPayload) the adapter cannot
+    // distinguish this from a cash prize by text alone. This test pins the
+    // known limitation so a future backend change (exposing fulfilment_type)
+    // that fixes it will visibly flip this expectation.
+    const out = classifyPrize({ title: '£500 TV Bundle', value_text: '£500' })
+    expect(out.kind).toBe('cash')
+  })
 })
 
 describe('awardToRevealPlan — prizes[] is the source of truth', () => {

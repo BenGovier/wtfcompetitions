@@ -16,13 +16,29 @@
  */
 
 import type { Award, HoleId, Outcome, RevealPlan } from "@/components/reveal/dg-football/types"
+import type { InstantWinFulfilmentType } from "@/lib/types/instantWins"
 
-/** Minimal prize shape shared by every reveal (matches InstantWinResult). */
+/**
+ * Minimal prize shape this adapter reads. The first four fields match the
+ * current `InstantWinResult` carried in `AwardPayload.prizes[]`.
+ *
+ * `fulfilment_type` / `prize_value_pence` are the CANONICAL, admin-chosen prize
+ * classification (instant_win_prizes.fulfilment_type / prize_value_pence — the
+ * money value is "never parsed from the title"). They are OPTIONAL here because
+ * the confirm_payment_and_award RPC does not yet surface them into
+ * AwardPayload.prizes[] (see the classification note below). This optional seam
+ * means the moment those fields ARE surfaced, classification becomes
+ * authoritative with no further reveal changes and no title-parsing risk.
+ */
 export type DgFootballPrize = {
   award_id?: string | null
   title: string
   value_text?: string | null
   image_url?: string | null
+  /** CANONICAL fulfilment method. When present it OVERRIDES title/value parsing. */
+  fulfilment_type?: InstantWinFulfilmentType | null
+  /** CANONICAL value in integer pence. Authoritative; never parsed from title. */
+  prize_value_pence?: number | null
 }
 
 /** The subset of AwardPayload this presentation adapter reads. */
@@ -43,11 +59,28 @@ export type DgFootballAward = {
  */
 const HOLE_ROTATION: HoleId[] = [5, 1, 3, 4, 2]
 
+/** Parse a strictly money-formatted GBP amount ("£100", "£5,000", "£12.50") to
+ *  integer pence, or null when there is no such amount. */
+function parseGbpPence(text: string): number | null {
+  const gbp = text.toLowerCase().match(/£\s*([\d,]+(?:\.\d{1,2})?)/)
+  return gbp ? Math.round(Number.parseFloat(gbp[1].replace(/,/g, "")) * 100) : null
+}
+
 /**
- * Classify an already-decided prize into a presentation Outcome. Uses the same
- * convention as the other reveals (TreasureChestReveal.getPrizeTier): the
- * "credit" keyword marks site credit; otherwise a "£" money amount marks cash;
- * anything else is a physical / manually fulfilled prize shown by its title.
+ * Classify an already-decided prize into a presentation Outcome.
+ *
+ * CLASSIFICATION PRIORITY (spec §2):
+ *   1. CANONICAL `fulfilment_type` (admin-chosen) wins when present — a 'manual'
+ *      prize is presented by its title even if its value text says "£500", and
+ *      the money amount comes from the authoritative `prize_value_pence`, never
+ *      the title. This is the safe path.
+ *   2. FALLBACK title/value parsing (same convention as the other reveals:
+ *      "credit" keyword → site credit; else a "£" amount → cash; else manual).
+ *
+ * KNOWN LIMITATION of the fallback: with title-only data a money-titled MANUAL
+ * prize (e.g. "£500 TV Bundle") cannot be distinguished from cash and will
+ * present as cash. AwardPayload.prizes[] does NOT yet carry fulfilment_type, so
+ * production currently uses the fallback — see the audit report / file header.
  *
  * NB: never fabricates a value. Manual prizes carry amountPence = 0 and are
  * presented by title (+ optional image), never a money figure (spec §15).
@@ -55,13 +88,32 @@ const HOLE_ROTATION: HoleId[] = [5, 1, 3, 4, 2]
 export function classifyPrize(prize: DgFootballPrize): Outcome {
   const valueText = prize.value_text?.trim() ?? ""
   const title = prize.title?.trim() ?? ""
-  const text = `${valueText} ${title}`.toLowerCase()
 
-  // A currency amount is only trusted when it is explicitly money-formatted
-  // ("£100", "£5,000") so physical prizes like "PlayStation 5" are NOT misread
-  // as a £5 cash win.
-  const gbp = text.match(/£\s*([\d,]+(?:\.\d{1,2})?)/)
-  const amountPence = gbp ? Math.round(Number.parseFloat(gbp[1].replace(/,/g, "")) * 100) : null
+  // 1) CANONICAL fulfilment type is authoritative when present.
+  const canonical = prize.fulfilment_type
+  if (canonical === "manual") {
+    return manualOutcome(prize, title, valueText)
+  }
+  if (canonical === "cash" || canonical === "wallet_credit") {
+    const authoritativePence =
+      typeof prize.prize_value_pence === "number" &&
+      Number.isFinite(prize.prize_value_pence) &&
+      prize.prize_value_pence > 0
+        ? Math.round(prize.prize_value_pence)
+        : parseGbpPence(`${valueText} ${title}`)
+    if (authoritativePence != null && authoritativePence > 0) {
+      return canonical === "wallet_credit"
+        ? { kind: "credit", amountPence: authoritativePence, valueText: valueText || undefined }
+        : { kind: "cash", amountPence: authoritativePence, valueText: valueText || undefined }
+    }
+    // Declared cash/credit but no positive amount anywhere → present as a named
+    // award rather than a fabricated £0 money win.
+    return manualOutcome(prize, title, valueText)
+  }
+
+  // 2) FALLBACK: no canonical type available (current AwardPayload shape).
+  const text = `${valueText} ${title}`.toLowerCase()
+  const amountPence = parseGbpPence(text)
 
   if (text.includes("credit")) {
     if (amountPence != null && amountPence > 0) {
