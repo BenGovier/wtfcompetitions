@@ -872,6 +872,16 @@ export const DG_FOOTBALL_CSS = String.raw`
   filter: drop-shadow(0 0 24px rgba(168,255,25,0.5));
   animation: dgf-enter-pop 520ms cubic-bezier(0.2,0.9,0.3,1) both;
 }
+/* Tray reload beat (>5 wins): tighter, "new balls" energy reset. */
+.dgf-interstitial-reload .dgf-interstitial-main { font-size: clamp(22px, 6.6vw, 40px); }
+
+/* Green energy reset on the tray when a fresh set of five is loaded. */
+.dgf-tray-reloading .dgf-tray { animation: dgf-tray-reload 520ms ease-out both; }
+@keyframes dgf-tray-reload {
+  0% { opacity: 0.15; transform: translateY(14px) scale(0.9); filter: brightness(2) saturate(1.6) drop-shadow(0 0 18px rgba(168,255,25,0.8)); }
+  55% { opacity: 1; filter: brightness(1.5) drop-shadow(0 0 22px rgba(168,255,25,0.7)); }
+  100% { opacity: 1; transform: translateY(0) scale(1); filter: none; }
+}
 
 /* -------------------------------------------------------------------------- */
 /*  Prize panel — win counter, value shake + light sweep, big rays            */
@@ -905,14 +915,34 @@ export const DG_FOOTBALL_CSS = String.raw`
 .dgf-summary-winline { margin: 8px 0 4px; font-size: clamp(20px, 5.4vw, 28px); font-weight: 900; text-transform: uppercase; color: var(--dg-white); }
 .dgf-summary-wincount { color: var(--dg-neon); font-size: 1.3em; }
 .dgf-summary-nowin { margin: 8px 0 2px; font-size: clamp(19px, 5vw, 26px); font-weight: 900; text-transform: uppercase; color: var(--dg-white); }
-.dgf-summary-prizes { display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; margin: 10px 0; }
-.dgf-summary-prize {
-  display: flex; flex-direction: column; align-items: center; min-width: 120px; padding: 12px 16px;
-  border-radius: 14px; background: rgba(168,255,25,0.06); border: 1px solid rgba(168,255,25,0.2);
+
+/* Itemised award list (shown BEFORE aggregate totals). */
+.dgf-summary-list {
+  list-style: none; margin: 10px 0 4px; padding: 0; display: flex; flex-direction: column; gap: 5px;
+  max-height: 40vh; overflow-y: auto;
 }
-.dgf-summary-prize-amt { font-size: clamp(26px, 8vw, 40px); font-weight: 900; line-height: 1; }
-.dgf-summary-prize-label { margin-top: 4px; font-size: 11px; font-weight: 800; letter-spacing: 0.14em; color: var(--dg-muted); }
-.dgf-summary-draw { margin: 8px 0 0; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; color: var(--dg-muted); text-transform: uppercase; }
+.dgf-summary-item {
+  display: flex; align-items: baseline; justify-content: center; gap: 8px; padding: 6px 12px;
+  border-radius: 11px; background: rgba(168,255,25,0.055); border: 1px solid rgba(168,255,25,0.16);
+  animation: dgf-enter-pop 360ms cubic-bezier(0.2,0.9,0.3,1) both;
+}
+.dgf-summary-item-x { font-size: 13px; font-weight: 800; color: var(--dg-muted); }
+.dgf-summary-item-amt { font-size: clamp(20px, 5.4vw, 27px); font-weight: 900; line-height: 1; }
+.dgf-summary-item-label { font-size: 11px; font-weight: 800; letter-spacing: 0.14em; color: var(--dg-muted); text-transform: uppercase; }
+
+/* Aggregate totals (shown AFTER the itemised list). */
+.dgf-summary-totals {
+  display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; margin: 10px 0 2px;
+  padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1);
+}
+.dgf-summary-total {
+  display: flex; flex-direction: column; align-items: center; min-width: 108px; padding: 8px 14px;
+  border-radius: 13px; background: rgba(255,255,255,0.04);
+}
+.dgf-summary-total-label { font-size: 10px; font-weight: 800; letter-spacing: 0.16em; color: var(--dg-muted); text-transform: uppercase; }
+.dgf-summary-total-amt { margin-top: 3px; font-size: clamp(24px, 7vw, 36px); font-weight: 900; line-height: 1; }
+.dgf-summary-checked { margin-top: 8px; }
+.dgf-summary-draw { margin: 6px 0 0; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; color: var(--dg-muted); text-transform: uppercase; }
 .dgf-summary-draw-strong { color: var(--dg-neon); font-size: 13px; }
 
 /* -------------------------------------------------------------------------- */

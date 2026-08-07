@@ -86,7 +86,7 @@ export const TIMING = {
   prizeHoldMs: 1750,
   /** Top-prize prize hold is longer so it lands. */
   prizeHoldBigMs: 2300,
-  /** "THERE'S ANOTHER WIN!" interstitial between chained wins. */
+  /** "THERE'S ANOTHER WIN!" interstitial between chained CINEMATIC wins. */
   interstitialMs: 950,
   /** Auto-lift of the next cosmetic ball before its shot. */
   relaunchLiftMs: 320,
@@ -96,11 +96,28 @@ export const TIMING = {
   cameraPunchMs: 300,
   /** Screen-shake duration. */
   shakeMs: 220,
+
+  /* ---- FAST WIN STREAK (4th win onward). Every award is STILL shown, just
+   *      more briefly. Target ~1.2–1.6s per award, always readable. -------- */
+  fastFlightMs: 360,
+  fastHoleEntryMs: 120,
+  fastSuspenseMs: 110,
+  fastWinReactionMs: 150,
+  fastPanelRiseMs: 300,
+  /** Prize stays readable long enough to read on a fast win. */
+  fastPrizeHoldMs: 780,
+  /** Brief "YOU'RE STILL WINNING!" beat (only shown on some fast wins). */
+  fastInterstitialMs: 560,
+  /** Silent quick board power-up between fast wins with no interstitial. */
+  fastPowerUpMs: 260,
+  /** Green energy tray reload when a fresh set of five balls is needed. */
+  trayReloadMs: 520,
 } as const
 
-/** Maximum number of individually animated wins. Beyond this the remaining
- *  wins are summarised (a 20-win buyer never sits through 20 animations). */
-export const MAX_ANIMATED_WINS = 3
+/** Number of wins shown as a FULL cinematic reveal. Wins beyond this are shown
+ *  in FAST WIN STREAK mode — but EVERY win is still individually revealed.
+ *  There is NO cap on how many awards are displayed. */
+export const MAX_CINEMATIC_WINS = 3
 
 /* -------------------------------------------------------------------------- */
 /*  Geometry                                                                  */
@@ -158,9 +175,11 @@ export function formatGBP(pence: number): string {
 
 const O_NONE: Outcome = { kind: "none", amountPence: 0 }
 const O_CREDIT5: Outcome = { kind: "credit", amountPence: 500 }
+const O_CREDIT10: Outcome = { kind: "credit", amountPence: 1000 }
 const O_CASH25: Outcome = { kind: "cash", amountPence: 2500 }
 const O_CASH50: Outcome = { kind: "cash", amountPence: 5000 }
 const O_CASH100: Outcome = { kind: "cash", amountPence: 10000 }
+const O_CASH250: Outcome = { kind: "cash", amountPence: 25000 }
 const O_CASH5000: Outcome = { kind: "cash", amountPence: 500000 }
 
 /** Big-win threshold — drives the gold, light-ray, confetti treatment. */
@@ -298,14 +317,26 @@ const PRESET_AWARDS: Record<ResultPreset, Award[]> = {
     { outcome: O_CASH25, destinationHole: 1 },
     { outcome: O_CREDIT5, destinationHole: 2 },
   ],
-  // Five wins — first three are animated (climaxing on the £5,000), the rest
-  // are summarised.
+  // Five wins — EVERY win is revealed. The first three are full cinematic
+  // (building to the £5,000 climax); wins 4–5 use FAST WIN STREAK mode.
   fiveWins: [
-    { outcome: O_CASH25, destinationHole: 1 },
     { outcome: O_CASH100, destinationHole: 5 },
+    { outcome: O_CASH25, destinationHole: 1 },
     { outcome: O_CASH5000, destinationHole: 3 },
-    { outcome: O_CREDIT5, destinationHole: 2 },
     { outcome: O_CASH50, destinationHole: 4 },
+    { outcome: O_CREDIT5, destinationHole: 2 },
+  ],
+  // Seven wins — proves >5 works: the tray reloads, holes are reused, every
+  // award is shown, and the summary reconciles exactly. Cinematic 1–3 build to
+  // the £5,000; wins 4–7 are fast.
+  sevenWins: [
+    { outcome: O_CASH100, destinationHole: 5 },
+    { outcome: O_CASH250, destinationHole: 1 },
+    { outcome: O_CASH5000, destinationHole: 3 },
+    { outcome: O_CASH50, destinationHole: 4 },
+    { outcome: O_CASH25, destinationHole: 2 },
+    { outcome: O_CREDIT10, destinationHole: 5 },
+    { outcome: O_CREDIT5, destinationHole: 1 },
   ],
 }
 
@@ -318,10 +349,14 @@ export function buildRevealPlan(preset: ResultPreset, ticketCount: TicketCount):
 const NONWIN_HOLE: HoleId = 4
 
 /**
- * Turn a plan into the ordered list of animations. Wins beyond
- * MAX_ANIMATED_WINS are NOT animated (they are summarised). A zero-win plan
- * animates exactly one non-winning shot. The cosmetic ball for each animation
- * starts from the tapped ball, then walks the remaining tray balls.
+ * Turn a plan into the ordered list of animations. EVERY win is animated — the
+ * first MAX_CINEMATIC_WINS as full cinematic reveals, the rest in FAST WIN
+ * STREAK mode. There is NO cap: a 7-win purchase yields 7 animations. A
+ * zero-win plan animates exactly one non-winning shot.
+ *
+ * The cosmetic ball for each animation starts from the tapped ball, then walks
+ * the remaining tray balls; after five it wraps (the tray "reloads"). Holes are
+ * reused (there are only five) but never repeat back-to-back.
  */
 export function buildAnimations(plan: RevealPlan, tappedBall: number): Animation[] {
   const ballSeq = ballSequence(tappedBall)
@@ -332,16 +367,29 @@ export function buildAnimations(plan: RevealPlan, tappedBall: number): Animation
         outcome: O_NONE,
         destinationHole: NONWIN_HOLE,
         ballNumber: ballSeq[0],
+        fast: false,
+        traySlot: 0,
       },
     ]
   }
-  const animatedAwards = plan.awards.slice(0, MAX_ANIMATED_WINS)
-  return animatedAwards.map((a, i) => ({
-    isWin: true,
-    outcome: a.outcome,
-    destinationHole: a.destinationHole,
-    ballNumber: ballSeq[i % ballSeq.length],
-  }))
+  let prevHole: HoleId | null = null
+  return plan.awards.map((a, i) => {
+    // Keep the authored hole unless it repeats the previous one, in which case
+    // rotate to the next free hole so consecutive shots never share a hole.
+    let hole = a.destinationHole
+    if (hole === prevHole) {
+      hole = (HOLE_IDS.find((h) => h !== prevHole) ?? hole) as HoleId
+    }
+    prevHole = hole
+    return {
+      isWin: true,
+      outcome: a.outcome,
+      destinationHole: hole,
+      ballNumber: ballSeq[i % ballSeq.length],
+      fast: i >= MAX_CINEMATIC_WINS,
+      traySlot: i % ballSeq.length,
+    }
+  })
 }
 
 /** Tap order → [tapped, then the other four ascending]. */
@@ -353,28 +401,61 @@ export function ballSequence(tapped: number): number[] {
 /* -------------------------------------------------------------------------- */
 /*  Run summary maths                                                         */
 /* -------------------------------------------------------------------------- */
+/** One line in the itemised summary: the exact award, and how many identical
+ *  awards were won (so "3 × £25 CASH" reads cleanly for big purchases). */
+export interface SummaryItem {
+  kind: OutcomeKind
+  amountPence: number
+  count: number
+  label: string
+}
+
 export interface PlanSummary {
   ticketCount: number
   instantWins: number
   cashPence: number
   creditPence: number
-  /** Number of wins NOT individually animated (shown as "and N more"). */
-  extraWins: number
+  /** Every award, itemised largest-first. Shown BEFORE the aggregate totals. */
+  items: SummaryItem[]
 }
 
+/**
+ * Derive the summary from the SAME awards array the animation walks, so the
+ * itemised list, the win count and the totals can never disagree.
+ */
 export function summarisePlan(plan: RevealPlan): PlanSummary {
   let cashPence = 0
   let creditPence = 0
+  // Group identical awards, remembering first-seen order value for sorting.
+  const groups = new Map<string, SummaryItem>()
   for (const a of plan.awards) {
-    if (a.outcome.kind === "cash") cashPence += a.outcome.amountPence
-    if (a.outcome.kind === "credit") creditPence += a.outcome.amountPence
+    const o = a.outcome
+    if (o.kind === "cash") cashPence += o.amountPence
+    if (o.kind === "credit") creditPence += o.amountPence
+    const key = `${o.kind}:${o.amountPence}`
+    const existing = groups.get(key)
+    if (existing) {
+      existing.count += 1
+    } else {
+      groups.set(key, {
+        kind: o.kind,
+        amountPence: o.amountPence,
+        count: 1,
+        label: o.kind === "credit" ? "SITE CREDIT" : "CASH",
+      })
+    }
   }
+  const items = Array.from(groups.values()).sort((a, b) => {
+    // Cash before credit, then by value descending.
+    if (a.kind !== b.kind) return a.kind === "cash" ? -1 : 1
+    return b.amountPence - a.amountPence
+  })
   return {
     ticketCount: plan.ticketCount,
     instantWins: plan.awards.length,
     cashPence,
     creditPence,
-    extraWins: Math.max(0, plan.awards.length - MAX_ANIMATED_WINS),
+    items,
   }
 }
 
@@ -389,6 +470,7 @@ export const RESULT_PRESET_OPTIONS: { value: ResultPreset; label: string }[] = [
   { value: "twoWins", label: "2 wins" },
   { value: "threeWins", label: "3 wins" },
   { value: "fiveWins", label: "5 wins" },
+  { value: "sevenWins", label: "7 wins" },
 ]
 
 export const DESTINATION_OPTIONS: { value: DestinationOverride; label: string }[] = [

@@ -28,6 +28,8 @@ const CUE_TONE: Record<SoundCue, { freq: number; dur: number; type: OscillatorTy
   credit: { freq: 620, dur: 0.28, type: "triangle" },
   nowin: { freq: 440, dur: 0.22, type: "sine" },
   another: { freq: 660, dur: 0.16, type: "triangle" },
+  streak: { freq: 780, dur: 0.12, type: "triangle" },
+  reload: { freq: 340, dur: 0.2, type: "sawtooth" },
 }
 
 function useSound(enabled: boolean) {

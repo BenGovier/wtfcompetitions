@@ -95,13 +95,19 @@ export interface RevealPlan {
 }
 
 /** One thing the reveal actually animates: a win, or (when there are zero
- *  wins) a single non-winning shot. */
+ *  wins) a single non-winning shot. EVERY win in the purchase becomes one of
+ *  these — there is no cap. `fast` marks the shorter FAST WIN STREAK treatment
+ *  used from the 4th win onward. */
 export interface Animation {
   isWin: boolean
   outcome: Outcome
   destinationHole: HoleId
-  /** Cosmetic tray ball this animation launches (1..5). */
+  /** Cosmetic tray ball this animation launches (1..5, then it repeats). */
   ballNumber: number
+  /** Full cinematic (false) vs FAST WIN STREAK (true, 4th win onward). */
+  fast: boolean
+  /** True when this shot begins a fresh tray of five cosmetic footballs. */
+  traySlot: number
 }
 
 /** Copy shown on the winning prize panel, derived from an Outcome. */
@@ -127,6 +133,7 @@ export type ResultPreset =
   | "twoWins"
   | "threeWins"
   | "fiveWins"
+  | "sevenWins"
 
 /** Purchased ticket quantity (the customer's real number of chances). */
 export type TicketCount = number
@@ -168,3 +175,5 @@ export type SoundCue =
   | "credit"
   | "nowin"
   | "another"
+  | "streak"
+  | "reload"

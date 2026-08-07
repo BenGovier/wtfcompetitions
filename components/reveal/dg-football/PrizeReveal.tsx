@@ -97,9 +97,19 @@ interface PrizeRevealProps {
   /** 1-based index of the win currently shown, and total animated wins. */
   winSoFar: number
   totalWins: number
+  /** FAST WIN STREAK — lighter confetti so a long streak never overloads. */
+  compact?: boolean
 }
 
-export function PrizeReveal({ copy, visible, reducedMotion, slowFactor, winSoFar, totalWins }: PrizeRevealProps) {
+export function PrizeReveal({
+  copy,
+  visible,
+  reducedMotion,
+  slowFactor,
+  winSoFar,
+  totalWins,
+  compact = false,
+}: PrizeRevealProps) {
   const valueColor =
     copy.tone === "big" ? COLORS.gold : copy.tone === "cash" ? COLORS.cash : COLORS.neon
 
@@ -116,7 +126,7 @@ export function PrizeReveal({ copy, visible, reducedMotion, slowFactor, winSoFar
       inert={!visible}
     >
       <div className="dgf-panel-edge" />
-      {visible && !reducedMotion && <Confetti tone={copy.tone} slowFactor={slowFactor} />}
+      {visible && !reducedMotion && !compact && <Confetti tone={copy.tone} slowFactor={slowFactor} />}
 
       <div className="dgf-panel-body">
         {copy.tone === "big" && <div className="dgf-rays" aria-hidden="true" />}
@@ -151,14 +161,13 @@ export function PrizeReveal({ copy, visible, reducedMotion, slowFactor, winSoFar
 /* -------------------------------------------------------------------------- */
 interface SummaryPanelProps {
   summary: PlanSummary
-  maxAnimated: number
   visible: boolean
   reducedMotion: boolean
   slowFactor: number
   onFinish: () => void
 }
 
-export function SummaryPanel({ summary, maxAnimated, visible, reducedMotion, slowFactor, onFinish }: SummaryPanelProps) {
+export function SummaryPanel({ summary, visible, reducedMotion, slowFactor, onFinish }: SummaryPanelProps) {
   const wonSomething = summary.instantWins > 0
   const btnRef = useVisibleFocus(visible)
   const winsWord = summary.instantWins === 1 ? "INSTANT WIN" : "INSTANT WINS"
@@ -179,37 +188,55 @@ export function SummaryPanel({ summary, maxAnimated, visible, reducedMotion, slo
       {visible && wonSomething && !reducedMotion && <Confetti tone="summary" slowFactor={slowFactor} />}
 
       <div className="dgf-panel-body">
-        <p className="dgf-summary-checked">{ticketsChecked(summary.ticketCount)}</p>
-
         {wonSomething ? (
           <>
             <p className="dgf-summary-winline">
-              <span className="dgf-summary-wincount">{summary.instantWins}</span> {winsWord}
+              YOUR <span className="dgf-summary-wincount">{summary.instantWins}</span> {winsWord}
             </p>
 
-            <div className="dgf-summary-prizes">
+            {/* ITEMISED award list FIRST — every prize the customer was shown,
+                derived from the same awards array the animation walked. */}
+            <ul className="dgf-summary-list">
+              {summary.items.map((item, i) => (
+                <li key={i} className="dgf-summary-item">
+                  {item.count > 1 && <span className="dgf-summary-item-x">{item.count} ×</span>}
+                  <span
+                    className="dgf-summary-item-amt"
+                    style={{ color: item.kind === "credit" ? COLORS.neon : COLORS.cash }}
+                  >
+                    {formatGBP(item.amountPence)}
+                  </span>
+                  <span className="dgf-summary-item-label">{item.label}</span>
+                </li>
+              ))}
+            </ul>
+
+            {/* Aggregate totals AFTER the itemised list. */}
+            <div className="dgf-summary-totals">
               {summary.cashPence > 0 && (
-                <div className="dgf-summary-prize">
-                  <span className="dgf-summary-prize-amt" style={{ color: COLORS.cash }}>
+                <div className="dgf-summary-total">
+                  <span className="dgf-summary-total-label">TOTAL CASH</span>
+                  <span className="dgf-summary-total-amt" style={{ color: COLORS.cash }}>
                     {formatGBP(summary.cashPence)}
                   </span>
-                  <span className="dgf-summary-prize-label">CASH WON</span>
                 </div>
               )}
               {summary.creditPence > 0 && (
-                <div className="dgf-summary-prize">
-                  <span className="dgf-summary-prize-amt" style={{ color: COLORS.neon }}>
+                <div className="dgf-summary-total">
+                  <span className="dgf-summary-total-label">SITE CREDIT</span>
+                  <span className="dgf-summary-total-amt" style={{ color: COLORS.neon }}>
                     {formatGBP(summary.creditPence)}
                   </span>
-                  <span className="dgf-summary-prize-label">SITE CREDIT</span>
                 </div>
               )}
             </div>
 
+            <p className="dgf-summary-checked">{ticketsChecked(summary.ticketCount)}</p>
             <p className="dgf-summary-draw">{ticketsAlsoInDraw(summary.ticketCount)}</p>
           </>
         ) : (
           <>
+            <p className="dgf-summary-checked">{ticketsChecked(summary.ticketCount)}</p>
             <p className="dgf-summary-nowin">NO INSTANT WIN THIS TIME</p>
             <p className="dgf-summary-draw dgf-summary-draw-strong">{ticketsInDraw(summary.ticketCount)}</p>
           </>

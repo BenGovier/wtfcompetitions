@@ -51,6 +51,8 @@ interface DgFootballStageProps {
   /** Whether the active animation is a win. */
   isWin: boolean
   bigWin: boolean
+  /** FAST WIN STREAK treatment (4th win onward). */
+  fast: boolean
   /** Cosmetic tray ball the active animation launches (1..5). */
   activeBall: number | null
   /** Ball the customer tapped to start the session. */
@@ -58,13 +60,14 @@ interface DgFootballStageProps {
   /** 1-based index of the win currently animating, and total animated wins. */
   winSoFar: number
   totalAnimatedWins: number
-  /** Interstitial copy for the "another win" beat. */
+  /** Interstitial copy for the "another win" beat ("" = none). */
   interstitialText: string
+  /** Whether the upcoming shot needs a fresh tray of five (green reset). */
+  trayReload: boolean
   revealCopy: RevealCopy | null
   revealVisible: boolean
   summary: PlanSummary
   summaryVisible: boolean
-  maxAnimated: number
   onSelectBall: (n: number) => void
   onFinish: () => void
   onHelp: () => void
@@ -103,16 +106,17 @@ export function DgFootballStage({
   destinationHole,
   isWin,
   bigWin,
+  fast,
   activeBall,
   tappedBall,
   winSoFar,
   totalAnimatedWins,
   interstitialText,
+  trayReload,
   revealCopy,
   revealVisible,
   summary,
   summaryVisible,
-  maxAnimated,
   onSelectBall,
   onFinish,
   onHelp,
@@ -182,8 +186,8 @@ export function DgFootballStage({
     setEntryMask({ x: target.x, y: target.y, size: target.size })
 
     const dir = target.x >= origin.x ? 1 : -1
-    const arcMs = (reduced ? TIMING.reducedFlightMs : TIMING.flightMs) * speed
-    const dropMs = TIMING.holeEntryMs * speed
+    const arcMs = (reduced ? TIMING.reducedFlightMs : fast ? TIMING.fastFlightMs : TIMING.flightMs) * speed
+    const dropMs = (fast ? TIMING.fastHoleEntryMs : TIMING.holeEntryMs) * speed
     const startAt = performance.now()
 
     flight.begin(origin.x, origin.y)
@@ -377,7 +381,11 @@ export function DgFootballStage({
       )}
 
       {/* 7. Ball tray + call to action */}
-      <div className="dgf-tray-area dgf-entrance-tray">
+      <div
+        className={`dgf-tray-area dgf-entrance-tray ${
+          trayReload && (state === "checking_additional" || state === "auto_relaunch") ? "dgf-tray-reloading" : ""
+        }`}
+      >
         <div
           className={`dgf-tap-cta ${state === "choosing" && preview === "off" ? "" : "dgf-tap-cta-hidden"}`}
           aria-hidden="true"
@@ -400,10 +408,11 @@ export function DgFootballStage({
       {/* 8a. Suspense veil (theatrical, not "loading"). */}
       <div className={`dgf-suspense-veil ${suspense ? "dgf-suspense-veil-on" : ""}`} aria-hidden="true" />
 
-      {/* 8b. "THERE'S ANOTHER WIN!" interstitial. */}
-      {state === "checking_additional" && (
-        <div className="dgf-interstitial" role="status">
-          <span className="dgf-interstitial-wait">WAIT...</span>
+      {/* 8b. "THERE'S ANOTHER WIN!" / streak / reload interstitial (only when
+             there is copy to show — quick silent power-ups render nothing). */}
+      {state === "checking_additional" && interstitialText !== "" && (
+        <div className={`dgf-interstitial ${trayReload ? "dgf-interstitial-reload" : ""}`} role="status">
+          <span className="dgf-interstitial-wait">{trayReload ? "NEW BALLS" : "WAIT..."}</span>
           <span className="dgf-interstitial-main">{interstitialText}</span>
         </div>
       )}
@@ -417,11 +426,11 @@ export function DgFootballStage({
           slowFactor={speed}
           winSoFar={winSoFar}
           totalWins={totalAnimatedWins}
+          compact={fast}
         />
       )}
       <SummaryPanel
         summary={summary}
-        maxAnimated={maxAnimated}
         visible={summaryVisible}
         reducedMotion={reduced}
         slowFactor={speed}
