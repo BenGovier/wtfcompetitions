@@ -3,48 +3,42 @@
 /**
  * BallTray — the premium bottom platform holding FIVE cosmetic footballs.
  *
- * Interaction model (per the new spec):
- *  - The five footballs are purely COSMETIC choices within each shot. They are
- *    NOT tickets and the choice NEVER decides the result.
- *  - The customer performs ONE interaction: TAP A BALL. On tap we immediately
- *    lock all five, lift/scale/rotate the chosen ball with a halo + energy
- *    ring, dim the rest, then the Stage auto-launches after a short hold.
- *  - The tapped ball reports its on-screen origin so the Stage can fly the real
- *    ball from that exact spot (no duplicate ball is created).
+ * Interaction model (approved spec):
+ *  - The five footballs are purely COSMETIC choices. They are NOT tickets and
+ *    the choice NEVER decides the result.
+ *  - The customer performs ONE interaction for the whole purchase: TAP A BALL.
+ *    On tap we lock all five and the tapped ball is lifted/scaled/rotated with
+ *    a halo + energy ring while the others dim; the Stage then auto-launches.
+ *  - For chained wins the orchestrator lifts a DIFFERENT remaining ball
+ *    automatically (no extra tap) via the controlled `liftedBall` prop.
+ *
+ * This component is controlled: the currently lifted ball, whether it is hidden
+ * (because the real flight ball has taken over) and whether the tray is locked
+ * all come from props. Each ball exposes `data-ball={n}` so the Stage can
+ * measure its on-screen centre as the flight origin.
  */
 
-import { useState } from "react"
 import { BALL_SIZE, TIMING, TRAY_BALL_COUNT } from "./config"
 import { Football } from "./Football"
 
 interface BallTrayProps {
-  /** 1-based number of the tapped ball for the current shot, else null. */
-  selectedNumber: number | null
-  /** Only choosable during the choosing phase. */
-  disabled: boolean
-  /** Hide the chosen ball once the real flight ball has taken over. */
-  hideSelected: boolean
+  /** 1-based number of the currently lifted ball, else null. */
+  liftedBall: number | null
+  /** Hide the lifted ball (the real flight ball has taken over). */
+  hideLifted: boolean
+  /** Disable tapping (everything except the initial choosing phase). */
+  locked: boolean
   reducedMotion: boolean
   speed: number
-  /** Reports the tapped ball number and its viewport-space centre. */
-  onSelect: (n: number, origin: { x: number; y: number }) => void
+  /** Fires once when the customer taps a ball to begin the reveal. */
+  onSelect: (n: number) => void
 }
 
 const NUMBERS = Array.from({ length: TRAY_BALL_COUNT }, (_, i) => i + 1)
 
-export function BallTray({
-  selectedNumber,
-  disabled,
-  hideSelected,
-  reducedMotion,
-  speed,
-  onSelect,
-}: BallTrayProps) {
-  const [selecting, setSelecting] = useState<number | null>(null)
-
-  const handleSelect = (n: number, el: HTMLButtonElement | null) => {
-    if (disabled || selecting !== null || selectedNumber !== null) return
-    setSelecting(n)
+export function BallTray({ liftedBall, hideLifted, locked, reducedMotion, speed, onSelect }: BallTrayProps) {
+  const handleSelect = (n: number) => {
+    if (locked || liftedBall !== null) return
     // Light haptic pulse on tap where supported.
     if (typeof navigator !== "undefined" && "vibrate" in navigator) {
       try {
@@ -53,40 +47,32 @@ export function BallTray({
         /* best effort */
       }
     }
-    const rect = el?.getBoundingClientRect()
-    const origin = rect
-      ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
-      : { x: 0, y: 0 }
-    onSelect(n, origin)
-    // Clear the local "selecting" flash once the ball has visibly lifted.
-    window.setTimeout(() => setSelecting(null), TIMING.selectHoldMs * speed)
+    onSelect(n)
   }
 
   return (
     <div className="dgf-tray-platform">
       <div className="dgf-tray" role="group" aria-label="Choose a ball">
         {NUMBERS.map((n) => {
-          const chosen = n === selectedNumber || n === selecting
-          const dimmed = (selectedNumber !== null || selecting !== null) && !chosen
-          const hidden = chosen && hideSelected
+          const chosen = n === liftedBall
+          const dimmed = liftedBall !== null && !chosen
+          const hidden = chosen && hideLifted
+          const idle = !reducedMotion && !locked && liftedBall === null
           return (
             <button
               key={n}
               type="button"
-              className={`dgf-ball-btn ${chosen ? "dgf-ball-chosen" : ""} ${
-                dimmed ? "dgf-ball-dim" : ""
-              } ${hidden ? "dgf-ball-hidden" : ""} ${
-                !reducedMotion && !disabled && selectedNumber === null && selecting === null
-                  ? "dgf-ball-idle"
-                  : ""
-              }`}
+              data-ball={n}
+              className={`dgf-ball-btn ${chosen ? "dgf-ball-chosen" : ""} ${dimmed ? "dgf-ball-dim" : ""} ${
+                hidden ? "dgf-ball-hidden" : ""
+              } ${idle ? "dgf-ball-idle" : ""}`}
               style={{
                 width: BALL_SIZE,
                 height: BALL_SIZE,
                 transitionDuration: `${TIMING.ballLiftMs * speed}ms`,
               }}
-              onClick={(e) => handleSelect(n, e.currentTarget)}
-              disabled={disabled || selectedNumber !== null}
+              onClick={() => handleSelect(n)}
+              disabled={locked}
               aria-label={`Choose ball ${n}`}
             >
               <span className="dgf-ball-inner">

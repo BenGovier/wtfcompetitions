@@ -6,7 +6,7 @@ export type CampaignStatus = 'draft' | 'live' | 'paused' | 'ended'
  * This list is the single source of truth for accepted `reveal_type` values
  * and mirrors the database `campaigns_reveal_type_check` constraint.
  */
-export const REVEAL_TYPES = ['normal', 'scratch_card', 'treasure_chest'] as const
+export const REVEAL_TYPES = ['normal', 'scratch_card', 'treasure_chest', 'dg_football'] as const
 export type RevealType = (typeof REVEAL_TYPES)[number]
 
 /**
@@ -14,7 +14,9 @@ export type RevealType = (typeof REVEAL_TYPES)[number]
  * safely fall back to 'normal' so existing/legacy campaigns behave unchanged.
  */
 export function normalizeRevealType(value: unknown): RevealType {
-  return value === 'scratch_card' || value === 'treasure_chest' ? value : 'normal'
+  return value === 'scratch_card' || value === 'treasure_chest' || value === 'dg_football'
+    ? value
+    : 'normal'
 }
 
 export interface Campaign {

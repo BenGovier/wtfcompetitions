@@ -6,14 +6,15 @@ import { REVEAL_TYPES, normalizeRevealType } from '../campaign'
 // and the checkout success reveal router, so these cases pin the safety
 // contract for the whole feature.
 describe('normalizeRevealType — accepted values', () => {
-  it('exposes exactly the three supported values in order', () => {
-    expect(REVEAL_TYPES).toEqual(['normal', 'scratch_card', 'treasure_chest'])
+  it('exposes exactly the four supported values in order', () => {
+    expect(REVEAL_TYPES).toEqual(['normal', 'scratch_card', 'treasure_chest', 'dg_football'])
   })
 
   it('passes through every supported value unchanged', () => {
     expect(normalizeRevealType('normal')).toBe('normal')
     expect(normalizeRevealType('scratch_card')).toBe('scratch_card')
     expect(normalizeRevealType('treasure_chest')).toBe('treasure_chest')
+    expect(normalizeRevealType('dg_football')).toBe('dg_football')
   })
 })
 
@@ -27,6 +28,9 @@ describe('normalizeRevealType — safe fallback to normal', () => {
     expect(normalizeRevealType('scratchcard')).toBe('normal')
     expect(normalizeRevealType('TREASURE_CHEST')).toBe('normal')
     expect(normalizeRevealType('treasure')).toBe('normal')
+    expect(normalizeRevealType('football')).toBe('normal')
+    expect(normalizeRevealType('DG_FOOTBALL')).toBe('normal')
+    expect(normalizeRevealType('dg-football')).toBe('normal')
     expect(normalizeRevealType('')).toBe('normal')
     expect(normalizeRevealType('normal; drop table')).toBe('normal')
   })

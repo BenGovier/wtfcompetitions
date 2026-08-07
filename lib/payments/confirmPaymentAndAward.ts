@@ -19,6 +19,21 @@ export type InstantWinResult = {
   title: string
   value_text?: string | null
   image_url?: string | null
+  /**
+   * CANONICAL fulfilment method, copied by the live RPC from
+   * instant_win_awards.fulfilment_type (originating from
+   * instant_win_prizes.fulfilment_type). Response metadata only — the reveal
+   * classifies from this instead of guessing from the title. `null` when a
+   * legacy payload does not carry it.
+   */
+  fulfilment_type?: 'cash' | 'wallet_credit' | 'manual' | null
+  /**
+   * CANONICAL prize value in integer pence, copied by the live RPC from
+   * instant_win_awards.prize_value_pence (a Postgres bigint). Authoritative
+   * money value — never derived from title/value_text/checkout totals. `null`
+   * when absent.
+   */
+  prize_value_pence?: number | null
 }
 
 /**
@@ -62,6 +77,26 @@ function coercePrize(raw: unknown): InstantWinResult | null {
   const asNumberOrNull = (v: unknown): number | null =>
     typeof v === 'number' && Number.isFinite(v) ? v : null
 
+  // Whitelist the canonical fulfilment method; anything else → null. We never
+  // INFER the type here — that classification stays in the DG adapter.
+  const asFulfilmentTypeOrNull = (
+    v: unknown,
+  ): 'cash' | 'wallet_credit' | 'manual' | null =>
+    v === 'cash' || v === 'wallet_credit' || v === 'manual' ? v : null
+
+  // The value is a Postgres bigint, which Supabase's JSON response may surface
+  // as a number OR a numeric string. Accept both, require a finite,
+  // non-negative integer count of pence, and never derive it from title/value
+  // text or any checkout amount.
+  const asPenceOrNull = (v: unknown): number | null => {
+    let n: number | null = null
+    if (typeof v === 'number') n = v
+    else if (typeof v === 'string' && v.trim().length > 0 && /^\d+$/.test(v.trim())) {
+      n = Number.parseInt(v.trim(), 10)
+    }
+    return n != null && Number.isFinite(n) && Number.isInteger(n) && n >= 0 ? n : null
+  }
+
   return {
     award_id: asStringOrNull(r.award_id),
     slot_id: asStringOrNull(r.slot_id),
@@ -70,6 +105,8 @@ function coercePrize(raw: unknown): InstantWinResult | null {
     title,
     value_text: asStringOrNull(r.value_text),
     image_url: asStringOrNull(r.image_url),
+    fulfilment_type: asFulfilmentTypeOrNull(r.fulfilment_type),
+    prize_value_pence: asPenceOrNull(r.prize_value_pence),
   }
 }
 
