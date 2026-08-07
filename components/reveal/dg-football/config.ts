@@ -4,16 +4,19 @@
  */
 
 import type {
+  Animation,
+  Award,
   CharPreview,
   DemoSettings,
   DestinationOverride,
+  EnergyTier,
   HoleId,
   Outcome,
   OutcomeKind,
-  OutcomePreset,
   RevealCopy,
+  RevealPlan,
+  ResultPreset,
   Speed,
-  Ticket,
   TicketCount,
 } from "./types"
 
@@ -49,48 +52,65 @@ export const ASSETS = {
 /*  Timings (ms, at speed = 1). Multiply by the speed factor at runtime.      */
 /* -------------------------------------------------------------------------- */
 export const TIMING = {
+  /** Opening staged entrance (spec: 800–950ms). */
   introMs: 900,
+  /** "BIG BALLER MODE" flash for high ticket counts (spec: ~500ms). */
+  bigBallerMs: 520,
   /** Ball lift on tap before it is locked in. */
   ballLiftMs: 200,
-  /** Selection is held (spec: 220–300ms) before the shot auto-begins. */
+  /** Selection is held (spec: 220–280ms) before the shot auto-begins. */
   selectHoldMs: 260,
-  /** Auto-shot flight (spec: 850–1050ms) — slower so the landing is enjoyable. */
-  flightMs: 950,
+  /** Auto-shot flight (spec: 850–950ms). */
+  flightMs: 920,
   /** Reduced-motion straight-line flight. */
   reducedFlightMs: 440,
   /** Lead before entry when the destination hole is revealed (spec: ~220ms). */
   anticipationLeadMs: 220,
-  /** Ball-into-hole entry sequence (spec: 180–240ms). */
-  holeEntryMs: 210,
-  /** Win impact hold at the hole before DG celebrates (spec: ~350ms). */
-  winImpactMs: 350,
-  /** dg-scored punch-in takeover (spec: 300–380ms). */
-  scoredTakeoverMs: 340,
-  /** Top-prize (£5,000) extends the celebration takeover. */
-  topPrizeExtraMs: 140,
-  /** Non-win reaction hold before the panel (spec: 350–450ms). */
-  nonwinHoldMs: 400,
-  /** Pause after the win celebration settles, before the prize panel rises. */
-  pauseBeforePanelMs: 240,
-  /** Prize-panel entrance (spec: 700–900ms). */
-  panelRiseMs: 820,
-  /** Return-to-choosing reflow after a shot. */
-  reflowMs: 600,
+  /** Ball-into-hole entry sequence (spec: 200–240ms). */
+  holeEntryMs: 220,
+  /** Theatrical suspense after entry, before any result (spec: 400–500ms). */
+  suspenseMs: 450,
+  /** Big-win suspense is a touch longer (spec: ~550ms). */
+  suspenseBigMs: 550,
+  /** Winning hole becomes the celebration source (shockwave + sparks). */
+  winReactionMs: 380,
+  /** Non-win positive hole pulse before the summary. */
+  nonwinReactionMs: 420,
+  /** dg-neutral → dg-scored celebration entrance (spec: ~320ms). */
+  celebrateMs: 320,
+  /** Small settle after the celebration before the prize panel rises. */
+  pauseBeforePanelMs: 150,
+  /** Prize-panel entrance. */
+  panelRiseMs: 700,
+  /** Auto-advance hold on a shown prize before the next win / summary. */
+  prizeHoldMs: 1750,
+  /** Top-prize prize hold is longer so it lands. */
+  prizeHoldBigMs: 2300,
+  /** "THERE'S ANOTHER WIN!" interstitial between chained wins. */
+  interstitialMs: 950,
+  /** Auto-lift of the next cosmetic ball before its shot. */
+  relaunchLiftMs: 320,
+  /** Delay before the final summary rises. */
+  summaryDelayMs: 260,
   /** Camera punch-in total. */
   cameraPunchMs: 300,
   /** Screen-shake duration. */
-  shakeMs: 200,
+  shakeMs: 220,
 } as const
+
+/** Maximum number of individually animated wins. Beyond this the remaining
+ *  wins are summarised (a 20-win buyer never sits through 20 animations). */
+export const MAX_ANIMATED_WINS = 3
 
 /* -------------------------------------------------------------------------- */
 /*  Geometry                                                                  */
 /* -------------------------------------------------------------------------- */
-/** Tray football diameter (px) at a 390px stage (spec: 58–68px). */
-export const BALL_SIZE = 62
+/** Tray football diameter (px) at a 390px stage. */
+export const BALL_SIZE = 60
 
 /** In-flight ball diameter (px). Stays large enough to follow (spec: 44–54px
- *  near the hole) — we launch a touch bigger and keep it readable. */
-export const FLIGHT_BALL_SIZE = 54
+ *  near the hole). */
+export const FLIGHT_BALL_SIZE = 56
 
 /** Number of cosmetic footballs in the tray each shot (always five). */
 export const TRAY_BALL_COUNT = 5
@@ -100,10 +120,10 @@ export const TRAY_BALL_COUNT = 5
  * partially overlaps the board's left edge, so the board is nudged right.
  */
 export const BOARD_RECT = {
-  leftPct: 0.15,
-  topPct: 0.2,
-  widthPct: 0.78,
-  heightPct: 0.5,
+  leftPct: 0.17,
+  topPct: 0.235,
+  widthPct: 0.77,
+  heightPct: 0.475,
 } as const
 
 /**
@@ -123,9 +143,6 @@ export const HOLES: Record<HoleId, { xPct: number; yPct: number }> = {
 
 export const HOLE_IDS: HoleId[] = [1, 2, 3, 4, 5]
 
-/** Hole diameter (px) at a 390px stage (spec: 86–104px). Scales with board. */
-export const HOLE_SIZE = 94
-
 /* -------------------------------------------------------------------------- */
 /*  Outcome helpers                                                           */
 /* -------------------------------------------------------------------------- */
@@ -139,10 +156,12 @@ export function formatGBP(pence: number): string {
   }).format(pounds(pence))
 }
 
-const OUTCOME_NONE: Outcome = { kind: "none", amountPence: 0 }
-const OUTCOME_CREDIT5: Outcome = { kind: "credit", amountPence: 500 }
-const OUTCOME_CASH100: Outcome = { kind: "cash", amountPence: 10000 }
-const OUTCOME_CASH5000: Outcome = { kind: "cash", amountPence: 500000 }
+const O_NONE: Outcome = { kind: "none", amountPence: 0 }
+const O_CREDIT5: Outcome = { kind: "credit", amountPence: 500 }
+const O_CASH25: Outcome = { kind: "cash", amountPence: 2500 }
+const O_CASH50: Outcome = { kind: "cash", amountPence: 5000 }
+const O_CASH100: Outcome = { kind: "cash", amountPence: 10000 }
+const O_CASH5000: Outcome = { kind: "cash", amountPence: 500000 }
 
 /** Big-win threshold — drives the gold, light-ray, confetti treatment. */
 export const BIG_WIN_PENCE = 100000
@@ -156,8 +175,8 @@ export function isWinOutcome(o: Outcome): boolean {
 }
 
 /**
- * Derive the reveal-panel copy from an outcome. Kept deterministic and free of
- * any negative / "you lose" framing for the non-winning case.
+ * Derive the winning prize-panel copy from an outcome. (Non-winning purchases
+ * are handled by the summary, never a prize panel.)
  */
 export function revealCopyFor(o: Outcome): RevealCopy {
   switch (o.kind) {
@@ -168,7 +187,7 @@ export function revealCopyFor(o: Outcome): RevealCopy {
           eyebrow: "INSTANT WIN!",
           amount: formatGBP(o.amountPence),
           unit: "CASH",
-          support: "WHAT A STRIKE!",
+          support: "YOU'VE HIT THE BIG ONE!",
           isMoney: true,
         }
       }
@@ -189,28 +208,50 @@ export function revealCopyFor(o: Outcome): RevealCopy {
         support: "NICE ONE!",
         isMoney: true,
       }
-    case "mystery":
-      return {
-        tone: "mystery",
-        eyebrow: "YOU'VE WON!",
-        amount: "MYSTERY PRIZE",
-        unit: "",
-        support: "OUR TEAM WILL CONTACT YOU",
-        isMoney: false,
-      }
-    case "none":
     default:
-      // Non-winning: never a loss. Positive, forward-looking framing only.
+      // Should never be shown on a panel; harmless fallback.
       return {
-        tone: "none",
-        eyebrow: "NO INSTANT WIN",
-        amount: "YOU'RE STILL IN",
+        tone: "cash",
+        eyebrow: "INSTANT WIN!",
+        amount: "",
         unit: "",
-        support: "THE FINAL DRAW",
-        support2: "YOUR NEXT SHOT IS READY",
-        isMoney: false,
+        support: "",
+        isMoney: true,
       }
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Ticket-count messaging (LOADED → GAME → CHECKED) + energy tiers            */
+/* -------------------------------------------------------------------------- */
+export function ticketsLoaded(n: number): string {
+  return `${n.toLocaleString("en-GB")} ${n === 1 ? "TICKET" : "TICKETS"} LOADED`
+}
+export function ticketsChecked(n: number): string {
+  return `${n.toLocaleString("en-GB")} ${n === 1 ? "TICKET" : "TICKETS"} CHECKED`
+}
+export function chancesLine(n: number): string {
+  return `${n.toLocaleString("en-GB")} ${n === 1 ? "CHANCE" : "CHANCES"} TO HIT AN INSTANT WIN`
+}
+export function ticketsInDraw(n: number): string {
+  return `ALL ${n.toLocaleString("en-GB")} ${n === 1 ? "TICKET REMAINS" : "TICKETS REMAIN"} IN THE FINAL DRAW`
+}
+export function ticketsAlsoInDraw(n: number): string {
+  return `ALL ${n.toLocaleString("en-GB")} ${n === 1 ? "TICKET IS" : "TICKETS ARE"} ALSO IN THE FINAL DRAW`
+}
+
+/** Cosmetic energy tier from purchased quantity (COSMETIC ONLY). */
+export function energyTierFor(count: number): EnergyTier {
+  if (count >= 250) return "max"
+  if (count >= 100) return "bigballer"
+  if (count >= 50) return "charged"
+  if (count >= 10) return "raised"
+  return "standard"
+}
+
+/** Whether to show the optional "BIG BALLER MODE" beat during the intro. */
+export function showsBigBaller(count: number): boolean {
+  return count >= 100
 }
 
 /* -------------------------------------------------------------------------- */
@@ -218,18 +259,20 @@ export function revealCopyFor(o: Outcome): RevealCopy {
 /* -------------------------------------------------------------------------- */
 export const INSTRUCTIONS: Record<string, { text: string; key?: string; sub?: string } | null> = {
   intro: null,
-  // The hero instruction lives in the brand header; the tray shows "TAP A BALL".
   choosing: { text: "CHOOSE A", key: "BALL", sub: "WATCH WHERE IT LANDS..." },
   selected: { text: "HERE WE", key: "GO!" },
   launching: { text: "HERE WE", key: "GO!" },
   approaching_hole: null,
   entering_hole: null,
-  win_impact: null,
+  suspense: null,
+  win_reaction: null,
   nonwin_reaction: null,
-  win_celebration: null,
+  celebrating: null,
   revealing: null,
   revealed: null,
-  transitioning_next: null,
+  checking_additional: null,
+  auto_relaunch: null,
+  summary: null,
   complete: null,
 }
 
@@ -237,73 +280,115 @@ export const INSTRUCTIONS: Record<string, { text: string; key?: string; sub?: st
 export const TAP_A_BALL = "TAP A BALL"
 
 /* -------------------------------------------------------------------------- */
-/*  Deterministic mock ticket sequence                                        */
-/*  DEFAULT (per spec):                                                        */
-/*    1: no win        → hole 4                                                */
-/*    2: £5 credit     → hole 2                                                */
-/*    3: no win        → hole 1                                                */
-/*    4: £100 cash     → hole 5                                                */
-/*    5: £5,000 cash   → hole 3                                                */
+/*  Deterministic mock reveal plans                                           */
+/*  Awards are the instant wins contained in the purchase. Holes rotate so    */
+/*  chained wins land in visibly different holes.                             */
 /* -------------------------------------------------------------------------- */
-interface Seed {
-  outcome: Outcome
-  hole: HoleId
+const PRESET_AWARDS: Record<ResultPreset, Award[]> = {
+  none: [],
+  credit5: [{ outcome: O_CREDIT5, destinationHole: 2 }],
+  cash100: [{ outcome: O_CASH100, destinationHole: 5 }],
+  cash5000: [{ outcome: O_CASH5000, destinationHole: 3 }],
+  twoWins: [
+    { outcome: O_CASH100, destinationHole: 5 },
+    { outcome: O_CREDIT5, destinationHole: 2 },
+  ],
+  threeWins: [
+    { outcome: O_CASH100, destinationHole: 5 },
+    { outcome: O_CASH25, destinationHole: 1 },
+    { outcome: O_CREDIT5, destinationHole: 2 },
+  ],
+  // Five wins — first three are animated (climaxing on the £5,000), the rest
+  // are summarised.
+  fiveWins: [
+    { outcome: O_CASH25, destinationHole: 1 },
+    { outcome: O_CASH100, destinationHole: 5 },
+    { outcome: O_CASH5000, destinationHole: 3 },
+    { outcome: O_CREDIT5, destinationHole: 2 },
+    { outcome: O_CASH50, destinationHole: 4 },
+  ],
 }
 
-const SEQUENCE: Seed[] = [
-  { outcome: OUTCOME_NONE, hole: 4 },
-  { outcome: OUTCOME_CREDIT5, hole: 2 },
-  { outcome: OUTCOME_NONE, hole: 1 },
-  { outcome: OUTCOME_CASH100, hole: 5 },
-  { outcome: OUTCOME_CASH5000, hole: 3 },
-]
-
-const outcomeForPreset: Record<Exclude<OutcomePreset, "sequence">, Outcome> = {
-  none: OUTCOME_NONE,
-  credit5: OUTCOME_CREDIT5,
-  cash100: OUTCOME_CASH100,
-  cash5000: OUTCOME_CASH5000,
+/** Build the deterministic reveal plan for a preset + purchased quantity. */
+export function buildRevealPlan(preset: ResultPreset, ticketCount: TicketCount): RevealPlan {
+  return { ticketCount, awards: PRESET_AWARDS[preset] }
 }
 
-/** Rotate holes for single-outcome presets so repeats still feel varied. */
-const HOLE_ROTATION: HoleId[] = [4, 2, 1, 5, 3]
-
-function makeTicket(index: number, seed: Seed): Ticket {
-  const n = index + 1
-  return {
-    id: `mock-ticket-${n}`,
-    label: `TICKET ${n}`,
-    shortLabel: `#${n}`,
-    outcome: seed.outcome,
-    destinationHole: seed.hole,
-  }
-}
+/** Non-winning single-shot uses this hole (feels central + neutral). */
+const NONWIN_HOLE: HoleId = 4
 
 /**
- * Build a deterministic ticket list for the given preset + count.
- * - "sequence" cycles the signature five-shot arc to fill the requested count.
- * - Any single-outcome preset repeats that outcome, rotating holes.
+ * Turn a plan into the ordered list of animations. Wins beyond
+ * MAX_ANIMATED_WINS are NOT animated (they are summarised). A zero-win plan
+ * animates exactly one non-winning shot. The cosmetic ball for each animation
+ * starts from the tapped ball, then walks the remaining tray balls.
  */
-export function buildTickets(preset: OutcomePreset, count: TicketCount): Ticket[] {
-  const seeds: Seed[] =
-    preset === "sequence"
-      ? Array.from({ length: count }, (_, i) => SEQUENCE[i % SEQUENCE.length])
-      : Array.from({ length: count }, (_, i) => ({
-          outcome: outcomeForPreset[preset],
-          hole: HOLE_ROTATION[i % HOLE_ROTATION.length],
-        }))
-  return seeds.map((s, i) => makeTicket(i, s))
+export function buildAnimations(plan: RevealPlan, tappedBall: number): Animation[] {
+  const ballSeq = ballSequence(tappedBall)
+  if (plan.awards.length === 0) {
+    return [
+      {
+        isWin: false,
+        outcome: O_NONE,
+        destinationHole: NONWIN_HOLE,
+        ballNumber: ballSeq[0],
+      },
+    ]
+  }
+  const animatedAwards = plan.awards.slice(0, MAX_ANIMATED_WINS)
+  return animatedAwards.map((a, i) => ({
+    isWin: true,
+    outcome: a.outcome,
+    destinationHole: a.destinationHole,
+    ballNumber: ballSeq[i % ballSeq.length],
+  }))
+}
+
+/** Tap order → [tapped, then the other four ascending]. */
+export function ballSequence(tapped: number): number[] {
+  const rest = [1, 2, 3, 4, 5].filter((n) => n !== tapped)
+  return [tapped, ...rest]
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Run summary maths                                                         */
+/* -------------------------------------------------------------------------- */
+export interface PlanSummary {
+  ticketCount: number
+  instantWins: number
+  cashPence: number
+  creditPence: number
+  /** Number of wins NOT individually animated (shown as "and N more"). */
+  extraWins: number
+}
+
+export function summarisePlan(plan: RevealPlan): PlanSummary {
+  let cashPence = 0
+  let creditPence = 0
+  for (const a of plan.awards) {
+    if (a.outcome.kind === "cash") cashPence += a.outcome.amountPence
+    if (a.outcome.kind === "credit") creditPence += a.outcome.amountPence
+  }
+  return {
+    ticketCount: plan.ticketCount,
+    instantWins: plan.awards.length,
+    cashPence,
+    creditPence,
+    extraWins: Math.max(0, plan.awards.length - MAX_ANIMATED_WINS),
+  }
 }
 
 /* -------------------------------------------------------------------------- */
 /*  Dev option lists                                                          */
 /* -------------------------------------------------------------------------- */
-export const OUTCOME_PRESET_OPTIONS: { value: OutcomePreset; label: string }[] = [
-  { value: "sequence", label: "Default sequence" },
+export const RESULT_PRESET_OPTIONS: { value: ResultPreset; label: string }[] = [
   { value: "none", label: "No instant win" },
   { value: "credit5", label: "£5 site credit" },
   { value: "cash100", label: "£100 cash" },
   { value: "cash5000", label: "£5,000 cash" },
+  { value: "twoWins", label: "2 wins" },
+  { value: "threeWins", label: "3 wins" },
+  { value: "fiveWins", label: "5 wins" },
 ]
 
 export const DESTINATION_OPTIONS: { value: DestinationOverride; label: string }[] = [
@@ -315,7 +400,7 @@ export const DESTINATION_OPTIONS: { value: DestinationOverride; label: string }[
   { value: 5, label: "5" },
 ]
 
-export const TICKET_COUNT_OPTIONS: TicketCount[] = [1, 3, 5, 10]
+export const TICKET_COUNT_OPTIONS: TicketCount[] = [1, 10, 50, 100, 125, 250, 500]
 
 export const SPEED_OPTIONS: { value: Speed; label: string }[] = [
   { value: 1, label: "Normal" },
@@ -330,8 +415,8 @@ export const CHAR_PREVIEW_OPTIONS: { value: CharPreview; label: string }[] = [
 ]
 
 export const DEFAULT_SETTINGS: DemoSettings = {
-  preset: "sequence",
-  ticketCount: 5,
+  resultPreset: "cash100",
+  ticketCount: 125,
   soundOn: false,
   reducedMotion: false,
   speed: 1,
@@ -352,5 +437,4 @@ export const KIND_LABEL: Record<OutcomeKind, string> = {
   none: "No win",
   credit: "Site credit",
   cash: "Cash",
-  mystery: "Mystery",
 }

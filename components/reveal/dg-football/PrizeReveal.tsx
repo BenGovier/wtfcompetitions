@@ -1,23 +1,32 @@
 "use client"
 
 /**
- * PrizeReveal — the premium sports-result panel that rises from the bottom,
- * plus the end-of-run SummaryPanel. Not a shadcn Dialog / generic modal.
- * The non-winning result stays upbeat (white + green, never red/"you lose").
+ * PrizeReveal — the premium sports-result panel that rises from the bottom for
+ * a WINNING result, plus the end-of-run SummaryPanel. Not a shadcn Dialog /
+ * generic modal.
+ *
+ * Wins auto-chain, so the prize panel has NO manual "next" button — it is shown
+ * for a timed hold then the orchestrator advances automatically. The prize
+ * value is the dominant element (gold for cash, green for credit) and lands
+ * with a scale-punch + light sweep. Because DG is now large and celebrating on
+ * the left, the panel is bottom-anchored and never full-height, so his face and
+ * fists stay visible above it.
  */
 
 import type { CSSProperties } from "react"
 import { useEffect, useRef } from "react"
 import type { RevealCopy } from "./types"
-import { COLORS, formatGBP } from "./config"
+import {
+  COLORS,
+  formatGBP,
+  ticketsAlsoInDraw,
+  ticketsChecked,
+  ticketsInDraw,
+  type PlanSummary,
+} from "./config"
 
-/**
- * Focus a button only while its panel is actually visible. Using React's
- * `autoFocus` on an always-mounted, off-screen panel makes the browser scroll
- * the (overflow:hidden) stage to reveal the focused control, which shoved the
- * whole game up by ~448px. A visibility-gated, scroll-suppressed focus avoids
- * that entirely while keeping keyboard users landing on the primary action.
- */
+/** Focus a button only while its panel is visible, without scrolling the
+ *  overflow-hidden stage (which would shove the whole game up). */
 function useVisibleFocus(visible: boolean) {
   const ref = useRef<HTMLButtonElement | null>(null)
   useEffect(() => {
@@ -39,13 +48,14 @@ function useVisibleFocus(visible: boolean) {
 /* -------------------------------------------------------------------------- */
 /*  Confetti (lightweight DOM burst, deterministic)                           */
 /* -------------------------------------------------------------------------- */
-function Confetti({ tone, slowFactor }: { tone: RevealCopy["tone"]; slowFactor: number }) {
-  const count = tone === "big" ? 46 : tone === "none" ? 0 : 22
-  if (count === 0) return null
+function Confetti({ tone, slowFactor }: { tone: RevealCopy["tone"] | "summary"; slowFactor: number }) {
+  const count = tone === "big" ? 54 : tone === "credit" ? 20 : 30
   const palette =
     tone === "big"
       ? [COLORS.gold, COLORS.neon, COLORS.white, COLORS.cash]
-      : [COLORS.neon, COLORS.white, COLORS.cash]
+      : tone === "credit"
+        ? [COLORS.neon, COLORS.white]
+        : [COLORS.cash, COLORS.neon, COLORS.white]
   return (
     <div className="dgf-confetti" aria-hidden="true">
       {Array.from({ length: count }).map((_, i) => {
@@ -77,51 +87,28 @@ function Confetti({ tone, slowFactor }: { tone: RevealCopy["tone"]; slowFactor: 
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Single result panel                                                       */
+/*  Single winning result panel                                               */
 /* -------------------------------------------------------------------------- */
 interface PrizeRevealProps {
   copy: RevealCopy
   visible: boolean
   reducedMotion: boolean
   slowFactor: number
-  isLast: boolean
-  /** 1-based index of the ticket just revealed, and the run total. */
-  shotIndex: number
-  shotTotal: number
-  /** Label of the NEXT shot (only meaningful when !isLast). */
-  shotLabel: string
-  onNext: () => void
+  /** 1-based index of the win currently shown, and total animated wins. */
+  winSoFar: number
+  totalWins: number
 }
 
-export function PrizeReveal({
-  copy,
-  visible,
-  reducedMotion,
-  slowFactor,
-  isLast,
-  shotIndex,
-  shotTotal,
-  shotLabel,
-  onNext,
-}: PrizeRevealProps) {
-  const isWin = copy.tone !== "none"
+export function PrizeReveal({ copy, visible, reducedMotion, slowFactor, winSoFar, totalWins }: PrizeRevealProps) {
   const valueColor =
-    copy.tone === "big" || copy.tone === "cash"
-      ? copy.tone === "big"
-        ? COLORS.gold
-        : COLORS.cash
-      : copy.tone === "credit"
-        ? COLORS.neon
-        : COLORS.white
-
-  const btnRef = useVisibleFocus(visible)
+    copy.tone === "big" ? COLORS.gold : copy.tone === "cash" ? COLORS.cash : COLORS.neon
 
   return (
     <div
       className={`dgf-panel dgf-panel-${copy.tone} ${visible ? "dgf-panel-in" : ""} ${
         reducedMotion ? "dgf-panel-reduced" : ""
       }`}
-      style={{ transitionDuration: `${820 * slowFactor}ms` }}
+      style={{ transitionDuration: `${700 * slowFactor}ms` }}
       role="dialog"
       aria-modal="false"
       aria-label={`${copy.eyebrow} ${copy.amount} ${copy.unit}`.trim()}
@@ -134,109 +121,102 @@ export function PrizeReveal({
       <div className="dgf-panel-body">
         {copy.tone === "big" && <div className="dgf-rays" aria-hidden="true" />}
 
-        <p className={`dgf-panel-eyebrow ${isWin ? "dgf-eyebrow-win" : "dgf-eyebrow-none"}`}>
+        <p className="dgf-panel-eyebrow dgf-eyebrow-win">
           {copy.eyebrow}
+          {totalWins > 1 && <span className="dgf-win-counter">WIN {winSoFar} OF {totalWins}</span>}
         </p>
 
-        {copy.isMoney ? (
-          <p
-            className={`dgf-panel-amount ${visible ? "dgf-value-pop" : ""}`}
-            style={{ color: valueColor }}
-            aria-live="assertive"
-          >
-            <span className="dgf-panel-amount-value">{copy.amount}</span>
-            {copy.unit && <span className="dgf-panel-amount-unit">{copy.unit}</span>}
-          </p>
-        ) : (
-          <p
-            className={`dgf-panel-headline text-balance ${visible ? "dgf-value-pop" : ""}`}
-            style={{ color: valueColor }}
-            aria-live="assertive"
-          >
+        <p
+          className={`dgf-panel-amount ${visible ? "dgf-value-pop" : ""} ${
+            copy.tone === "big" && visible && !reducedMotion ? "dgf-value-shake" : ""
+          }`}
+          style={{ color: valueColor }}
+          aria-live="assertive"
+        >
+          <span className="dgf-panel-amount-value">
             {copy.amount}
-          </p>
-        )}
+            {visible && !reducedMotion && <span className="dgf-value-sweep" aria-hidden="true" />}
+          </span>
+          {copy.unit && <span className="dgf-panel-amount-unit">{copy.unit}</span>}
+        </p>
 
         <p className="dgf-panel-support text-balance">{copy.support}</p>
-        {copy.support2 && <p className="dgf-panel-support2 text-balance">{copy.support2}</p>}
-
-        {/*
-          If more reveals remain, point the customer at the shot they are ABOUT
-          to open (shotLabel = the NEXT shot). On the final reveal there is no
-          next shot — go straight to the final result.
-        */}
-        <button ref={btnRef} type="button" className="dgf-next-btn" onClick={onNext}>
-          {isLast ? "SEE FINAL RESULT" : "NEXT SHOT"}
-          {!isLast && <span className="dgf-next-sub">{shotLabel}</span>}
-        </button>
-
-        <p className="dgf-panel-progress" aria-hidden="true">
-          {shotIndex} / {shotTotal} TICKETS PLAYED
-        </p>
       </div>
     </div>
   )
 }
 
 /* -------------------------------------------------------------------------- */
-/*  End-of-run summary                                                        */
+/*  End-of-run summary (LOADED → GAME → CHECKED)                              */
 /* -------------------------------------------------------------------------- */
-export interface RunSummary {
-  totalShots: number
-  instantWins: number
-  cashPence: number
-  creditPence: number
-}
-
 interface SummaryPanelProps {
-  summary: RunSummary
+  summary: PlanSummary
+  maxAnimated: number
   visible: boolean
   reducedMotion: boolean
   slowFactor: number
   onFinish: () => void
 }
 
-export function SummaryPanel({ summary, visible, reducedMotion, slowFactor, onFinish }: SummaryPanelProps) {
+export function SummaryPanel({ summary, maxAnimated, visible, reducedMotion, slowFactor, onFinish }: SummaryPanelProps) {
   const wonSomething = summary.instantWins > 0
   const btnRef = useVisibleFocus(visible)
+  const winsWord = summary.instantWins === 1 ? "INSTANT WIN" : "INSTANT WINS"
+
   return (
     <div
-      className={`dgf-panel dgf-summary ${visible ? "dgf-panel-in" : ""} ${
-        reducedMotion ? "dgf-panel-reduced" : ""
-      }`}
-      style={{ transitionDuration: `${520 * slowFactor}ms` }}
+      className={`dgf-panel dgf-summary ${wonSomething ? "dgf-summary-win" : "dgf-summary-none"} ${
+        visible ? "dgf-panel-in" : ""
+      } ${reducedMotion ? "dgf-panel-reduced" : ""}`}
+      style={{ transitionDuration: `${560 * slowFactor}ms` }}
       role="dialog"
       aria-modal="false"
-      aria-label="All shots complete"
+      aria-label={ticketsChecked(summary.ticketCount)}
       aria-hidden={!visible}
       inert={!visible}
     >
       <div className="dgf-panel-edge" />
-      {visible && wonSomething && !reducedMotion && <Confetti tone="big" slowFactor={slowFactor} />}
+      {visible && wonSomething && !reducedMotion && <Confetti tone="summary" slowFactor={slowFactor} />}
+
       <div className="dgf-panel-body">
-        <p className="dgf-panel-eyebrow dgf-eyebrow-win">ALL SHOTS COMPLETE</p>
+        <p className="dgf-summary-checked">{ticketsChecked(summary.ticketCount)}</p>
 
-        <dl className="dgf-summary-grid">
-          <div className="dgf-summary-row">
-            <dt>Instant wins</dt>
-            <dd style={{ color: COLORS.neon }}>{summary.instantWins}</dd>
-          </div>
-          <div className="dgf-summary-row">
-            <dt>Total cash won</dt>
-            <dd style={{ color: COLORS.cash }}>{formatGBP(summary.cashPence)}</dd>
-          </div>
-          <div className="dgf-summary-row">
-            <dt>Site credit won</dt>
-            <dd style={{ color: COLORS.gold }}>{formatGBP(summary.creditPence)}</dd>
-          </div>
-        </dl>
+        {wonSomething ? (
+          <>
+            <p className="dgf-summary-winline">
+              <span className="dgf-summary-wincount">{summary.instantWins}</span> {winsWord}
+            </p>
 
-        <p className="dgf-panel-support">
-          Every ticket is still in the final draw — good luck!
-        </p>
+            <div className="dgf-summary-prizes">
+              {summary.cashPence > 0 && (
+                <div className="dgf-summary-prize">
+                  <span className="dgf-summary-prize-amt" style={{ color: COLORS.cash }}>
+                    {formatGBP(summary.cashPence)}
+                  </span>
+                  <span className="dgf-summary-prize-label">CASH WON</span>
+                </div>
+              )}
+              {summary.creditPence > 0 && (
+                <div className="dgf-summary-prize">
+                  <span className="dgf-summary-prize-amt" style={{ color: COLORS.neon }}>
+                    {formatGBP(summary.creditPence)}
+                  </span>
+                  <span className="dgf-summary-prize-label">SITE CREDIT</span>
+                </div>
+              )}
+            </div>
+
+            <p className="dgf-summary-draw">{ticketsAlsoInDraw(summary.ticketCount)}</p>
+          </>
+        ) : (
+          <>
+            <p className="dgf-summary-nowin">NO INSTANT WIN THIS TIME</p>
+            <p className="dgf-summary-draw dgf-summary-draw-strong">{ticketsInDraw(summary.ticketCount)}</p>
+          </>
+        )}
 
         <button ref={btnRef} type="button" className="dgf-next-btn" onClick={onFinish}>
-          FINISH
+          CONTINUE
         </button>
       </div>
     </div>

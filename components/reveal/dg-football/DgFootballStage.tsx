@@ -4,149 +4,182 @@
  * DgFootballStage — the pure presentational stage for DG'S BIG BALLERS.
  *
  * Layer order (back → front):
- *   1. Stadium environment (radial pitch glow + vignette)
- *   2. Brand header (logo lockup + hero instruction) + help button
+ *   1. Stadium environment (radial pitch glow + vignette), energy-tiered
+ *   2. Brand header (logo lockup + ticket messaging + hero instruction) + help
  *   3. TargetBoard (the main game object — five identical mystery holes)
- *   4. DgCharacter (host, left of / partly behind the board)
+ *   4. DgCharacter (host, larger, left of / partly behind the board)
  *   5. FlightLayer (the flying ball + neon energy trail) — above the board
- *   6. BallTray (five cosmetic footballs) + "TAP A BALL"
- *   7. PrizeReveal / SummaryPanel (rise from the bottom)
- *   8. Dev guide overlays (opt-in, invisible in normal play)
+ *   6. Hole-entry front lip (occludes the ball as it sinks into the hole)
+ *   7. BallTray (five cosmetic footballs) + "TAP A BALL"
+ *   8. Suspense veil / interstitial / PrizeReveal / SummaryPanel
+ *   9. Dev guide overlays (opt-in, invisible in normal play)
  *
  * The Stage owns ONE piece of imperative behaviour: the requestAnimationFrame
- * flight of the ball along a quadratic-bezier arc from the tapped tray ball to
- * the measured centre of the predetermined hole, followed by a short drop into
- * the throat. Everything else is derived from the single `state` prop so board
- * lighting, DG's pose and the ball are always consistent.
+ * flight of the ball along a quadratic-bezier arc from the ACTIVE tray ball to
+ * the measured centre of the predetermined hole, then a short sink into the
+ * throat. Everything else is derived from the single `state` prop so board
+ * lighting, DG's pose and the ball are always consistent. Measuring the active
+ * tray ball (rather than a captured tap point) lets chained wins auto-launch a
+ * different cosmetic ball with no extra interaction.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { BOARD_RECT, INSTRUCTIONS, TAP_A_BALL, TIMING } from "./config"
+import {
+  BOARD_RECT,
+  chancesLine,
+  energyTierFor,
+  INSTRUCTIONS,
+  showsBigBaller,
+  TAP_A_BALL,
+  ticketsLoaded,
+  TIMING,
+} from "./config"
 import type { DemoSettings, GameState, HoleId, RevealCopy } from "./types"
 import { TargetBoard } from "./TargetBoard"
 import { DgCharacter } from "./DgCharacter"
 import { FlightLayer, type FlightHandle } from "./FlightLayer"
 import { BallTray } from "./BallTray"
-import { PrizeReveal, SummaryPanel, type RunSummary } from "./PrizeReveal"
+import { PrizeReveal, SummaryPanel } from "./PrizeReveal"
+import type { PlanSummary } from "./config"
 
 interface DgFootballStageProps {
   state: GameState
   settings: DemoSettings
-  /** The predetermined destination hole for the active shot. */
+  ticketCount: number
+  /** The predetermined destination hole for the active animation. */
   destinationHole: HoleId | null
-  /** Whether the active shot is a win (drives tone + DG celebration). */
+  /** Whether the active animation is a win. */
   isWin: boolean
-  /** Viewport-space origin of the tapped tray ball (for the flight start). */
-  ballOrigin: { x: number; y: number } | null
-  /** 1-based active shot index + total, for the tray/progress. */
-  shotIndex: number
-  shotTotal: number
-  /** Next shot label (for the reveal CTA sub-line). */
-  nextShotLabel: string
-  isLastShot: boolean
-  /** Selected cosmetic ball number for the current shot. */
-  selectedNumber: number | null
+  bigWin: boolean
+  /** Cosmetic tray ball the active animation launches (1..5). */
+  activeBall: number | null
+  /** Ball the customer tapped to start the session. */
+  tappedBall: number | null
+  /** 1-based index of the win currently animating, and total animated wins. */
+  winSoFar: number
+  totalAnimatedWins: number
+  /** Interstitial copy for the "another win" beat. */
+  interstitialText: string
   revealCopy: RevealCopy | null
   revealVisible: boolean
-  summary: RunSummary
+  summary: PlanSummary
   summaryVisible: boolean
-  onSelectBall: (n: number, origin: { x: number; y: number }) => void
-  onNext: () => void
+  maxAnimated: number
+  onSelectBall: (n: number) => void
   onFinish: () => void
   onHelp: () => void
 }
 
-/* Which states show a lit/entered destination hole. */
+/* State groups (keep transitions readable). */
 const FOCUS_STATES: GameState[] = [
   "approaching_hole",
   "entering_hole",
-  "win_impact",
+  "suspense",
+  "win_reaction",
   "nonwin_reaction",
-  "win_celebration",
+  "celebrating",
   "revealing",
   "revealed",
 ]
 const ENTERED_STATES: GameState[] = [
   "entering_hole",
-  "win_impact",
+  "suspense",
+  "win_reaction",
   "nonwin_reaction",
-  "win_celebration",
+  "celebrating",
   "revealing",
   "revealed",
 ]
 const FLIGHT_STATES: GameState[] = ["launching", "approaching_hole", "entering_hole"]
+const CELEBRATION_STATES: GameState[] = ["win_reaction", "celebrating", "revealing", "revealed"]
+const NONWIN_STATES: GameState[] = ["nonwin_reaction"]
 
 const cubicOut = (t: number) => 1 - Math.pow(1 - t, 3)
 
 export function DgFootballStage({
   state,
   settings,
+  ticketCount,
   destinationHole,
   isWin,
-  ballOrigin,
-  shotIndex,
-  shotTotal,
-  nextShotLabel,
-  isLastShot,
-  selectedNumber,
+  bigWin,
+  activeBall,
+  tappedBall,
+  winSoFar,
+  totalAnimatedWins,
+  interstitialText,
   revealCopy,
   revealVisible,
   summary,
   summaryVisible,
+  maxAnimated,
   onSelectBall,
-  onNext,
   onFinish,
   onHelp,
 }: DgFootballStageProps) {
   const reduced = settings.reducedMotion
   const speed = settings.speed
   const preview = settings.charPreview
+  const tier = energyTierFor(ticketCount)
 
   const stageRef = useRef<HTMLDivElement>(null)
   const flightRef = useRef<FlightHandle>(null)
   const rafRef = useRef<number | null>(null)
   const flightTokenRef = useRef(0)
 
-  // Debug geometry captured at flight start (stage-local px).
+  const [entryMask, setEntryMask] = useState<{ x: number; y: number; size: number } | null>(null)
   const [debugGeom, setDebugGeom] = useState<{
     origin: { x: number; y: number }
     control: { x: number; y: number }
     endpoint: { x: number; y: number }
   } | null>(null)
 
-  /* ---- measure a hole's centre in stage-local pixels ---- */
+  /* ---- measure a hole's centre + size in stage-local pixels ---- */
   const measureHole = useCallback((hole: HoleId) => {
     const stage = stageRef.current
     if (!stage) return null
+    const holeEl = stage.querySelector<HTMLElement>(`[data-hole="${hole}"]`)
     const marker = stage.querySelector<HTMLElement>(`[data-hole="${hole}"] .dgf-hole-centre`)
-    if (!marker) return null
+    if (!holeEl || !marker) return null
     const s = stage.getBoundingClientRect()
     const m = marker.getBoundingClientRect()
-    return { x: m.left + m.width / 2 - s.left, y: m.top + m.height / 2 - s.top }
+    const h = holeEl.getBoundingClientRect()
+    return { x: m.left + m.width / 2 - s.left, y: m.top + m.height / 2 - s.top, size: h.width }
   }, [])
 
-  /* ---- run the flight when we enter "launching" ---- */
+  /* ---- measure the active tray ball's centre (flight origin) ---- */
+  const measureBall = useCallback((n: number) => {
+    const stage = stageRef.current
+    if (!stage) return null
+    const el = stage.querySelector<HTMLElement>(`[data-ball="${n}"]`)
+    if (!el) return null
+    const s = stage.getBoundingClientRect()
+    const b = el.getBoundingClientRect()
+    return { x: b.left + b.width / 2 - s.left, y: b.top + b.height / 2 - s.top }
+  }, [])
+
+  /* ---- run the flight whenever we (re)enter "launching" ---- */
   useEffect(() => {
     if (state !== "launching") return
-    if (!ballOrigin || destinationHole == null) return
+    if (activeBall == null || destinationHole == null) return
     const stage = stageRef.current
     const flight = flightRef.current
     if (!stage || !flight) return
 
     const token = ++flightTokenRef.current
-    const s = stage.getBoundingClientRect()
-    const origin = { x: ballOrigin.x - s.left, y: ballOrigin.y - s.top }
+    const origin = measureBall(activeBall)
     const target = measureHole(destinationHole)
-    if (!target) return
+    if (!origin || !target) return
 
     // Quadratic-bezier control point: arc up and lean toward the board.
     const dist = Math.hypot(target.x - origin.x, target.y - origin.y)
-    const arcLift = Math.max(90, dist * 0.32)
+    const arcLift = Math.max(110, dist * 0.36)
     const control = {
-      x: origin.x + (target.x - origin.x) * 0.52,
+      x: origin.x + (target.x - origin.x) * 0.5,
       y: Math.min(origin.y, target.y) - arcLift,
     }
     setDebugGeom({ origin, control, endpoint: target })
+    setEntryMask({ x: target.x, y: target.y, size: target.size })
 
     const dir = target.x >= origin.x ? 1 : -1
     const arcMs = (reduced ? TIMING.reducedFlightMs : TIMING.flightMs) * speed
@@ -160,21 +193,21 @@ export function DgFootballStage({
       const elapsed = now - startAt
 
       if (elapsed <= arcMs) {
-        // Phase A — arc toward the hole.
+        // Phase A — arc toward the hole. Ball stays large + easy to follow.
         const t = cubicOut(Math.min(1, elapsed / arcMs))
         const mt = 1 - t
         const x = mt * mt * origin.x + 2 * mt * t * control.x + t * t * target.x
         const y = mt * mt * origin.y + 2 * mt * t * control.y + t * t * target.y
-        const rot = reduced ? 0 : dir * t * 540
-        const scale = 1 - 0.18 * t // slight perspective shrink toward the board
+        const rot = reduced ? 0 : dir * t * 620
+        const scale = 1 - 0.08 * t // only a slight perspective shrink
         flight.frame(x, y, rot, scale, 1)
         rafRef.current = requestAnimationFrame(tick)
       } else if (elapsed <= arcMs + dropMs) {
-        // Phase B — drop into the throat: shrink + fade at the hole centre.
+        // Phase B — sink into the throat: 1 → 0.72 → 0.35 → 0.1, drop + fade.
         const t = Math.min(1, (elapsed - arcMs) / dropMs)
-        const scale = 0.82 * (1 - 0.72 * t)
-        const opacity = 1 - t
-        flight.frame(target.x, target.y + t * 8, dir * (540 + t * 120), scale, opacity)
+        const scale = 0.92 * (1 - 0.9 * t)
+        const opacity = t < 0.72 ? 1 : 1 - (t - 0.72) / 0.28
+        flight.frame(target.x, target.y + t * 14, dir * (620 + t * 140), scale, opacity)
         rafRef.current = requestAnimationFrame(tick)
       } else {
         flight.end()
@@ -186,9 +219,9 @@ export function DgFootballStage({
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state])
+  }, [state, activeBall, destinationHole])
 
-  // Ensure the ball is hidden whenever we are not mid-flight.
+  // Hide the ball whenever we are not mid-flight.
   useEffect(() => {
     if (!FLIGHT_STATES.includes(state)) flightRef.current?.end()
   }, [state])
@@ -200,45 +233,53 @@ export function DgFootballStage({
   }, [])
 
   /* ---- derived board lighting from state ---- */
-  const pulse = state === "launching"
+  const pulse = state === "launching" || state === "approaching_hole"
   const focusHole = FOCUS_STATES.includes(state) ? destinationHole : null
   const enteredHole = ENTERED_STATES.includes(state) ? destinationHole : null
-  const resultTone: "win" | "nonwin" | null =
-    ["win_impact", "win_celebration", "revealing", "revealed"].includes(state) && isWin
-      ? "win"
-      : ["nonwin_reaction", "revealing", "revealed"].includes(state) && !isWin
-        ? "nonwin"
-        : null
+  const suspense = state === "suspense"
+  const resultTone: "win" | "nonwin" | null = CELEBRATION_STATES.includes(state)
+    ? "win"
+    : NONWIN_STATES.includes(state)
+      ? "nonwin"
+      : null
+  const holeBurst = (state === "win_reaction" || state === "celebrating") && isWin
+  const holePulseOut = state === "nonwin_reaction"
 
   /* ---- DG pose ---- */
-  const livePose: "neutral" | "scored" =
-    ["win_impact", "win_celebration", "revealing", "revealed"].includes(state) && isWin ? "scored" : "neutral"
+  const livePose: "neutral" | "scored" = CELEBRATION_STATES.includes(state) && isWin ? "scored" : "neutral"
   const pose = preview === "off" ? livePose : preview === "scored" ? "scored" : "neutral"
-  const winFlash = preview === "off" && (state === "win_impact" || state === "win_celebration")
-  const dimCharacter = (state === "revealing" || state === "revealed") && !isWin
+  const winFlash = preview === "off" && (state === "win_reaction" || state === "celebrating") && isWin
+  const dimCharacter = state === "nonwin_reaction" || (state === "summary" && summary.instantWins === 0)
 
-  /* ---- brand + instruction ---- */
-  const brandHidden = (revealVisible && isWin) || summaryVisible || ["win_impact", "win_celebration"].includes(state)
+  /* ---- brand + instruction + ticket header ---- */
+  const celebrating = CELEBRATION_STATES.includes(state) && isWin
+  const brandHidden = celebrating || summaryVisible || state === "checking_additional"
   const instruction = preview === "off" ? INSTRUCTIONS[state] : null
+  const showFullTicketMsg = state === "intro" || state === "choosing"
+  const bigBallerBeat = state === "intro" && showsBigBaller(ticketCount) && !reduced
 
-  const trayDisabled = state !== "choosing" || preview !== "off"
-  const hideSelected =
-    selectedNumber != null &&
-    [
-      "launching",
-      "approaching_hole",
-      "entering_hole",
-      "win_impact",
-      "nonwin_reaction",
-      "win_celebration",
-      "revealing",
-      "revealed",
-    ].includes(state)
+  /* ---- ball tray control ---- */
+  const trayLocked = state !== "choosing" || preview !== "off"
+  const liftedBall =
+    state === "selected"
+      ? tappedBall
+      : state === "auto_relaunch"
+        ? activeBall
+        : [...FLIGHT_STATES, "suspense", "win_reaction", "nonwin_reaction", "celebrating", "revealing", "revealed"].includes(
+              state,
+            )
+          ? activeBall
+          : null
+  const hideLifted = [...FLIGHT_STATES, "suspense", "win_reaction", "nonwin_reaction", "celebrating", "revealing", "revealed"].includes(
+    state,
+  )
 
   const stageClasses = [
     "dgf-stage",
-    state === "win_impact" && !reduced ? "dgf-punch" : "",
-    state === "win_impact" && !reduced ? "dgf-shake" : "",
+    `dgf-tier-${tier}`,
+    settings.skipIntro ? "" : "dgf-run-entrance",
+    state === "win_reaction" && isWin && !reduced ? "dgf-punch" : "",
+    state === "win_reaction" && isWin && !reduced ? "dgf-shake" : "",
   ]
     .filter(Boolean)
     .join(" ")
@@ -256,18 +297,26 @@ export function DgFootballStage({
       <div className="dgf-env" aria-hidden="true">
         <div className="dgf-env-pitch" />
         <div className="dgf-env-glow" />
+        <div className="dgf-env-beams" />
         <div className="dgf-env-vignette" />
       </div>
 
-      {/* 2. Brand header + help */}
+      {/* 2. Brand header + ticket messaging + help */}
       <header className={`dgf-brand ${brandHidden ? "dgf-brand-hidden" : ""}`}>
         <button type="button" className="dgf-help-btn" onClick={onHelp} aria-label="How it works">
           ?
         </button>
-        <div className="dgf-brand-lockup" aria-label="DG'S BIG BALLERS">
+        <div className="dgf-brand-lockup dgf-entrance-brand" aria-label="DG'S BIG BALLERS">
           <span className="dgf-brand-kicker">DG&apos;S</span>
           <span className="dgf-brand-title">BIG BALLERS</span>
         </div>
+
+        {/* Ticket messaging — a real sales/reinforcement message, not fine print. */}
+        <div className={`dgf-tickets dgf-entrance-tickets ${showFullTicketMsg ? "" : "dgf-tickets-compact"}`}>
+          <span className="dgf-tickets-loaded">{ticketsLoaded(ticketCount)}</span>
+          {showFullTicketMsg && <span className="dgf-tickets-chances">{chancesLine(ticketCount)}</span>}
+        </div>
+
         {instruction && (
           <div className="dgf-instruction" aria-live="polite">
             <span className="dgf-instruction-text">
@@ -278,11 +327,19 @@ export function DgFootballStage({
         )}
       </header>
 
-      {/* 3 + 4 + 5. Board area (board, DG, flight share this positioned box) */}
-      <div className="dgf-board-area" style={boardStyle}>
+      {/* Optional BIG BALLER MODE beat during the intro (100+ tickets). */}
+      {bigBallerBeat && (
+        <div className="dgf-bigballer" aria-hidden="true">
+          <span>BIG BALLER MODE</span>
+        </div>
+      )}
+
+      {/* 3 + 4. Board area (board + DG share this positioned box) */}
+      <div className="dgf-board-area dgf-entrance-board" style={boardStyle}>
         <DgCharacter
           pose={pose}
           winFlash={winFlash}
+          bigWin={bigWin}
           dim={dimCharacter}
           reducedMotion={reduced}
           speed={speed}
@@ -290,9 +347,13 @@ export function DgFootballStage({
         />
         <TargetBoard
           pulse={pulse}
+          suspense={suspense}
           focusHole={focusHole}
           enteredHole={enteredHole}
           resultTone={resultTone}
+          holeBurst={holeBurst}
+          holePulseOut={holePulseOut}
+          bigWin={bigWin}
           reducedMotion={reduced}
           showHoleBounds={settings.showHoleBounds}
           showHoleCentres={settings.showHoleCentres}
@@ -300,11 +361,23 @@ export function DgFootballStage({
         />
       </div>
 
-      {/* Flight layer spans the whole stage so the ball can travel tray→board. */}
+      {/* 5. Flight layer spans the whole stage so the ball can travel tray→board. */}
       <FlightLayer ref={flightRef} reducedMotion={reduced} />
 
-      {/* 6. Ball tray + call to action */}
-      <div className="dgf-tray-area">
+      {/* 6. Hole-entry front lip — occludes the ball's lower half as it sinks. */}
+      {entryMask && ENTERED_STATES.includes(state) && (
+        <div
+          className={`dgf-entry-mask ${state === "entering_hole" ? "dgf-entry-mask-active" : ""}`}
+          style={{ left: entryMask.x, top: entryMask.y, width: entryMask.size, height: entryMask.size }}
+          aria-hidden="true"
+        >
+          <span className="dgf-entry-throat" />
+          <span className="dgf-entry-lip" />
+        </div>
+      )}
+
+      {/* 7. Ball tray + call to action */}
+      <div className="dgf-tray-area dgf-entrance-tray">
         <div
           className={`dgf-tap-cta ${state === "choosing" && preview === "off" ? "" : "dgf-tap-cta-hidden"}`}
           aria-hidden="true"
@@ -315,42 +388,52 @@ export function DgFootballStage({
           <span className="dgf-tap-label">{TAP_A_BALL}</span>
         </div>
         <BallTray
-          selectedNumber={selectedNumber}
-          disabled={trayDisabled}
-          hideSelected={hideSelected}
+          liftedBall={liftedBall}
+          hideLifted={hideLifted}
+          locked={trayLocked}
           reducedMotion={reduced}
           speed={speed}
           onSelect={onSelectBall}
         />
       </div>
 
-      {/* 7. Reveal / summary */}
+      {/* 8a. Suspense veil (theatrical, not "loading"). */}
+      <div className={`dgf-suspense-veil ${suspense ? "dgf-suspense-veil-on" : ""}`} aria-hidden="true" />
+
+      {/* 8b. "THERE'S ANOTHER WIN!" interstitial. */}
+      {state === "checking_additional" && (
+        <div className="dgf-interstitial" role="status">
+          <span className="dgf-interstitial-wait">WAIT...</span>
+          <span className="dgf-interstitial-main">{interstitialText}</span>
+        </div>
+      )}
+
+      {/* 8c. Reveal / summary */}
       {revealCopy && (
         <PrizeReveal
           copy={revealCopy}
           visible={revealVisible}
           reducedMotion={reduced}
           slowFactor={speed}
-          isLast={isLastShot}
-          shotIndex={shotIndex}
-          shotTotal={shotTotal}
-          shotLabel={nextShotLabel}
-          onNext={onNext}
+          winSoFar={winSoFar}
+          totalWins={totalAnimatedWins}
         />
       )}
       <SummaryPanel
         summary={summary}
+        maxAnimated={maxAnimated}
         visible={summaryVisible}
         reducedMotion={reduced}
         slowFactor={speed}
         onFinish={onFinish}
       />
 
-      {/* 8. Dev guide overlays */}
+      {/* 9. Dev guide overlays */}
       {settings.showState && (
         <div className="dgf-state-badge" aria-hidden="true">
           {state}
           {destinationHole != null && ` · hole ${destinationHole}`}
+          {activeBall != null && ` · ball ${activeBall}`}
         </div>
       )}
       {debugGeom && (settings.showBallOrigin || settings.showControlPoints || settings.showEndpoint) && (
