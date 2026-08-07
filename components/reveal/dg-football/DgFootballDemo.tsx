@@ -8,9 +8,9 @@
  * (no external audio files, never autoplays before a user gesture).
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import type { DemoSettings, SoundCue } from "./types"
-import { buildTickets, DEFAULT_SETTINGS } from "./config"
+import { DEFAULT_SETTINGS } from "./config"
 import { DgFootballReveal } from "./DgFootballReveal"
 import { DemoControls } from "./DemoControls"
 
@@ -22,10 +22,12 @@ const CUE_TONE: Record<SoundCue, { freq: number; dur: number; type: OscillatorTy
   launch: { freq: 180, dur: 0.18, type: "sawtooth" },
   whoosh: { freq: 260, dur: 0.16, type: "sawtooth" },
   drop: { freq: 140, dur: 0.14, type: "sine" },
+  suspense: { freq: 300, dur: 0.4, type: "sine" },
   impact: { freq: 90, dur: 0.22, type: "square" },
   prize: { freq: 720, dur: 0.35, type: "triangle" },
   credit: { freq: 620, dur: 0.28, type: "triangle" },
   nowin: { freq: 440, dur: 0.22, type: "sine" },
+  another: { freq: 660, dur: 0.16, type: "triangle" },
 }
 
 function useSound(enabled: boolean) {
@@ -59,6 +61,7 @@ function useSound(enabled: boolean) {
       osc.frequency.setValueAtTime(freq, now)
       if (cue === "prize") osc.frequency.exponentialRampToValueAtTime(freq * 1.8, now + dur)
       if (cue === "launch") osc.frequency.exponentialRampToValueAtTime(freq * 2.4, now + dur)
+      if (cue === "suspense") osc.frequency.exponentialRampToValueAtTime(freq * 1.5, now + dur)
       gain.gain.setValueAtTime(0.0001, now)
       gain.gain.exponentialRampToValueAtTime(0.14, now + 0.01)
       gain.gain.exponentialRampToValueAtTime(0.0001, now + dur)
@@ -110,19 +113,11 @@ export function DgFootballDemo() {
     if (mq.matches) setSettings((s) => ({ ...s, reducedMotion: true }))
   }, [])
 
-  const tickets = useMemo(
-    () => buildTickets(settings.preset, settings.ticketCount),
-    [settings.preset, settings.ticketCount],
-  )
-
   const patch = useCallback((p: Partial<DemoSettings>) => {
-    setSettings((s) => {
-      const next = { ...s, ...p }
-      return next
-    })
+    setSettings((s) => ({ ...s, ...p }))
     // Changing the outcome/ticket config restarts the run so the new setting
     // applies cleanly from the top.
-    if (p.preset !== undefined || p.ticketCount !== undefined || p.skipIntro !== undefined) {
+    if (p.resultPreset !== undefined || p.ticketCount !== undefined || p.skipIntro !== undefined) {
       setRunNonce((n) => n + 1)
     }
   }, [])
@@ -137,7 +132,7 @@ export function DgFootballDemo() {
   }, [])
 
   // Remount key: rebuild the whole run when config changes or on reset.
-  const runKey = `${settings.preset}-${settings.ticketCount}-${settings.skipIntro}-${runNonce}`
+  const runKey = `${settings.resultPreset}-${settings.ticketCount}-${settings.skipIntro}-${runNonce}`
 
   return (
     <div className="dgf-page">
@@ -148,7 +143,6 @@ export function DgFootballDemo() {
         <div className="dgf-viewport">
           <DgFootballReveal
             key={runKey}
-            tickets={tickets}
             settings={settings}
             playSound={play}
             onFinish={handleFinish}

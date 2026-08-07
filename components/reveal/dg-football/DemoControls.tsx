@@ -8,11 +8,11 @@
  * this isolated demo's local state.
  */
 
-import type { CharPreview, DemoSettings, DestinationOverride, OutcomePreset, Speed, TicketCount } from "./types"
+import type { CharPreview, DemoSettings, DestinationOverride, ResultPreset, Speed, TicketCount } from "./types"
 import {
   CHAR_PREVIEW_OPTIONS,
   DESTINATION_OPTIONS,
-  OUTCOME_PRESET_OPTIONS,
+  RESULT_PRESET_OPTIONS,
   SPEED_OPTIONS,
   TICKET_COUNT_OPTIONS,
 } from "./config"
@@ -53,20 +53,22 @@ export function DemoControls({ settings, onChange, onReset, variant }: DemoContr
       </div>
 
       <fieldset className="dgf-ctl-group">
-        <legend>Outcome preset</legend>
+        <legend>Result preset</legend>
         <div className="dgf-ctl-chips">
-          {OUTCOME_PRESET_OPTIONS.map((opt) => (
+          {RESULT_PRESET_OPTIONS.map((opt) => (
             <button
               key={opt.value}
               type="button"
-              className={`dgf-chip ${settings.preset === opt.value ? "dgf-chip-on" : ""}`}
-              onClick={() => onChange({ preset: opt.value as OutcomePreset })}
+              className={`dgf-chip ${settings.resultPreset === opt.value ? "dgf-chip-on" : ""}`}
+              onClick={() => onChange({ resultPreset: opt.value as ResultPreset })}
             >
               {opt.label}
             </button>
           ))}
         </div>
-        <p className="dgf-ctl-note">The tapped ball never decides this — the outcome is predetermined per ticket.</p>
+        <p className="dgf-ctl-note">
+          The instant wins in the purchase. Multiple wins auto-chain; the tapped ball never decides them.
+        </p>
       </fieldset>
 
       <fieldset className="dgf-ctl-group">

@@ -162,12 +162,14 @@ export const DG_FOOTBALL_CSS = String.raw`
 
 /* ---- DG character (left of / partly behind the board) ---- */
 .dgf-character {
-  position: absolute; left: -22%; bottom: -2%; z-index: 1;
-  width: 48%; height: 98%;
+  position: absolute; left: -30%; bottom: -3%; z-index: 1;
+  width: 62%; height: 112%;
   display: flex; align-items: flex-end; justify-content: center;
   pointer-events: none;
-  transition: opacity 260ms ease, filter 260ms ease;
+  transition: opacity 260ms ease, filter 260ms ease, transform 320ms cubic-bezier(0.2,0.9,0.3,1);
+  transform-origin: bottom left;
 }
+.dgf-character-scored { transform: scale(1.04); }
 .dgf-character-dim { opacity: 0.62; filter: saturate(0.85) brightness(0.72); }
 .dgf-character-inner { position: relative; width: 100%; height: 100%; }
 .dgf-rim {
@@ -659,6 +661,259 @@ export const DG_FOOTBALL_CSS = String.raw`
 .dgf-hole-centre-on { background: #ff5a5a; width: 6px; height: 6px; box-shadow: 0 0 6px #ff5a5a; }
 .dgf-board-bounds { outline: 2px dashed rgba(255,216,74,0.8); }
 .dgf-character-bounds { outline: 2px dashed rgba(90,180,255,0.8); }
+
+/* -------------------------------------------------------------------------- */
+/*  Stadium light beams + energy tiers (cosmetic only)                        */
+/* -------------------------------------------------------------------------- */
+.dgf-env-beams {
+  position: absolute; inset: -10% -20% auto -20%; height: 70%;
+  background:
+    conic-gradient(from 200deg at 22% -6%, transparent 0deg, rgba(210,255,180,0.10) 6deg, transparent 12deg),
+    conic-gradient(from 160deg at 78% -6%, transparent 0deg, rgba(210,255,180,0.10) 6deg, transparent 12deg);
+  filter: blur(6px); mix-blend-mode: screen; opacity: 0.6;
+}
+/* Each tier lifts the pitch glow + beams a little; NEVER changes gameplay. */
+.dgf-tier-raised    .dgf-env-glow  { filter: brightness(1.06) saturate(1.05); }
+.dgf-tier-charged   .dgf-env-glow  { filter: brightness(1.12) saturate(1.12); }
+.dgf-tier-charged   .dgf-env-beams { opacity: 0.75; }
+.dgf-tier-bigballer .dgf-env-glow  { filter: brightness(1.2) saturate(1.2); }
+.dgf-tier-bigballer .dgf-env-beams { opacity: 0.9; animation: dgf-beam-sweep 7s ease-in-out infinite; }
+.dgf-tier-bigballer .dgf-brand-title { filter: drop-shadow(0 0 22px rgba(168,255,25,0.5)); }
+.dgf-tier-max       .dgf-env-glow  { filter: brightness(1.28) saturate(1.3); }
+.dgf-tier-max       .dgf-env-beams { opacity: 1; animation: dgf-beam-sweep 6s ease-in-out infinite; }
+.dgf-tier-max       .dgf-brand-title { filter: drop-shadow(0 0 30px rgba(168,255,25,0.65)); }
+.dgf-tier-max       .dgf-tray-platform { box-shadow: 0 -6px 24px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08), 0 0 40px rgba(168,255,25,0.32); }
+@keyframes dgf-beam-sweep { 0%,100% { transform: translateX(-2%) skewX(-2deg); } 50% { transform: translateX(2%) skewX(2deg); } }
+
+/* -------------------------------------------------------------------------- */
+/*  Ticket messaging (LOADED / CHECKED / chances)                             */
+/* -------------------------------------------------------------------------- */
+.dgf-tickets {
+  margin-top: clamp(6px, 1.6vh, 12px);
+  display: flex; flex-direction: column; align-items: center; gap: 3px; text-align: center;
+  transition: opacity 240ms ease;
+}
+.dgf-tickets-loaded {
+  font-size: clamp(13px, 3.4vw, 17px); font-weight: 900; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--dg-neon);
+  padding: 3px 14px; border-radius: 999px;
+  background: rgba(168,255,25,0.1); border: 1px solid rgba(168,255,25,0.3);
+  box-shadow: 0 0 18px rgba(168,255,25,0.18);
+}
+.dgf-tickets-chances {
+  font-size: clamp(10px, 2.7vw, 13px); font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--dg-muted);
+}
+.dgf-tickets-compact { margin-top: 6px; opacity: 0.9; }
+.dgf-tickets-compact .dgf-tickets-loaded { font-size: clamp(11px, 2.8vw, 13px); padding: 2px 10px; }
+
+/* -------------------------------------------------------------------------- */
+/*  Staged opening entrance                                                   */
+/* -------------------------------------------------------------------------- */
+.dgf-run-entrance .dgf-entrance-brand { animation: dgf-enter-pop 620ms cubic-bezier(0.2,0.9,0.3,1) both; }
+.dgf-run-entrance .dgf-entrance-tickets { animation: dgf-fade-up 500ms ease both; animation-delay: 240ms; }
+.dgf-run-entrance .dgf-entrance-board { animation: dgf-enter-board 720ms cubic-bezier(0.2,0.9,0.3,1) both; animation-delay: 180ms; }
+.dgf-run-entrance .dgf-entrance-tray { animation: dgf-enter-tray 620ms cubic-bezier(0.2,0.9,0.3,1) both; animation-delay: 460ms; }
+@keyframes dgf-enter-pop { 0% { opacity: 0; transform: scale(0.7) translateY(-12px); } 60% { opacity: 1; transform: scale(1.06); } 100% { transform: scale(1); } }
+@keyframes dgf-enter-board { 0% { opacity: 0; transform: translateY(18px) scale(0.9); } 100% { opacity: 1; transform: none; } }
+@keyframes dgf-enter-tray { 0% { opacity: 0; transform: translateY(60px); } 100% { opacity: 1; transform: none; } }
+
+/* "BIG BALLER MODE" intro beat (100+ tickets). */
+.dgf-bigballer {
+  position: absolute; inset: 0; z-index: 8; display: grid; place-items: center; pointer-events: none;
+  animation: dgf-bigballer 900ms ease-in forwards;
+}
+.dgf-bigballer span {
+  font-size: clamp(30px, 9vw, 58px); font-weight: 900; font-style: italic; letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: linear-gradient(180deg, #fff7d6, var(--dg-gold) 55%, #e0a800);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 0 30px rgba(255,216,74,0.6));
+}
+@keyframes dgf-bigballer {
+  0% { opacity: 0; transform: scale(1.4); }
+  25% { opacity: 1; transform: scale(1); }
+  75% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.92); }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Board depth details + suspense                                            */
+/* -------------------------------------------------------------------------- */
+.dgf-board-brushed {
+  position: absolute; inset: 0; border-radius: 18px; pointer-events: none; opacity: 0.5;
+  background: repeating-linear-gradient(90deg, rgba(255,255,255,0.03) 0 1px, transparent 1px 3px);
+}
+.dgf-board-scratches {
+  position: absolute; inset: 0; border-radius: 18px; pointer-events: none; opacity: 0.4;
+  background:
+    linear-gradient(115deg, transparent 40%, rgba(255,255,255,0.05) 42%, transparent 44%),
+    linear-gradient(75deg, transparent 60%, rgba(0,0,0,0.3) 62%, transparent 64%);
+}
+.dgf-rivet {
+  position: absolute; width: 6px; height: 6px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #aeb4a6, #5a6154 60%, #2a2f29 100%);
+  box-shadow: inset 0 1px 1px rgba(255,255,255,0.3), 0 1px 2px rgba(0,0,0,0.7); z-index: 4;
+}
+.dgf-rivet-t1 { top: 3%; left: 34%; } .dgf-rivet-t2 { top: 3%; right: 34%; }
+.dgf-rivet-b1 { bottom: 11%; left: 34%; } .dgf-rivet-b2 { bottom: 11%; right: 34%; }
+
+.dgf-hole-reflection {
+  position: absolute; left: 26%; top: 20%; width: 34%; height: 22%; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,0.16), transparent 70%);
+  pointer-events: none;
+}
+
+/* Suspense: board darkens, LEDs dim, focus hole stays lit. */
+.dgf-board-suspense .dgf-board-face { filter: brightness(0.5); transition: filter 220ms ease; }
+.dgf-board-suspense .dgf-led { opacity: 0.4; transition: opacity 220ms ease; }
+.dgf-board-suspense .dgf-hole-focus { filter: none; }
+.dgf-board-win .dgf-led { animation: dgf-led-flare 500ms ease-out; }
+@keyframes dgf-led-flare { 0%,100% { opacity: 0.92; } 40% { opacity: 1; box-shadow: 0 0 18px var(--dg-neon), 0 0 40px rgba(168,255,25,0.9); } }
+
+/* Suspense veil over the whole stage. */
+.dgf-suspense-veil {
+  position: absolute; inset: 0; z-index: 12; pointer-events: none; opacity: 0;
+  background: radial-gradient(60% 50% at 50% 42%, transparent 30%, rgba(0,0,0,0.55) 100%);
+  transition: opacity 220ms ease;
+}
+.dgf-suspense-veil-on { opacity: 1; }
+
+/* -------------------------------------------------------------------------- */
+/*  Hole-entry mask (front lip occludes the ball as it sinks)                 */
+/* -------------------------------------------------------------------------- */
+.dgf-entry-mask {
+  position: absolute; z-index: 10; transform: translate(-50%, -50%); pointer-events: none;
+  border-radius: 50%;
+}
+.dgf-entry-throat {
+  position: absolute; inset: 0; border-radius: 50%;
+  background: radial-gradient(circle at 50% 40%, #0a0d08 0%, #000 70%);
+  clip-path: inset(48% 0 0 0);
+}
+.dgf-entry-lip {
+  position: absolute; inset: -6%; border-radius: 50%;
+  border-bottom: 4px solid rgba(58,64,52,0.9);
+  box-shadow: 0 3px 8px rgba(0,0,0,0.7);
+  clip-path: inset(50% 0 0 0);
+}
+.dgf-entry-mask-active .dgf-entry-lip { border-bottom-color: rgba(168,255,25,0.5); }
+
+/* -------------------------------------------------------------------------- */
+/*  Winning hole = SOURCE of the celebration                                  */
+/* -------------------------------------------------------------------------- */
+.dgf-hole-shock {
+  position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+  border: 3px solid rgba(255,216,74,0.9);
+  animation: dgf-shock 620ms ease-out forwards;
+}
+.dgf-hole-shock-2 { border-color: rgba(168,255,25,0.8); animation-delay: 140ms; }
+@keyframes dgf-shock {
+  0% { opacity: 0.9; transform: scale(0.6); }
+  100% { opacity: 0; transform: scale(2.6); }
+}
+.dgf-hole-rays {
+  position: absolute; left: 50%; top: 50%; width: 320%; height: 320%;
+  transform: translate(-50%, -50%); pointer-events: none; mix-blend-mode: screen;
+  background: conic-gradient(from 0deg,
+    rgba(255,216,74,0.5) 0deg, transparent 8deg, transparent 30deg,
+    rgba(168,255,25,0.4) 40deg, transparent 48deg, transparent 82deg,
+    rgba(255,216,74,0.5) 92deg, transparent 100deg, transparent 150deg,
+    rgba(168,255,25,0.4) 162deg, transparent 170deg, transparent 360deg);
+  opacity: 0; animation: dgf-rays-in 640ms ease-out forwards, dgf-spin 8s linear infinite;
+}
+.dgf-hole-rays-big { width: 480%; height: 480%; }
+@keyframes dgf-rays-in { 0% { opacity: 0; transform: translate(-50%,-50%) scale(0.4); } 100% { opacity: 0.8; transform: translate(-50%,-50%) scale(1); } }
+.dgf-hole-sparks {
+  position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; transform: translate(-50%,-50%);
+  pointer-events: none;
+  background:
+    radial-gradient(circle, var(--dg-gold) 40%, transparent 42%);
+  box-shadow:
+    0 -60px 0 -2px var(--dg-neon), 42px -42px 0 -3px var(--dg-gold), 60px 0 0 -2px var(--dg-neon),
+    42px 42px 0 -3px var(--dg-gold), 0 60px 0 -2px var(--dg-neon), -42px 42px 0 -3px var(--dg-gold),
+    -60px 0 0 -2px var(--dg-neon), -42px -42px 0 -3px var(--dg-gold);
+  animation: dgf-sparks 640ms ease-out forwards;
+}
+@keyframes dgf-sparks { 0% { opacity: 1; transform: translate(-50%,-50%) scale(0.3); } 100% { opacity: 0; transform: translate(-50%,-50%) scale(1.8); } }
+.dgf-hole-pulseout {
+  position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+  border: 3px solid rgba(168,255,25,0.8);
+  animation: dgf-shock 700ms ease-out forwards;
+}
+.dgf-hole-bigwin .dgf-hole-ring { border-color: var(--dg-gold); box-shadow: 0 0 40px rgba(255,216,74,1), inset 0 0 16px rgba(255,216,74,0.6); }
+.dgf-hole-bigwin .dgf-hole-throat { background: radial-gradient(circle at 50% 40%, rgba(255,216,74,0.35), #000 70%); }
+
+/* Stronger celebration burst behind a big-win DG. */
+.dgf-win-flash-big {
+  background: radial-gradient(circle, rgba(255,216,74,0.8), rgba(168,255,25,0.4) 46%, transparent 72%);
+}
+.dgf-win-flash-big.dgf-win-flash-on { animation: dgf-winflash 700ms ease-out forwards; }
+.dgf-dg-scored-in { animation: dgf-dg-pop var(--dgf-enter, 320ms) cubic-bezier(0.2,1.1,0.3,1) both; }
+@keyframes dgf-dg-pop { 0% { transform: scale(1.08) translateY(6px); } 100% { transform: none; } }
+
+/* -------------------------------------------------------------------------- */
+/*  "THERE'S ANOTHER WIN!" interstitial                                       */
+/* -------------------------------------------------------------------------- */
+.dgf-interstitial {
+  position: absolute; inset: 0; z-index: 31; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 6px; pointer-events: none;
+  background: radial-gradient(60% 50% at 50% 50%, rgba(5,7,5,0.78), rgba(5,7,5,0.35) 70%, transparent);
+}
+.dgf-interstitial-wait {
+  font-size: clamp(12px, 3.4vw, 16px); font-weight: 800; letter-spacing: 0.3em; text-transform: uppercase;
+  color: var(--dg-muted); animation: dgf-fade 200ms ease both;
+}
+.dgf-interstitial-main {
+  font-size: clamp(28px, 8.4vw, 52px); font-weight: 900; font-style: italic; letter-spacing: 0.01em;
+  text-transform: uppercase;
+  background: linear-gradient(180deg, #f3fff0, var(--dg-neon) 60%, #7dd400);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 0 24px rgba(168,255,25,0.5));
+  animation: dgf-enter-pop 520ms cubic-bezier(0.2,0.9,0.3,1) both;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Prize panel — win counter, value shake + light sweep, big rays            */
+/* -------------------------------------------------------------------------- */
+.dgf-win-counter {
+  display: inline-block; margin-left: 10px; padding: 2px 8px; border-radius: 999px;
+  font-size: 10px; letter-spacing: 0.12em; color: var(--dg-white);
+  background: rgba(168,255,25,0.16); border: 1px solid rgba(168,255,25,0.4); vertical-align: middle;
+}
+.dgf-panel-amount-value { position: relative; display: inline-block; overflow: hidden; }
+.dgf-value-sweep {
+  position: absolute; top: 0; left: -60%; width: 40%; height: 100%;
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,0.85), transparent);
+  mix-blend-mode: overlay; animation: dgf-sweep 720ms ease-out 120ms both;
+}
+@keyframes dgf-sweep { 0% { left: -60%; } 100% { left: 130%; } }
+.dgf-value-shake { animation: dgf-value-pop 460ms cubic-bezier(0.2,1.2,0.4,1) both, dgf-value-quake 420ms ease-out 460ms; }
+@keyframes dgf-value-quake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 50% { transform: translateX(3px); } 75% { transform: translateX(-2px); } }
+.dgf-panel .dgf-rays {
+  position: absolute; left: 50%; top: 30%; width: 200%; height: 200%;
+  transform: translate(-50%, -50%); opacity: 0.6; mix-blend-mode: screen; pointer-events: none;
+  animation: dgf-spin 9s linear infinite;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Summary panel (LOADED → GAME → CHECKED)                                   */
+/* -------------------------------------------------------------------------- */
+.dgf-summary-none { border-top-color: rgba(168,255,25,0.7); }
+.dgf-summary-win { border-top-color: var(--dg-gold); box-shadow: 0 -20px 60px rgba(0,0,0,0.7), 0 -2px 34px rgba(255,216,74,0.4); }
+.dgf-summary-checked { font-size: 13px; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; color: var(--dg-muted); margin: 0; }
+.dgf-summary-winline { margin: 8px 0 4px; font-size: clamp(20px, 5.4vw, 28px); font-weight: 900; text-transform: uppercase; color: var(--dg-white); }
+.dgf-summary-wincount { color: var(--dg-neon); font-size: 1.3em; }
+.dgf-summary-nowin { margin: 8px 0 2px; font-size: clamp(19px, 5vw, 26px); font-weight: 900; text-transform: uppercase; color: var(--dg-white); }
+.dgf-summary-prizes { display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; margin: 10px 0; }
+.dgf-summary-prize {
+  display: flex; flex-direction: column; align-items: center; min-width: 120px; padding: 12px 16px;
+  border-radius: 14px; background: rgba(168,255,25,0.06); border: 1px solid rgba(168,255,25,0.2);
+}
+.dgf-summary-prize-amt { font-size: clamp(26px, 8vw, 40px); font-weight: 900; line-height: 1; }
+.dgf-summary-prize-label { margin-top: 4px; font-size: 11px; font-weight: 800; letter-spacing: 0.14em; color: var(--dg-muted); }
+.dgf-summary-draw { margin: 8px 0 0; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; color: var(--dg-muted); text-transform: uppercase; }
+.dgf-summary-draw-strong { color: var(--dg-neon); font-size: 13px; }
 
 /* -------------------------------------------------------------------------- */
 /*  Reduced motion                                                            */
