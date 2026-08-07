@@ -6,15 +6,15 @@
 import type {
   CharPreview,
   DemoSettings,
-  MissVariant,
+  DestinationOverride,
+  HoleId,
   Outcome,
   OutcomeKind,
   OutcomePreset,
   RevealCopy,
-  ShotPath,
+  Speed,
   Ticket,
   TicketCount,
-  TimeScale,
 } from "./types"
 
 /* -------------------------------------------------------------------------- */
@@ -34,14 +34,14 @@ export const COLORS = {
 } as const
 
 /* -------------------------------------------------------------------------- */
-/*  Asset paths (real character photos — supplied separately)                 */
+/*  Assets                                                                    */
+/*  dg-board-reference.png is VISUAL REFERENCE ONLY — never rendered as the    */
+/*  game. The board, holes, DG and effects are all independent DOM/CSS/SVG.    */
 /* -------------------------------------------------------------------------- */
 export const ASSETS = {
-  /** Between shots, non-winning reaction and final summary. */
+  /** Initial / choosing / shot-in-progress / non-win / between / summary. */
   dgNeutral: "/reveal/dg-football/dg-neutral.png",
-  /** Active/waiting pose — shown from intro through aiming, launch and flight. */
-  dgMouthOpen: "/reveal/dg-football/dg-mouth-open.png",
-  /** Winning celebration takeover ONLY — after the ball enters the mouth. */
+  /** Winning celebration + behind the winning prize panel ONLY. */
   dgScored: "/reveal/dg-football/dg-scored.png",
 } as const
 
@@ -50,104 +50,81 @@ export const ASSETS = {
 /* -------------------------------------------------------------------------- */
 export const TIMING = {
   introMs: 900,
-  ballLiftMs: 250,
-  /** Ball moves to the central launch point ~250ms after selection. */
-  ballToLaunchMs: 250,
-  tapHintDelayMs: 1400,
-  /** Launch flight window (spec: 680–760ms). We use the midpoint. */
-  launchMinMs: 680,
-  launchMaxMs: 760,
-  /** Tension-release pause after a valid flick, before flight begins. */
-  tensionReleaseMs: 100,
-  /** Green head-glow ramp starts ~220ms before impact. */
-  preImpactGlowLeadMs: 220,
-  /** Short light sweep across the face ~170ms before impact. */
-  preImpactSweepLeadMs: 170,
-  /** Expression cross-fade duration (spec: 100–130ms). */
-  crossfadeMs: 120,
-  /** Impact micro-sequence total. */
-  impactMs: 420,
-  /** Screen-shake duration (spec: 180–220ms). */
-  shakeMs: 200,
-  /** Camera punch-in total (spec: ~320ms). */
-  cameraPunchMs: 320,
-  /** Suspense hold before the prize panel rises (spec: 500–650ms). */
-  suspenseMs: 560,
+  /** Ball lift on tap before it is locked in. */
+  ballLiftMs: 200,
+  /** Selection is held (spec: 220–300ms) before the shot auto-begins. */
+  selectHoldMs: 260,
+  /** Auto-shot flight (spec: 850–1050ms) — slower so the landing is enjoyable. */
+  flightMs: 950,
+  /** Reduced-motion straight-line flight. */
+  reducedFlightMs: 440,
+  /** Lead before entry when the destination hole is revealed (spec: ~220ms). */
+  anticipationLeadMs: 220,
+  /** Ball-into-hole entry sequence (spec: 180–240ms). */
+  holeEntryMs: 210,
+  /** Win impact hold at the hole before DG celebrates (spec: ~350ms). */
+  winImpactMs: 350,
+  /** dg-scored punch-in takeover (spec: 300–380ms). */
+  scoredTakeoverMs: 340,
+  /** Top-prize (£5,000) extends the celebration takeover. */
+  topPrizeExtraMs: 140,
+  /** Non-win reaction hold before the panel (spec: 350–450ms). */
+  nonwinHoldMs: 400,
+  /** Pause after the win celebration settles, before the prize panel rises. */
+  pauseBeforePanelMs: 240,
   /** Prize-panel entrance (spec: 700–900ms). */
   panelRiseMs: 820,
-  /** Reduced-motion straight-line launch. */
-  reducedLaunchMs: 300,
-  /** Return-to-choosing reflow after a shot (spec: 500–700ms). */
+  /** Return-to-choosing reflow after a shot. */
   reflowMs: 600,
-
-  /* ---- winning shot branch (spec-exact windows) ---------------------- */
-  /** Winning flight home → mouth (spec: 700–820ms). */
-  winFlightMs: 760,
-  /** Final mouth-entry sequence — ball behind the mask, compress + vanish
-   *  (spec: 180–240ms). */
-  mouthEntryMs: 210,
-  /** Mouth impact micro-sequence — shockwave + particles (spec: 280–380ms). */
-  winImpactMs: 330,
-  /** Screen briefly darkens before the scored image (spec: 100–140ms). */
-  darkTransitionMs: 120,
-  /** dg-scored.png punch-in takeover (spec: 320–420ms). */
-  scoredTakeoverMs: 380,
-  /** Pause after the celebration settles, before the prize panel rises
-   *  (spec: 220–320ms). */
-  pauseBeforePanelMs: 270,
-  /** Top-prize (£5,000) extends the celebration takeover by this much. */
-  topPrizeExtraMs: 180,
-
-  /* ---- miss shot branch ---------------------------------------------- */
-  /** Miss flight home → past the mouth (kept in the winning flight range). */
-  missFlightMs: 760,
-  /** Cross-fade from mouth-open → neutral after a visible miss
-   *  (spec: 140–180ms). */
-  missReactionMs: 160,
-  /** Brief beat on the near-miss ripple before the neutral swap. */
-  missSettleMs: 220,
+  /** Camera punch-in total. */
+  cameraPunchMs: 300,
+  /** Screen-shake duration. */
+  shakeMs: 200,
 } as const
 
-export const SLOW_FACTOR = 3
+/* -------------------------------------------------------------------------- */
+/*  Geometry                                                                  */
+/* -------------------------------------------------------------------------- */
+/** Tray football diameter (px) at a 390px stage (spec: 58–68px). */
+export const BALL_SIZE = 62
 
-/** Minimum upward drag (px) required to trigger a launch on release. */
-export const LAUNCH_DRAG_THRESHOLD = 70
+/** In-flight ball diameter (px). Stays large enough to follow (spec: 44–54px
+ *  near the hole) — we launch a touch bigger and keep it readable. */
+export const FLIGHT_BALL_SIZE = 54
 
-/** Tray football diameter (px) at a 390px stage — unselected balls. */
-export const BALL_SIZE = 60
-
-/** The selected launch football is dramatically larger and dominant
- *  (spec: 96–112px). It sits alone in the central launch lane. */
-export const BALL_SIZE_SELECTED = 104
-
-/** Mouth target position as a fraction of the stage. DG's mouth sits ~43–47%
- *  down the viewport; we centre on 45%. */
-export const MOUTH_TARGET = { xPct: 0.5, yPct: 0.45 } as const
-
-/** Home (launch) position of the active football as a fraction of the stage
- *  (spec: 68–74% down before drag). */
-export const LAUNCH_HOME = { xPct: 0.5, yPct: 0.71 } as const
+/** Number of cosmetic footballs in the tray each shot (always five). */
+export const TRAY_BALL_COUNT = 5
 
 /**
- * Deterministic miss endpoints, expressed as an offset (in px, at a ~390px
- * stage) from the MEASURED mouth centre. The ball travels convincingly toward
- * the mouth, clearly misses at this point, then continues beyond it. These are
- * fixed per variant — never randomised on render.
+ * Target board rectangle as fractions of the stage. DG stands to the LEFT and
+ * partially overlaps the board's left edge, so the board is nudged right.
  */
-export const MISS_OFFSETS: Record<MissVariant, { dx: number; dy: number }> = {
-  left_cheek: { dx: -78, dy: 4 },
-  right_cheek: { dx: 78, dy: 4 },
-  top: { dx: 6, dy: -84 },
-  edge_clip: { dx: 46, dy: -18 },
-  shoulder_bounce: { dx: -104, dy: 96 },
-}
+export const BOARD_RECT = {
+  leftPct: 0.15,
+  topPct: 0.2,
+  widthPct: 0.78,
+  heightPct: 0.5,
+} as const
 
-const MISS_ORDER: MissVariant[] = ["left_cheek", "right_cheek", "top", "edge_clip", "shoulder_bounce"]
+/**
+ * The five holes as fractions of the board's INNER face, in the quincunx:
+ *     1     2
+ *        3
+ *     4     5
+ * Measured in the DOM at runtime; these drive the CSS placement.
+ */
+export const HOLES: Record<HoleId, { xPct: number; yPct: number }> = {
+  1: { xPct: 0.29, yPct: 0.24 },
+  2: { xPct: 0.71, yPct: 0.24 },
+  3: { xPct: 0.5, yPct: 0.5 },
+  4: { xPct: 0.29, yPct: 0.76 },
+  5: { xPct: 0.71, yPct: 0.76 },
+} as const
 
-/** Deterministic miss variant for a given ticket index (stable per shot). */
-export function missVariantForIndex(index: number): MissVariant {
-  return MISS_ORDER[index % MISS_ORDER.length]
-}
+export const HOLE_IDS: HoleId[] = [1, 2, 3, 4, 5]
+
+/** Hole diameter (px) at a 390px stage (spec: 86–104px). Scales with board. */
+export const HOLE_SIZE = 94
 
 /* -------------------------------------------------------------------------- */
 /*  Outcome helpers                                                           */
@@ -166,13 +143,16 @@ const OUTCOME_NONE: Outcome = { kind: "none", amountPence: 0 }
 const OUTCOME_CREDIT5: Outcome = { kind: "credit", amountPence: 500 }
 const OUTCOME_CASH100: Outcome = { kind: "cash", amountPence: 10000 }
 const OUTCOME_CASH5000: Outcome = { kind: "cash", amountPence: 500000 }
-const OUTCOME_MYSTERY: Outcome = { kind: "mystery", amountPence: 0 }
 
 /** Big-win threshold — drives the gold, light-ray, confetti treatment. */
 export const BIG_WIN_PENCE = 100000
 
 export function isBigWin(o: Outcome): boolean {
   return o.kind === "cash" && o.amountPence >= BIG_WIN_PENCE
+}
+
+export function isWinOutcome(o: Outcome): boolean {
+  return o.kind !== "none"
 }
 
 /**
@@ -188,7 +168,7 @@ export function revealCopyFor(o: Outcome): RevealCopy {
           eyebrow: "INSTANT WIN!",
           amount: formatGBP(o.amountPence),
           unit: "CASH",
-          support: "STRAIGHT IN!",
+          support: "WHAT A STRIKE!",
           isMoney: true,
         }
       }
@@ -197,7 +177,7 @@ export function revealCopyFor(o: Outcome): RevealCopy {
         eyebrow: "INSTANT WIN!",
         amount: formatGBP(o.amountPence),
         unit: "CASH",
-        support: "WHAT A SHOT!",
+        support: "WHAT A STRIKE!",
         isMoney: true,
       }
     case "credit":
@@ -206,7 +186,7 @@ export function revealCopyFor(o: Outcome): RevealCopy {
         eyebrow: "BONUS WIN!",
         amount: formatGBP(o.amountPence),
         unit: "SITE CREDIT",
-        support: "IT'S IN!",
+        support: "NICE ONE!",
         isMoney: true,
       }
     case "mystery":
@@ -220,14 +200,13 @@ export function revealCopyFor(o: Outcome): RevealCopy {
       }
     case "none":
     default:
-      // Non-winning: never a loss. "JUST WIDE!" keeps it playful, then the
-      // reassurance that the ticket is still live in the final draw.
+      // Non-winning: never a loss. Positive, forward-looking framing only.
       return {
         tone: "none",
-        eyebrow: "JUST WIDE!",
-        amount: "NO INSTANT WIN",
+        eyebrow: "NO INSTANT WIN",
+        amount: "YOU'RE STILL IN",
         unit: "",
-        support: "YOU'RE STILL IN THE FINAL DRAW",
+        support: "THE FINAL DRAW",
         support2: "YOUR NEXT SHOT IS READY",
         isMoney: false,
       }
@@ -239,125 +218,134 @@ export function revealCopyFor(o: Outcome): RevealCopy {
 /* -------------------------------------------------------------------------- */
 export const INSTRUCTIONS: Record<string, { text: string; key?: string; sub?: string } | null> = {
   intro: null,
-  choosing: { text: "CHOOSE YOUR", key: "BALL", sub: "FLICK IT INTO DG'S MOUTH" },
-  selected: { text: "FLICK TO", key: "SHOOT", sub: "GET IT IN HIS MOUTH" },
-  aiming: { text: "RELEASE TO", key: "SHOOT" },
+  // The hero instruction lives in the brand header; the tray shows "TAP A BALL".
+  choosing: { text: "CHOOSE A", key: "BALL", sub: "WATCH WHERE IT LANDS..." },
+  selected: { text: "HERE WE", key: "GO!" },
   launching: { text: "HERE WE", key: "GO!" },
-  winning_entry: null,
-  miss_flight: null,
+  approaching_hole: null,
+  entering_hole: null,
   win_impact: null,
-  win_celebration_transition: null,
+  nonwin_reaction: null,
   win_celebration: null,
-  miss_reaction: null,
-  suspense: null,
   revealing: null,
   revealed: null,
   transitioning_next: null,
   complete: null,
 }
 
+/** The primary call-to-action shown directly above the tray. */
+export const TAP_A_BALL = "TAP A BALL"
+
 /* -------------------------------------------------------------------------- */
-/*  Deterministic mock ticket sequences                                       */
+/*  Deterministic mock ticket sequence                                        */
+/*  DEFAULT (per spec):                                                        */
+/*    1: no win        → hole 4                                                */
+/*    2: £5 credit     → hole 2                                                */
+/*    3: no win        → hole 1                                                */
+/*    4: £100 cash     → hole 5                                                */
+/*    5: £5,000 cash   → hole 3                                                */
 /* -------------------------------------------------------------------------- */
-const outcomeForPreset: Record<Exclude<OutcomePreset, "mixed5">, Outcome> = {
+interface Seed {
+  outcome: Outcome
+  hole: HoleId
+}
+
+const SEQUENCE: Seed[] = [
+  { outcome: OUTCOME_NONE, hole: 4 },
+  { outcome: OUTCOME_CREDIT5, hole: 2 },
+  { outcome: OUTCOME_NONE, hole: 1 },
+  { outcome: OUTCOME_CASH100, hole: 5 },
+  { outcome: OUTCOME_CASH5000, hole: 3 },
+]
+
+const outcomeForPreset: Record<Exclude<OutcomePreset, "sequence">, Outcome> = {
   none: OUTCOME_NONE,
   credit5: OUTCOME_CREDIT5,
   cash100: OUTCOME_CASH100,
   cash5000: OUTCOME_CASH5000,
-  mystery: OUTCOME_MYSTERY,
 }
 
-/** The signature default demo sequence (exactly as specified). */
-const MIXED5: Outcome[] = [
-  OUTCOME_NONE,
-  OUTCOME_CREDIT5,
-  OUTCOME_CASH100,
-  OUTCOME_NONE,
-  OUTCOME_CASH5000,
-]
+/** Rotate holes for single-outcome presets so repeats still feel varied. */
+const HOLE_ROTATION: HoleId[] = [4, 2, 1, 5, 3]
 
-function makeTicket(index: number, outcome: Outcome): Ticket {
+function makeTicket(index: number, seed: Seed): Ticket {
   const n = index + 1
   return {
     id: `mock-ticket-${n}`,
     label: `TICKET ${n}`,
     shortLabel: `#${n}`,
-    outcome,
+    outcome: seed.outcome,
+    destinationHole: seed.hole,
   }
 }
 
 /**
  * Build a deterministic ticket list for the given preset + count.
- * - "mixed5" cycles the signature sequence to fill the requested count.
- * - Any single-outcome preset repeats that outcome across all tickets.
+ * - "sequence" cycles the signature five-shot arc to fill the requested count.
+ * - Any single-outcome preset repeats that outcome, rotating holes.
  */
 export function buildTickets(preset: OutcomePreset, count: TicketCount): Ticket[] {
-  const outcomes: Outcome[] =
-    preset === "mixed5"
-      ? Array.from({ length: count }, (_, i) => MIXED5[i % MIXED5.length])
-      : Array.from({ length: count }, () => outcomeForPreset[preset])
-  return outcomes.map((o, i) => makeTicket(i, o))
+  const seeds: Seed[] =
+    preset === "sequence"
+      ? Array.from({ length: count }, (_, i) => SEQUENCE[i % SEQUENCE.length])
+      : Array.from({ length: count }, (_, i) => ({
+          outcome: outcomeForPreset[preset],
+          hole: HOLE_ROTATION[i % HOLE_ROTATION.length],
+        }))
+  return seeds.map((s, i) => makeTicket(i, s))
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Dev option lists                                                          */
+/* -------------------------------------------------------------------------- */
 export const OUTCOME_PRESET_OPTIONS: { value: OutcomePreset; label: string }[] = [
+  { value: "sequence", label: "Default sequence" },
   { value: "none", label: "No instant win" },
   { value: "credit5", label: "£5 site credit" },
   { value: "cash100", label: "£100 cash" },
   { value: "cash5000", label: "£5,000 cash" },
-  { value: "mystery", label: "Mystery prize" },
-  { value: "mixed5", label: "Mixed five-ticket sequence" },
 ]
 
-/**
- * Demo ticket counts. Each ticket is one shot and one numbered football in the
- * tray; a used football leaves the tray after its shot. The signature demo is
- * the five-ticket mixed sequence, so counts stay small and legible as an arc.
- */
-export const TICKET_COUNT_OPTIONS: TicketCount[] = [1, 3, 5]
-
-export const DEFAULT_SETTINGS: DemoSettings = {
-  preset: "mixed5",
-  ticketCount: 5,
-  soundOn: false,
-  reducedMotion: false,
-  timeScale: 1,
-  skipIntro: false,
-  shotPath: "auto",
-  charPreview: "off",
-  showMouthTarget: false,
-  showMouthMask: false,
-  showCharBounds: false,
-  showScoredBounds: false,
-  showPrizeSafe: false,
-  showEndpoint: false,
-  showState: false,
-}
-
-/** Dev "shot path" options. `auto` derives win/miss from the ticket outcome. */
-export const SHOT_PATH_OPTIONS: { value: ShotPath; label: string }[] = [
+export const DESTINATION_OPTIONS: { value: DestinationOverride; label: string }[] = [
   { value: "auto", label: "Automatic" },
-  { value: "score", label: "Force score" },
-  { value: "left_cheek", label: "Left miss" },
-  { value: "right_cheek", label: "Right miss" },
-  { value: "top", label: "Top miss" },
-  { value: "edge_clip", label: "Edge clip" },
-  { value: "shoulder_bounce", label: "Shoulder bounce" },
+  { value: 1, label: "1" },
+  { value: 2, label: "2" },
+  { value: 3, label: "3" },
+  { value: 4, label: "4" },
+  { value: 5, label: "5" },
 ]
 
-/** Dev timing-scale options (1× / 0.5× / 0.25×). */
-export const TIME_SCALE_OPTIONS: { value: TimeScale; label: string }[] = [
+export const TICKET_COUNT_OPTIONS: TicketCount[] = [1, 3, 5, 10]
+
+export const SPEED_OPTIONS: { value: Speed; label: string }[] = [
   { value: 1, label: "Normal" },
   { value: 2, label: "0.5×" },
   { value: 4, label: "0.25×" },
 ]
 
-/** Dev character-preview poses (static inspection of each asset). */
 export const CHAR_PREVIEW_OPTIONS: { value: CharPreview; label: string }[] = [
   { value: "off", label: "Live game" },
-  { value: "mouth_open", label: "Mouth open" },
   { value: "neutral", label: "Neutral" },
   { value: "scored", label: "Scored" },
 ]
+
+export const DEFAULT_SETTINGS: DemoSettings = {
+  preset: "sequence",
+  ticketCount: 5,
+  soundOn: false,
+  reducedMotion: false,
+  speed: 1,
+  skipIntro: false,
+  destination: "auto",
+  charPreview: "off",
+  showHoleBounds: false,
+  showHoleCentres: false,
+  showBallOrigin: false,
+  showControlPoints: false,
+  showEndpoint: false,
+  showBoardBounds: false,
+  showState: false,
+}
 
 /** Human labels for outcome kinds (dev summary use). */
 export const KIND_LABEL: Record<OutcomeKind, string> = {

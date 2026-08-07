@@ -3,70 +3,79 @@
  *
  * PROTOTYPE ONLY. No Supabase, no checkout, no payments, no award allocation,
  * no API routes. Every value here is mock/presentation data.
+ *
+ * NEW MECHANIC (tap-a-ball → auto shot → into one of five mystery holes):
+ *   The customer performs ONE interaction — TAP A BALL. The selected football
+ *   automatically launches on a curved path into a five-hole target board and
+ *   visibly enters ONE hole. That hole reveals the PREDETERMINED result.
+ *   No flicking / swiping / dragging / aiming / hole selection.
  */
 
 /**
  * The single, typed game state. Never model this with loose booleans.
  *
- * The flight branches after `launching`:
- *   WIN:  launching → winning_entry → win_impact →
- *         win_celebration_transition → win_celebration → suspense →
- *         revealing → revealed
- *   MISS: launching → miss_flight → miss_reaction → suspense →
- *         revealing → revealed
- * Both branches converge at `suspense`, then continue to
- *   revealed → transitioning_next → (choosing | complete).
+ *   intro → choosing → selected → launching → approaching_hole → entering_hole
+ *     WIN:  → win_impact → win_celebration → revealing → revealed
+ *     MISS: → nonwin_reaction → revealing → revealed
+ *   revealed → transitioning_next → (choosing | complete)
  */
 export type GameState =
   | "intro"
   | "choosing"
   | "selected"
-  | "aiming"
   | "launching"
-  | "winning_entry"
-  | "miss_flight"
+  | "approaching_hole"
+  | "entering_hole"
   | "win_impact"
-  | "win_celebration_transition"
+  | "nonwin_reaction"
   | "win_celebration"
-  | "miss_reaction"
-  | "suspense"
   | "revealing"
   | "revealed"
   | "transitioning_next"
   | "complete"
 
-/** Which supplied photo DG is showing. Derived from GameState — never ad-hoc. */
-export type CharacterPose = "mouth_open" | "neutral" | "scored"
+/** Which supplied photo DG is showing. Derived from GameState — never ad-hoc.
+ *  dg-neutral: everything except a winning celebration.
+ *  dg-scored:  winning celebration + behind the winning prize panel only. */
+export type CharacterPose = "neutral" | "scored"
 
-/** Deterministic miss trajectories. Fixed per shot — never randomised. */
-export type MissVariant = "left_cheek" | "right_cheek" | "top" | "edge_clip" | "shoulder_bounce"
+/** The five target-board holes. These are HOLE identifiers, not ticket numbers. */
+export type HoleId = 1 | 2 | 3 | 4 | 5
 
-/** Dev "shot path" override. `auto` derives win/miss from the ticket outcome. */
-export type ShotPath = "auto" | "score" | MissVariant
-
-/** Dev static character preview (inspect a single asset), or "off" for live. */
-export type CharPreview = "off" | "mouth_open" | "neutral" | "scored"
+/** Dev destination override. `auto` uses the ticket's predetermined hole. */
+export type DestinationOverride = "auto" | HoleId
 
 /** Dev timing multiplier: 1 = normal, 2 = 0.5×, 4 = 0.25×. */
-export type TimeScale = 1 | 2 | 4
+export type Speed = 1 | 2 | 4
+
+/** Dev static character preview (inspect a single asset), or "off" for live. */
+export type CharPreview = "off" | "neutral" | "scored"
+
+/** Imperative dev replay commands fired from the controls. */
+export type ReplayKind = "launch" | "hole_entry" | "win" | "nonwin"
 
 /** The kind of instant-win outcome for a single ticket. */
 export type OutcomeKind = "none" | "credit" | "cash" | "mystery"
 
 /** A single deterministic mock outcome. `amountPence` is only meaningful for
- *  cash / credit outcomes. Never exposed to the UI before impact. */
+ *  cash / credit outcomes. Never exposed to the UI before ball entry. */
 export interface Outcome {
   kind: OutcomeKind
   /** Whole-pound value in pence for cash/credit, else 0. */
   amountPence: number
 }
 
-/** A mock ticket = one shot = one football. */
+/**
+ * A mock ticket = one shot. Each ticket has a PREDETERMINED outcome AND the
+ * board hole the ball visually enters. The cosmetic football the customer taps
+ * NEVER changes either of these.
+ */
 export interface Ticket {
   id: string
   label: string
   shortLabel: string
   outcome: Outcome
+  destinationHole: HoleId
 }
 
 /** Copy shown on the prize-reveal panel, derived from an Outcome.
@@ -87,18 +96,15 @@ export interface RevealCopy {
 
 /** Dev-only demo control preset for the outcome selector. */
 export type OutcomePreset =
+  | "sequence"
   | "none"
   | "credit5"
   | "cash100"
   | "cash5000"
-  | "mystery"
-  | "mixed5"
 
 /**
- * The number of purchased tickets. Each ticket is one shot and shows as one
- * numbered football in the tray; a used football leaves the tray after its
- * shot. The signature demo is five tickets, so this stays a small, legible
- * count in the dev controls (1 / 3 / 5).
+ * The number of purchased tickets. Each ticket is one shot. The cosmetic tray
+ * always shows five footballs regardless of this count. Dev options: 1/3/5/10.
  */
 export type TicketCount = number
 
@@ -109,27 +115,29 @@ export interface DemoSettings {
   soundOn: boolean
   reducedMotion: boolean
   /** 1 = normal, 2 = 0.5×, 4 = 0.25×. Drives every animation duration. */
-  timeScale: TimeScale
+  speed: Speed
   skipIntro: boolean
-  /** Force the flight path (win/miss variant) regardless of outcome. */
-  shotPath: ShotPath
+  /** Force the destination hole regardless of the ticket. `auto` = predetermined. */
+  destination: DestinationOverride
   /** Static pose preview for asset inspection; "off" = live gameplay. */
   charPreview: CharPreview
   /* ---- guide overlays (all default off; invisible in normal gameplay) ---- */
-  showMouthTarget: boolean
-  showMouthMask: boolean
-  showCharBounds: boolean
-  showScoredBounds: boolean
-  showPrizeSafe: boolean
+  showHoleBounds: boolean
+  showHoleCentres: boolean
+  showBallOrigin: boolean
+  showControlPoints: boolean
   showEndpoint: boolean
+  showBoardBounds: boolean
   showState: boolean
 }
 
 /** Conceptual sound cues. No external audio files are required. */
 export type SoundCue =
   | "select"
-  | "charge"
   | "launch"
+  | "whoosh"
+  | "drop"
   | "impact"
   | "prize"
+  | "credit"
   | "nowin"

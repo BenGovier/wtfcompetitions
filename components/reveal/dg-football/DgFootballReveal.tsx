@@ -1,68 +1,51 @@
 "use client"
 
 /**
- * DgFootballReveal — the orchestrator and single source of truth for game phase.
+ * DgFootballReveal — the orchestrator and single source of truth for GameState.
  *
- * INTERACTION MODEL (per the refinement spec — do not regress):
- *  - `tickets` is the purchased-ticket list. Each ticket is ONE shot and shows
- *    as ONE numbered football (#1..#N) in the tray.
- *  - The customer picks a numbered football to shoot. That ticket's outcome is
- *    PREDETERMINED (`tickets[n-1].outcome`); the pick / flick never decides it.
- *  - BALL INTO DG'S MOUTH = INSTANT WIN. BALL MISSES = NO INSTANT WIN. The
- *    flight branch is derived from the predetermined outcome, not from skill.
- *  - After a shot the used football visibly LEAVES the tray. "SHOT X OF Y"
- *    tracks tickets played.
+ * INTERACTION MODEL (new "tap-a-ball → auto shot → into a hole" mechanic):
+ *  - The customer performs ONE interaction per shot: TAP A BALL. The five tray
+ *    footballs are COSMETIC — the tapped one never decides anything.
+ *  - Each purchased ticket (`tickets[i]`) is one shot with a PREDETERMINED
+ *    `outcome` and `destinationHole`. Shots are played in order.
+ *  - On tap, the selected ball automatically launches into the target board and
+ *    visibly enters its ticket's hole; that hole then reveals the result.
  *
- * Phase is a single typed reducer. The Stage owns the launch→flight timeline
- * and reports each phase up via `onPhase`; the parent owns intro, the reveal
- * panel timing and the between-shots transition.
+ * The Stage is a pure renderer: it derives all board lighting, DG's pose and
+ * the ball's flight from the single `state` prop. This orchestrator owns the
+ * timed walk through the state machine (every duration comes from TIMING and is
+ * scaled by the dev `speed`), so the animation and the state stay in lockstep.
  */
 
 import { useCallback, useEffect, useMemo, useReducer } from "react"
-import type { DemoSettings, GameState, MissVariant, Outcome, ShotPath, SoundCue, Ticket } from "./types"
-import { isBigWin, missVariantForIndex, revealCopyFor, TIMING } from "./config"
+import type { DemoSettings, GameState, HoleId, SoundCue, Ticket } from "./types"
+import { isBigWin, revealCopyFor, TIMING } from "./config"
 import { DgFootballStage } from "./DgFootballStage"
-import { PrizeReveal, SummaryPanel, type RunSummary } from "./PrizeReveal"
+import type { RunSummary } from "./PrizeReveal"
 
 interface RevealStateShape {
   state: GameState
-  /** Per-ticket "played" flags (index = ticket index). */
-  played: boolean[]
-  /** 1-based ball number chosen for the CURRENT shot (= ticket index + 1). */
+  /** Number of shots fully played (also the active ticket index). */
+  playedCount: number
+  /** Cosmetic ball number tapped for the CURRENT shot (1..5), else null. */
   selectedNumber: number | null
-  /** Ball number leaving the tray during the next-shot transition. */
-  leavingNumber: number | null
+  /** Viewport-space origin of the tapped ball, for the flight start. */
+  ballOrigin: { x: number; y: number } | null
 }
 
 type Action =
   | { type: "INTRO_DONE" }
-  | { type: "SELECT"; number: number }
-  | { type: "AIM_START" }
-  | { type: "AIM_CANCEL" }
-  | { type: "LAUNCH" }
-  | { type: "PHASE"; phase: GameState }
-  | { type: "REVEAL" }
-  | { type: "REVEALED" }
+  | { type: "SELECT"; number: number; origin: { x: number; y: number } }
+  | { type: "GOTO"; from: GameState; to: GameState }
   | { type: "NEXT" }
-  | { type: "ADVANCE" }
+  | { type: "ADVANCE"; total: number }
 
-/** Phases the Stage is allowed to drive between LAUNCH and SUSPENSE. */
-const STAGE_PHASES: GameState[] = [
-  "winning_entry",
-  "miss_flight",
-  "win_impact",
-  "win_celebration_transition",
-  "win_celebration",
-  "miss_reaction",
-  "suspense",
-]
-
-function makeInitial(ticketCount: number, skipIntro: boolean): RevealStateShape {
+function makeInitial(skipIntro: boolean): RevealStateShape {
   return {
     state: skipIntro ? "choosing" : "intro",
-    played: Array.from({ length: ticketCount }, () => false),
+    playedCount: 0,
     selectedNumber: null,
-    leavingNumber: null,
+    ballOrigin: null,
   }
 }
 
@@ -71,42 +54,28 @@ function reducer(s: RevealStateShape, a: Action): RevealStateShape {
     case "INTRO_DONE":
       return s.state === "intro" ? { ...s, state: "choosing" } : s
     case "SELECT":
-      return s.state === "choosing" ? { ...s, state: "selected", selectedNumber: a.number } : s
-    case "AIM_START":
-      return s.state === "selected" ? { ...s, state: "aiming" } : s
-    case "AIM_CANCEL":
-      return s.state === "aiming" ? { ...s, state: "selected" } : s
-    case "LAUNCH":
-      return s.state === "selected" || s.state === "aiming" ? { ...s, state: "launching" } : s
-    case "PHASE":
-      // The Stage is the single animator; trust its ordering for the flight
-      // phases. Ignore anything outside the allowed set.
-      return STAGE_PHASES.includes(a.phase) ? { ...s, state: a.phase } : s
-    case "REVEAL":
-      return s.state === "suspense" ? { ...s, state: "revealing" } : s
-    case "REVEALED":
-      return s.state === "revealing" ? { ...s, state: "revealed" } : s
-    case "NEXT":
-      return s.state === "revealed"
-        ? { ...s, state: "transitioning_next", leavingNumber: s.selectedNumber }
+      return s.state === "choosing"
+        ? { ...s, state: "selected", selectedNumber: a.number, ballOrigin: a.origin }
         : s
+    case "GOTO":
+      // Guarded transition so a stale timer can never fire out of order.
+      return s.state === a.from ? { ...s, state: a.to } : s
+    case "NEXT":
+      return s.state === "revealed" ? { ...s, state: "transitioning_next" } : s
     case "ADVANCE": {
       if (s.state !== "transitioning_next") return s
-      const played = s.played.slice()
-      if (s.selectedNumber != null) played[s.selectedNumber - 1] = true
-      const hasMore = played.some((p) => !p)
-      return hasMore
-        ? { state: "choosing", played, selectedNumber: null, leavingNumber: null }
-        : { state: "complete", played, selectedNumber: null, leavingNumber: null }
+      const playedCount = s.playedCount + 1
+      const hasMore = playedCount < a.total
+      return {
+        state: hasMore ? "choosing" : "complete",
+        playedCount,
+        selectedNumber: null,
+        ballOrigin: null,
+      }
     }
     default:
       return s
   }
-}
-
-const MISS_VARIANTS: MissVariant[] = ["left_cheek", "right_cheek", "top", "edge_clip", "shoulder_bounce"]
-function isMissVariant(p: ShotPath): p is MissVariant {
-  return (MISS_VARIANTS as string[]).includes(p)
 }
 
 interface DgFootballRevealProps {
@@ -114,99 +83,128 @@ interface DgFootballRevealProps {
   settings: DemoSettings
   playSound: (cue: SoundCue) => void
   onFinish: () => void
+  onHelp: () => void
 }
 
-export function DgFootballReveal({ tickets, settings, playSound, onFinish }: DgFootballRevealProps) {
-  const slow = settings.timeScale
+export function DgFootballReveal({ tickets, settings, playSound, onFinish, onHelp }: DgFootballRevealProps) {
+  const speed = settings.speed
 
-  const [s, dispatch] = useReducer(reducer, undefined, () =>
-    makeInitial(tickets.length, settings.skipIntro),
-  )
+  const [s, dispatch] = useReducer(reducer, undefined, () => makeInitial(settings.skipIntro))
 
-  /* ---- derived values -------------------------------------------------- */
+  /* ---- active shot ----------------------------------------------------- */
   const total = tickets.length
-  const playedCount = s.played.filter(Boolean).length
-  const remainingNumbers = useMemo(
-    () => s.played.map((p, i) => (p ? -1 : i + 1)).filter((n) => n > 0),
-    [s.played],
-  )
-  const activeTicketIndex = s.selectedNumber != null ? s.selectedNumber - 1 : null
-  const activeTicket = activeTicketIndex != null ? (tickets[activeTicketIndex] ?? null) : null
-  const ticketOutcome: Outcome | null = activeTicket ? activeTicket.outcome : null
+  const activeIndex = Math.min(s.playedCount, total - 1)
+  const activeTicket = tickets[activeIndex] ?? null
+  const outcome = activeTicket?.outcome ?? null
+  const isWin = outcome ? outcome.kind !== "none" : false
+  const bigWin = outcome ? isBigWin(outcome) : false
 
-  // Derive the flight branch from the PREDETERMINED outcome (never from skill).
-  // Dev `shotPath` can force a path for testing.
-  const forceScore = settings.shotPath === "score"
-  const forcedMiss = isMissVariant(settings.shotPath) ? settings.shotPath : null
+  // Which hole the ball visibly enters. Dev override wins for staging, but the
+  // OUTCOME is always the ticket's predetermined result (holes are mystery).
+  const destinationHole: HoleId | null =
+    settings.destination !== "auto" ? settings.destination : (activeTicket?.destinationHole ?? null)
 
-  // The displayed outcome MUST agree with the flight branch. When a dev forces
-  // a path that contradicts the ticket, coerce the shown outcome so a scored
-  // takeover never plays over a "no win" panel (and vice-versa). In `auto`
-  // (production) mode this is exactly the ticket's real outcome.
-  const activeOutcome: Outcome | null = useMemo<Outcome | null>(() => {
-    if (!ticketOutcome) return null
-    if (forceScore && ticketOutcome.kind === "none") {
-      const win: Outcome = { kind: "cash", amountPence: 10000 } // representative £100 win
-      return win
-    }
-    if (forcedMiss && ticketOutcome.kind !== "none") {
-      const miss: Outcome = { kind: "none", amountPence: 0 }
-      return miss
-    }
-    return ticketOutcome
-  }, [ticketOutcome, forceScore, forcedMiss])
+  const shotIndex = activeIndex + 1
+  const isLastShot = activeIndex + 1 >= total
+  const nextShotLabel = isLastShot ? "" : `TICKET ${Math.min(activeIndex + 2, total)}`
 
-  const isWin = activeOutcome ? activeOutcome.kind !== "none" : false
-  const missVariant: MissVariant = forcedMiss ?? missVariantForIndex(activeTicketIndex ?? 0)
-  const bigWin = activeOutcome ? isBigWin(activeOutcome) : false
-  const creditWin = activeOutcome ? activeOutcome.kind === "credit" : false
+  /* ---- timed walk through the state machine ---------------------------- */
+  const go = useCallback((from: GameState, to: GameState) => dispatch({ type: "GOTO", from, to }), [])
 
-  const shotCurrent = Math.min(playedCount + 1, total)
-  const shotTotal = total
-  const isLastShot = playedCount + 1 >= total
-  const nextShotNumber = Math.min(playedCount + 2, total)
-
-  /* ---- intro auto-advance --------------------------------------------- */
+  // intro → choosing
   useEffect(() => {
     if (s.state !== "intro") return
-    const id = window.setTimeout(() => dispatch({ type: "INTRO_DONE" }), TIMING.introMs * slow)
+    const id = window.setTimeout(() => dispatch({ type: "INTRO_DONE" }), TIMING.introMs * speed)
     return () => window.clearTimeout(id)
-  }, [s.state, slow])
+  }, [s.state, speed])
 
-  /* ---- suspense → revealing → revealed -------------------------------- */
+  // selected → launching (short hold, then the shot fires itself)
   useEffect(() => {
-    if (s.state !== "suspense") return
-    const id = window.setTimeout(() => dispatch({ type: "REVEAL" }), TIMING.pauseBeforePanelMs * slow)
+    if (s.state !== "selected") return
+    playSound("select")
+    const id = window.setTimeout(() => go("selected", "launching"), TIMING.selectHoldMs * speed)
     return () => window.clearTimeout(id)
-  }, [s.state, slow])
+  }, [s.state, speed, go, playSound])
 
+  // launching → approaching_hole (destination revealed for the last stretch)
+  useEffect(() => {
+    if (s.state !== "launching") return
+    playSound("launch")
+    const flightDur = (settings.reducedMotion ? TIMING.reducedFlightMs : TIMING.flightMs) * speed
+    const lead = Math.min(TIMING.anticipationLeadMs * speed, flightDur)
+    const id = window.setTimeout(() => go("launching", "approaching_hole"), Math.max(0, flightDur - lead))
+    return () => window.clearTimeout(id)
+  }, [s.state, speed, settings.reducedMotion, go, playSound])
+
+  // approaching_hole → entering_hole
+  useEffect(() => {
+    if (s.state !== "approaching_hole") return
+    const flightDur = (settings.reducedMotion ? TIMING.reducedFlightMs : TIMING.flightMs) * speed
+    const lead = Math.min(TIMING.anticipationLeadMs * speed, flightDur)
+    const id = window.setTimeout(() => go("approaching_hole", "entering_hole"), lead)
+    return () => window.clearTimeout(id)
+  }, [s.state, speed, settings.reducedMotion, go])
+
+  // entering_hole → win_impact | nonwin_reaction
+  useEffect(() => {
+    if (s.state !== "entering_hole") return
+    playSound("drop")
+    const id = window.setTimeout(() => {
+      dispatch({ type: "GOTO", from: "entering_hole", to: isWin ? "win_impact" : "nonwin_reaction" })
+    }, TIMING.holeEntryMs * speed)
+    return () => window.clearTimeout(id)
+  }, [s.state, speed, isWin, playSound])
+
+  // win_impact → win_celebration
+  useEffect(() => {
+    if (s.state !== "win_impact") return
+    playSound("impact")
+    if (typeof navigator !== "undefined" && "vibrate" in navigator && settings.soundOn) {
+      try {
+        navigator.vibrate?.([16, 40, 22])
+      } catch {
+        /* best effort */
+      }
+    }
+    const id = window.setTimeout(() => go("win_impact", "win_celebration"), TIMING.winImpactMs * speed)
+    return () => window.clearTimeout(id)
+  }, [s.state, speed, settings.soundOn, go, playSound])
+
+  // win_celebration → revealing
+  useEffect(() => {
+    if (s.state !== "win_celebration") return
+    playSound("prize")
+    const dur = (TIMING.scoredTakeoverMs + (bigWin ? TIMING.topPrizeExtraMs : 0)) * speed
+    const id = window.setTimeout(() => go("win_celebration", "revealing"), dur)
+    return () => window.clearTimeout(id)
+  }, [s.state, speed, bigWin, go, playSound])
+
+  // nonwin_reaction → revealing
+  useEffect(() => {
+    if (s.state !== "nonwin_reaction") return
+    playSound("nowin")
+    const id = window.setTimeout(() => go("nonwin_reaction", "revealing"), TIMING.nonwinHoldMs * speed)
+    return () => window.clearTimeout(id)
+  }, [s.state, speed, go, playSound])
+
+  // revealing → revealed (panel finished rising; wait for the customer)
   useEffect(() => {
     if (s.state !== "revealing") return
-    playSound(isWin ? "prize" : "nowin")
-    const id = window.setTimeout(() => dispatch({ type: "REVEALED" }), TIMING.panelRiseMs * slow)
+    const id = window.setTimeout(() => go("revealing", "revealed"), TIMING.panelRiseMs * speed)
     return () => window.clearTimeout(id)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [s.state, slow])
+  }, [s.state, speed, go])
 
-  /* ---- transitioning_next → choosing / complete after reflow ---------- */
+  // transitioning_next → choosing | complete
   useEffect(() => {
     if (s.state !== "transitioning_next") return
-    const id = window.setTimeout(() => dispatch({ type: "ADVANCE" }), TIMING.reflowMs * slow)
+    const id = window.setTimeout(() => dispatch({ type: "ADVANCE", total }), TIMING.reflowMs * speed)
     return () => window.clearTimeout(id)
-  }, [s.state, slow])
+  }, [s.state, speed, total])
 
-  /* ---- callbacks down to the stage ------------------------------------ */
-  const onSelectBall = useCallback(
-    (n: number) => {
-      playSound("select")
-      dispatch({ type: "SELECT", number: n })
-    },
-    [playSound],
-  )
-  const onAimStart = useCallback(() => dispatch({ type: "AIM_START" }), [])
-  const onAimCancel = useCallback(() => dispatch({ type: "AIM_CANCEL" }), [])
-  const onLaunch = useCallback(() => dispatch({ type: "LAUNCH" }), [])
-  const onPhase = useCallback((phase: GameState) => dispatch({ type: "PHASE", phase }), [])
+  /* ---- callbacks ------------------------------------------------------- */
+  const onSelectBall = useCallback((n: number, origin: { x: number; y: number }) => {
+    dispatch({ type: "SELECT", number: n, origin })
+  }, [])
   const onNext = useCallback(() => dispatch({ type: "NEXT" }), [])
 
   /* ---- run summary ----------------------------------------------------- */
@@ -224,28 +222,29 @@ export function DgFootballReveal({ tickets, settings, playSound, onFinish }: DgF
   }, [tickets])
 
   const revealVisible = s.state === "revealing" || s.state === "revealed"
-  const revealCopy = activeOutcome ? revealCopyFor(activeOutcome) : null
+  const revealCopy = outcome ? revealCopyFor(outcome) : null
 
   return (
     <div className="dgf-reveal-root">
       <DgFootballStage
         state={s.state}
-        remainingNumbers={remainingNumbers}
-        selectedNumber={s.selectedNumber}
-        leavingNumber={s.leavingNumber}
         settings={settings}
-        shotCurrent={shotCurrent}
-        shotTotal={shotTotal}
+        destinationHole={destinationHole}
         isWin={isWin}
-        missVariant={missVariant}
-        bigWin={bigWin}
-        creditWin={creditWin}
+        ballOrigin={s.ballOrigin}
+        shotIndex={shotIndex}
+        shotTotal={total}
+        nextShotLabel={nextShotLabel}
+        isLastShot={isLastShot}
+        selectedNumber={s.selectedNumber}
+        revealCopy={revealCopy}
+        revealVisible={revealVisible}
+        summary={summary}
+        summaryVisible={s.state === "complete"}
         onSelectBall={onSelectBall}
-        onAimStart={onAimStart}
-        onAimCancel={onAimCancel}
-        onLaunch={onLaunch}
-        onPhase={onPhase}
-        playSound={playSound}
+        onNext={onNext}
+        onFinish={onFinish}
+        onHelp={onHelp}
       />
 
       {/* Live region for the result (screen-reader announcement). */}
@@ -256,28 +255,6 @@ export function DgFootballReveal({ tickets, settings, playSound, onFinish }: DgF
             ? `All shots complete. ${summary.instantWins} instant wins.`
             : ""}
       </div>
-
-      {revealCopy && (
-        <PrizeReveal
-          copy={revealCopy}
-          visible={revealVisible}
-          reducedMotion={settings.reducedMotion}
-          slowFactor={slow}
-          isLast={isLastShot}
-          shotIndex={shotCurrent}
-          shotTotal={shotTotal}
-          shotLabel={`SHOT ${nextShotNumber} OF ${shotTotal}`}
-          onNext={onNext}
-        />
-      )}
-
-      <SummaryPanel
-        summary={summary}
-        visible={s.state === "complete"}
-        reducedMotion={settings.reducedMotion}
-        slowFactor={slow}
-        onFinish={onFinish}
-      />
     </div>
   )
 }

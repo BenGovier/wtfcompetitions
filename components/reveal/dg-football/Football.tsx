@@ -1,24 +1,15 @@
 "use client"
 
 /**
- * FlickableFootball — the single active football (the large launch ball) plus
- * the reusable `Football` SVG graphic used everywhere in the prototype.
+ * Football — the reusable dimensional association-football (soccer ball)
+ * graphic used across the prototype (tray + in-flight ball).
  *
- * The graphic is a dimensional black-and-white match ball: a lit white sphere
- * with a classic ring of black pentagon panels, a top-left specular highlight,
- * a dark lower-right underside and a faint green reflected light from the pitch.
- * It is NOT a flat disc, golf ball, emoji or generic icon.
- *
- * All gesture + physics logic lives in the Stage via useFlickGesture; this
- * component is pure presentation and never decides results.
+ * It is a lit white sphere with a classic ring of black pentagon panels, a
+ * top-left specular highlight, a dark lower-right underside and a faint green
+ * reflected light from the pitch. It is NOT a flat disc, golf ball, American
+ * football, basketball, emoji or generic circle.
  */
 
-import type { CSSProperties } from "react"
-import { forwardRef } from "react"
-
-/* -------------------------------------------------------------------------- */
-/*  Geometry helpers                                                          */
-/* -------------------------------------------------------------------------- */
 /** Build a regular polygon path centred at (cx,cy). `rot` in degrees. */
 function poly(cx: number, cy: number, r: number, sides: number, rot: number): string {
   const pts: string[] = []
@@ -29,9 +20,6 @@ function poly(cx: number, cy: number, r: number, sides: number, rot: number): st
   return pts.join(" ")
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Reusable football graphic (SVG). Dimensional, not a flat disc.            */
-/* -------------------------------------------------------------------------- */
 export function Football({ size, idPrefix }: { size: number; idPrefix: string }) {
   const sphere = `${idPrefix}-sphere`
   const shade = `${idPrefix}-shade`
@@ -39,7 +27,6 @@ export function Football({ size, idPrefix }: { size: number; idPrefix: string })
   const greenRef = `${idPrefix}-green`
   const clip = `${idPrefix}-clip`
 
-  // Central panel just above the visual centre; five panels around the rim.
   const centre = { x: 50, y: 47 }
   const ringR = 33
   const ring = [0, 1, 2, 3, 4].map((i) => {
@@ -82,7 +69,6 @@ export function Football({ size, idPrefix }: { size: number; idPrefix: string })
       </defs>
 
       <g clipPath={`url(#${clip})`}>
-        {/* Lit white sphere */}
         <circle cx="50" cy="50" r="49" fill={`url(#${sphere})`} />
 
         {/* Black panels: central pentagon + a ring of five around it */}
@@ -103,65 +89,13 @@ export function Football({ size, idPrefix }: { size: number; idPrefix: string })
           })}
         </g>
 
-        {/* Curved surface shading: dark underside then subtle texture */}
         <circle cx="50" cy="50" r="49" fill={`url(#${shade})`} />
         <circle cx="50" cy="50" r="49" fill={`url(#${greenRef})`} />
-        {/* Top-left specular highlight */}
         <ellipse cx="36" cy="28" rx="24" ry="17" fill={`url(#${gloss})`} />
       </g>
 
-      {/* Crisp rim to seat it on the surface */}
       <circle cx="50" cy="50" r="49" fill="none" stroke="rgba(255,255,255,0.22)" strokeWidth="1" />
       <circle cx="50" cy="50" r="49" fill="none" stroke="rgba(0,0,0,0.28)" strokeWidth="0.6" />
     </svg>
   )
 }
-
-/* -------------------------------------------------------------------------- */
-/*  The active launch ball wrapper                                            */
-/* -------------------------------------------------------------------------- */
-interface FlickableFootballProps {
-  size: number
-  /** Full CSS transform string (translate/rotate/scale) computed by the Stage. */
-  transform: string
-  /** 0..1 charge level — strengthens the green halo as tension builds. */
-  charge?: number
-  /** Whether this element is actively animating (adds will-change). */
-  animating?: boolean
-  /** Pointer-down handler from the flick gesture (omit to disable dragging). */
-  onPointerDown?: (e: React.PointerEvent) => void
-  interactive?: boolean
-  ariaHidden?: boolean
-  opacity?: number
-}
-
-export const FlickableFootball = forwardRef<HTMLDivElement, FlickableFootballProps>(
-  function FlickableFootball(
-    { size, transform, charge = 0, animating, onPointerDown, interactive, ariaHidden = true, opacity = 1 },
-    ref,
-  ) {
-    const haloAlpha = 0.4 + charge * 0.5
-    const haloBlur = 16 + charge * 20
-    const style: CSSProperties = {
-      position: "absolute",
-      left: 0,
-      top: 0,
-      // Above the lane, character and trajectory so the flying ball clearly
-      // crosses in front of DG's mouth before it is absorbed.
-      zIndex: 8,
-      width: size,
-      height: size,
-      transform,
-      opacity,
-      touchAction: interactive ? "none" : undefined,
-      cursor: interactive ? "grab" : "default",
-      willChange: animating ? "transform, opacity" : undefined,
-      filter: `drop-shadow(0 12px 16px rgba(0,0,0,0.55)) drop-shadow(0 0 ${haloBlur}px rgba(168,255,25,${haloAlpha}))`,
-    }
-    return (
-      <div ref={ref} style={style} onPointerDown={onPointerDown} aria-hidden={ariaHidden}>
-        <Football size={size} idPrefix="dgf-active-ball" />
-      </div>
-    )
-  },
-)
