@@ -24,11 +24,10 @@ import type { InstantWinFulfilmentType } from "@/lib/types/instantWins"
  *
  * `fulfilment_type` / `prize_value_pence` are the CANONICAL, admin-chosen prize
  * classification (instant_win_prizes.fulfilment_type / prize_value_pence — the
- * money value is "never parsed from the title"). They are OPTIONAL here because
- * the confirm_payment_and_award RPC does not yet surface them into
- * AwardPayload.prizes[] (see the classification note below). This optional seam
- * means the moment those fields ARE surfaced, classification becomes
- * authoritative with no further reveal changes and no title-parsing risk.
+ * money value is "never parsed from the title"). The live
+ * confirm_payment_and_award RPC returns them on every prize and coercePrize
+ * preserves them, so they are populated in production. They stay OPTIONAL only
+ * so legacy payloads without them still type-check and fall back safely.
  */
 export type DgFootballPrize = {
   award_id?: string | null
@@ -77,10 +76,11 @@ function parseGbpPence(text: string): number | null {
  *   2. FALLBACK title/value parsing (same convention as the other reveals:
  *      "credit" keyword → site credit; else a "£" amount → cash; else manual).
  *
- * KNOWN LIMITATION of the fallback: with title-only data a money-titled MANUAL
- * prize (e.g. "£500 TV Bundle") cannot be distinguished from cash and will
- * present as cash. AwardPayload.prizes[] does NOT yet carry fulfilment_type, so
- * production currently uses the fallback — see the audit report / file header.
+ * The live confirm_payment_and_award RPC returns fulfilment_type +
+ * prize_value_pence on every prize, and coercePrize now preserves them, so
+ * production ALWAYS takes the canonical path. The fallback exists only for
+ * legacy payloads that genuinely lack these fields (where a money-titled manual
+ * prize like "£500 TV Bundle" cannot be distinguished from cash by text alone).
  *
  * NB: never fabricates a value. Manual prizes carry amountPence = 0 and are
  * presented by title (+ optional image), never a money figure (spec §15).

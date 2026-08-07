@@ -30,6 +30,10 @@ type Prize = {
   title: string
   value_text?: string | null
   image_url?: string | null
+  // Canonical, admin-chosen fulfilment metadata carried through from the live
+  // RPC (via coercePrize). The adapter classifies from these first.
+  fulfilment_type?: "cash" | "wallet_credit" | "manual" | null
+  prize_value_pence?: number | null
 }
 
 type RevealAward = DgFootballAward & {
