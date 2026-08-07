@@ -1,14 +1,18 @@
 "use client"
 
 /**
- * DgCharacter — the NORMAL character frame (Layer 2). It holds the two
- * identically-framed supplied photos, dg-mouth-open.png (active/waiting) and
- * dg-neutral.png (between shots / non-winning / summary), and cross-fades
- * between them with no change of scale or position. The winning celebration
- * asset dg-scored.png is deliberately NOT handled here — it is a separate
- * full-stage takeover (see ScoredTakeover) because its framing and pose differ.
+ * DgCharacter — the host personality (Layer: DG), anchored to the LEFT of and
+ * partially behind the target board. He is a host element; the BOARD is the
+ * main game object, so DG never covers the holes or the ball trajectory.
  *
- * If an asset is missing we show a clear dev-only notice naming the exact file,
+ * He holds the two supplied, identically-framed photos and cross-fades between
+ * them in place (no full-screen takeover):
+ *   - dg-neutral.png : initial, choosing, shot-in-flight, non-win, between,
+ *                      summary.
+ *   - dg-scored.png  : a winning result only — during the celebration and
+ *                      behind the winning prize panel.
+ * On a win a green/gold burst flashes behind him as he switches to the scored
+ * pose. If an asset is missing we show a clear dev notice naming the file,
  * never a substitute person.
  */
 
@@ -16,19 +20,15 @@ import { useState } from "react"
 import { ASSETS, TIMING } from "./config"
 
 interface DgCharacterProps {
-  /** Show the open-mouth asset (true) or the neutral asset (false). */
-  mouthOpen: boolean
-  /** Fade the whole normal frame out while the scored takeover owns the stage. */
-  hidden: boolean
-  /** Ramp the green glow behind DG's head (begins ~220ms before impact). */
-  headGlow: boolean
-  /** Fire a short green light sweep across the face (~170ms before impact). */
-  faceSweep: boolean
-  /** Keep the shirt-logo / chest area glowing (impact + suspense). */
-  chestGlow: boolean
+  /** Which supplied photo to show. */
+  pose: "neutral" | "scored"
+  /** Green/gold celebration burst behind DG (win only). */
+  winFlash: boolean
+  /** Dim slightly while a non-win result panel is up (never fully hidden). */
+  dim: boolean
   reducedMotion: boolean
-  slowFactor: number
-  /** Debug: outline the normal character image frame. */
+  speed: number
+  /** Debug: outline the character image frame. */
   showBounds?: boolean
 }
 
@@ -42,35 +42,26 @@ export function MissingAssetNotice({ file }: { file: string }) {
   )
 }
 
-export function DgCharacter({
-  mouthOpen,
-  hidden,
-  headGlow,
-  faceSweep,
-  chestGlow,
-  reducedMotion,
-  slowFactor,
-  showBounds,
-}: DgCharacterProps) {
+export function DgCharacter({ pose, winFlash, dim, reducedMotion, speed, showBounds }: DgCharacterProps) {
   const [neutralError, setNeutralError] = useState(false)
-  const [openError, setOpenError] = useState(false)
+  const [scoredError, setScoredError] = useState(false)
 
-  const crossfadeMs = TIMING.crossfadeMs * slowFactor
-  const breatheStyle = reducedMotion ? undefined : ({ animationDuration: `${6 * slowFactor}s` } as const)
+  const scored = pose === "scored"
+  const crossfadeMs = TIMING.scoredTakeoverMs * speed
+  const breatheStyle = reducedMotion ? undefined : ({ animationDuration: `${6 * speed}s` } as const)
 
   return (
     <div
-      className={`dgf-character ${showBounds ? "dgf-character-bounds" : ""}`}
-      style={{ opacity: hidden ? 0 : 1, transition: `opacity ${TIMING.darkTransitionMs * slowFactor}ms ease` }}
+      className={`dgf-character ${showBounds ? "dgf-character-bounds" : ""} ${dim ? "dgf-character-dim" : ""}`}
       aria-hidden="true"
     >
       {/* Green rim light behind the shoulders */}
       <div className="dgf-rim" />
 
-      {/* Rising green glow behind the head (pre-impact) */}
-      <div className={`dgf-head-glow ${headGlow ? "dgf-head-glow-on" : ""}`} />
+      {/* Green/gold celebration burst behind DG (win only) */}
+      <div className={`dgf-win-flash ${winFlash ? "dgf-win-flash-on" : ""} ${reducedMotion ? "dgf-win-flash-reduced" : ""}`} />
 
-      <div className={`dgf-character-inner ${reducedMotion ? "" : "dgf-breathe"}`} style={breatheStyle}>
+      <div className={`dgf-character-inner ${reducedMotion || scored ? "" : "dgf-breathe"}`} style={breatheStyle}>
         {/* Both images share the exact same frame; only opacity differs. */}
         {neutralError ? (
           <MissingAssetNotice file={ASSETS.dgNeutral} />
@@ -79,30 +70,24 @@ export function DgCharacter({
             src={ASSETS.dgNeutral || "/placeholder.svg"}
             alt=""
             className="dgf-dg-img"
-            style={{ opacity: mouthOpen ? 0 : 1, transitionDuration: `${crossfadeMs}ms` }}
+            style={{ opacity: scored ? 0 : 1, transitionDuration: `${crossfadeMs}ms` }}
             onError={() => setNeutralError(true)}
             draggable={false}
           />
         )}
 
-        {openError ? (
-          mouthOpen ? <MissingAssetNotice file={ASSETS.dgMouthOpen} /> : null
+        {scoredError ? (
+          scored ? <MissingAssetNotice file={ASSETS.dgScored} /> : null
         ) : (
           <img
-            src={ASSETS.dgMouthOpen || "/placeholder.svg"}
+            src={ASSETS.dgScored || "/placeholder.svg"}
             alt=""
-            className="dgf-dg-img"
-            style={{ opacity: mouthOpen ? 1 : 0, transitionDuration: `${crossfadeMs}ms` }}
-            onError={() => setOpenError(true)}
+            className={`dgf-dg-img dgf-dg-scored ${scored ? "dgf-dg-scored-in" : ""}`}
+            style={{ opacity: scored ? 1 : 0, transitionDuration: `${crossfadeMs}ms` }}
+            onError={() => setScoredError(true)}
             draggable={false}
           />
         )}
-
-        {/* Chest / shirt-logo glow over the real DG logo (impact + suspense) */}
-        <div className={`dgf-chest-glow ${chestGlow ? "dgf-chest-glow-on" : ""}`} />
-
-        {/* Short light sweep across the face, masking the expression swap */}
-        {!reducedMotion && faceSweep && <div className="dgf-face-sweep" />}
       </div>
     </div>
   )
