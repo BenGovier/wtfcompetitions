@@ -50,6 +50,26 @@ const TreasureChestReveal = dynamic(
   },
 )
 
+// Lazy-loaded so ONLY dg_football campaigns download/parse the football game
+// core + its stylesheet. The chunk is fetched only when a confirmed award
+// identifies the campaign as dg_football (see the reveal selector below).
+// Normal, Scratch Card and Treasure Chest customers never load any of this.
+const DgFootballReveal = dynamic(
+  () =>
+    import('@/components/checkout/reveal/DgFootballReveal').then(
+      (module) => module.DgFootballReveal,
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <main className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-4 py-16 text-center">
+        <Spinner className="h-6 w-6 text-lime-400" />
+        <p className="text-sm text-muted-foreground">Warming up the pitch…</p>
+      </main>
+    ),
+  },
+)
+
 /**
  * Isolated error boundary for optional reveal experiences. If the lazy chunk
  * fails to load or the animation throws at runtime, we render the safe
@@ -381,6 +401,8 @@ function CheckoutSuccessClient() {
   // branches only choose how it is displayed.
   //   - treasure_chest → full-screen TreasureChestReveal (lazy chunk), wrapped
   //     in an error boundary that falls back to the normal reveal.
+  //   - dg_football → full-screen DgFootballReveal (lazy chunk), wrapped in the
+  //     same error boundary so any asset/animation failure falls back safely.
   //   - normal (and any unknown/null value) → full-screen NormalCheckoutReveal.
   //   - scratch_card → falls through to the card layout below (unchanged).
   if (state.kind === 'confirmed') {
@@ -389,6 +411,13 @@ function CheckoutSuccessClient() {
       return (
         <RevealErrorBoundary fallback={<NormalCheckoutReveal award={state.award} />}>
           <TreasureChestReveal award={state.award} />
+        </RevealErrorBoundary>
+      )
+    }
+    if (revealType === 'dg_football') {
+      return (
+        <RevealErrorBoundary fallback={<NormalCheckoutReveal award={state.award} />}>
+          <DgFootballReveal award={state.award} />
         </RevealErrorBoundary>
       )
     }
