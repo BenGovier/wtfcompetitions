@@ -136,16 +136,31 @@ export function PrizeReveal({
           {totalWins > 1 && <span className="dgf-win-counter">WIN {winSoFar} OF {totalWins}</span>}
         </p>
 
+        {/* Physical / manual prizes show their image (when supplied) above the
+            title. Image loading NEVER gates the award: an onError hides only the
+            image and the title still reveals. */}
+        {copy.isManual && copy.imageUrl && (
+          <img
+            className="dgf-panel-img"
+            src={copy.imageUrl || "/placeholder.svg"}
+            alt=""
+            crossOrigin="anonymous"
+            onError={(e) => {
+              e.currentTarget.style.display = "none"
+            }}
+          />
+        )}
+
         <p
           className={`dgf-panel-amount ${visible ? "dgf-value-pop" : ""} ${
-            copy.tone === "big" && visible && !reducedMotion ? "dgf-value-shake" : ""
+            copy.tone === "big" && visible && !reducedMotion && !copy.isManual ? "dgf-value-shake" : ""
           }`}
           style={{ color: valueColor }}
           aria-live="assertive"
         >
-          <span className="dgf-panel-amount-value">
+          <span className={`dgf-panel-amount-value ${copy.isManual ? "dgf-amount-manual" : ""}`}>
             {copy.amount}
-            {visible && !reducedMotion && <span className="dgf-value-sweep" aria-hidden="true" />}
+            {visible && !reducedMotion && !copy.isManual && <span className="dgf-value-sweep" aria-hidden="true" />}
           </span>
           {copy.unit && <span className="dgf-panel-amount-unit">{copy.unit}</span>}
         </p>
@@ -200,13 +215,23 @@ export function SummaryPanel({ summary, visible, reducedMotion, slowFactor, onFi
               {summary.items.map((item, i) => (
                 <li key={i} className="dgf-summary-item">
                   {item.count > 1 && <span className="dgf-summary-item-x">{item.count} ×</span>}
-                  <span
-                    className="dgf-summary-item-amt"
-                    style={{ color: item.kind === "credit" ? COLORS.neon : COLORS.cash }}
-                  >
-                    {formatGBP(item.amountPence)}
-                  </span>
-                  <span className="dgf-summary-item-label">{item.label}</span>
+                  {item.kind === "manual" ? (
+                    // Physical / manual prize: no reliable cash value, so show
+                    // the prize title itself rather than a fabricated amount.
+                    <span className="dgf-summary-item-amt" style={{ color: COLORS.gold }}>
+                      {item.label}
+                    </span>
+                  ) : (
+                    <>
+                      <span
+                        className="dgf-summary-item-amt"
+                        style={{ color: item.kind === "credit" ? COLORS.neon : COLORS.cash }}
+                      >
+                        {formatGBP(item.amountPence)}
+                      </span>
+                      <span className="dgf-summary-item-label">{item.label}</span>
+                    </>
+                  )}
                 </li>
               ))}
             </ul>

@@ -24,7 +24,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useReducer } from "react"
-import type { Animation, DemoSettings, GameState, HoleId, SoundCue } from "./types"
+import type { Animation, DemoSettings, GameState, HoleId, RevealPlan, SoundCue } from "./types"
 import {
   buildAnimations,
   buildRevealPlan,
@@ -81,17 +81,24 @@ interface DgFootballRevealProps {
   playSound: (cue: SoundCue) => void
   onFinish: () => void
   onHelp: () => void
+  /**
+   * PRODUCTION: a predetermined plan built from the real AwardPayload. When
+   * provided it is the sole source of truth and the mock `resultPreset`/
+   * `ticketCount` path is bypassed entirely. When omitted (the /dgfootballidea
+   * prototype) the deterministic mock plan is built from `settings`.
+   */
+  plan?: RevealPlan
 }
 
-export function DgFootballReveal({ settings, playSound, onFinish, onHelp }: DgFootballRevealProps) {
+export function DgFootballReveal({ settings, playSound, onFinish, onHelp, plan: providedPlan }: DgFootballRevealProps) {
   const speed = settings.speed
 
   const [s, dispatch] = useReducer(reducer, undefined, () => makeInitial(settings.skipIntro))
 
   /* ---- predetermined plan + animation list ----------------------------- */
   const plan = useMemo(
-    () => buildRevealPlan(settings.resultPreset, settings.ticketCount),
-    [settings.resultPreset, settings.ticketCount],
+    () => providedPlan ?? buildRevealPlan(settings.resultPreset, settings.ticketCount),
+    [providedPlan, settings.resultPreset, settings.ticketCount],
   )
   const summary = useMemo(() => summarisePlan(plan), [plan])
 
@@ -309,6 +316,7 @@ export function DgFootballReveal({ settings, playSound, onFinish, onHelp }: DgFo
         state={s.state}
         settings={settings}
         ticketCount={plan.ticketCount}
+        ticketRangeText={plan.ticketRangeText ?? null}
         destinationHole={destinationHole}
         isWin={isWin}
         bigWin={bigWin}

@@ -64,14 +64,23 @@ export type Speed = 1 | 2 | 4
 export type CharPreview = "off" | "neutral" | "scored"
 
 /** The kind of instant-win outcome. "none" only ever appears as a whole-purchase
- *  zero-win result, never as an award. */
-export type OutcomeKind = "none" | "credit" | "cash"
+ *  zero-win result, never as an award. "manual" is a physical / manually
+ *  fulfilled prize that has NO reliable numeric cash value — it is presented by
+ *  its title (and optional image) instead of a money amount. */
+export type OutcomeKind = "none" | "credit" | "cash" | "manual"
 
-/** A single deterministic mock outcome. `amountPence` is meaningful for
- *  cash / credit; 0 for none. */
+/** A single outcome. `amountPence` is meaningful for cash / credit; 0 for
+ *  none / manual. The optional display fields are populated by the PRODUCTION
+ *  adapter for manual/physical prizes (the mock prototype never sets them). */
 export interface Outcome {
   kind: OutcomeKind
   amountPence: number
+  /** Manual/physical prize display title (e.g. "PlayStation 5"). */
+  title?: string
+  /** Optional prize image (manual/physical prizes only). */
+  imageUrl?: string
+  /** Optional raw value text straight from the server (display only). */
+  valueText?: string
 }
 
 /**
@@ -92,6 +101,10 @@ export interface Award {
 export interface RevealPlan {
   ticketCount: number
   awards: Award[]
+  /** Optional compact ticket-range label for parity with other reveals, e.g.
+   *  "TICKETS #1201–#1325". Set by the PRODUCTION adapter; omitted (undefined)
+   *  by the mock prototype and rendered only when present. */
+  ticketRangeText?: string
 }
 
 /** One thing the reveal actually animates: a win, or (when there are zero
@@ -118,6 +131,10 @@ export interface RevealCopy {
   unit: string
   support: string
   isMoney: boolean
+  /** Manual/physical prize: render title text (smaller) instead of a money
+   *  amount, plus an optional image. Cash/credit leave these undefined. */
+  isManual?: boolean
+  imageUrl?: string
 }
 
 /** Cosmetic energy tier derived purely from ticket quantity. Affects ONLY

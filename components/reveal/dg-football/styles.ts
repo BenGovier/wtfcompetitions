@@ -474,6 +474,10 @@ export const DG_FOOTBALL_CSS = String.raw`
   text-shadow: 0 0 30px rgba(255,216,74,0.4);
 }
 .dgf-panel-amount-unit { font-size: clamp(16px, 4.6vw, 24px); font-weight: 900; letter-spacing: 0.18em; color: var(--dg-white); }
+/* Manual / physical prize: the title can be long, so it wraps and uses a
+   smaller, balanced size instead of the huge single-line money display. */
+.dgf-amount-manual { font-size: clamp(24px, 8vw, 40px); line-height: 1.02; white-space: normal; text-wrap: balance; }
+.dgf-panel-img { max-width: min(62%, 200px); max-height: 128px; object-fit: contain; margin: 2px auto 6px; border-radius: 12px; filter: drop-shadow(0 6px 18px rgba(0,0,0,0.5)); }
 .dgf-value-pop { animation: dgf-value-pop 460ms cubic-bezier(0.2,1.2,0.4,1) both; }
 @keyframes dgf-value-pop { 0% { transform: scale(0.5); opacity: 0; } 60% { transform: scale(1.08); opacity: 1; } 100% { transform: scale(1); } }
 .dgf-panel-headline { font-size: clamp(20px, 5.4vw, 30px); font-weight: 900; text-transform: uppercase; color: var(--dg-white); }
@@ -703,6 +707,10 @@ export const DG_FOOTBALL_CSS = String.raw`
 .dgf-tickets-chances {
   font-size: clamp(10px, 2.7vw, 13px); font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
   color: var(--dg-muted);
+}
+.dgf-tickets-range {
+  font-size: clamp(9px, 2.4vw, 11px); font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--dg-muted); opacity: 0.8;
 }
 .dgf-tickets-compact { margin-top: 6px; opacity: 0.9; }
 .dgf-tickets-compact .dgf-tickets-loaded { font-size: clamp(11px, 2.8vw, 13px); padding: 2px 10px; }

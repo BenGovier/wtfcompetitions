@@ -227,6 +227,19 @@ export function revealCopyFor(o: Outcome): RevealCopy {
         support: "NICE ONE!",
         isMoney: true,
       }
+    case "manual":
+      // Physical / manually fulfilled prize. No reliable cash value — present
+      // the prize by its title (and optional image), never a fabricated amount.
+      return {
+        tone: "big",
+        eyebrow: "YOU'VE WON!",
+        amount: o.title?.trim() || o.valueText?.trim() || "A PRIZE",
+        unit: "",
+        support: "WHAT A STRIKE!",
+        isMoney: false,
+        isManual: true,
+        imageUrl: o.imageUrl,
+      }
     default:
       // Should never be shown on a panel; harmless fallback.
       return {
@@ -427,12 +440,17 @@ export function summarisePlan(plan: RevealPlan): PlanSummary {
   let cashPence = 0
   let creditPence = 0
   // Group identical awards, remembering first-seen order value for sorting.
+  // Cash/credit group by (kind + amount); manual/physical prizes group by their
+  // title so distinct physical prizes stay separate lines while identical ones
+  // collapse to "N ×". Either way the SUM of item counts always equals
+  // plan.awards.length, so the summary can never silently drop or duplicate.
   const groups = new Map<string, SummaryItem>()
   for (const a of plan.awards) {
     const o = a.outcome
     if (o.kind === "cash") cashPence += o.amountPence
     if (o.kind === "credit") creditPence += o.amountPence
-    const key = `${o.kind}:${o.amountPence}`
+    const manualLabel = o.title?.trim() || o.valueText?.trim() || "PRIZE"
+    const key = o.kind === "manual" ? `manual:${manualLabel.toLowerCase()}` : `${o.kind}:${o.amountPence}`
     const existing = groups.get(key)
     if (existing) {
       existing.count += 1
@@ -441,13 +459,15 @@ export function summarisePlan(plan: RevealPlan): PlanSummary {
         kind: o.kind,
         amountPence: o.amountPence,
         count: 1,
-        label: o.kind === "credit" ? "SITE CREDIT" : "CASH",
+        label: o.kind === "manual" ? manualLabel : o.kind === "credit" ? "SITE CREDIT" : "CASH",
       })
     }
   }
+  const kindOrder: Record<OutcomeKind, number> = { cash: 0, manual: 1, credit: 2, none: 3 }
   const items = Array.from(groups.values()).sort((a, b) => {
-    // Cash before credit, then by value descending.
-    if (a.kind !== b.kind) return a.kind === "cash" ? -1 : 1
+    // Cash first, then physical prizes, then site credit; within a kind by
+    // value descending (manual prizes have no value, so keep insertion order).
+    if (a.kind !== b.kind) return kindOrder[a.kind] - kindOrder[b.kind]
     return b.amountPence - a.amountPence
   })
   return {

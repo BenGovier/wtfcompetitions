@@ -46,6 +46,9 @@ interface DgFootballStageProps {
   state: GameState
   settings: DemoSettings
   ticketCount: number
+  /** Optional compact ticket-range label (e.g. "TICKETS #1201–#1325"), shown
+   *  in the header for parity with other reveals. Null = omit. */
+  ticketRangeText?: string | null
   /** The predetermined destination hole for the active animation. */
   destinationHole: HoleId | null
   /** Whether the active animation is a win. */
@@ -103,6 +106,7 @@ export function DgFootballStage({
   state,
   settings,
   ticketCount,
+  ticketRangeText,
   destinationHole,
   isWin,
   bigWin,
@@ -319,6 +323,9 @@ export function DgFootballStage({
         <div className={`dgf-tickets dgf-entrance-tickets ${showFullTicketMsg ? "" : "dgf-tickets-compact"}`}>
           <span className="dgf-tickets-loaded">{ticketsLoaded(ticketCount)}</span>
           {showFullTicketMsg && <span className="dgf-tickets-chances">{chancesLine(ticketCount)}</span>}
+          {showFullTicketMsg && ticketRangeText && (
+            <span className="dgf-tickets-range">{ticketRangeText}</span>
+          )}
         </div>
 
         {instruction && (
