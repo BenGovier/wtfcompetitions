@@ -135,18 +135,19 @@ export async function listAssignees(svc: SupabaseClient): Promise<InboxAssignee[
     if (error) console.error('[inbox/service] listAssignees error:', (error.message || '').slice(0, 200))
     return []
   }
+  const asStr = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 ? v : null)
   return data
-    .map((row) => {
+    .map((row): InboxAssignee | null => {
       const r = row as Record<string, unknown>
       const userId = typeof r.user_id === 'string' ? r.user_id : null
       if (!userId || !UUID_RE.test(userId)) return null
       return {
         user_id: userId,
-        role: (r.role as string) ?? null,
-        email: (r.email as string) ?? null,
-        first_name: (r.first_name as string) ?? null,
-        last_name: (r.last_name as string) ?? null,
-        display_name: (r.display_name as string) ?? null,
+        role: asStr(r.role),
+        email: asStr(r.email),
+        first_name: asStr(r.first_name),
+        last_name: asStr(r.last_name),
+        display_name: asStr(r.display_name),
       }
     })
     .filter((r): r is InboxAssignee => r !== null)
