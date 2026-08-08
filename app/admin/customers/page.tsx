@@ -11,7 +11,7 @@ export default async function CustomersPage() {
       <div className="space-y-1">
         <h2 className="text-2xl font-bold tracking-tight">Customers</h2>
         <p className="text-sm text-muted-foreground">
-          Search customers, review purchases and manage account restrictions.
+          Search customers, review purchases, winnings and account restrictions.
         </p>
       </div>
 
