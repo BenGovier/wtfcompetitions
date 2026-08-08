@@ -7,11 +7,11 @@ export default async function CustomersPage() {
   await requireAdmin({ roles: ['admin', 'operations_admin'] })
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h2 className="text-3xl font-bold tracking-tight">Customers</h2>
-        <p className="text-muted-foreground">
-          Search customers, review purchase activity and manage account restrictions.
+    <div className="space-y-6">
+      <div className="space-y-1">
+        <h2 className="text-2xl font-bold tracking-tight">Customers</h2>
+        <p className="text-sm text-muted-foreground">
+          Search customers, review purchases and manage account restrictions.
         </p>
       </div>
 

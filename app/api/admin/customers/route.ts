@@ -38,6 +38,9 @@ function asStringOrNull(value: unknown): string | null {
  *  coerced defensively for display. Returns null for an unusable row. */
 function normalizeRow(row: unknown): {
   user_id: string
+  first_name: string | null
+  last_name: string | null
+  display_name: string | null
   real_name: string | null
   email: string | null
   mobile: string | null
@@ -57,6 +60,11 @@ function normalizeRow(row: unknown): {
 
   return {
     user_id: r.user_id,
+    // V2 fields: genuine supplied names. `real_name` is often username-style
+    // noise, so the UI ranks it below these for the primary display name.
+    first_name: asStringOrNull(r.first_name),
+    last_name: asStringOrNull(r.last_name),
+    display_name: asStringOrNull(r.display_name),
     real_name: asStringOrNull(r.real_name),
     email: asStringOrNull(r.email),
     mobile: asStringOrNull(r.mobile),
@@ -77,7 +85,7 @@ function normalizeRow(row: unknown): {
  *
  * Server-only customer directory. Authorises the caller (admin or
  * operations_admin) BEFORE creating the service-role client, validates every
- * query parameter, and then calls the privileged `admin_list_customers` RPC
+ * query parameter, and then calls the privileged `admin_list_customers_v2` RPC
  * EXACTLY ONCE. There are no per-row database calls — self-exclusion status,
  * order counts, cash paid, last purchase and wallet balance all arrive from the
  * single list RPC (which already solved the N+1 problem).
@@ -174,7 +182,9 @@ export async function GET(request: NextRequest) {
 
   try {
     // === Exactly ONE database round-trip. ===
-    const { data, error } = await svc.rpc('admin_list_customers', {
+    // V2 returns the same list payload PLUS first_name / last_name /
+    // display_name / real_name for proper customer-identity display.
+    const { data, error } = await svc.rpc('admin_list_customers_v2', {
       p_search: pSearch,
       p_status: pStatus,
       p_limit: limit,
