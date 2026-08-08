@@ -52,6 +52,14 @@ function normalizeRow(row: unknown): {
   lifetime_external_pence: number
   last_confirmed_at: string | null
   wallet_available_pence: number
+  // V3 winnings aggregates (kept separate; cash vs site credit never summed).
+  instant_win_count: number
+  main_draw_win_count: number
+  total_win_count: number
+  cash_win_count: number
+  site_credit_win_count: number
+  cash_won_pence: number
+  site_credit_won_pence: number
   aggregates_refreshed_at: string | null
 } | null {
   if (typeof row !== 'object' || row === null) return null
@@ -60,8 +68,8 @@ function normalizeRow(row: unknown): {
 
   return {
     user_id: r.user_id,
-    // V2 fields: genuine supplied names. `real_name` is often username-style
-    // noise, so the UI ranks it below these for the primary display name.
+    // Genuine supplied names. `real_name` is often username-style noise, so the
+    // UI ranks it below these for the primary display name.
     first_name: asStringOrNull(r.first_name),
     last_name: asStringOrNull(r.last_name),
     display_name: asStringOrNull(r.display_name),
@@ -76,6 +84,14 @@ function normalizeRow(row: unknown): {
     lifetime_external_pence: coerceNonNegInt(r.lifetime_external_pence),
     last_confirmed_at: asStringOrNull(r.last_confirmed_at),
     wallet_available_pence: coerceNonNegInt(r.wallet_available_pence),
+    // V3 winnings summary — surfaced directly on each list row, no extra query.
+    instant_win_count: coerceNonNegInt(r.instant_win_count),
+    main_draw_win_count: coerceNonNegInt(r.main_draw_win_count),
+    total_win_count: coerceNonNegInt(r.total_win_count),
+    cash_win_count: coerceNonNegInt(r.cash_win_count),
+    site_credit_win_count: coerceNonNegInt(r.site_credit_win_count),
+    cash_won_pence: coerceNonNegInt(r.cash_won_pence),
+    site_credit_won_pence: coerceNonNegInt(r.site_credit_won_pence),
     aggregates_refreshed_at: asStringOrNull(r.aggregates_refreshed_at),
   }
 }
@@ -85,10 +101,11 @@ function normalizeRow(row: unknown): {
  *
  * Server-only customer directory. Authorises the caller (admin or
  * operations_admin) BEFORE creating the service-role client, validates every
- * query parameter, and then calls the privileged `admin_list_customers_v2` RPC
+ * query parameter, and then calls the privileged `admin_list_customers_v3` RPC
  * EXACTLY ONCE. There are no per-row database calls — self-exclusion status,
- * order counts, cash paid, last purchase and wallet balance all arrive from the
- * single list RPC (which already solved the N+1 problem).
+ * order counts, cash paid, last purchase, wallet balance AND the winnings
+ * summary all arrive from the single list RPC (which already solved the N+1
+ * problem).
  *
  * Pagination is forward keyset only, per the DB contract: the RPC returns
  * `limit + 1` rows; the extra row establishes `hasNext` without a COUNT(*), and
@@ -182,9 +199,10 @@ export async function GET(request: NextRequest) {
 
   try {
     // === Exactly ONE database round-trip. ===
-    // V2 returns the same list payload PLUS first_name / last_name /
-    // display_name / real_name for proper customer-identity display.
-    const { data, error } = await svc.rpc('admin_list_customers_v2', {
+    // V3 returns the identity + activity + wallet payload PLUS a full winnings
+    // summary (instant/draw/total counts, cash vs site-credit counts and pence)
+    // so the list can show winnings without any per-row query (no N+1).
+    const { data, error } = await svc.rpc('admin_list_customers_v3', {
       p_search: pSearch,
       p_status: pStatus,
       p_limit: limit,

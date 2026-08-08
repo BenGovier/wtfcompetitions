@@ -49,11 +49,11 @@ describe('GET /api/admin/customers', () => {
     expect(rpc).not.toHaveBeenCalled()
   })
 
-  it('calls admin_list_customers_v2 with normalized defaults', async () => {
+  it('calls admin_list_customers_v3 with normalized defaults', async () => {
     await GET(req('http://x/api/admin/customers'))
     expect(rpc).toHaveBeenCalledTimes(1)
     const [name, params] = rpc.mock.calls[0]
-    expect(name).toBe('admin_list_customers_v2')
+    expect(name).toBe('admin_list_customers_v3')
     expect(params).toMatchObject({
       p_search: null,
       p_status: 'all',
@@ -192,7 +192,7 @@ describe('GET /api/admin/customers', () => {
     expect(json.customers[0].user_id).toBe('11111111-1111-1111-1111-111111111111')
   })
 
-  it('passes through V2 name fields (first/last/display/real) on each row', async () => {
+  it('passes through V3 name fields (first/last/display/real) on each row', async () => {
     rpc.mockResolvedValue({
       data: [
         {
@@ -220,6 +220,63 @@ describe('GET /api/admin/customers', () => {
       last_name: 'Lovelace',
       display_name: 'ada_l',
       real_name: 'adalove88',
+    })
+  })
+
+  it('passes through V3 winnings fields with cash and site credit kept separate', async () => {
+    rpc.mockResolvedValue({
+      data: [
+        {
+          user_id: '11111111-1111-1111-1111-111111111111',
+          real_name: 'Winner',
+          account_created_at: '2024-01-01T00:00:00Z',
+          confirmed_order_count: 4,
+          lifetime_external_pence: 3198,
+          wallet_available_pence: 0,
+          // Winnings aggregates — bigints may arrive as numeric strings.
+          instant_win_count: '2',
+          main_draw_win_count: 1,
+          total_win_count: 3,
+          cash_win_count: 1,
+          site_credit_win_count: 1,
+          cash_won_pence: 10000,
+          site_credit_won_pence: 500,
+        },
+      ],
+      error: null,
+    })
+    const res = await GET(req('http://x/api/admin/customers'))
+    const json = await res.json()
+    expect(json.customers[0]).toMatchObject({
+      instant_win_count: 2,
+      main_draw_win_count: 1,
+      total_win_count: 3,
+      cash_win_count: 1,
+      site_credit_win_count: 1,
+      // Kept as distinct fields — never summed into one "total won".
+      cash_won_pence: 10000,
+      site_credit_won_pence: 500,
+    })
+  })
+
+  it('defaults winnings fields to zero when the RPC omits them', async () => {
+    rpc.mockResolvedValue({
+      data: [
+        {
+          user_id: '11111111-1111-1111-1111-111111111111',
+          real_name: 'No Wins',
+          account_created_at: '2024-01-01T00:00:00Z',
+        },
+      ],
+      error: null,
+    })
+    const res = await GET(req('http://x/api/admin/customers'))
+    const json = await res.json()
+    expect(json.customers[0]).toMatchObject({
+      total_win_count: 0,
+      cash_won_pence: 0,
+      site_credit_won_pence: 0,
+      main_draw_win_count: 0,
     })
   })
 

@@ -5,15 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { ChevronLeft, ChevronRight } from "lucide-react"
+import { ChevronLeft, ChevronRight, Receipt } from "lucide-react"
 import { formatPence, formatDateTime, formatTicketRange } from "./format"
 
 type Order = {
@@ -37,26 +29,35 @@ type Order = {
 
 const PAGE_SIZE = 25
 
-function statusVariant(state: string | null): "default" | "secondary" | "outline" {
-  if (state === "confirmed" || state === "completed") return "default"
-  return "secondary"
+/**
+ * checkout_state is the AUTHORITATIVE order status (§31). A confirmed order
+ * stays CONFIRMED even when provider_status is diagnostic noise like
+ * "tds_expired". We never downgrade to FAILED based on provider_status.
+ */
+function statusClass(state: string | null): string {
+  if (state === "confirmed" || state === "completed") {
+    return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+  }
+  if (state === "failed" || state === "cancelled" || state === "expired") {
+    return "border-destructive/30 bg-destructive/10 text-destructive"
+  }
+  return "border-border bg-muted text-muted-foreground"
 }
 
-/** Human label for the checkout state, e.g. "confirmed" -> "Confirmed". */
 function formatState(state: string | null): string {
   if (!state) return "—"
   return state.charAt(0).toUpperCase() + state.slice(1).replace(/_/g, " ")
 }
 
 /**
- * Provider column for support diagnostics: the funding provider plus its raw
- * provider_status when present (e.g. "acquired · settled"). A fully wallet-paid
- * order has no external provider, so we show "Site credit" instead of a dash.
+ * Tertiary provider DIAGNOSTIC only. Shows the funding provider + its raw
+ * provider_status verbatim (e.g. "Acquired · tds expired") — never invents a
+ * "settled" state. A fully wallet-funded order shows "Site credit".
  */
 function formatProvider(provider: string | null, providerStatus: string | null, cashPaidPence: number): string {
   if (!provider) return cashPaidPence <= 0 ? "Site credit" : "—"
   const label = provider.charAt(0).toUpperCase() + provider.slice(1)
-  return providerStatus ? `${label} · ${providerStatus}` : label
+  return providerStatus ? `${label} · ${providerStatus.replace(/_/g, " ")}` : label
 }
 
 export function CustomerPurchaseHistory({ userId }: { userId: string }) {
@@ -76,10 +77,9 @@ export function CustomerPurchaseHistory({ userId }: { userId: string }) {
 
     ;(async () => {
       try {
-        const res = await fetch(
-          `/api/admin/customers/${userId}/orders?limit=${PAGE_SIZE}&offset=${offset}`,
-          { signal: controller.signal },
-        )
+        const res = await fetch(`/api/admin/customers/${userId}/orders?limit=${PAGE_SIZE}&offset=${offset}`, {
+          signal: controller.signal,
+        })
         const json = await res.json()
         if (requestId !== requestIdRef.current) return
         if (!res.ok || !json.ok) {
@@ -109,7 +109,10 @@ export function CustomerPurchaseHistory({ userId }: { userId: string }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Purchase history</CardTitle>
+        <CardTitle className="flex items-center gap-2">
+          <Receipt className="size-5 text-muted-foreground" aria-hidden="true" />
+          Purchase history
+        </CardTitle>
         <p className="text-sm text-muted-foreground">Confirmed purchases only.</p>
       </CardHeader>
       <CardContent className="p-0">
@@ -118,62 +121,55 @@ export function CustomerPurchaseHistory({ userId }: { userId: string }) {
         ) : loading ? (
           <div className="space-y-3 p-6">
             {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full" />
+              <Skeleton key={i} className="h-20 w-full" />
             ))}
           </div>
         ) : orders.length === 0 && offset === 0 ? (
           <p className="py-12 text-center text-muted-foreground">This customer has not made any purchases yet.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="whitespace-nowrap">Date</TableHead>
-                  <TableHead>Competition</TableHead>
-                  <TableHead>Order Ref</TableHead>
-                  <TableHead className="text-right">Tickets</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                  <TableHead className="text-right">Cash Paid</TableHead>
-                  <TableHead className="text-right">Site Credit</TableHead>
-                  <TableHead>Provider</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="whitespace-nowrap">Ticket Numbers</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {orders.map((o) => (
-                  <TableRow key={o.checkout_intent_id ?? `${o.checkout_ref}-${o.created_at}`}>
-                    <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                      {formatDateTime(o.confirmed_at ?? o.created_at)}
-                    </TableCell>
-                    <TableCell className="max-w-[200px] truncate font-medium" title={o.campaign_title ?? undefined}>
-                      {o.campaign_title ?? "—"}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">
-                      {o.checkout_ref ?? "—"}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">{o.qty}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatPence(o.total_pence)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatPence(o.cash_paid_pence)}</TableCell>
-                    <TableCell className="text-right tabular-nums text-muted-foreground">
-                      {formatPence(o.wallet_credit_pence)}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                      {formatProvider(o.provider, o.provider_status, o.cash_paid_pence)}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={statusVariant(o.checkout_state)}>
-                        {formatState(o.checkout_state)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap tabular-nums">
-                      {formatTicketRange(o.start_ticket, o.end_ticket)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+          <ul className="divide-y">
+            {orders.map((o) => (
+              <li
+                key={o.checkout_intent_id ?? `${o.checkout_ref}-${o.created_at}`}
+                className="flex flex-col gap-3 px-6 py-4 lg:flex-row lg:items-start lg:justify-between"
+              >
+                {/* Primary: competition, date, tickets */}
+                <div className="min-w-0 space-y-0.5 lg:flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-foreground">{o.campaign_title ?? "—"}</span>
+                    <Badge variant="outline" className={`uppercase tracking-wide ${statusClass(o.checkout_state)}`}>
+                      {formatState(o.checkout_state)}
+                    </Badge>
+                  </div>
+                  <div className="text-sm text-muted-foreground">{formatDateTime(o.confirmed_at ?? o.created_at)}</div>
+                  <div className="text-sm text-muted-foreground tabular-nums">
+                    {o.qty} {o.qty === 1 ? "ticket" : "tickets"}
+                    {(o.start_ticket !== null || o.end_ticket !== null) && (
+                      <>
+                        {" "}
+                        <span className="text-muted-foreground/70">
+                          ({formatTicketRange(o.start_ticket, o.end_ticket)})
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Money */}
+                <div className="grid grid-cols-3 gap-x-6 gap-y-0.5 text-sm lg:w-[280px] lg:shrink-0 lg:text-right">
+                  <Money label="Order" value={formatPence(o.total_pence)} strong />
+                  <Money label="Cash" value={formatPence(o.cash_paid_pence)} />
+                  <Money label="Credit" value={formatPence(o.wallet_credit_pence)} />
+                </div>
+
+                {/* Tertiary diagnostics */}
+                <div className="space-y-0.5 text-xs text-muted-foreground lg:w-[180px] lg:shrink-0 lg:text-right">
+                  {o.checkout_ref && <div className="truncate font-mono">{o.checkout_ref}</div>}
+                  <div>{formatProvider(o.provider, o.provider_status, o.cash_paid_pence)}</div>
+                </div>
+              </li>
+            ))}
+          </ul>
         )}
       </CardContent>
 
@@ -203,5 +199,16 @@ export function CustomerPurchaseHistory({ userId }: { userId: string }) {
         </div>
       )}
     </Card>
+  )
+}
+
+function Money({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div>
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">{label}</div>
+      <div className={`tabular-nums ${strong ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
+        {value}
+      </div>
+    </div>
   )
 }
