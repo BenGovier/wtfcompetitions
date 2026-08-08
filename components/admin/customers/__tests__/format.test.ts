@@ -9,6 +9,8 @@ import {
   buildListWinningsSummary,
   resolveWinStatus,
   resolveWinPrizeLabel,
+  formatDayTime,
+  formatRelativeTime,
   type WinRecord,
 } from "../format"
 
@@ -220,6 +222,41 @@ describe("resolveWinStatus (critical status rules)", () => {
     const r = resolveWinStatus({ win_kind: "main_draw", fulfilment_type: "cash", is_paid: false })
     expect(r.label).toBe("Draw win")
     expect(r.tone).toBe("draw")
+  })
+})
+
+describe("formatDayTime", () => {
+  it("returns em dash for missing / invalid input", () => {
+    expect(formatDayTime(null)).toBe("—")
+    expect(formatDayTime("not-a-date")).toBe("—")
+  })
+
+  it("formats a valid timestamp as 'D Mon · HH:MM' with a separator", () => {
+    const out = formatDayTime("2026-08-08T18:04:00Z")
+    expect(out).toContain("·")
+    expect(out).toMatch(/\d{2}:\d{2}/)
+  })
+})
+
+describe("formatRelativeTime", () => {
+  const now = new Date("2026-08-08T18:00:00Z").getTime()
+
+  it("returns em dash for missing / invalid input", () => {
+    expect(formatRelativeTime(null, now)).toBe("—")
+    expect(formatRelativeTime("nope", now)).toBe("—")
+  })
+
+  it("reports recent times relative to now", () => {
+    expect(formatRelativeTime("2026-08-08T17:59:40Z", now)).toBe("just now")
+    expect(formatRelativeTime("2026-08-08T17:55:00Z", now)).toBe("5 mins ago")
+    expect(formatRelativeTime("2026-08-08T17:00:00Z", now)).toBe("1 hour ago")
+    expect(formatRelativeTime("2026-08-06T18:00:00Z", now)).toBe("2 days ago")
+  })
+
+  it("falls back to an absolute day for anything older than ~6 days", () => {
+    const out = formatRelativeTime("2026-07-01T18:00:00Z", now)
+    expect(out).not.toContain("ago")
+    expect(out).toMatch(/Jul/)
   })
 })
 
