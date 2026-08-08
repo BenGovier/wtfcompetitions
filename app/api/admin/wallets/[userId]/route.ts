@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient, type SupabaseClient } from '@supabase/supabase-js'
 import { authorizeAdminApi } from '@/lib/admin/auth'
+import { isUserPurchaseRestricted } from '@/lib/account-restrictions'
 
 const NO_STORE = { headers: { 'Cache-Control': 'private, no-store' } }
 
@@ -181,9 +182,17 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       created_at: r.created_at,
     }))
 
+    // === Account status: purchase restriction (self-exclusion) ===
+    // Read-only display flag via the same verified helper the checkout
+    // enforcement uses. It fails closed (unknown => restricted), which for an
+    // admin display errs toward showing "self-excluded" rather than masking a
+    // real restriction.
+    const restricted = await isUserPurchaseRestricted(svc, userId)
+
     return NextResponse.json(
       {
         ok: true,
+        restricted,
         customer: {
           user_id: userId,
           name: customerName,

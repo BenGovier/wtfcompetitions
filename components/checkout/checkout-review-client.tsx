@@ -68,6 +68,10 @@ const isNonNegInt = (v: unknown): v is number =>
  */
 const FRIENDLY_ERRORS: Record<string, string> = {
   auth_required: 'Please log in to complete your entry.',
+  // Server-enforced self-exclusion. Retrying will not help, so we show clear,
+  // non-technical copy (enforcement is entirely server-side — see
+  // /api/checkout/create and the Acquired create-checkout route).
+  ACCOUNT_SELF_EXCLUDED: 'Purchasing has been disabled on this account.',
   sold_out: 'This giveaway just sold out. Please try a smaller quantity or another giveaway.',
   user_ticket_cap_exceeded: "You've reached the maximum number of tickets allowed for this giveaway.",
   wallet_prepare_failed: "We couldn't apply your WTF Credit. Your credit was not charged — please try again.",

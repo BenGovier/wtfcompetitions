@@ -5,6 +5,11 @@ import { randomUUID } from 'crypto'
 import { computeAuthoritativeSubtotal, normalizeBundlePence, normalizeQty } from '@/lib/checkout/pricing'
 import { validateDiscountCode } from '@/lib/discounts/validateDiscountCode'
 import type { AppliedDiscount } from '@/lib/discounts/discountCalc'
+import {
+  isUserPurchaseRestricted,
+  ACCOUNT_SELF_EXCLUDED_ERROR,
+  ACCOUNT_SELF_EXCLUDED_MESSAGE,
+} from '@/lib/account-restrictions'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -68,6 +73,22 @@ export async function POST(request: Request) {
   }
 
   const resolvedUser = user
+
+  // 1b) Self-exclusion gate (PRIMARY BLOCK). This runs immediately after the
+  //     user is resolved and BEFORE anything with side effects — before the
+  //     campaign fetch, per-user cap check, discount validation, checkout_intent
+  //     insert, and (critically) before any wallet reservation. A restricted
+  //     customer therefore cannot start a new purchase by ANY funding path
+  //     (card, full-wallet, or partial-wallet), because no intent is ever
+  //     created and wallet_prepare_checkout is never reached. Enforcement is
+  //     entirely server-side. It fails closed (see the helper) — existing
+  //     entries, winnings, wallet balance/history and login are all untouched.
+  if (await isUserPurchaseRestricted(supabase, resolvedUser.id)) {
+    return NextResponse.json(
+      { ok: false, error: ACCOUNT_SELF_EXCLUDED_ERROR, message: ACCOUNT_SELF_EXCLUDED_MESSAGE },
+      { status: 403, ...NO_STORE },
+    )
+  }
 
   // 2) Parse body
   let body: Record<string, unknown>
