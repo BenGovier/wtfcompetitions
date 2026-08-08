@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { rateLimit, getClientIp } from "@/lib/marketing/rate-limit"
 
 export const runtime = "nodejs"
+
+// Conservative per-IP fixed window. A genuine enquirer never submits this many
+// times in ten minutes, so legitimate behaviour is unaffected; this only blunts
+// rapid automated/abusive submissions. Best-effort (per instance), layered on
+// the existing honeypot and validation.
+const CONTACT_RATE_LIMIT = { limit: 8, windowMs: 10 * 60 * 1000 }
 
 const ALLOWED_ENQUIRY_TYPES = ['general', 'winner_payout', 'ticket_order_problem', 'account_login_issue', 'other']
 const ALLOWED_PAYOUT_METHODS = ['bank_transfer', 'paypal', 'other']
@@ -62,6 +69,16 @@ export async function POST(req: Request) {
     const honeypot = String(body.company_website ?? "").trim()
     if (honeypot) {
       return NextResponse.json({ ok: true })
+    }
+
+    // Conservative rate limit (after honeypot so silent bot-successes don't
+    // consume a legitimate visitor's budget on a shared IP).
+    const rl = rateLimit(`contact:${getClientIp(req)}`, CONTACT_RATE_LIMIT)
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { ok: false, error: "Too many submissions. Please wait a moment and try again." },
+        { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } },
+      )
     }
 
     // Parse and sanitize fields
