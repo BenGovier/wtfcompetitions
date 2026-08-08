@@ -23,6 +23,7 @@ import {
   Zap,
   Tag,
   Ticket,
+  Inbox,
   Wallet,
   Banknote,
   BarChart3,
@@ -54,7 +55,7 @@ export interface AdminNavItem {
 }
 
 /**
- * The 12 VISIBLE admin navigation items.
+ * The 13 VISIBLE admin navigation items.
  *
  * Order and grouping are authoritative; every item has exactly one icon.
  * Visibility is enforced by `canAccessRoute`, so admin-only items never surface
@@ -74,6 +75,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { href: '/admin/discount-codes', label: 'Discount Codes', icon: Tag, section: 'operations' },
   { href: '/admin/entries', label: 'Entries', icon: Ticket, section: 'operations' },
   { href: '/admin/customers', label: 'Customers', icon: UserSearch, section: 'operations' },
+  { href: '/admin/inbox', label: 'Inbox', icon: Inbox, section: 'operations' },
   // FINANCE
   { href: '/admin/wallets', label: 'WTF Credit', icon: Wallet, section: 'finance' },
   { href: '/admin/payouts', label: 'Payouts', icon: Banknote, section: 'finance' },

@@ -49,6 +49,10 @@ export const OPERATIONS_ADMIN_ALLOWED_ROUTES = [
   '/admin/entries',
   '/admin/wallets',
   '/admin/live-feed',
+  // Operations Admin works the support Inbox alongside admins. Hosts (ops) and
+  // read_only get no access. Enforcement is mirrored on every /api/admin/inbox
+  // route via authorizeAdminApi({ roles: ['admin', 'operations_admin'] }).
+  '/admin/inbox',
   // Operations Admin may browse the customer directory and open individual
   // customers. The self-exclusion ACTION remains admin-only, enforced at the
   // dialog + wallet self-exclude API layer, never by nav visibility alone.
