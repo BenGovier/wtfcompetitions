@@ -49,11 +49,11 @@ describe('GET /api/admin/customers', () => {
     expect(rpc).not.toHaveBeenCalled()
   })
 
-  it('calls admin_list_customers with normalized defaults', async () => {
+  it('calls admin_list_customers_v2 with normalized defaults', async () => {
     await GET(req('http://x/api/admin/customers'))
     expect(rpc).toHaveBeenCalledTimes(1)
     const [name, params] = rpc.mock.calls[0]
-    expect(name).toBe('admin_list_customers')
+    expect(name).toBe('admin_list_customers_v2')
     expect(params).toMatchObject({
       p_search: null,
       p_status: 'all',
@@ -190,6 +190,37 @@ describe('GET /api/admin/customers', () => {
     const json = await res.json()
     expect(json.customers).toHaveLength(1)
     expect(json.customers[0].user_id).toBe('11111111-1111-1111-1111-111111111111')
+  })
+
+  it('passes through V2 name fields (first/last/display/real) on each row', async () => {
+    rpc.mockResolvedValue({
+      data: [
+        {
+          user_id: '11111111-1111-1111-1111-111111111111',
+          first_name: 'Ada',
+          last_name: 'Lovelace',
+          display_name: 'ada_l',
+          real_name: 'adalove88',
+          email: 'ada@x.io',
+          mobile: '07786144708',
+          is_self_excluded: false,
+          account_created_at: '2024-01-01T00:00:00Z',
+          confirmed_order_count: 2,
+          lifetime_external_pence: 500,
+          last_confirmed_at: null,
+          wallet_available_pence: 0,
+        },
+      ],
+      error: null,
+    })
+    const res = await GET(req('http://x/api/admin/customers'))
+    const json = await res.json()
+    expect(json.customers[0]).toMatchObject({
+      first_name: 'Ada',
+      last_name: 'Lovelace',
+      display_name: 'ada_l',
+      real_name: 'adalove88',
+    })
   })
 
   it('maps an RPC error to 500', async () => {
