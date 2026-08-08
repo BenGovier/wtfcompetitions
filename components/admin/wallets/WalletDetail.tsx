@@ -12,8 +12,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Loader2, ChevronLeft, ChevronRight } from "lucide-react"
+import { Loader2, ChevronLeft, ChevronRight, ShieldCheck, Ban } from "lucide-react"
 import { AddCreditDialog, type CreditSuccess } from "./AddCreditDialog"
+import { SelfExcludeDialog } from "./SelfExcludeDialog"
 
 type Customer = { user_id: string; name: string; email: string; mobile: string | null }
 type Balances = { balance_pence: number; reserved_pence: number; available_pence: number }
@@ -122,6 +123,7 @@ export function WalletDetail({ userId }: { userId: string }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [customer, setCustomer] = useState<Customer | null>(null)
+  const [restricted, setRestricted] = useState(false)
   const [balances, setBalances] = useState<Balances>({ balance_pence: 0, reserved_pence: 0, available_pence: 0 })
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [reservations, setReservations] = useState<Reservation[]>([])
@@ -139,6 +141,7 @@ export function WalletDetail({ userId }: { userId: string }) {
         return
       }
       setCustomer(json.customer)
+      setRestricted(json.restricted === true)
       setBalances(json.balances)
       setTransactions(json.transactions ?? [])
       setHasNext(json.transactionsHasNext ?? false)
@@ -171,6 +174,13 @@ export function WalletDetail({ userId }: { userId: string }) {
     },
     [page, fetchDetail],
   )
+
+  const handleExcluded = useCallback(() => {
+    // Optimistically reflect the new status, then re-fetch to confirm from the
+    // server (which reads the authoritative restriction).
+    setRestricted(true)
+    fetchDetail()
+  }, [fetchDetail])
 
   if (loading && !customer) {
     return (
@@ -226,6 +236,51 @@ export function WalletDetail({ userId }: { userId: string }) {
           )}
         </CardContent>
       </Card>
+
+      {/* Account status — self-exclusion / purchasing restriction. Kept
+          visually distinct from the ordinary wallet actions below. */}
+      {restricted ? (
+        <Card className="border-destructive bg-destructive/5">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-destructive">
+              <Ban className="h-5 w-5" aria-hidden="true" />
+              Account status
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <Badge variant="destructive" className="uppercase tracking-wide">
+              Self-excluded
+            </Badge>
+            <span className="text-sm font-semibold uppercase tracking-wide text-destructive">
+              Purchasing disabled
+            </span>
+            <p className="w-full text-sm text-muted-foreground">
+              This customer cannot make new purchases. Existing entries, winnings, transaction history and wallet
+              balance are unaffected.
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+              Account status
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <Badge variant="secondary" className="uppercase tracking-wide">
+                Active
+              </Badge>
+              <span className="text-sm text-muted-foreground">This customer can make purchases.</span>
+            </div>
+            {customer && (
+              <SelfExcludeDialog userId={customer.user_id} customerName={customer.name} onExcluded={handleExcluded} />
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Balance cards */}
       <div className="grid gap-4 sm:grid-cols-3">
