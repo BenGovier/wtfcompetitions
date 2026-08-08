@@ -52,6 +52,39 @@ export function formatDateTime(iso: string | null): string {
   })
 }
 
+/** Compact day + time for the winners feed, e.g. "8 Aug · 18:04". Returns "—"
+ *  for missing/invalid input. Uses 24h time and omits the year for recency. */
+export function formatDayTime(iso: string | null): string {
+  if (!iso) return "—"
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return "—"
+  const day = d.toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+  const time = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false })
+  return `${day} · ${time}`
+}
+
+/**
+ * Human "time ago" for the winners feed, e.g. "just now", "5 mins ago",
+ * "3 hours ago", "2 days ago". For anything older than ~6 days it falls back to
+ * the absolute day so the label never becomes vague. Computed once at render
+ * (no timers/subscriptions — the feed does not auto-tick).
+ */
+export function formatRelativeTime(iso: string | null, now: number = Date.now()): string {
+  if (!iso) return "—"
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return "—"
+  const diffMs = now - d.getTime()
+  if (diffMs < 0) return "just now"
+  const mins = Math.floor(diffMs / 60000)
+  if (mins < 1) return "just now"
+  if (mins < 60) return `${mins} min${mins === 1 ? "" : "s"} ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`
+  const days = Math.floor(hours / 24)
+  if (days <= 6) return `${days} day${days === 1 ? "" : "s"} ago`
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+}
+
 /** The fields any customer-shaped record may expose for name resolution. */
 export type CustomerNameParts = {
   first_name?: string | null
