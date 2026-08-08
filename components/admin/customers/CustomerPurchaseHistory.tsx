@@ -42,6 +42,23 @@ function statusVariant(state: string | null): "default" | "secondary" | "outline
   return "secondary"
 }
 
+/** Human label for the checkout state, e.g. "confirmed" -> "Confirmed". */
+function formatState(state: string | null): string {
+  if (!state) return "—"
+  return state.charAt(0).toUpperCase() + state.slice(1).replace(/_/g, " ")
+}
+
+/**
+ * Provider column for support diagnostics: the funding provider plus its raw
+ * provider_status when present (e.g. "acquired · settled"). A fully wallet-paid
+ * order has no external provider, so we show "Site credit" instead of a dash.
+ */
+function formatProvider(provider: string | null, providerStatus: string | null, cashPaidPence: number): string {
+  if (!provider) return cashPaidPence <= 0 ? "Site credit" : "—"
+  const label = provider.charAt(0).toUpperCase() + provider.slice(1)
+  return providerStatus ? `${label} · ${providerStatus}` : label
+}
+
 export function CustomerPurchaseHistory({ userId }: { userId: string }) {
   const [orders, setOrders] = useState<Order[]>([])
   const [offset, setOffset] = useState(0)
@@ -142,11 +159,11 @@ export function CustomerPurchaseHistory({ userId }: { userId: string }) {
                       {formatPence(o.wallet_credit_pence)}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                      {o.provider ?? "—"}
+                      {formatProvider(o.provider, o.provider_status, o.cash_paid_pence)}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={statusVariant(o.checkout_state)} className="capitalize">
-                        {o.checkout_state ?? "—"}
+                      <Badge variant={statusVariant(o.checkout_state)}>
+                        {formatState(o.checkout_state)}
                       </Badge>
                     </TableCell>
                     <TableCell className="whitespace-nowrap tabular-nums">

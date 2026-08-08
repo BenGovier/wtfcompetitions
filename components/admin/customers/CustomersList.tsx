@@ -1,8 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import Link from "next/link"
-import { Card, CardContent } from "@/components/ui/card"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -15,19 +14,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { useToast } from "@/hooks/use-toast"
+import { Search, Loader2, ChevronLeft, ChevronRight, ChevronRight as RowChevron, Ban, Copy } from "lucide-react"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { Search, Loader2, ChevronLeft, ChevronRight, Ban } from "lucide-react"
-import { formatPence, formatDate } from "./format"
+  formatPence,
+  formatDate,
+  formatUkMobile,
+  resolveCustomerName,
+  resolveSecondaryHandle,
+} from "./format"
 
 type Customer = {
   user_id: string
+  first_name: string | null
+  last_name: string | null
+  display_name: string | null
   real_name: string | null
   email: string | null
   mobile: string | null
@@ -64,6 +65,9 @@ function mapError(code: unknown): string {
 }
 
 export function CustomersList() {
+  const router = useRouter()
+  const { toast } = useToast()
+
   const [searchInput, setSearchInput] = useState("")
   const [appliedSearch, setAppliedSearch] = useState("")
   const [status, setStatus] = useState<StatusFilter>("all")
@@ -79,24 +83,34 @@ export function CustomersList() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Debounce the search box. Applies only at >= 3 characters; 1–2 characters are
-  // treated as "no filter" so we never fire a request per keystroke.
+  // Debounce the search box. Applies only at >= 3 characters; 1–2 characters
+  // are held (NOT sent as an empty/unfiltered request) so the full directory
+  // never flashes back mid-type.
+  const trimmedInput = searchInput.trim()
+  const pendingShortSearch = trimmedInput.length > 0 && trimmedInput.length < MIN_SEARCH_LEN
+
   useEffect(() => {
     const handle = setTimeout(() => {
       const trimmed = searchInput.trim()
-      setAppliedSearch(trimmed.length >= MIN_SEARCH_LEN ? trimmed : "")
+      // Only two states ever reach the server: a >=3 char term, or "cleared".
+      if (trimmed.length >= MIN_SEARCH_LEN) {
+        setAppliedSearch(trimmed)
+      } else if (trimmed.length === 0) {
+        setAppliedSearch("")
+      }
+      // 1–2 chars: leave appliedSearch untouched (no new request).
     }, DEBOUNCE_MS)
     return () => clearTimeout(handle)
   }, [searchInput])
 
-  // Any change to search / status / page size resets pagination to the first page.
+  // Any change to search / status / page size resets pagination to page one.
   useEffect(() => {
     setCursor(null)
     setStack([])
   }, [appliedSearch, status, pageSize])
 
-  // Latest-request guard: stale responses are ignored (belt-and-braces with the
-  // AbortController, which cancels the previous in-flight request outright).
+  // Latest-request guard, paired with an AbortController that cancels the
+  // previous in-flight request outright.
   const requestIdRef = useRef(0)
 
   useEffect(() => {
@@ -160,177 +174,218 @@ export function CustomersList() {
     setCursor(prev)
   }
 
+  const openCustomer = (userId: string) => router.push(`/admin/customers/${userId}`)
+
+  const copyEmail = async (email: string) => {
+    try {
+      await navigator.clipboard.writeText(email)
+      toast({ title: "Email copied", description: email })
+    } catch {
+      toast({ title: "Couldn't copy", description: "Copy is unavailable in this browser.", variant: "destructive" })
+    }
+  }
+
   const pageNumber = stack.length + 1
-  const emptyMessage =
-    appliedSearch
-      ? "No customers match that search."
-      : status === "self_excluded"
-        ? "No self-excluded customers."
-        : status === "active"
-          ? "No active customers."
-          : "No customers yet."
+  const emptyMessage = appliedSearch
+    ? "No customers match that search."
+    : status === "self_excluded"
+      ? "No self-excluded customers."
+      : status === "active"
+        ? "No active customers."
+        : "No customers yet."
 
   return (
     <div className="space-y-4">
-      {/* Controls */}
-      <Card>
-        <CardContent className="space-y-4 py-4">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="search"
-              className="pl-9"
-              placeholder="Search name, email or mobile"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              aria-label="Search customers by name, email or mobile"
-            />
-          </div>
+      {/* Compact toolbar — search dominates, segmented status, page size. */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="search"
+            className="h-11 pl-9 text-base"
+            placeholder="Search name, email or mobile"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            aria-label="Search customers by name, email or mobile"
+          />
+        </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <Tabs value={status} onValueChange={(v) => setStatus(v as StatusFilter)}>
-              <TabsList>
-                <TabsTrigger value="all">All</TabsTrigger>
-                <TabsTrigger value="active">Active</TabsTrigger>
-                <TabsTrigger value="self_excluded">Self-Excluded</TabsTrigger>
-              </TabsList>
-            </Tabs>
-
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">Per page</span>
-              <Select
-                value={String(pageSize)}
-                onValueChange={(v) => setPageSize(Number(v) as PageSize)}
+        <div className="flex flex-wrap items-center gap-3">
+          <Tabs value={status} onValueChange={(v) => setStatus(v as StatusFilter)}>
+            <TabsList className="h-11">
+              <TabsTrigger value="all">All</TabsTrigger>
+              <TabsTrigger value="active">Active</TabsTrigger>
+              <TabsTrigger
+                value="self_excluded"
+                className="gap-1 data-[state=active]:bg-destructive data-[state=active]:text-destructive-foreground"
               >
-                <SelectTrigger className="w-[84px]" aria-label="Results per page">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="25">25</SelectItem>
-                  <SelectItem value="50">50</SelectItem>
-                  <SelectItem value="100">100</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+                <Ban className="size-3.5" aria-hidden="true" />
+                Self-Excluded
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+
+          <Select value={String(pageSize)} onValueChange={(v) => setPageSize(Number(v) as PageSize)}>
+            <SelectTrigger className="h-11 w-[130px]" aria-label="Results per page">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="25">25 per page</SelectItem>
+              <SelectItem value="50">50 per page</SelectItem>
+              <SelectItem value="100">100 per page</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {pendingShortSearch && (
+        <p className="text-sm text-muted-foreground" role="status">
+          Type at least {MIN_SEARCH_LEN} characters to search.
+        </p>
+      )}
 
       {error ? (
-        <Card>
-          <CardContent className="py-12 text-center text-destructive">{error}</CardContent>
-        </Card>
+        <div className="rounded-lg border border-destructive/40 bg-destructive/5 py-12 text-center text-destructive">
+          {error}
+        </div>
       ) : loading ? (
-        <Card>
-          <CardContent className="space-y-3 py-6">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full" />
-            ))}
-          </CardContent>
-        </Card>
+        <div className="space-y-2 rounded-lg border p-4">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <Skeleton key={i} className="h-14 w-full" />
+          ))}
+        </div>
       ) : customers.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">{emptyMessage}</CardContent>
-        </Card>
+        <div className="rounded-lg border py-16 text-center text-muted-foreground">{emptyMessage}</div>
       ) : (
         <>
           {/* Desktop table */}
-          <Card className="hidden md:block">
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Customer</TableHead>
-                    <TableHead>Contact</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Orders</TableHead>
-                    <TableHead className="text-right">Cash Paid</TableHead>
-                    <TableHead>Last Purchase</TableHead>
-                    <TableHead className="text-right">Wallet</TableHead>
-                    <TableHead>Joined</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {customers.map((c) => (
-                    <TableRow key={c.user_id}>
-                      <TableCell>
-                        <div className="font-medium">{c.real_name || "Unknown"}</div>
-                        <div className="font-mono text-xs text-muted-foreground">{c.user_id.slice(0, 8)}</div>
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        <div>{c.email || "—"}</div>
-                        <div className="text-muted-foreground">{c.mobile || "No mobile"}</div>
-                      </TableCell>
-                      <TableCell>
+          <div className="hidden overflow-hidden rounded-lg border md:block">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+                  <th className="px-4 py-3 text-left font-medium">Customer</th>
+                  <th className="px-4 py-3 text-left font-medium">Contact</th>
+                  <th className="px-4 py-3 text-left font-medium">Status</th>
+                  <th className="px-4 py-3 text-right font-medium">Orders</th>
+                  <th className="px-4 py-3 text-right font-medium">Cash Paid</th>
+                  <th className="px-4 py-3 text-left font-medium">Last Purchase</th>
+                  <th className="px-4 py-3 text-right font-medium">Wallet</th>
+                  <th className="px-4 py-3 text-left font-medium">Joined</th>
+                  <th className="w-10 px-2 py-3" aria-hidden="true" />
+                </tr>
+              </thead>
+              <tbody>
+                {customers.map((c) => {
+                  const name = resolveCustomerName(c)
+                  const secondary = resolveSecondaryHandle(c, name)
+                  return (
+                    <tr
+                      key={c.user_id}
+                      onClick={() => openCustomer(c.user_id)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault()
+                          openCustomer(c.user_id)
+                        }
+                      }}
+                      tabIndex={0}
+                      role="button"
+                      aria-label={`Open ${name}`}
+                      className="cursor-pointer border-b transition-colors last:border-0 hover:bg-muted/50 focus:outline-none focus-visible:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                    >
+                      <td className="px-4 py-3.5">
+                        <div className="font-medium text-foreground">{name}</div>
+                        {secondary && <div className="text-xs text-muted-foreground">{secondary}</div>}
+                      </td>
+                      <td className="px-4 py-3.5">
+                        {c.email ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              copyEmail(c.email as string)
+                            }}
+                            className="group inline-flex max-w-[220px] items-center gap-1.5 truncate text-left text-foreground hover:text-primary"
+                            title={`Copy ${c.email}`}
+                          >
+                            <span className="truncate">{c.email}</span>
+                            <Copy className="size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                          </button>
+                        ) : (
+                          <span className="text-muted-foreground">No email</span>
+                        )}
+                        <div className="text-xs text-muted-foreground">
+                          {c.mobile ? formatUkMobile(c.mobile) : "No mobile"}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3.5">
                         <StatusBadge selfExcluded={c.is_self_excluded} />
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">{c.confirmed_order_count}</TableCell>
-                      <TableCell className="text-right tabular-nums">
+                      </td>
+                      <td className="px-4 py-3.5 text-right tabular-nums">{c.confirmed_order_count}</td>
+                      <td className="px-4 py-3.5 text-right font-medium tabular-nums">
                         {formatPence(c.lifetime_external_pence)}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3.5 text-muted-foreground">
                         {formatDate(c.last_confirmed_at)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
+                      </td>
+                      <td className="px-4 py-3.5 text-right tabular-nums">
                         {formatPence(c.wallet_available_pence)}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3.5 text-muted-foreground">
                         {formatDate(c.account_created_at)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button asChild variant="outline" size="sm">
-                          <Link href={`/admin/customers/${c.user_id}`}>View</Link>
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+                      </td>
+                      <td className="px-2 py-3.5 text-right">
+                        <RowChevron className="ml-auto size-4 text-muted-foreground" aria-hidden="true" />
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
 
           {/* Mobile / tablet cards */}
           <div className="space-y-3 md:hidden">
-            {customers.map((c) => (
-              <Card key={c.user_id}>
-                <CardContent className="space-y-3 py-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="font-medium">{c.real_name || "Unknown"}</div>
-                      <div className="text-sm text-muted-foreground">{c.email || "—"}</div>
-                      <div className="text-sm text-muted-foreground">{c.mobile || "No mobile"}</div>
+            {customers.map((c) => {
+              const name = resolveCustomerName(c)
+              return (
+                <div
+                  key={c.user_id}
+                  onClick={() => openCustomer(c.user_id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault()
+                      openCustomer(c.user_id)
+                    }
+                  }}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`Open ${name}`}
+                  className="flex cursor-pointer items-center gap-3 rounded-lg border p-4 transition-colors hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="font-medium">{name}</div>
+                      <StatusBadge selfExcluded={c.is_self_excluded} compact />
                     </div>
-                    <StatusBadge selfExcluded={c.is_self_excluded} />
+                    <div className="space-y-0.5 text-sm text-muted-foreground">
+                      <div className="truncate">{c.email || "No email"}</div>
+                      <div>{c.mobile ? formatUkMobile(c.mobile) : "No mobile"}</div>
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                      <span className="tabular-nums">
+                        {c.confirmed_order_count} {c.confirmed_order_count === 1 ? "order" : "orders"}
+                      </span>
+                      <span className="font-medium tabular-nums">{formatPence(c.lifetime_external_pence)} cash paid</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Last purchase {formatDate(c.last_confirmed_at)} · Wallet {formatPence(c.wallet_available_pence)}
+                    </div>
                   </div>
-                  <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                    <div>
-                      <dt className="text-muted-foreground">Orders</dt>
-                      <dd className="tabular-nums">{c.confirmed_order_count}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-muted-foreground">Cash Paid</dt>
-                      <dd className="tabular-nums">{formatPence(c.lifetime_external_pence)}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-muted-foreground">Wallet</dt>
-                      <dd className="tabular-nums">{formatPence(c.wallet_available_pence)}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-muted-foreground">Last Purchase</dt>
-                      <dd>{formatDate(c.last_confirmed_at)}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-muted-foreground">Joined</dt>
-                      <dd>{formatDate(c.account_created_at)}</dd>
-                    </div>
-                  </dl>
-                  <Button asChild variant="outline" size="sm" className="w-full">
-                    <Link href={`/admin/customers/${c.user_id}`}>View customer</Link>
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
+                  <RowChevron className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                </div>
+              )
+            })}
           </div>
         </>
       )}
@@ -362,20 +417,23 @@ export function CustomersList() {
   )
 }
 
-function StatusBadge({ selfExcluded }: { selfExcluded: boolean }) {
+function StatusBadge({ selfExcluded, compact = false }: { selfExcluded: boolean; compact?: boolean }) {
   if (selfExcluded) {
     return (
-      <div className="space-y-1">
+      <div className={compact ? "" : "space-y-1"}>
         <Badge variant="destructive" className="gap-1 uppercase tracking-wide">
           <Ban className="h-3 w-3" aria-hidden="true" />
           Self-Excluded
         </Badge>
-        <p className="text-xs text-muted-foreground">Purchasing disabled</p>
+        {!compact && <p className="text-xs text-muted-foreground">Purchasing disabled</p>}
       </div>
     )
   }
   return (
-    <Badge variant="secondary" className="uppercase tracking-wide">
+    <Badge
+      variant="outline"
+      className="border-emerald-500/30 bg-emerald-500/10 uppercase tracking-wide text-emerald-700 dark:text-emerald-400"
+    >
       Active
     </Badge>
   )
