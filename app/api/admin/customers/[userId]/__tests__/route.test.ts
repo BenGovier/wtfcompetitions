@@ -53,7 +53,15 @@ beforeEach(() => {
   maybeSingle
     .mockResolvedValueOnce({ data: { user_id: USER_ID, real_name: 'Jane Doe', mobile: '07123' }, error: null })
     .mockResolvedValueOnce({ data: { balance_pence: 1000, reserved_pence: 300 }, error: null })
-  getUserById.mockResolvedValue({ data: { user: { email: 'jane@x.io', created_at: '2024-01-01T00:00:00Z' } } })
+  getUserById.mockResolvedValue({
+    data: {
+      user: {
+        email: 'jane@x.io',
+        created_at: '2024-01-01T00:00:00Z',
+        user_metadata: { first_name: 'Jane', last_name: 'Doe', display_name: 'jd' },
+      },
+    },
+  })
   isUserPurchaseRestricted.mockResolvedValue(false)
 })
 
@@ -75,13 +83,16 @@ describe('GET /api/admin/customers/[userId]', () => {
     expect(res.status).toBe(400)
   })
 
-  it('returns identity, wallet available (balance - reserved) and restriction', async () => {
+  it('returns identity name parts, wallet available (balance - reserved) and restriction', async () => {
     const res = await GET(req(), ctx())
     const json = await res.json()
     expect(res.status).toBe(200)
     expect(json.customer).toMatchObject({
       user_id: USER_ID,
-      name: 'Jane Doe',
+      first_name: 'Jane',
+      last_name: 'Doe',
+      display_name: 'jd',
+      real_name: 'Jane Doe',
       email: 'jane@x.io',
       mobile: '07123',
       joined: '2024-01-01T00:00:00Z',

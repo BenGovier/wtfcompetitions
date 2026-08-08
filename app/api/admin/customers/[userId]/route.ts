@@ -53,8 +53,8 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   const svc = createServiceClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } })
 
   try {
-    // === Identity (name + mobile) ===
-    let name = 'Unknown'
+    // === Identity (real_name handle + mobile) ===
+    let realName: string | null = null
     let mobile: string | null = null
     const { data: profile, error: profErr } = await svc
       .from('profiles_private')
@@ -64,17 +64,26 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     if (profErr) {
       console.error('[admin/customers/detail] profiles_private error (non-fatal):', profErr.message)
     } else if (profile) {
-      name = profile.real_name || 'Unknown'
+      realName = profile.real_name || null
       mobile = profile.mobile || null
     }
 
-    // === Email + joined date from the auth admin API (no schema access). ===
+    // === Email + joined date + genuine names from the auth admin API. ===
+    // first_name / last_name / display_name are read from the EXISTING
+    // raw_user_meta_data on the auth response — no schema access, no new query.
     let email: string | null = null
     let joined: string | null = null
+    let firstName: string | null = null
+    let lastName: string | null = null
+    let displayName: string | null = null
     try {
       const { data: authData } = await svc.auth.admin.getUserById(userId)
       email = authData?.user?.email ?? null
       joined = authData?.user?.created_at ?? null
+      const meta = (authData?.user?.user_metadata ?? {}) as Record<string, unknown>
+      firstName = typeof meta.first_name === 'string' && meta.first_name.trim() ? meta.first_name.trim() : null
+      lastName = typeof meta.last_name === 'string' && meta.last_name.trim() ? meta.last_name.trim() : null
+      displayName = typeof meta.display_name === 'string' && meta.display_name.trim() ? meta.display_name.trim() : null
     } catch (e: any) {
       console.error('[admin/customers/detail] auth lookup error (non-fatal):', e?.message)
     }
@@ -104,8 +113,13 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
         restricted,
         customer: {
           user_id: userId,
-          name,
-          email: email || '-',
+          // Raw name parts; the UI resolves the primary display name via the
+          // shared resolveCustomerName helper (same as the list).
+          first_name: firstName,
+          last_name: lastName,
+          display_name: displayName,
+          real_name: realName,
+          email: email || null,
           mobile: mobile || null,
           joined,
         },
