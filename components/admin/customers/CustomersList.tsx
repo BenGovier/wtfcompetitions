@@ -15,13 +15,16 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
-import { Search, Loader2, ChevronLeft, ChevronRight, ChevronRight as RowChevron, Ban, Copy } from "lucide-react"
+import { Search, Loader2, ChevronLeft, ChevronRight, ChevronRight as RowChevron, Ban, Copy, Trophy } from "lucide-react"
+import { CustomerAvatar } from "./CustomerAvatar"
 import {
   formatPence,
   formatDate,
+  formatCount,
   formatUkMobile,
   resolveCustomerName,
-  resolveSecondaryHandle,
+  buildListWinningsSummary,
+  type CustomerWinningsParts,
 } from "./format"
 
 type Customer = {
@@ -40,6 +43,13 @@ type Customer = {
   lifetime_external_pence: number
   last_confirmed_at: string | null
   wallet_available_pence: number
+  instant_win_count: number
+  main_draw_win_count: number
+  total_win_count: number
+  cash_win_count: number
+  site_credit_win_count: number
+  cash_won_pence: number
+  site_credit_won_pence: number
 }
 
 type Cursor = { createdAt: string; userId: string }
@@ -196,14 +206,14 @@ export function CustomersList() {
 
   return (
     <div className="space-y-4">
-      {/* Compact toolbar — search dominates, segmented status, page size. */}
+      {/* Compact CRM toolbar — search dominates, segmented status, page size. */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             type="search"
             className="h-11 pl-9 text-base"
-            placeholder="Search name, email or mobile"
+            placeholder="Search by name, email or mobile"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             aria-label="Search customers by name, email or mobile"
@@ -245,153 +255,173 @@ export function CustomersList() {
       )}
 
       {error ? (
-        <div className="rounded-lg border border-destructive/40 bg-destructive/5 py-12 text-center text-destructive">
+        <div className="rounded-xl border border-destructive/40 bg-destructive/5 py-16 text-center text-destructive">
           {error}
         </div>
       ) : loading ? (
-        <div className="space-y-2 rounded-lg border p-4">
+        <div className="space-y-2.5">
           {Array.from({ length: 8 }).map((_, i) => (
-            <Skeleton key={i} className="h-14 w-full" />
+            <Skeleton key={i} className="h-[92px] w-full rounded-xl" />
           ))}
         </div>
       ) : customers.length === 0 ? (
-        <div className="rounded-lg border py-16 text-center text-muted-foreground">{emptyMessage}</div>
+        <div className="rounded-xl border py-20 text-center text-muted-foreground">{emptyMessage}</div>
       ) : (
-        <>
-          {/* Desktop table */}
-          <div className="hidden overflow-hidden rounded-lg border md:block">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
-                  <th className="px-4 py-3 text-left font-medium">Customer</th>
-                  <th className="px-4 py-3 text-left font-medium">Contact</th>
-                  <th className="px-4 py-3 text-left font-medium">Status</th>
-                  <th className="px-4 py-3 text-right font-medium">Orders</th>
-                  <th className="px-4 py-3 text-right font-medium">Cash Paid</th>
-                  <th className="px-4 py-3 text-left font-medium">Last Purchase</th>
-                  <th className="px-4 py-3 text-right font-medium">Wallet</th>
-                  <th className="px-4 py-3 text-left font-medium">Joined</th>
-                  <th className="w-10 px-2 py-3" aria-hidden="true" />
-                </tr>
-              </thead>
-              <tbody>
-                {customers.map((c) => {
-                  const name = resolveCustomerName(c)
-                  const secondary = resolveSecondaryHandle(c, name)
-                  return (
-                    <tr
-                      key={c.user_id}
-                      onClick={() => openCustomer(c.user_id)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault()
-                          openCustomer(c.user_id)
-                        }
-                      }}
-                      tabIndex={0}
-                      role="button"
-                      aria-label={`Open ${name}`}
-                      className="cursor-pointer border-b transition-colors last:border-0 hover:bg-muted/50 focus:outline-none focus-visible:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-                    >
-                      <td className="px-4 py-3.5">
-                        <div className="font-medium text-foreground">{name}</div>
-                        {secondary && <div className="text-xs text-muted-foreground">{secondary}</div>}
-                      </td>
-                      <td className="px-4 py-3.5">
-                        {c.email ? (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              copyEmail(c.email as string)
-                            }}
-                            className="group inline-flex max-w-[220px] items-center gap-1.5 truncate text-left text-foreground hover:text-primary"
-                            title={`Copy ${c.email}`}
-                          >
-                            <span className="truncate">{c.email}</span>
-                            <Copy className="size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-                          </button>
-                        ) : (
-                          <span className="text-muted-foreground">No email</span>
-                        )}
-                        <div className="text-xs text-muted-foreground">
-                          {c.mobile ? formatUkMobile(c.mobile) : "No mobile"}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <StatusBadge selfExcluded={c.is_self_excluded} />
-                      </td>
-                      <td className="px-4 py-3.5 text-right tabular-nums">{c.confirmed_order_count}</td>
-                      <td className="px-4 py-3.5 text-right font-medium tabular-nums">
-                        {formatPence(c.lifetime_external_pence)}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3.5 text-muted-foreground">
-                        {formatDate(c.last_confirmed_at)}
-                      </td>
-                      <td className="px-4 py-3.5 text-right tabular-nums">
-                        {formatPence(c.wallet_available_pence)}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3.5 text-muted-foreground">
-                        {formatDate(c.account_created_at)}
-                      </td>
-                      <td className="px-2 py-3.5 text-right">
-                        <RowChevron className="ml-auto size-4 text-muted-foreground" aria-hidden="true" />
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Mobile / tablet cards */}
-          <div className="space-y-3 md:hidden">
-            {customers.map((c) => {
-              const name = resolveCustomerName(c)
-              return (
-                <div
-                  key={c.user_id}
-                  onClick={() => openCustomer(c.user_id)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault()
-                      openCustomer(c.user_id)
-                    }
-                  }}
-                  tabIndex={0}
-                  role="button"
-                  aria-label={`Open ${name}`}
-                  className="flex cursor-pointer items-center gap-3 rounded-lg border p-4 transition-colors hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <div className="min-w-0 flex-1 space-y-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="font-medium">{name}</div>
-                      <StatusBadge selfExcluded={c.is_self_excluded} compact />
-                    </div>
-                    <div className="space-y-0.5 text-sm text-muted-foreground">
-                      <div className="truncate">{c.email || "No email"}</div>
-                      <div>{c.mobile ? formatUkMobile(c.mobile) : "No mobile"}</div>
-                    </div>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
-                      <span className="tabular-nums">
-                        {c.confirmed_order_count} {c.confirmed_order_count === 1 ? "order" : "orders"}
-                      </span>
-                      <span className="font-medium tabular-nums">{formatPence(c.lifetime_external_pence)} cash paid</span>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      Last purchase {formatDate(c.last_confirmed_at)} · Wallet {formatPence(c.wallet_available_pence)}
+        <div className="space-y-2.5">
+          {customers.map((c) => {
+            const name = resolveCustomerName(c)
+            return (
+              <div
+                key={c.user_id}
+                onClick={() => openCustomer(c.user_id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault()
+                    openCustomer(c.user_id)
+                  }
+                }}
+                tabIndex={0}
+                role="button"
+                aria-label={`Open ${name}`}
+                className="group cursor-pointer rounded-xl border bg-card transition-colors hover:border-primary/40 hover:bg-muted/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              >
+                {/* Desktop: horizontal zoned CRM row. */}
+                <div className="hidden items-center gap-5 px-5 py-4 lg:flex">
+                  {/* IDENTITY */}
+                  <div className="flex min-w-0 flex-[1.6] items-center gap-3">
+                    <CustomerAvatar name={name} seed={c.user_id} />
+                    <div className="min-w-0">
+                      <div className="truncate font-semibold text-foreground">{name}</div>
+                      {c.email ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            copyEmail(c.email as string)
+                          }}
+                          className="group/email inline-flex max-w-full items-center gap-1.5 truncate text-left text-sm text-muted-foreground hover:text-primary"
+                          title={`Copy ${c.email}`}
+                        >
+                          <span className="truncate">{c.email}</span>
+                          <Copy className="size-3 shrink-0 opacity-0 transition-opacity group-hover/email:opacity-100" />
+                        </button>
+                      ) : (
+                        <div className="text-sm text-muted-foreground">No email</div>
+                      )}
+                      <div className="text-sm text-muted-foreground">
+                        {c.mobile ? formatUkMobile(c.mobile) : "No mobile"}
+                      </div>
                     </div>
                   </div>
-                  <RowChevron className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+
+                  {/* ACTIVITY */}
+                  <Zone label="Activity">
+                    {c.confirmed_order_count > 0 ? (
+                      <>
+                        <div className="font-medium tabular-nums text-foreground">
+                          {formatCount(c.confirmed_order_count)}{" "}
+                          {c.confirmed_order_count === 1 ? "order" : "orders"}
+                        </div>
+                        <div className="text-sm text-muted-foreground">Last {formatDate(c.last_confirmed_at)}</div>
+                      </>
+                    ) : (
+                      <div className="text-sm text-muted-foreground">No purchases</div>
+                    )}
+                  </Zone>
+
+                  {/* VALUE */}
+                  <Zone label="Value">
+                    <div className="font-medium tabular-nums text-foreground">
+                      {formatPence(c.lifetime_external_pence)}
+                    </div>
+                    <div className="text-sm text-muted-foreground">cash paid</div>
+                    {c.wallet_available_pence > 0 && (
+                      <div className="text-sm text-muted-foreground tabular-nums">
+                        {formatPence(c.wallet_available_pence)} wallet
+                      </div>
+                    )}
+                  </Zone>
+
+                  {/* WINNINGS */}
+                  <Zone label="Winnings">
+                    <WinningsInline w={c} />
+                  </Zone>
+
+                  {/* STATUS + chevron */}
+                  <div className="flex shrink-0 items-center gap-3">
+                    <StatusBadge selfExcluded={c.is_self_excluded} />
+                    <RowChevron
+                      className="size-5 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5 group-hover:text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                  </div>
                 </div>
-              )
-            })}
-          </div>
-        </>
+
+                {/* Mobile / tablet: full-width vertical card. */}
+                <div className="flex flex-col gap-3 p-4 lg:hidden">
+                  <div className="flex items-start gap-3">
+                    <CustomerAvatar name={name} seed={c.user_id} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="truncate font-semibold">{name}</div>
+                        <StatusBadge selfExcluded={c.is_self_excluded} compact />
+                      </div>
+                      {c.email ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            copyEmail(c.email as string)
+                          }}
+                          className="mt-0.5 block max-w-full truncate text-left text-sm text-muted-foreground"
+                          title={`Copy ${c.email}`}
+                        >
+                          {c.email}
+                        </button>
+                      ) : (
+                        <div className="mt-0.5 text-sm text-muted-foreground">No email</div>
+                      )}
+                      <div className="text-sm text-muted-foreground">
+                        {c.mobile ? formatUkMobile(c.mobile) : "No mobile"}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 border-t pt-3 text-sm">
+                    <div>
+                      <span className="tabular-nums text-foreground">
+                        {c.confirmed_order_count > 0
+                          ? `${formatCount(c.confirmed_order_count)} ${c.confirmed_order_count === 1 ? "order" : "orders"}`
+                          : "No purchases"}
+                      </span>
+                      {c.confirmed_order_count > 0 && (
+                        <div className="text-xs text-muted-foreground">Last {formatDate(c.last_confirmed_at)}</div>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <span className="font-medium tabular-nums text-foreground">
+                        {formatPence(c.lifetime_external_pence)} cash
+                      </span>
+                      <div className="text-xs text-muted-foreground tabular-nums">
+                        {formatPence(c.wallet_available_pence)} wallet
+                      </div>
+                    </div>
+                  </div>
+
+                  {c.total_win_count > 0 && (
+                    <div className="border-t pt-3">
+                      <WinningsInline w={c} />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
       )}
 
       {/* Pagination */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between pt-1">
         <p className="text-sm text-muted-foreground">
           {loading ? (
             <span className="inline-flex items-center gap-2">
@@ -417,15 +447,47 @@ export function CustomersList() {
   )
 }
 
+/** A labelled information zone in a desktop customer row. */
+function Zone({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="hidden min-w-0 flex-1 flex-col gap-0.5 lg:flex">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">{label}</span>
+      <div className="text-sm leading-snug">{children}</div>
+    </div>
+  )
+}
+
+/**
+ * Compact winnings summary for a list row. Cash and site credit are shown
+ * separately and never summed; main-draw wins are surfaced as a count only
+ * (they carry no canonical monetary value).
+ */
+function WinningsInline({ w }: { w: CustomerWinningsParts }) {
+  const summary = buildListWinningsSummary(w)
+  if (!summary) {
+    return <span className="text-sm text-muted-foreground">No wins</span>
+  }
+  return (
+    <div className="space-y-0.5">
+      <div className="inline-flex items-center gap-1.5 font-medium text-foreground">
+        <Trophy className="size-3.5 text-amber-500" aria-hidden="true" />
+        {summary.headline}
+      </div>
+      {summary.money && <div className="text-sm text-muted-foreground tabular-nums">{summary.money}</div>}
+      {summary.draws && <div className="text-sm text-muted-foreground">{summary.draws}</div>}
+    </div>
+  )
+}
+
 function StatusBadge({ selfExcluded, compact = false }: { selfExcluded: boolean; compact?: boolean }) {
   if (selfExcluded) {
     return (
-      <div className={compact ? "" : "space-y-1"}>
+      <div className={compact ? "" : "text-right"}>
         <Badge variant="destructive" className="gap-1 uppercase tracking-wide">
           <Ban className="h-3 w-3" aria-hidden="true" />
           Self-Excluded
         </Badge>
-        {!compact && <p className="text-xs text-muted-foreground">Purchasing disabled</p>}
+        {!compact && <p className="mt-1 text-xs text-muted-foreground">Purchasing disabled</p>}
       </div>
     )
   }
