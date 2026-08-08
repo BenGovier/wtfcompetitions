@@ -49,6 +49,10 @@ export const OPERATIONS_ADMIN_ALLOWED_ROUTES = [
   '/admin/entries',
   '/admin/wallets',
   '/admin/live-feed',
+  // Operations Admin may browse the customer directory and open individual
+  // customers. The self-exclusion ACTION remains admin-only, enforced at the
+  // dialog + wallet self-exclude API layer, never by nav visibility alone.
+  '/admin/customers',
   // Operations Admin may VIEW discount codes (read-only). Mutations are still
   // blocked at the page + API layer (admin-only), never by nav visibility alone.
   '/admin/discount-codes',

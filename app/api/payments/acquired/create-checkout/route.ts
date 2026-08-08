@@ -9,6 +9,11 @@ import {
   validateCustomerName,
   type CustomerNameField,
 } from '@/lib/acquired/customer-name'
+import {
+  isUserPurchaseRestricted,
+  ACCOUNT_SELF_EXCLUDED_ERROR,
+  ACCOUNT_SELF_EXCLUDED_MESSAGE,
+} from '@/lib/account-restrictions'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -158,6 +163,24 @@ export async function POST(request: Request) {
       console.error('[payments/acquired] name update ownership mismatch for ref', ref)
       return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403, headers: noStore })
     }
+  }
+
+  // 5-restrict) Self-exclusion STALE-INTENT guard. This protects an intent that
+  //             was created while the customer was still allowed but who has
+  //             since become self-excluded. We check the intent's OWNER (not the
+  //             request session — this route is normally called without a name
+  //             and thus without an auth round-trip) using the same service
+  //             client, and refuse to create/continue an Acquired payment. We do
+  //             NOT mutate the intent: it stays 'pending' exactly as a normal
+  //             rejected request leaves it, and no wallet reservation has been
+  //             touched yet at this point. This is a NEW-purchase block only; it
+  //             never runs on the webhook/confirmation (already-paid) path.
+  if (await isUserPurchaseRestricted(svc, intent.user_id)) {
+    console.warn('[payments/acquired] blocked self-excluded owner for ref', ref)
+    return NextResponse.json(
+      { ok: false, error: ACCOUNT_SELF_EXCLUDED_ERROR, message: ACCOUNT_SELF_EXCLUDED_MESSAGE },
+      { status: 403, headers: noStore },
+    )
   }
 
   // 5a) Wallet reservation release helper.

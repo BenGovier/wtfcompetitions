@@ -28,6 +28,7 @@ import {
   BarChart3,
   ScrollText,
   Users,
+  UserSearch,
   type LucideIcon,
 } from 'lucide-react'
 import { canAccessRoute, type AdminRole } from '@/lib/admin/permissions'
@@ -53,7 +54,7 @@ export interface AdminNavItem {
 }
 
 /**
- * The 11 VISIBLE admin navigation items.
+ * The 12 VISIBLE admin navigation items.
  *
  * Order and grouping are authoritative; every item has exactly one icon.
  * Visibility is enforced by `canAccessRoute`, so admin-only items never surface
@@ -72,6 +73,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { href: '/admin/instant-wins', label: 'Instant Wins', icon: Zap, section: 'operations' },
   { href: '/admin/discount-codes', label: 'Discount Codes', icon: Tag, section: 'operations' },
   { href: '/admin/entries', label: 'Entries', icon: Ticket, section: 'operations' },
+  { href: '/admin/customers', label: 'Customers', icon: UserSearch, section: 'operations' },
   // FINANCE
   { href: '/admin/wallets', label: 'WTF Credit', icon: Wallet, section: 'finance' },
   { href: '/admin/payouts', label: 'Payouts', icon: Banknote, section: 'finance' },
