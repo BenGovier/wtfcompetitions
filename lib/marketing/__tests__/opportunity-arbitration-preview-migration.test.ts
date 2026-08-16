@@ -351,6 +351,63 @@ describe('011 preview — deterministic bounded score', () => {
   })
 })
 
+describe('011 preview — affinity_c reflects ONLY structured affinity (Stage 3C2D)', () => {
+  // Isolate the affinity_c expression: from the `AS affinity_c` marker back to
+  // the previous comma that opens the projection.
+  const affIdx = FLAT.indexOf('AS affinity_c')
+  const affExpr = FLAT.slice(FLAT.lastIndexOf('(CASE', affIdx), affIdx)
+
+  const STRUCTURED = [
+    'wallet_credit_campaign_match',
+    'frequent_buyer_relevant_campaign',
+    'vip_relevant_campaign',
+    'reveal_affinity_campaign',
+    'recently_active_no_relevant_entry',
+    'campaign_closing_relevant_customer',
+  ]
+  const PROMO_CONFIG_ONLY = ['vip_early_access', 'regular_buyer_campaign_alert', 'promotion_match']
+
+  it('awards affinity_c only to the six structured-affinity opportunity types (flat 60)', () => {
+    for (const k of STRUCTURED) {
+      expect(affExpr).toContain(`'${k}'`)
+    }
+    // The award is a flat 60 gated on the key allow-list + a concrete campaign.
+    expect(FLAT).toMatch(/\) AND s\.campaign_id IS NOT NULL THEN 60 ELSE 0 END\)::int AS affinity_c/i)
+  })
+
+  it('gives vip_early_access NO affinity_c merely from campaign_id', () => {
+    expect(affExpr).not.toContain("'vip_early_access'")
+  })
+
+  it('gives regular_buyer_campaign_alert NO affinity_c merely from campaign_id', () => {
+    expect(affExpr).not.toContain("'regular_buyer_campaign_alert'")
+  })
+
+  it('gives promotion_match NO affinity_c merely from campaign_id', () => {
+    expect(affExpr).not.toContain("'promotion_match'")
+  })
+
+  it('does NOT reference the promotion-config-only keys anywhere in affinity_c', () => {
+    for (const k of PROMO_CONFIG_ONLY) {
+      expect(affExpr).not.toContain(`'${k}'`)
+    }
+  })
+
+  it('does NOT add VIP inside affinity_c (VIP lives once in value_c)', () => {
+    // No is_vip term and no leftover +20 inside the affinity_c expression.
+    expect(/is_vip/i.test(affExpr)).toBe(false)
+    expect(/\b20\b/.test(affExpr)).toBe(false)
+    // affinity_c is no longer family-based.
+    expect(/family IN \('affinity', 'promotion'\)/i.test(affExpr)).toBe(false)
+  })
+
+  it('bounds affinity_c to exactly 0 or 60 (no other magnitude yet)', () => {
+    // The only numeric literals in the affinity_c expression are 60 and 0.
+    const nums = (affExpr.match(/\b\d+\b/g) || []).sort()
+    expect(nums).toEqual(['0', '60'])
+  })
+})
+
 describe('011 preview — arbitration (one winner per customer)', () => {
   it('uses a window ROW_NUMBER partitioned by user_id (no procedural loop)', () => {
     expect(FLAT).toMatch(/ROW_NUMBER\(\) OVER \( PARTITION BY f\.user_id ORDER BY/i)

@@ -639,9 +639,27 @@ scored AS (
 final AS (
   SELECT
     s.*,
-    -- affinity_c (affinity + promotion families): concrete campaign relevance.
-    (CASE WHEN s.family IN ('affinity', 'promotion') AND s.campaign_id IS NOT NULL THEN 60 ELSE 0 END
-      + CASE WHEN s.is_vip AND s.family IN ('affinity', 'promotion') THEN 20 ELSE 0 END)::int AS affinity_c,
+    -- affinity_c: ONLY genuine STRUCTURED campaign affinity/relevance. Awarded
+    -- (flat 60) exclusively to opportunity types whose selected campaign came
+    -- from the customer_campaign_affinity matching path (relevant_campaign_id /
+    -- reveal_campaign_id / closing_campaign_id ranked by structured affinity
+    -- strength). Promotion-config-only types (vip_early_access,
+    -- regular_buyer_campaign_alert, promotion_match) carry a campaign_id from
+    -- explicit marketing_campaign_promotions configuration, NOT from customer
+    -- affinity, so they earn NOTHING here. VIP is NOT counted here at all — it is
+    -- already represented once in value_c (VIP = 80); adding it again would
+    -- double-count the same feature. Bounded to exactly 0 or 60 for this stage.
+    (CASE
+       WHEN s.opportunity_key IN (
+         'wallet_credit_campaign_match',
+         'frequent_buyer_relevant_campaign',
+         'vip_relevant_campaign',
+         'reveal_affinity_campaign',
+         'recently_active_no_relevant_entry',
+         'campaign_closing_relevant_customer'
+       ) AND s.campaign_id IS NOT NULL THEN 60
+       ELSE 0
+     END)::int AS affinity_c,
     -- urgency_c: only a candidate whose OWN campaign is closing earns urgency.
     (CASE WHEN s.is_closing THEN 100 ELSE 0 END)::int AS urgency_c
   FROM scored s
