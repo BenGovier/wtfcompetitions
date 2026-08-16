@@ -26,9 +26,12 @@ const EXEC = NO_LINE_COMMENTS.replace(/\s+/g, ' ')
 
 describe('008 opportunity detection preview — migration shape', () => {
   it('is wrapped in a single atomic transaction BEGIN;/COMMIT;', () => {
-    expect(FLAT.startsWith('BEGIN;')).toBe(true)
-    expect((CODE.match(/\bCOMMIT\s*;/g) || []).length).toBe(1)
-    expect(FLAT.trim().endsWith('COMMIT;')).toBe(true)
+    // The file opens with a documentation header, so BEGIN; is the first
+    // EXECUTABLE statement (EXEC strips comments) and COMMIT; is the last.
+    const execTrimmed = EXEC.trim()
+    expect(execTrimmed.startsWith('BEGIN;')).toBe(true)
+    expect(execTrimmed.endsWith('COMMIT;')).toBe(true)
+    expect((EXEC.match(/\bCOMMIT\s*;/g) || []).length).toBe(1)
   })
 
   it('sets fail-fast LOCAL lock and statement timeouts', () => {
@@ -249,7 +252,9 @@ describe('008 opportunity detection preview — checkout_intents access', () => 
   })
 
   it('deduplicates abandoned candidates by customer', () => {
-    expect(FLAT).toMatch(/abandoned_users AS \( SELECT DISTINCT user_id FROM abandoned_no_conversion \)/i)
+    // EXEC strips the inline "-- deduplicate by customer" comment that sits
+    // between AS ( and SELECT in the source.
+    expect(EXEC).toMatch(/abandoned_users AS \( SELECT DISTINCT user_id FROM abandoned_no_conversion \)/i)
   })
 
   it('reports recentCheckoutRowsScanned for the abandoned detector', () => {
@@ -300,8 +305,8 @@ describe('008 opportunity detection preview — profile-only detectors reuse can
   })
 
   it('uses the automation first_delay_minutes / minimum_wallet_pence config, not hard-coded literals', () => {
-    expect(FLAT).toMatch(/first_delay_minutes\s+\)\s+FILTER \(WHERE automation_key = 'abandoned_checkout'\)/i)
-    expect(FLAT).toMatch(/first_delay_minutes\s+\)\s+FILTER \(WHERE automation_key = 'new_account_no_purchase'\)/i)
+    expect(FLAT).toMatch(/first_delay_minutes\)\s+FILTER \(WHERE automation_key = 'abandoned_checkout'\)/i)
+    expect(FLAT).toMatch(/first_delay_minutes\)\s+FILTER \(WHERE automation_key = 'new_account_no_purchase'\)/i)
     expect(FLAT).toMatch(/minimum_wallet_pence\) FILTER \(WHERE automation_key = 'wtf_credit_waiting'\)/i)
     expect(FLAT).toMatch(/p\.wallet_available_pence >= v_wtf_min_wallet/i)
   })
