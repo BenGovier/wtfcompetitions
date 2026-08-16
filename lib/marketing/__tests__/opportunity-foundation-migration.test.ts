@@ -338,10 +338,32 @@ describe('Stage 3C1 — read-only aggregate RPC', () => {
     expect(FLAT).toMatch(/CREATE OR REPLACE FUNCTION public\.get_admin_marketing_opportunity_overview\(\)\s+RETURNS jsonb/i)
   })
 
-  it('is SECURITY DEFINER with a fixed search_path and a 10s timeout', () => {
+  it('remains STABLE (read-only volatility)', () => {
+    // STABLE appears in the function declaration, between RETURNS jsonb and the
+    // AS $$ body, so the function is never VOLATILE.
+    const decl = FLAT.match(/RETURNS jsonb\s+LANGUAGE plpgsql\s+([\s\S]*?)\s+AS \$\$/i)
+    expect(decl, 'function declaration present').toBeTruthy()
+    expect(decl![1]).toMatch(/\bSTABLE\b/i)
+  })
+
+  it('is SECURITY DEFINER with a fixed search_path', () => {
     expect(FLAT).toMatch(/SECURITY DEFINER/i)
     expect(FLAT).toMatch(/SET search_path = public, pg_temp/i)
-    expect(FLAT).toMatch(/set_config\('statement_timeout', '10s', true\)/i)
+  })
+
+  it('sets the 10s statement_timeout declaratively via the SET clause', () => {
+    expect(FLAT).toMatch(/SET statement_timeout = '10s'/i)
+    // The SET clause is part of the declaration (before the AS $$ body).
+    const decl = FLAT.match(/RETURNS jsonb\s+LANGUAGE plpgsql\s+([\s\S]*?)\s+AS \$\$/i)
+    expect(decl, 'function declaration present').toBeTruthy()
+    expect(decl![1]).toMatch(/SET statement_timeout = '10s'/i)
+    expect(decl![1]).toMatch(/SET search_path = public, pg_temp/i)
+  })
+
+  it('makes NO set_config call anywhere in the migration', () => {
+    // The STABLE function must not write any runtime GUC; the whole file is free
+    // of set_config so nothing can smuggle a write into a read-only function.
+    expect(/set_config\s*\(/i.test(CODE)).toBe(false)
   })
 
   it('returns the required aggregate keys', () => {

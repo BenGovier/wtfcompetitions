@@ -373,6 +373,7 @@ LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
 SET search_path = public, pg_temp
+SET statement_timeout = '10s'
 AS $$
 DECLARE
   v_now         timestamptz := now();
@@ -380,9 +381,9 @@ DECLARE
   v_by_state    jsonb;
   v_by_type     jsonb;
 BEGIN
-  -- Transaction-local safety limit: a pathological run self-terminates well
-  -- within the 10s ceiling required by the spec.
-  PERFORM set_config('statement_timeout', '10s', true);
+  -- The 10s statement-timeout ceiling is enforced declaratively via the
+  -- function's SET statement_timeout clause (keeps this STABLE function fully
+  -- read-only; no set_config / no runtime GUC writes).
 
   -- Single-pass conditional aggregation over the (initially empty) table.
   SELECT jsonb_build_object(
