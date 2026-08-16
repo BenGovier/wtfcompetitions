@@ -191,6 +191,34 @@ describe('010 rollup — canonical source semantics reused verbatim', () => {
     )
   })
 
+  it('keeps the per-order external cash RAW (not clamped per order)', () => {
+    // The canonical CASE is aliased as raw ext_pence, and it is NOT wrapped in a
+    // per-order GREATEST(..., 0) — the old ext_nn per-order clamp is gone.
+    expect(/ext_nn/i.test(EXEC)).toBe(false)
+    expect(FLAT).toMatch(/END\)::bigint AS ext_pence/i)
+    // No "GREATEST( CASE WHEN ci.external_payment_pence ..." per-order clamp.
+    expect(
+      /GREATEST\(\s*CASE WHEN ci\.external_payment_pence IS NOT NULL/i.test(FLAT),
+    ).toBe(false)
+  })
+
+  it('clamps only the final derived aggregates for the 009 non-negative CHECKs', () => {
+    expect(FLAT).toMatch(/GREATEST\(COALESCE\(SUM\(ext_pence\) FILTER \(WHERE confirmed_at >= v_now - interval '30 days'\), 0\), 0\)/i)
+    expect(FLAT).toMatch(/GREATEST\(ROUND\(AVG\(ext_pence\)\), 0\)/i)
+    expect(FLAT).toMatch(/GREATEST\(MAX\(ext_pence\), 0\)/i)
+    expect(FLAT).toMatch(/GREATEST\(COALESCE\(SUM\(ext_pence\), 0\), 0\)/i) // affinity
+  })
+
+  it('builds source_updated_at from aggregates only — no correlated MAX subqueries', () => {
+    // The removed correlated forms must be gone entirely.
+    expect(/\(SELECT MAX\(confirmed_at\) FROM co/i.test(EXEC)).toBe(false)
+    expect(/\(SELECT MAX\(created_at\)\s+FROM wtx/i.test(EXEC)).toBe(false)
+    // The GREATEST uses the already-joined aggregate fields.
+    expect(FLAT).toMatch(
+      /GREATEST\( t\.refreshed_at, t\.source_updated_at, pu\.latest_confirmed_at, wa\.last_win_at, wl\.wallet_source_updated_at, ag\.last_abandoned_at \) AS source_updated_at/i,
+    )
+  })
+
   it('resolves awards to users ONLY through a confirmed real checkout', () => {
     expect(FLAT).toMatch(/FROM public\.instant_win_awards a JOIN co ON co\.id = a\.checkout_intent_id/i)
   })
@@ -209,8 +237,39 @@ describe('010 rollup — canonical source semantics reused verbatim', () => {
     expect(/FROM\s+public\.wallet_reservations/i.test(EXEC)).toBe(false)
   })
 
-  it('counts wallet spend as negative amounts tied to a checkout, excluding admin corrections', () => {
-    expect(FLAT).toMatch(/amount_pence < 0 AND source_checkout_intent_id IS NOT NULL/i)
+  it('classifies the wallet ledger by transaction_type, not by amount sign alone', () => {
+    // transaction_type is selected into the wtx CTE and used in the filters.
+    expect(FLAT).toMatch(/wtx AS \( SELECT wt\.user_id, wt\.transaction_type,/i)
+  })
+
+  it('counts wallet CREDIT received via an explicit positive-credit type allow-list', () => {
+    // Both the last_wallet_credit_at and the 30d credit sum use the allow-list.
+    expect(
+      (FLAT.match(
+        /transaction_type IN \('instant_win_credit', 'admin_credit', 'refund_credit'\) AND amount_pence > 0/gi,
+      ) || []).length,
+    ).toBeGreaterThanOrEqual(2)
+  })
+
+  it('EXCLUDES reversal from wallet-credit-received metrics', () => {
+    // 'reversal' must never appear inside a credit-received allow-list.
+    expect(/'instant_win_credit', 'admin_credit', 'refund_credit', 'reversal'/i.test(EXEC)).toBe(
+      false,
+    )
+    expect(/'reversal'/i.test(EXEC)).toBe(false)
+  })
+
+  it('counts wallet SPEND only as order_spend, negative, tied to a checkout', () => {
+    // Both last_wallet_debit_at and the 30d spend sum use exactly this predicate.
+    expect(
+      (FLAT.match(
+        /transaction_type = 'order_spend' AND amount_pence < 0 AND source_checkout_intent_id IS NOT NULL/gi,
+      ) || []).length,
+    ).toBeGreaterThanOrEqual(2)
+  })
+
+  it('never treats admin_debit as customer wallet purchase spend', () => {
+    expect(/'admin_debit'/i.test(EXEC)).toBe(false)
   })
 
   it('reads the abandoned first delay from marketing_automations with a 45m fallback', () => {
@@ -275,14 +334,101 @@ describe('010 rollup — bounded, set-based, resumable design', () => {
     expect(FLAT).toMatch(/ON CONFLICT \(user_id\) DO UPDATE SET/i)
   })
 
-  it('advances the incremental watermark only after processing, with an overlap', () => {
-    expect(FLAT).toMatch(/v_overlap\s+interval := interval '15 minutes'/i)
-    expect(FLAT).toMatch(/last_incremental_at\s+= v_now/i)
+  it('the batch helper enforces its own hard bound of 1000 and dedupes UUIDs', () => {
+    // Dedup (DISTINCT + NULL strip) before the bound check.
+    expect(FLAT).toMatch(/SELECT array_agg\(DISTINCT u ORDER BY u\) INTO p_ids FROM unnest\(p_ids\) AS u WHERE u IS NOT NULL/i)
+    // Hard rejection above 1000.
+    expect(FLAT).toMatch(/IF cardinality\(p_ids\) > 1000 THEN RAISE EXCEPTION/i)
   })
 
-  it('re-applies the strict confirmed scope inside the helper (broad detection is safe)', () => {
-    // Detection widens (updated_at OR created_at) but the helper re-filters.
-    expect(FLAT).toMatch(/ci\.confirmed_at >= v_since OR ci\.updated_at >= v_since OR ci\.created_at >= v_since/i)
+  it('opens the incremental window with a 15-minute overlap floor', () => {
+    expect(FLAT).toMatch(/v_overlap\s+interval := interval '15 minutes'/i)
+    expect(FLAT).toMatch(
+      /v_win_from := COALESCE\(v_state\.last_incremental_at, v_state\.backfill_started_at, v_now\) - v_overlap/i,
+    )
+    expect(FLAT).toMatch(/v_win_to\s+:= v_now/i)
+  })
+})
+
+describe('010 rollup — incremental is bounded, frozen-window + cursor', () => {
+  it('adds frozen window + cursor columns to the refresh-state table', () => {
+    expect(FLAT).toMatch(/incremental_window_from timestamptz/i)
+    expect(FLAT).toMatch(/incremental_window_to\s+timestamptz/i)
+    expect(FLAT).toMatch(/incremental_cursor\s+uuid/i)
+    expect(FLAT).toMatch(/last_incremental_at\s+timestamptz/i)
+  })
+
+  it('constrains the window fields so no impossible partial state can persist', () => {
+    expect(FLAT).toMatch(
+      /cmi_refresh_state_window_pair_chk CHECK \( \(incremental_window_from IS NULL\) = \(incremental_window_to IS NULL\) \)/i,
+    )
+    expect(FLAT).toMatch(/cmi_refresh_state_window_order_chk CHECK \([^)]*incremental_window_from <= incremental_window_to/i)
+    expect(FLAT).toMatch(
+      /cmi_refresh_state_cursor_requires_window_chk CHECK \( incremental_cursor IS NULL OR incremental_window_to IS NOT NULL \)/i,
+    )
+  })
+
+  it('LIMITs the incremental candidate universe to the bounded batch (p_limit/v_batch)', () => {
+    // The candidate SELECT is ordered by user_id and hard-limited to v_batch.
+    expect(FLAT).toMatch(/AND \(v_cursor IS NULL OR uid > v_cursor\) ORDER BY uid LIMIT v_batch/i)
+  })
+
+  it('never array_aggs the entire changed population in incremental mode', () => {
+    // The old unbounded "array_agg(DISTINCT uid) ... FROM (...) WHERE uid IS NOT NULL"
+    // with no LIMIT must be gone. array_agg used in incremental is the ordered,
+    // pre-LIMITed form.
+    expect(/array_agg\(DISTINCT uid\)/i.test(EXEC)).toBe(false)
+    expect(FLAT).toMatch(/SELECT array_agg\(uid ORDER BY uid\) INTO v_ids FROM \( SELECT DISTINCT uid/i)
+  })
+
+  it('advances the cursor only when the window is NOT yet exhausted', () => {
+    // Non-complete branch advances cursor to the last processed id.
+    expect(FLAT).toMatch(/SET incremental_cursor\s+= v_ids\[v_count\]/i)
+  })
+
+  it('advances last_incremental_at to window_to ONLY when the window is exhausted', () => {
+    // Completion branch sets watermark to window_to and clears window + cursor.
+    expect(FLAT).toMatch(/v_complete := \(v_count < v_batch\)/i)
+    expect(FLAT).toMatch(
+      /SET last_incremental_at\s+= v_win_to, incremental_window_from = NULL, incremental_window_to\s+= NULL, incremental_cursor\s+= NULL/i,
+    )
+    // The watermark is never blindly advanced to v_now in incremental mode.
+    expect(/last_incremental_at\s*=\s*v_now/i.test(EXEC)).toBe(false)
+  })
+
+  it('recomputes rolling-window stale intelligence at least every 24 hours', () => {
+    expect(FLAT).toMatch(
+      /FROM public\.customer_marketing_intelligence cmi WHERE cmi\.refreshed_at < v_win_to - interval '24 hours'/i,
+    )
+    // Backed by an index on OUR OWN rollup table.
+    expect(FLAT).toMatch(
+      /CREATE INDEX IF NOT EXISTS idx_customer_marketing_intelligence_refreshed_at ON public\.customer_marketing_intelligence \(refreshed_at\)/i,
+    )
+  })
+
+  it('creates a candidate when an abandonment threshold crosses (no UPDATE required)', () => {
+    expect(FLAT).toMatch(/ci\.created_at >\s+v_win_from - v_abandon_delay/i)
+    expect(FLAT).toMatch(/ci\.created_at <= v_win_to\s+- v_abandon_delay/i)
+    expect(FLAT).toMatch(/ci\.state IS DISTINCT FROM 'confirmed'/i)
+  })
+
+  it('has NO broad checkout_intents.updated_at OR-scan for change detection', () => {
+    expect(/updated_at\s*>=\s*v_since/i.test(EXEC)).toBe(false)
+    expect(/ci\.updated_at/i.test(EXEC)).toBe(false)
+  })
+
+  it('has NO global wallet_transactions.created_at candidate scan in the orchestrator', () => {
+    // Wallet-driven change discovery must go through the profile bridge (source
+    // A), never a global ledger scan to find changed users. The only
+    // wallet_transactions read is inside the batch helper's candidate-joined wtx
+    // CTE (JOIN targets), never a bare orchestrator scan by created_at.
+    expect(/FROM public\.wallet_transactions wt WHERE wt\.created_at >=/i.test(EXEC)).toBe(false)
+  })
+
+  it('uses index-friendly bounded ranges for direct checkout candidate discovery', () => {
+    expect(FLAT).toMatch(/ci\.created_at > v_win_from AND ci\.created_at <= v_win_to/i)
+    expect(FLAT).toMatch(/ci\.confirmed_at > v_win_from AND ci\.confirmed_at <= v_win_to/i)
+    expect(FLAT).toMatch(/a\.awarded_at > v_win_from AND a\.awarded_at <= v_win_to/i)
   })
 })
 
@@ -383,5 +529,16 @@ describe('010 rollup — overview RPC is aggregate-only, no identities', () => {
     expect(/'email'/i.test(overview)).toBe(false)
     expect(/'userId'/i.test(overview)).toBe(false)
     expect(/'rows',\s*jsonb_agg/i.test(overview)).toBe(false)
+  })
+
+  it('declares statement_timeout on the STABLE function and calls no set_config in its body', () => {
+    // The overview keeps STABLE and gains a declarative SET statement_timeout.
+    expect(FLAT).toMatch(
+      /CREATE OR REPLACE FUNCTION public\.get_admin_marketing_intelligence_overview\(\) RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public, pg_temp SET statement_timeout = '10s' AS/i,
+    )
+    // No set_config anywhere inside the STABLE overview body.
+    const fnStart = EXEC.indexOf('CREATE OR REPLACE FUNCTION public.get_admin_marketing_intelligence_overview')
+    const overviewExec = EXEC.slice(fnStart)
+    expect(/set_config\(/i.test(overviewExec)).toBe(false)
   })
 })

@@ -194,6 +194,15 @@ CREATE TABLE IF NOT EXISTS public.customer_marketing_intelligence_refresh_state 
   backfill_cursor      uuid,
   backfill_complete    boolean     NOT NULL DEFAULT false,
   last_incremental_at  timestamptz,
+  -- FROZEN INCREMENTAL WINDOW + UUID CURSOR (resumable, bounded incremental).
+  -- While an incremental window is being paged, from/to are frozen and the
+  -- cursor advances through user_ids. last_incremental_at is advanced to
+  -- incremental_window_to ONLY when the frozen window is fully exhausted, so a
+  -- source event committed after window_to belongs to the NEXT window and can
+  -- never be skipped.
+  incremental_window_from timestamptz,
+  incremental_window_to   timestamptz,
+  incremental_cursor      uuid,
   last_success_at      timestamptz,
   last_attempt_at      timestamptz,
   last_mode            text,
@@ -206,7 +215,23 @@ CREATE TABLE IF NOT EXISTS public.customer_marketing_intelligence_refresh_state 
   CONSTRAINT cmi_refresh_state_mode_chk CHECK (
     last_mode IS NULL OR last_mode IN ('backfill', 'incremental', 'skipped')
   ),
-  CONSTRAINT cmi_refresh_state_processed_nonneg_chk CHECK (last_processed_users >= 0)
+  CONSTRAINT cmi_refresh_state_processed_nonneg_chk CHECK (last_processed_users >= 0),
+  -- Window fields are all-or-nothing: from and to must be set together or both
+  -- NULL, so a half-open window state can never be persisted.
+  CONSTRAINT cmi_refresh_state_window_pair_chk CHECK (
+    (incremental_window_from IS NULL) = (incremental_window_to IS NULL)
+  ),
+  -- When a window is active it must be ordered (from <= to).
+  CONSTRAINT cmi_refresh_state_window_order_chk CHECK (
+    incremental_window_from IS NULL
+    OR incremental_window_to IS NULL
+    OR incremental_window_from <= incremental_window_to
+  ),
+  -- A cursor is only meaningful inside an active window; it can never dangle
+  -- without a frozen window to page through.
+  CONSTRAINT cmi_refresh_state_cursor_requires_window_chk CHECK (
+    incremental_cursor IS NULL OR incremental_window_to IS NOT NULL
+  )
 );
 
 COMMENT ON TABLE public.customer_marketing_intelligence_refresh_state IS
@@ -224,6 +249,15 @@ REVOKE ALL ON public.customer_marketing_intelligence_refresh_state FROM public, 
 -- existing/default grants, then grant back exactly the verbs the singleton needs.
 REVOKE ALL ON public.customer_marketing_intelligence_refresh_state FROM service_role;
 GRANT SELECT, INSERT, UPDATE ON public.customer_marketing_intelligence_refresh_state TO service_role;
+
+-- Time-driven maintenance support: an index on OUR OWN rollup table so the
+-- incremental pass can cheaply find intelligence rows that have gone stale
+-- (refreshed_at older than 24h) and recompute their rolling-window metrics even
+-- when the customer generated no new source event. This indexes ONLY the
+-- 3C2B-owned customer_marketing_intelligence table; NO operational
+-- checkout/payment/wallet table is indexed by this migration.
+CREATE INDEX IF NOT EXISTS idx_customer_marketing_intelligence_refreshed_at
+  ON public.customer_marketing_intelligence (refreshed_at);
 
 -- ============================================================================
 -- 2. PRIVATE SET-BASED BATCH HELPER
@@ -247,6 +281,25 @@ DECLARE
 BEGIN
   IF p_ids IS NULL OR array_length(p_ids, 1) IS NULL THEN
     RETURN 0;
+  END IF;
+
+  -- Enforce the helper's OWN contract, independent of any caller. Deduplicate
+  -- first (drop NULLs + repeats) so a caller passing duplicate UUIDs cannot
+  -- inflate cardinality past the bound, then hard-refuse any batch over 1000.
+  -- The helper must NEVER be capable of processing an unbounded array.
+  SELECT array_agg(DISTINCT u ORDER BY u)
+    INTO p_ids
+    FROM unnest(p_ids) AS u
+   WHERE u IS NOT NULL;
+
+  IF p_ids IS NULL OR array_length(p_ids, 1) IS NULL THEN
+    RETURN 0;
+  END IF;
+
+  IF cardinality(p_ids) > 1000 THEN
+    RAISE EXCEPTION
+      'refresh_customer_marketing_intelligence_batch: batch size % exceeds the hard limit of 1000',
+      cardinality(p_ids);
   END IF;
 
   -- Abandoned-checkout first delay from admin config (falls back to 45 minutes
@@ -273,21 +326,20 @@ BEGIN
     WHERE p.user_id = ANY (p_ids)
   ),
   -- Canonical confirmed real orders for the candidate batch (predicate + cash
-  -- formula reused EXACTLY from migration 003). ext_nn is clamped >= 0 for the
-  -- 009 non-negativity CHECKs; the underlying formula is unchanged.
+  -- formula reused EXACTLY from migration 003). ext_pence is the RAW canonical
+  -- per-order external cash — NOT clamped here, so it is byte-for-byte the Stage
+  -- 1 revenue definition. Non-negativity for the 009 CHECKs is applied ONLY to
+  -- the final aggregates/outputs below, never to the individual order.
   co AS (
     SELECT
       ci.user_id,
       ci.id,
       ci.confirmed_at,
       ci.campaign_id,
-      GREATEST(
-        CASE
-          WHEN ci.external_payment_pence IS NOT NULL THEN ci.external_payment_pence
-          ELSE COALESCE(ci.total_pence, 0) - COALESCE(ci.wallet_credit_pence, 0)
-        END,
-        0
-      )::bigint AS ext_nn
+      (CASE
+        WHEN ci.external_payment_pence IS NOT NULL THEN ci.external_payment_pence
+        ELSE COALESCE(ci.total_pence, 0) - COALESCE(ci.wallet_credit_pence, 0)
+      END)::bigint AS ext_pence
     FROM public.checkout_intents ci
     JOIN targets t ON t.id = ci.user_id
     WHERE ci.state = 'confirmed'
@@ -297,7 +349,10 @@ BEGIN
   ),
   -- Purchase windows + spend windows + value stats, all from one captured v_now
   -- so counts are internally consistent and naturally nested (7<=14<=30<=60<=90,
-  -- 30<=90) as the 009 monotonic CHECKs require.
+  -- 30<=90) as the 009 monotonic CHECKs require. GREATEST(...,0) here guards the
+  -- non-negative derived CONTAINERS only (the per-order ext_pence stays raw).
+  -- latest_confirmed_at is carried out of this already-grouped aggregate so
+  -- source_updated_at needs NO correlated per-customer MAX subquery.
   purchase AS (
     SELECT
       user_id,
@@ -306,10 +361,11 @@ BEGIN
       COUNT(*) FILTER (WHERE confirmed_at >= v_now - interval '30 days')::integer AS orders_30d,
       COUNT(*) FILTER (WHERE confirmed_at >= v_now - interval '60 days')::integer AS orders_60d,
       COUNT(*) FILTER (WHERE confirmed_at >= v_now - interval '90 days')::integer AS orders_90d,
-      GREATEST(COALESCE(SUM(ext_nn) FILTER (WHERE confirmed_at >= v_now - interval '30 days'), 0), 0)::bigint AS external_spend_30d_pence,
-      GREATEST(COALESCE(SUM(ext_nn) FILTER (WHERE confirmed_at >= v_now - interval '90 days'), 0), 0)::bigint AS external_spend_90d_pence,
-      GREATEST(ROUND(AVG(ext_nn)), 0)::bigint AS average_external_order_value_pence,
-      GREATEST(MAX(ext_nn), 0)::bigint        AS highest_external_order_value_pence
+      GREATEST(COALESCE(SUM(ext_pence) FILTER (WHERE confirmed_at >= v_now - interval '30 days'), 0), 0)::bigint AS external_spend_30d_pence,
+      GREATEST(COALESCE(SUM(ext_pence) FILTER (WHERE confirmed_at >= v_now - interval '90 days'), 0), 0)::bigint AS external_spend_90d_pence,
+      GREATEST(ROUND(AVG(ext_pence)), 0)::bigint AS average_external_order_value_pence,
+      GREATEST(MAX(ext_pence), 0)::bigint        AS highest_external_order_value_pence,
+      MAX(confirmed_at)                          AS latest_confirmed_at
     FROM co
     GROUP BY user_id
   ),
@@ -381,13 +437,19 @@ BEGIN
     FROM aw
     WHERE rn = 1
   ),
-  -- Wallet ledger (wallet_transactions ONLY; never wallet_reservations).
-  -- Positive amounts = genuine balance additions ("credit received"). Negative
-  -- amounts carrying a source_checkout_intent_id = genuine purchase spend;
-  -- negative admin corrections (no source_checkout_intent_id) are EXCLUDED.
+  -- Wallet ledger (wallet_transactions ONLY; never wallet_reservations),
+  -- classified by the ACTUAL transaction_type — NOT by amount sign alone.
+  --   CREDIT RECEIVED = transaction_type IN
+  --     ('instant_win_credit','admin_credit','refund_credit') AND amount_pence > 0.
+  --     'reversal' is EXPLICITLY EXCLUDED from credit-received metrics.
+  --   WALLET SPEND (genuine customer purchase) = transaction_type = 'order_spend'
+  --     AND amount_pence < 0 AND source_checkout_intent_id IS NOT NULL.
+  --     'admin_debit' and 'reversal' are NEVER counted as customer purchase spend,
+  --     and wallet reservations are not in this table at all.
   wtx AS (
     SELECT
       wt.user_id,
+      wt.transaction_type,
       wt.amount_pence,
       wt.created_at,
       wt.source_checkout_intent_id
@@ -397,13 +459,27 @@ BEGIN
   wallet_agg AS (
     SELECT
       user_id,
-      MAX(created_at) FILTER (WHERE amount_pence > 0) AS last_wallet_credit_at,
-      MAX(created_at) FILTER (WHERE amount_pence < 0 AND source_checkout_intent_id IS NOT NULL) AS last_wallet_debit_at,
+      MAX(created_at) FILTER (
+        WHERE transaction_type IN ('instant_win_credit', 'admin_credit', 'refund_credit')
+          AND amount_pence > 0
+      ) AS last_wallet_credit_at,
+      MAX(created_at) FILTER (
+        WHERE transaction_type = 'order_spend'
+          AND amount_pence < 0
+          AND source_checkout_intent_id IS NOT NULL
+      ) AS last_wallet_debit_at,
       GREATEST(COALESCE(SUM(amount_pence) FILTER (
-        WHERE amount_pence > 0 AND created_at >= v_now - interval '30 days'), 0), 0)::bigint AS wallet_credit_received_30d_pence,
+        WHERE transaction_type IN ('instant_win_credit', 'admin_credit', 'refund_credit')
+          AND amount_pence > 0
+          AND created_at >= v_now - interval '30 days'), 0), 0)::bigint AS wallet_credit_received_30d_pence,
       GREATEST(COALESCE(SUM(-amount_pence) FILTER (
-        WHERE amount_pence < 0 AND source_checkout_intent_id IS NOT NULL
-              AND created_at >= v_now - interval '30 days'), 0), 0)::bigint AS wallet_spent_30d_pence
+        WHERE transaction_type = 'order_spend'
+          AND amount_pence < 0
+          AND source_checkout_intent_id IS NOT NULL
+          AND created_at >= v_now - interval '30 days'), 0), 0)::bigint AS wallet_spent_30d_pence,
+      -- Greatest ledger timestamp for this candidate; feeds source_updated_at
+      -- (aggregate only — replaces a correlated per-customer MAX subquery).
+      MAX(created_at) AS wallet_source_updated_at
     FROM wtx
     GROUP BY user_id
   ),
@@ -482,16 +558,17 @@ BEGIN
       COALESCE(ag.abandoned_7d_count, 0)  AS abandoned_7d_count,
       COALESCE(ag.abandoned_30d_count, 0) AS abandoned_30d_count,
       al.last_abandoned_campaign_id,
-      -- Greatest known input-change timestamp across the customer's sources.
+      -- Greatest known input-change timestamp across the customer's sources,
+      -- built ENTIRELY from already-joined aggregate fields. NO correlated
+      -- per-customer MAX subquery: latest_confirmed_at comes from `purchase` and
+      -- wallet_source_updated_at from `wallet_agg`.
       GREATEST(
         t.refreshed_at,
         t.source_updated_at,
+        pu.latest_confirmed_at,
         wa.last_win_at,
-        wl.last_wallet_credit_at,
-        wl.last_wallet_debit_at,
-        ag.last_abandoned_at,
-        (SELECT MAX(confirmed_at) FROM co  WHERE co.user_id  = t.id),
-        (SELECT MAX(created_at)   FROM wtx WHERE wtx.user_id = t.id)
+        wl.wallet_source_updated_at,
+        ag.last_abandoned_at
       ) AS source_updated_at
     FROM targets t
     LEFT JOIN purchase pu ON pu.user_id = t.id
@@ -587,13 +664,12 @@ BEGIN
       ci.id,
       ci.confirmed_at,
       ci.campaign_id,
-      GREATEST(
-        CASE
-          WHEN ci.external_payment_pence IS NOT NULL THEN ci.external_payment_pence
-          ELSE COALESCE(ci.total_pence, 0) - COALESCE(ci.wallet_credit_pence, 0)
-        END,
-        0
-      )::bigint AS ext_nn
+      -- RAW canonical per-order external cash (identical to Stage 1); NOT
+      -- clamped here. Non-negativity is applied only to the affinity aggregates.
+      (CASE
+        WHEN ci.external_payment_pence IS NOT NULL THEN ci.external_payment_pence
+        ELSE COALESCE(ci.total_pence, 0) - COALESCE(ci.wallet_credit_pence, 0)
+      END)::bigint AS ext_pence
     FROM public.checkout_intents ci
     JOIN targets t ON t.id = ci.user_id
     WHERE ci.state = 'confirmed'
@@ -609,7 +685,7 @@ BEGIN
       'campaign'::text            AS affinity_type,
       lower(campaign_id::text)    AS affinity_key,
       COUNT(*)::integer           AS confirmed_order_count,
-      GREATEST(SUM(ext_nn), 0)::bigint AS external_spend_pence,
+      GREATEST(COALESCE(SUM(ext_pence), 0), 0)::bigint AS external_spend_pence,
       MAX(confirmed_at)           AS last_confirmed_at
     FROM co
     WHERE campaign_id IS NOT NULL
@@ -624,7 +700,7 @@ BEGIN
       'reveal_type'::text                 AS affinity_type,
       lower(btrim(c.reveal_type))         AS affinity_key,
       COUNT(*)::integer                   AS confirmed_order_count,
-      GREATEST(SUM(co.ext_nn), 0)::bigint AS external_spend_pence,
+      GREATEST(COALESCE(SUM(co.ext_pence), 0), 0)::bigint AS external_spend_pence,
       MAX(co.confirmed_at)                AS last_confirmed_at
     FROM co
     JOIN public.campaigns c ON c.id = co.campaign_id
@@ -640,7 +716,7 @@ BEGIN
       'presentation_type'::text              AS affinity_type,
       lower(btrim(c.presentation_type))      AS affinity_key,
       COUNT(*)::integer                      AS confirmed_order_count,
-      GREATEST(SUM(co.ext_nn), 0)::bigint    AS external_spend_pence,
+      GREATEST(COALESCE(SUM(co.ext_pence), 0), 0)::bigint AS external_spend_pence,
       MAX(co.confirmed_at)                   AS last_confirmed_at
     FROM co
     JOIN public.campaigns c ON c.id = co.campaign_id
@@ -702,8 +778,12 @@ DECLARE
   v_count      integer := 0;
   v_processed  integer := 0;
   v_mode       text;
-  v_since      timestamptz;
   v_complete   boolean;
+  -- Frozen incremental window + cursor state.
+  v_win_from      timestamptz;
+  v_win_to        timestamptz;
+  v_cursor        uuid;
+  v_abandon_delay interval;
 BEGIN
   -- Transaction-local safety limits, set before the lock and any work. Same
   -- fail-fast envelope as the proven Stage 1 refresh.
@@ -819,64 +899,162 @@ BEGIN
   END IF;
 
   -- ==========================================================================
-  -- INCREMENTAL MODE — recompute every user whose relevant source data changed
-  -- since the watermark (minus an overlap). We process the WHOLE changed set;
-  -- the watermark advances to v_now ONLY on success, so a run that times out
-  -- rolls back and re-covers the same users next time (a user can NEVER be
-  -- skipped by advancing the watermark past unprocessed rows).
+  -- INCREMENTAL MODE — RESUMABLE, BOUNDED, FROZEN WINDOW + UUID CURSOR.
+  --
+  -- A frozen window [window_from, window_to] is opened once, then paged in
+  -- user_id order in bounded batches. last_incremental_at advances to window_to
+  -- ONLY when the window is fully exhausted; the cursor advances after each
+  -- successful batch. A timeout/failure rolls the whole call back (single
+  -- transaction), so neither the cursor nor the watermark advances past
+  -- unprocessed users, and a source event committed after window_to is picked up
+  -- by the NEXT window. The batch handed to the helper is ALWAYS <= v_batch.
   -- ==========================================================================
   v_mode := 'incremental';
 
-  v_since := COALESCE(v_state.last_incremental_at, v_state.backfill_started_at, v_now) - v_overlap;
+  -- Abandoned-checkout delay (drives abandonment-maturity candidate discovery).
+  SELECT make_interval(mins => COALESCE(ma.first_delay_minutes, 45))
+    INTO v_abandon_delay
+    FROM public.marketing_automations ma
+   WHERE ma.automation_key = 'abandoned_checkout';
+  IF v_abandon_delay IS NULL THEN
+    v_abandon_delay := interval '45 minutes';
+  END IF;
 
-  SELECT array_agg(DISTINCT uid)
+  -- (A) Establish or resume the frozen window.
+  IF v_state.incremental_window_to IS NULL THEN
+    -- No active window: open a new one, frozen for its whole paging lifetime.
+    v_win_from := COALESCE(v_state.last_incremental_at, v_state.backfill_started_at, v_now) - v_overlap;
+    v_win_to   := v_now;
+    v_cursor   := NULL;
+
+    UPDATE public.customer_marketing_intelligence_refresh_state
+       SET incremental_window_from = v_win_from,
+           incremental_window_to   = v_win_to,
+           incremental_cursor      = NULL,
+           updated_at              = v_now
+     WHERE key = 'default';
+  ELSE
+    -- Resume the existing frozen window from the stored cursor.
+    v_win_from := v_state.incremental_window_from;
+    v_win_to   := v_state.incremental_window_to;
+    v_cursor   := v_state.incremental_cursor;
+  END IF;
+
+  -- (B..F) Build the DISTINCT candidate universe for the FROZEN window, restrict
+  -- to user_id > cursor, order by user_id, and LIMIT to the bounded batch. Every
+  -- source uses an index-friendly bounded range within the frozen window; there
+  -- is NO broad checkout_intents.updated_at OR-scan and NO global
+  -- wallet_transactions.created_at scan (wallet changes reach us via the Stage 1
+  -- profile refreshed_at / source_updated_at bridge, source A).
+  SELECT array_agg(uid ORDER BY uid)
   INTO v_ids
   FROM (
-    -- Profile recomputed or its inputs changed (Stage 1 bumps refreshed_at).
-    SELECT p.user_id AS uid
-    FROM public.customer_marketing_profiles p
-    WHERE p.refreshed_at >= v_since
-       OR p.source_updated_at >= v_since
-    UNION
-    -- Any changed checkout for a real (non-debug, non-SIM) user. Detection is
-    -- intentionally broad (confirmed_at OR updated_at OR created_at); the strict
-    -- confirmed scope is RE-APPLIED inside the batch helper, so widening
-    -- detection cannot corrupt aggregates.
-    SELECT ci.user_id
-    FROM public.checkout_intents ci
-    WHERE ci.user_id IS NOT NULL
-      AND ci.provider IS DISTINCT FROM 'debug'
-      AND (ci.ref IS NULL OR ci.ref NOT LIKE 'SIM-%')
-      AND (ci.confirmed_at >= v_since OR ci.updated_at >= v_since OR ci.created_at >= v_since)
-    UNION
-    -- New/changed awards, resolved to the user through their checkout.
-    SELECT ci.user_id
-    FROM public.instant_win_awards a
-    JOIN public.checkout_intents ci ON ci.id = a.checkout_intent_id
-    WHERE a.awarded_at >= v_since
-    UNION
-    -- New wallet ledger activity.
-    SELECT wt.user_id
-    FROM public.wallet_transactions wt
-    WHERE wt.created_at >= v_since
-  ) c
-  WHERE uid IS NOT NULL;
+    SELECT DISTINCT uid
+    FROM (
+      -- A. Profiles changed/refreshed inside the frozen window. This is also the
+      --    bridge for arbitrary checkout UPDATEs and ALL wallet activity, since
+      --    Stage 1 already watches those and bumps the profile's refreshed_at /
+      --    source_updated_at.
+      SELECT p.user_id AS uid
+      FROM public.customer_marketing_profiles p
+      WHERE (p.refreshed_at     > v_win_from AND p.refreshed_at     <= v_win_to)
+         OR (p.source_updated_at > v_win_from AND p.source_updated_at <= v_win_to)
+
+      UNION ALL
+      -- B. Real (non-debug, non-SIM) checkouts CREATED in the frozen window.
+      SELECT ci.user_id
+      FROM public.checkout_intents ci
+      WHERE ci.user_id IS NOT NULL
+        AND ci.provider IS DISTINCT FROM 'debug'
+        AND (ci.ref IS NULL OR ci.ref NOT LIKE 'SIM-%')
+        AND ci.created_at > v_win_from AND ci.created_at <= v_win_to
+
+      UNION ALL
+      -- C. Canonical confirmed rows whose confirmed_at is in the frozen window.
+      SELECT ci.user_id
+      FROM public.checkout_intents ci
+      WHERE ci.user_id IS NOT NULL
+        AND ci.provider IS DISTINCT FROM 'debug'
+        AND (ci.ref IS NULL OR ci.ref NOT LIKE 'SIM-%')
+        AND ci.confirmed_at > v_win_from AND ci.confirmed_at <= v_win_to
+
+      UNION ALL
+      -- D. Awards with awarded_at in the frozen window (indexed awarded_at),
+      --    resolved to the user through their checkout.
+      SELECT ci.user_id
+      FROM public.instant_win_awards a
+      JOIN public.checkout_intents ci ON ci.id = a.checkout_intent_id
+      WHERE a.awarded_at > v_win_from AND a.awarded_at <= v_win_to
+
+      UNION ALL
+      -- E. Abandonment MATURITY crossings: a pending (non-confirmed), real,
+      --    non-SIM checkout whose created_at + delay lands inside the frozen
+      --    window — i.e. it becomes an abandoned-checkout signal now, WITHOUT any
+      --    source-row UPDATE. Bounded indexable created_at range; the
+      --    authoritative same-campaign conversion exclusion stays in the batch
+      --    helper (this query only ensures timely recomputation).
+      SELECT ci.user_id
+      FROM public.checkout_intents ci
+      WHERE ci.user_id IS NOT NULL
+        AND ci.state IS DISTINCT FROM 'confirmed'
+        AND ci.provider IS DISTINCT FROM 'debug'
+        AND (ci.ref IS NULL OR ci.ref NOT LIKE 'SIM-%')
+        AND ci.created_at >  v_win_from - v_abandon_delay
+        AND ci.created_at <= v_win_to   - v_abandon_delay
+
+      UNION ALL
+      -- F. Time-driven maintenance: intelligence rows older than 24h relative to
+      --    the frozen window_to, so rolling-window metrics (orders_*d, spend_*d,
+      --    wins_30d, wallet_*_30d, abandoned_*_count) are recomputed at least
+      --    daily even with no new source event. Uses the refreshed_at index.
+      SELECT cmi.user_id
+      FROM public.customer_marketing_intelligence cmi
+      WHERE cmi.refreshed_at < v_win_to - interval '24 hours'
+    ) u
+    WHERE uid IS NOT NULL
+      AND (v_cursor IS NULL OR uid > v_cursor)
+    ORDER BY uid
+    LIMIT v_batch
+  ) picked;
 
   v_count := COALESCE(array_length(v_ids, 1), 0);
 
   IF v_count > 0 THEN
+    -- Bounded batch (<= v_batch <= 1000); helper re-enforces its own hard bound.
     v_processed := public.refresh_customer_marketing_intelligence_batch(v_ids);
   END IF;
 
-  -- Advance the watermark ONLY on success. v_now was captured at the start, so
-  -- rows committed during this run are re-covered by the next run's overlap.
-  UPDATE public.customer_marketing_intelligence_refresh_state
-     SET last_incremental_at  = v_now,
-         last_success_at      = v_now,
-         last_mode            = v_mode,
-         last_processed_users = v_processed,
-         updated_at           = v_now
-   WHERE key = 'default';
+  -- The frozen window is exhausted when this page returned fewer than a full
+  -- batch (nothing remains beyond the last user_id).
+  v_complete := (v_count < v_batch);
+
+  IF v_complete THEN
+    -- Window done: advance the watermark to window_to and CLEAR the
+    -- window/cursor so the next call opens a fresh window. last_incremental_at
+    -- only advances here, once no candidates remain — never past unprocessed
+    -- users.
+    UPDATE public.customer_marketing_intelligence_refresh_state
+       SET last_incremental_at     = v_win_to,
+           incremental_window_from = NULL,
+           incremental_window_to   = NULL,
+           incremental_cursor      = NULL,
+           last_success_at         = v_now,
+           last_mode               = v_mode,
+           last_processed_users    = v_processed,
+           updated_at              = v_now
+     WHERE key = 'default';
+  ELSE
+    -- Window continues: advance ONLY the cursor to the last processed user_id.
+    -- last_incremental_at is deliberately left untouched so the window stays
+    -- frozen until fully paged.
+    UPDATE public.customer_marketing_intelligence_refresh_state
+       SET incremental_cursor   = v_ids[v_count],
+           last_success_at      = v_now,
+           last_mode            = v_mode,
+           last_processed_users = v_processed,
+           updated_at           = v_now
+     WHERE key = 'default';
+  END IF;
 
   RETURN jsonb_build_object(
     'ok', true,
@@ -884,6 +1062,7 @@ BEGIN
     'skippedBecauseLocked', false,
     'processedUsers', v_processed,
     'backfillComplete', true,
+    'incrementalWindowComplete', v_complete,
     'lastSuccessAt', v_now,
     'durationMs', (extract(epoch FROM (clock_timestamp() - v_started)) * 1000)::bigint
   );
@@ -907,6 +1086,7 @@ LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
 SET search_path = public, pg_temp
+SET statement_timeout = '10s'
 AS $$
 DECLARE
   v_refresh   jsonb;
@@ -914,8 +1094,8 @@ DECLARE
   v_totals    jsonb;
   v_affinity  jsonb;
 BEGIN
-  PERFORM set_config('statement_timeout', '10s', true);
-
+  -- statement_timeout is set DECLARATIVELY on the function (SET clause above);
+  -- a STABLE function must not call set_config() in its body.
   SELECT jsonb_build_object(
            'backfillComplete', COALESCE(s.backfill_complete, false),
            'lastSuccessAt',    s.last_success_at,
