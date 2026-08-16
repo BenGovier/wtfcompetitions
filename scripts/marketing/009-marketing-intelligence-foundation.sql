@@ -408,6 +408,33 @@ CREATE TABLE IF NOT EXISTS public.customer_marketing_intelligence (
   CONSTRAINT cmi_fulfilment_type_chk CHECK (
     last_win_fulfilment_type IS NULL
     OR last_win_fulfilment_type IN ('cash', 'wallet_credit', 'manual')
+  ),
+
+  -- Derived-data consistency: these nested time-window aggregates are computed
+  -- by a later rollup. Enforce that logically impossible combinations can NEVER
+  -- be stored, so a buggy future rollup fails loudly instead of persisting
+  -- corrupt intelligence. Each wider window must contain the narrower one.
+  CONSTRAINT cmi_orders_window_monotonic_chk CHECK (
+    orders_7d <= orders_14d
+    AND orders_14d <= orders_30d
+    AND orders_30d <= orders_60d
+    AND orders_60d <= orders_90d
+  ),
+  CONSTRAINT cmi_spend_window_monotonic_chk CHECK (
+    external_spend_30d_pence <= external_spend_90d_pence
+  ),
+  CONSTRAINT cmi_wins_window_monotonic_chk CHECK (
+    wins_30d <= win_count
+  ),
+  CONSTRAINT cmi_abandoned_window_monotonic_chk CHECK (
+    abandoned_7d_count <= abandoned_30d_count
+  ),
+  -- Average order value can never exceed the highest order value (when both
+  -- are known). NULLs (unknown) are permitted and skip the check.
+  CONSTRAINT cmi_avg_le_highest_chk CHECK (
+    average_external_order_value_pence IS NULL
+    OR highest_external_order_value_pence IS NULL
+    OR average_external_order_value_pence <= highest_external_order_value_pence
   )
 );
 
@@ -463,11 +490,14 @@ CREATE TABLE IF NOT EXISTS public.customer_campaign_affinity (
     AND char_length(affinity_type) BETWEEN 1 AND 50
   ),
 
-  -- affinity_key: lower-case, trimmed, token-safe, bounded.
+  -- affinity_key: lower-case, trimmed, token-safe, bounded. Hyphens ARE allowed
+  -- so keys can be UUID- or slug-style identifiers (e.g. a campaign UUID for
+  -- affinity_type = 'campaign'), which contain hyphens. affinity_type stays
+  -- underscore/token-only above; only the KEY permits hyphens.
   CONSTRAINT customer_campaign_affinity_key_token_chk CHECK (
     affinity_key = lower(affinity_key)
     AND affinity_key = btrim(affinity_key)
-    AND affinity_key ~ '^[a-z0-9_]+$'
+    AND affinity_key ~ '^[a-z0-9_-]+$'
     AND char_length(affinity_key) BETWEEN 1 AND 100
   ),
 
@@ -477,7 +507,7 @@ CREATE TABLE IF NOT EXISTS public.customer_campaign_affinity (
 );
 
 COMMENT ON TABLE public.customer_campaign_affinity IS
-  'Stage 3C2B compact per-customer campaign affinity rollup (multi-row per customer). affinity_type is token-validated but intentionally NOT value-locked, so future structured metadata can be added. Never infer host/category from titles. Installed empty; populated by a later rollup. Service-role only.';
+  'Stage 3C2B compact per-customer campaign affinity rollup (multi-row per customer). affinity_type is token-validated (underscore/token only) but intentionally NOT value-locked, so future structured metadata can be added. affinity_key additionally permits hyphens so it can hold UUID/slug-style identifiers (e.g. a campaign UUID). Never infer host/category from titles. Installed empty; populated by a later rollup. Service-role only.';
 
 -- Index to find users with a given affinity_type + affinity_key.
 CREATE INDEX IF NOT EXISTS customer_campaign_affinity_type_key_idx

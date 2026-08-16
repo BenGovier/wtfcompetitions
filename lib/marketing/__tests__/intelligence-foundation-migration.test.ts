@@ -292,6 +292,36 @@ describe('009 — customer_marketing_intelligence', () => {
     )
   })
 
+  it('constrains the order windows to be monotonically non-decreasing', () => {
+    expect(FLAT).toMatch(
+      /CONSTRAINT cmi_orders_window_monotonic_chk CHECK \(\s*orders_7d <= orders_14d\s*AND orders_14d <= orders_30d\s*AND orders_30d <= orders_60d\s*AND orders_60d <= orders_90d\s*\)/i,
+    )
+  })
+
+  it('constrains 30d external spend to not exceed 90d external spend', () => {
+    expect(FLAT).toMatch(
+      /CONSTRAINT cmi_spend_window_monotonic_chk CHECK \(\s*external_spend_30d_pence <= external_spend_90d_pence\s*\)/i,
+    )
+  })
+
+  it('constrains wins_30d to not exceed win_count', () => {
+    expect(FLAT).toMatch(
+      /CONSTRAINT cmi_wins_window_monotonic_chk CHECK \(\s*wins_30d <= win_count\s*\)/i,
+    )
+  })
+
+  it('constrains abandoned_7d_count to not exceed abandoned_30d_count', () => {
+    expect(FLAT).toMatch(
+      /CONSTRAINT cmi_abandoned_window_monotonic_chk CHECK \(\s*abandoned_7d_count <= abandoned_30d_count\s*\)/i,
+    )
+  })
+
+  it('constrains average order value to not exceed highest when both exist', () => {
+    expect(FLAT).toMatch(
+      /CONSTRAINT cmi_avg_le_highest_chk CHECK \(\s*average_external_order_value_pence IS NULL\s*OR highest_external_order_value_pence IS NULL\s*OR average_external_order_value_pence <= highest_external_order_value_pence\s*\)/i,
+    )
+  })
+
   it('stores no consent / eligibility columns (permission stays elsewhere)', () => {
     const m = EXEC.match(/CREATE TABLE IF NOT EXISTS public\.customer_marketing_intelligence \((.*?)\);/i)
     expect(m).toBeTruthy()
@@ -319,9 +349,29 @@ describe('009 — customer_campaign_affinity', () => {
 
   it('token-validates affinity_type/affinity_key but does NOT value-lock them', () => {
     expect(FLAT).toMatch(/affinity_type ~ '\^\[a-z0-9_\]\+\$'/i)
-    expect(FLAT).toMatch(/affinity_key ~ '\^\[a-z0-9_\]\+\$'/i)
+    expect(FLAT).toMatch(/affinity_key ~ '\^\[a-z0-9_-\]\+\$'/i)
     // No rigid IN (...) list permanently restricting affinity_type values.
     expect(/affinity_type IN \(/i.test(EXEC)).toBe(false)
+  })
+
+  it('affinity_type stays underscore/token-only (no hyphen)', () => {
+    // affinity_type must NOT admit hyphens — only affinity_key does.
+    expect(FLAT).toMatch(/affinity_type ~ '\^\[a-z0-9_\]\+\$'/i)
+    expect(/affinity_type ~ '\^\[a-z0-9_-\]\+\$'/i.test(FLAT)).toBe(false)
+  })
+
+  it('affinity_key permits hyphens so UUID/slug-style keys are valid', () => {
+    // The key pattern includes a hyphen inside the class, enabling campaign
+    // UUIDs (which contain hyphens) as keys for affinity_type = campaign.
+    expect(FLAT).toMatch(/affinity_key ~ '\^\[a-z0-9_-\]\+\$'/i)
+    // A representative campaign UUID matches the key pattern.
+    const keyPattern = /^[a-z0-9_-]+$/
+    expect(keyPattern.test('9f8b2c1a-4d3e-4a2b-8c7d-1e2f3a4b5c6d')).toBe(true)
+    // ...but still rejects whitespace / illegal characters.
+    expect(keyPattern.test('bad key')).toBe(false)
+    expect(keyPattern.test('BAD-UPPER')).toBe(false)
+    // The bounded length (1..100) is retained.
+    expect(FLAT).toMatch(/char_length\(affinity_key\) BETWEEN 1 AND 100/i)
   })
 
   it('indexes affinity_type + affinity_key lookups', () => {
