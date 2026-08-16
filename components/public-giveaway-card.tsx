@@ -101,8 +101,25 @@ export function PublicGiveawayCard({
   return (
     <Link
       href={`/giveaways/${giveaway.slug}`}
-      className={`group relative flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#1c0b30] transition-all duration-300 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0014] ${variant.hoverBorder} ${variant.hoverShadow}`}
+      className={`group relative flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#1c0b30] transition-all duration-300 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0014] ${variant.hoverBorder} ${variant.hoverShadow} ${deadline ? "pt-4" : ""}`}
     >
+      {/* Closing-date pill — straddles the top edge of the artwork. Positioned
+          against the (relative) card root, NOT the clipped artwork wrapper, so
+          it can sit half above / half over the image while staying inside the
+          card. The pt-4 reservation above is applied only when a deadline
+          exists, so cards without a countdown keep their original image
+          position (no empty strip). */}
+      {deadline && (
+        <span
+          className={
+            "absolute left-1/2 top-4 z-20 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-full px-3 py-1 text-xs font-bold shadow-lg shadow-black/40 " +
+            (deadline.ended ? "bg-red-600 text-white" : "bg-[#1c0b30] text-white ring-1 ring-amber-400/50")
+          }
+        >
+          {deadline.label}
+        </span>
+      )}
+
       {/* Artwork with overlays */}
       <div className="relative aspect-[4/3] w-full overflow-hidden">
         {giveaway.hero_image_url ? (
@@ -118,18 +135,6 @@ export function PublicGiveawayCard({
         )}
         {/* Bottom fade so the price badge stays legible */}
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/85 via-black/40 to-transparent" />
-
-        {/* Closing-date pill — centred at the top of the artwork */}
-        {deadline && (
-          <span
-            className={
-              "absolute left-1/2 top-3 z-10 -translate-x-1/2 whitespace-nowrap rounded-full px-3 py-1 text-xs font-bold shadow-lg shadow-black/40 " +
-              (deadline.ended ? "bg-red-600 text-white" : "bg-[#1c0b30] text-white ring-1 ring-amber-400/50")
-            }
-          >
-            {deadline.label}
-          </span>
-        )}
       </div>
 
       {/* Content */}
@@ -137,8 +142,8 @@ export function PublicGiveawayCard({
         {/* Ticket price — centred gold pill overlapping the image/content seam.
             Price only: no label, single line, symmetrical. */}
         {base != null && (
-          <div className="relative z-10 -mt-6 mb-3 flex justify-center">
-            <span className="inline-flex items-center whitespace-nowrap rounded-full bg-gradient-to-br from-[#FFD700] to-[#FFA500] px-4 py-1.5 text-lg font-black tabular-nums leading-none text-black shadow-lg shadow-black/30 md:text-xl">
+          <div className="relative z-10 -mt-5 mb-3 flex justify-center">
+            <span className="inline-flex items-center whitespace-nowrap rounded-full bg-gradient-to-br from-[#FFD700] to-[#FFA500] px-3 py-1 text-sm font-black tabular-nums leading-none text-black shadow-lg shadow-black/30 md:text-base">
               {priceText(base)}
             </span>
           </div>
