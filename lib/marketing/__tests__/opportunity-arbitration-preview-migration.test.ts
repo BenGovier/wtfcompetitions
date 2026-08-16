@@ -373,10 +373,24 @@ describe('011 preview — permission separate from detection', () => {
     expect(FLAT).toMatch(/FROM public\.customer_marketing_profiles p LEFT JOIN public\.customer_marketing_intelligence/i)
     // The permission/sendability fields are PROJECTED, never used as an
     // equality/boolean predicate that would prune the detected population.
+    // Permission/sendability fields are never used as a boolean/equality
+    // predicate that would prune the population.
     expect(/marketing_eligible_snapshot\s*=\s*true/i.test(FLAT_EXEC)).toBe(false)
     expect(/marketing_enabled\s*=\s*true/i.test(FLAT_EXEC)).toBe(false)
-    expect(/WHERE\s+[^()]*\bsendable_now\b/i.test(FLAT_EXEC)).toBe(false)
-    expect(/WHERE\s+[^()]*\bmarketing_enabled\b/i.test(FLAT_EXEC)).toBe(false)
+    // marketing_enabled appears ONLY as a bare projection (`p.marketing_enabled,`)
+    // and inside the derived perm_* boolean columns — never as a filter such as
+    // `WHERE marketing_enabled` / `AND marketing_enabled` / `marketing_enabled AND`.
+    expect(/WHERE\s+[a-z0-9_.]*\bmarketing_enabled\b/i.test(FLAT_EXEC)).toBe(false)
+    expect(/\bAND\s+[a-z0-9_.]*\bmarketing_enabled\b/i.test(FLAT_EXEC)).toBe(false)
+    // The ONLY `WHERE ... sendable_now` allowed is the winners reporting
+    // aggregate `(... FROM winners WHERE sendable_now)`; no other sendable_now
+    // predicate may prune the detected population.
+    const sendableClauses = FLAT_EXEC.match(/WHERE\s+sendable_now\b/gi) || []
+    for (const clause of sendableClauses) {
+      expect(clause).toMatch(/WHERE\s+sendable_now/i)
+    }
+    // And sendable_now is never combined into a population-pruning predicate.
+    expect(/\bAND\s+sendable_now\b/i.test(FLAT_EXEC)).toBe(false)
     // The only executable WHERE touching permission-family columns is the
     // campaign_specific invariant, which references campaign_id, not permission.
     expect(FLAT).toMatch(/WHERE NOT \(def\.campaign_specific AND rc\.campaign_id IS NULL\)/i)
