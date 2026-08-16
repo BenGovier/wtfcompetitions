@@ -66,6 +66,9 @@ const ALL_DEFINITIONS = [
   'promotion_match',
 ]
 
+// Stage 3C2D semantic correction: winner + abandonment detectors are now
+// campaign_specific (they carry last_win_campaign_id / last_abandoned_campaign_id),
+// so they moved OUT of supportedNow and INTO requiresCampaignContext.
 const SUPPORTED_NOW = [
   'new_account_no_purchase',
   'first_to_second_purchase',
@@ -78,28 +81,30 @@ const SUPPORTED_NOW = [
   'personal_cadence_overdue',
   'wtf_credit_waiting',
   'fresh_wallet_credit',
-  'recent_winner_follow_up',
-  'recent_winner_credit_available',
   'first_win_follow_up',
-  'high_value_winner_follow_up',
-  'abandoned_checkout',
-  'repeat_abandoner',
 ]
 
 const REQUIRES_CAMPAIGN = [
+  'recent_winner_follow_up',
+  'recent_winner_credit_available',
+  'high_value_winner_follow_up',
+  'abandoned_checkout',
+  'repeat_abandoner',
   'wallet_credit_campaign_match',
   'frequent_buyer_relevant_campaign',
   'vip_relevant_campaign',
   'reveal_affinity_campaign',
   'recently_active_no_relevant_entry',
-  'recent_buyer_cross_campaign',
   'vip_early_access',
   'regular_buyer_campaign_alert',
   'campaign_closing_relevant_customer',
   'promotion_match',
 ]
 
-const FUTURE_UNSUPPORTED = ['high_value_abandoned_checkout']
+// recent_buyer_cross_campaign is campaign_specific but a concrete another-live-
+// unbought campaign_id cannot be selected safely from existing rollups, so per
+// requirement (I) it is reported UNSUPPORTED rather than emitting NULL.
+const FUTURE_UNSUPPORTED = ['high_value_abandoned_checkout', 'recent_buyer_cross_campaign']
 
 describe('011 preview — migration envelope', () => {
   it('is wrapped in a single atomic BEGIN;/COMMIT;', () => {
@@ -233,20 +238,25 @@ describe('011 preview — broad catalogue, not the original six', () => {
     }
   })
 
-  it('implements exactly 27 of the 28 catalogue definitions', () => {
+  it('implements exactly 26 of the 28 catalogue definitions', () => {
     const implemented = ALL_DEFINITIONS.filter((k) =>
       new RegExp(`\\('${k}',`, 'i').test(FLAT_EXEC),
     )
     expect(implemented.sort()).toEqual(
       ALL_DEFINITIONS.filter((k) => !FUTURE_UNSUPPORTED.includes(k)).sort(),
     )
-    expect(implemented).toHaveLength(27)
+    expect(implemented).toHaveLength(26)
   })
 
-  it('declares high_value_abandoned_checkout UNSUPPORTED (never invented) with a reason', () => {
+  it('declares the two unsupported detectors (never invented) with reasons', () => {
+    // Neither unsupported detector has an executable ('key', ...) candidate row.
     expect(/\('high_value_abandoned_checkout',/i.test(FLAT_EXEC)).toBe(false)
-    expect(FLAT).toMatch(/'futureUnsupported', jsonb_build_array\( 'high_value_abandoned_checkout' \)/i)
+    expect(/\('recent_buyer_cross_campaign',/i.test(FLAT_EXEC)).toBe(false)
+    expect(FLAT).toMatch(
+      /'futureUnsupported', jsonb_build_array\( 'high_value_abandoned_checkout','recent_buyer_cross_campaign' \)/i,
+    )
     expect(FLAT).toMatch(/highValueAbandonedCheckoutUnsupportedReason/i)
+    expect(FLAT).toMatch(/recentBuyerCrossCampaignUnsupportedReason/i)
   })
 
   it('publishes a support matrix partitioning the catalogue', () => {
@@ -333,7 +343,7 @@ describe('011 preview — deterministic bounded score', () => {
   })
 
   it('starts the score from the catalogue default_score (no opaque magic base)', () => {
-    expect(FLAT).toMatch(/round\(s\.default_score\)::int \+ s\.value_c \+ s\.recency_c/i)
+    expect(FLAT).toMatch(/round\(f\.default_score\)::int \+ f\.value_c \+ f\.recency_c/i)
   })
 
   it('incorporates definition priority as a score/arbitration input', () => {
@@ -358,10 +368,18 @@ describe('011 preview — arbitration (one winner per customer)', () => {
 })
 
 describe('011 preview — permission separate from detection', () => {
-  it('does NOT filter detection by marketing permission', () => {
+  it('does NOT filter detection by marketing permission or sendability', () => {
+    // Population spine covers every profile; intelligence is a LEFT JOIN.
     expect(FLAT).toMatch(/FROM public\.customer_marketing_profiles p LEFT JOIN public\.customer_marketing_intelligence/i)
-    expect(/WHERE[^;]*marketing_eligible_snapshot\s*=\s*true/i.test(FLAT_EXEC)).toBe(false)
-    expect(/WHERE[^;]*p\.marketing_enabled/i.test(FLAT_EXEC)).toBe(false)
+    // The permission/sendability fields are PROJECTED, never used as an
+    // equality/boolean predicate that would prune the detected population.
+    expect(/marketing_eligible_snapshot\s*=\s*true/i.test(FLAT_EXEC)).toBe(false)
+    expect(/marketing_enabled\s*=\s*true/i.test(FLAT_EXEC)).toBe(false)
+    expect(/WHERE\s+[^()]*\bsendable_now\b/i.test(FLAT_EXEC)).toBe(false)
+    expect(/WHERE\s+[^()]*\bmarketing_enabled\b/i.test(FLAT_EXEC)).toBe(false)
+    // The only executable WHERE touching permission-family columns is the
+    // campaign_specific invariant, which references campaign_id, not permission.
+    expect(FLAT).toMatch(/WHERE NOT \(def\.campaign_specific AND rc\.campaign_id IS NULL\)/i)
   })
 
   it('reports a three-way permission split on winners', () => {
@@ -373,9 +391,82 @@ describe('011 preview — permission separate from detection', () => {
     expect(FLAT).toMatch(/'winningSuppressed'/i)
   })
 
-  it('derives permission from authoritative profile fields', () => {
-    expect(FLAT).toMatch(/c\.marketing_eligible_snapshot AND NOT c\.has_active_suppression/i)
+  it('derives permission from marketing_enabled + suppression (permission != sendability)', () => {
+    // perm_backed is PERMISSION-backed (marketing_enabled), distinct from
+    // sendable_now which is the eligibility snapshot.
+    expect(FLAT).toMatch(/c\.marketing_enabled AND NOT c\.has_active_suppression\)\s*AS perm_backed/i)
+    expect(FLAT).toMatch(/NOT c\.marketing_enabled AND NOT c\.has_active_suppression\)\s*AS perm_not_backed/i)
     expect(FLAT).toMatch(/c\.has_active_suppression\s+AS perm_suppressed/i)
+  })
+
+  it('reports sendability (marketing_eligible_snapshot) SEPARATELY from permission', () => {
+    // sendable_now is its own field and its own aggregate + sample flag.
+    expect(FLAT).toMatch(/c\.marketing_eligible_snapshot AND NOT c\.has_active_suppression\)\s*AS sendable_now/i)
+    expect(FLAT).toMatch(/'winningSendableNow',\s*\(SELECT count\(\*\)::bigint FROM winners WHERE sendable_now\)/i)
+    expect(FLAT).toMatch(/'sendableNow',\s*sendable_now/i)
+  })
+})
+
+describe('011 preview — campaign context is concrete (Stage 3C2D correction)', () => {
+  it('defines the live campaign universe as status=live AND still-open', () => {
+    expect(FLAT).toMatch(/WHERE c\.status = 'live' AND \(c\.end_at IS NULL OR c\.end_at > now\(\)\)/i)
+  })
+
+  it('builds an ACTIONABLE promotion universe joining promotions to live campaigns', () => {
+    expect(FLAT).toMatch(
+      /FROM public\.marketing_campaign_promotions p JOIN public\.campaigns c ON c\.id = p\.campaign_id WHERE p\.status IN \('scheduled', 'processing'\) AND c\.status = 'live' AND \(c\.end_at IS NULL OR c\.end_at > now\(\)\)/i,
+    )
+  })
+
+  it('enforces the campaign_specific invariant in EXECUTABLE SQL (not just prose)', () => {
+    expect(FLAT).toMatch(/def\.campaign_specific/i)
+    expect(FLAT).toMatch(/WHERE NOT \(def\.campaign_specific AND rc\.campaign_id IS NULL\)/i)
+  })
+
+  it('attaches winner campaign context from last_win_campaign_id', () => {
+    expect(FLAT).toMatch(/i\.last_win_campaign_id/i)
+    // recent_winner_follow_up requires a non-null last_win_campaign_id.
+    expect(FLAT).toMatch(
+      /\('recent_winner_follow_up', c\.last_win_at IS NOT NULL AND c\.last_win_at >= now\(\) - interval '7 days' AND c\.last_win_campaign_id IS NOT NULL, c\.last_win_campaign_id\)/i,
+    )
+    expect(FLAT).toMatch(/'high_value_winner_follow_up',[\s\S]*c\.last_win_campaign_id IS NOT NULL, c\.last_win_campaign_id\)/i)
+  })
+
+  it('attaches abandonment campaign context from last_abandoned_campaign_id', () => {
+    expect(FLAT).toMatch(/i\.last_abandoned_campaign_id/i)
+    expect(FLAT).toMatch(
+      /\('abandoned_checkout', COALESCE\(c\.abandoned_7d_count, 0\) >= 1 AND c\.last_abandoned_campaign_id IS NOT NULL, c\.last_abandoned_campaign_id\)/i,
+    )
+    expect(FLAT).toMatch(/\('repeat_abandoner', COALESCE\(c\.abandoned_30d_count, 0\) >= 2 AND c\.last_abandoned_campaign_id IS NOT NULL, c\.last_abandoned_campaign_id\)/i)
+  })
+
+  it('uses a SEPARATE reveal-only selector for reveal_affinity_campaign', () => {
+    expect(FLAT).toMatch(/reveal_campaign_pick/i)
+    expect(FLAT).toMatch(/WHERE NOT already_entered AND via_reveal/i)
+    expect(FLAT).toMatch(/\('reveal_affinity_campaign', c\.reveal_campaign_id IS NOT NULL, c\.reveal_campaign_id\)/i)
+  })
+
+  it('ranks relevant campaigns by structured affinity — never MIN(uuid)', () => {
+    expect(FLAT).toMatch(
+      /ORDER BY confirmed_order_count DESC, external_spend_pence DESC, affinity_last_confirmed_at DESC NULLS LAST, end_at ASC NULLS LAST, campaign_id ASC/i,
+    )
+    expect(/min\(campaign_id\)/i.test(EXEC)).toBe(false)
+  })
+
+  it('derives is_closing from THAT candidate campaign only (not customer-wide)', () => {
+    expect(FLAT).toMatch(/\(rc\.campaign_id IS NOT NULL AND COALESCE\(cl\.is_closing, false\)\) AS is_closing/i)
+    expect(FLAT).toMatch(/LEFT JOIN closing_lu cl ON cl\.campaign_id = rc\.campaign_id/i)
+  })
+
+  it('gates first_to_second_purchase to a single recent order within 14 days', () => {
+    expect(FLAT).toMatch(
+      /\('first_to_second_purchase', c\.confirmed_order_count = 1 AND c\.last_confirmed_at IS NOT NULL AND c\.last_confirmed_at >= now\(\) - interval '14 days', NULL::uuid\)/i,
+    )
+  })
+
+  it('sources actionable promotion campaign ids for promotion detectors', () => {
+    expect(FLAT).toMatch(/\('vip_early_access', c\.is_vip AND c\.vip_promo_campaign_id IS NOT NULL, c\.vip_promo_campaign_id\)/i)
+    expect(FLAT).toMatch(/\('regular_buyer_campaign_alert', c\.is_frequent AND c\.rb_promo_campaign_id IS NOT NULL, c\.rb_promo_campaign_id\)/i)
   })
 })
 

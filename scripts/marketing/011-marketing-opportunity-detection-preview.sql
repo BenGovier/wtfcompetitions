@@ -25,24 +25,48 @@
 --   Primary substrate is the pre-computed rollups:
 --     * public.customer_marketing_profiles        (value, wallet, permission)
 --     * public.customer_marketing_intelligence     (behaviour, wins, cadence,
---                                                    wallet freshness, abandonment)
+--                                                    wallet freshness, abandonment,
+--                                                    last_win_campaign_id,
+--                                                    last_abandoned_campaign_id)
 --     * public.customer_campaign_affinity          (campaign / reveal_type /
---                                                    presentation_type affinity)
+--                                                    presentation_type affinity,
+--                                                    with confirmed_order_count,
+--                                                    external_spend_pence,
+--                                                    last_confirmed_at)
 --   Small config datasets are joined:
 --     * public.campaigns                           (live universe + closing)
 --     * public.marketing_campaign_promotions       (configured promotions)
 --     * public.marketing_automations               (delay / wallet thresholds)
+--     * public.marketing_opportunity_definitions   (family / priority / score /
+--                                                    campaign_specific)
 --   checkout_intents / instant_win_awards / wallet_transactions are NEVER read
 --   here: those operational facts are already rolled up into intelligence and
 --   affinity. Abandonment (delay + debug/SIM + later same-campaign conversion
 --   exclusion) is ALREADY applied inside the rollup, so no re-scan is needed.
 --
+-- CAMPAIGN CONTEXT IS REAL (no NULL-campaign campaign-specific candidates)
+--   Every definition flagged campaign_specific = true MUST carry a concrete
+--   campaign_id or it is dropped in executable SQL (not merely documented):
+--     * live campaign universe  = status = 'live' AND (end_at IS NULL OR
+--                                  end_at > now())
+--     * actionable promotions   = marketing_campaign_promotions JOIN campaigns,
+--                                  promotion status scheduled/processing AND the
+--                                  campaign still live/open
+--     * winner candidates       = intelligence.last_win_campaign_id
+--     * abandonment candidates  = intelligence.last_abandoned_campaign_id
+--     * affinity/relevance      = an ACTUAL relevant LIVE campaign the customer
+--                                  has NOT already bought, ranked by structured
+--                                  affinity (never MIN(uuid))
+--   is_closing describes THAT candidate's own campaign only; it is never a
+--   customer-wide flag.
+--
 -- ARCHITECTURE RULE — DETECTION IS NOT SEND ELIGIBILITY
 --   An opportunity is DETECTED from the full Auth customer population regardless
---   of marketing permission. Permission (marketing_eligible_snapshot /
---   has_active_suppression) is reported SEPARATELY as an aggregate on the
---   winning candidates; it NEVER filters detection. Final send eligibility
---   remains a later deterministic gate (send workers re-check
+--   of marketing permission. Detection NEVER filters on permission or
+--   sendability. Permission (marketing_enabled / has_active_suppression) and
+--   sendability (marketing_eligible_snapshot AND NOT has_active_suppression) are
+--   reported SEPARATELY as aggregates on the winning candidates. Final send
+--   eligibility remains a later deterministic gate (send workers re-check
 --   is_marketing_email_eligible at send time).
 --
 -- NO LOSS / GAMBLING-HARM SIGNALS
@@ -137,8 +161,9 @@ $preflight$;
 --
 --    Determinism / boundedness:
 --      * Purely set-based (CTEs + window functions). No PL/pgSQL customer loop.
---      * Campaign-context detectors are gated on there being live campaigns /
---        configured promotions; when none exist those joins touch zero rows.
+--      * Campaign-context detectors are gated on a CONCRETE campaign_id; when no
+--        live campaigns / actionable promotions exist those picks are NULL and
+--        the campaign_specific invariant drops the candidate.
 --      * Reads ONLY the three rollups + tiny config tables. No operational scan.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.wtf_marketing_opportunity_candidates_preview()
@@ -152,10 +177,11 @@ RETURNS TABLE (
   final_score         integer,
   score_components    jsonb,
   is_closing          boolean,
-  -- permission (reported separately from detection; NEVER filters it)
+  -- permission + sendability (reported separately from detection; NEVER filter)
   perm_backed         boolean,
   perm_suppressed     boolean,
   perm_not_backed     boolean,
+  sendable_now        boolean,
   rn                  integer
 )
 LANGUAGE sql
@@ -172,26 +198,10 @@ cfg AS (
     COALESCE(max(minimum_wallet_pence) FILTER (WHERE automation_key = 'wtf_credit_waiting'),      1)::bigint  AS wtf_min_wallet_pence
   FROM public.marketing_automations
 ),
--- Configured promotions gate the promotion detectors. status scheduled/processing
--- are the actionable states (draft/completed/cancelled/failed are inert).
-promo AS (
-  SELECT
-    count(*) FILTER (WHERE promotion_type = 'vip_early_access')             AS vip_promo_count,
-    count(*) FILTER (WHERE promotion_type = 'regular_buyer_campaign_alert') AS rb_promo_count
-  FROM public.marketing_campaign_promotions
-  WHERE status IN ('scheduled', 'processing')
-),
--- Campaign ids of configured regular-buyer promotions (for the already-purchased
--- exclusion, done via campaign AFFINITY rows — NOT a checkout scan).
-rb_promo_campaigns AS (
-  SELECT DISTINCT lower(campaign_id::text) AS campaign_key
-  FROM public.marketing_campaign_promotions
-  WHERE promotion_type = 'regular_buyer_campaign_alert'
-    AND status IN ('scheduled', 'processing')
-),
--- Live / marketable campaign universe (status = 'live' is the authoritative
--- public "isLive" definition). reveal_type / presentation_type are lower-cased
--- to match the affinity rollup keys. Closing = end_at within 48h.
+-- Live / marketable campaign universe. status = 'live' is the authoritative
+-- public "isLive" definition; a live campaign with end_at in the past is no
+-- longer open, so it is excluded. reveal_type / presentation_type are lowered
+-- to match the affinity rollup keys. is_closing = end_at within 48h.
 live_campaigns AS (
   SELECT
     c.id                                                          AS campaign_id,
@@ -203,34 +213,65 @@ live_campaigns AS (
       AND c.end_at <= now() + interval '48 hours')                AS is_closing
   FROM public.campaigns c
   WHERE c.status = 'live'
+    AND (c.end_at IS NULL OR c.end_at > now())
 ),
-live_campaign_count AS (
-  SELECT count(*)::int AS n FROM live_campaigns
+-- Per-campaign closing lookup for candidate-specific is_closing (J). A candidate
+-- is "closing" ONLY when ITS OWN attached campaign is closing.
+closing_lu AS (
+  SELECT campaign_id, is_closing FROM live_campaigns
 ),
--- Per-customer campaign RELEVANCE booleans, derived ONLY from structured data
--- (affinity rollup x live campaign structured metadata). Never inferred from
--- titles/slugs/descriptions. A customer is "relevant" to a live campaign when a
--- reveal_type or presentation_type affinity key equals that campaign's
--- lower-cased reveal_type / presentation_type.
+-- ACTIONABLE promotion universe (B): a configured promotion in an actionable
+-- state whose campaign is genuinely live/open. This is the ONLY source of
+-- campaign_id for vip_early_access / regular_buyer_campaign_alert /
+-- promotion_match.
+actionable_promos AS (
+  SELECT
+    p.promotion_type,
+    p.campaign_id,
+    c.end_at
+  FROM public.marketing_campaign_promotions p
+  JOIN public.campaigns c ON c.id = p.campaign_id
+  WHERE p.status IN ('scheduled', 'processing')
+    AND c.status = 'live'
+    AND (c.end_at IS NULL OR c.end_at > now())
+),
+vip_promo_campaigns AS (
+  SELECT DISTINCT campaign_id, end_at
+  FROM actionable_promos WHERE promotion_type = 'vip_early_access'
+),
+rb_promo_campaigns AS (
+  SELECT DISTINCT campaign_id, end_at
+  FROM actionable_promos WHERE promotion_type = 'regular_buyer_campaign_alert'
+),
+-- reveal_type / presentation_type affinity, carrying the structured stats used
+-- for campaign selection ordering (H).
 type_affinity AS (
-  SELECT user_id, affinity_type, affinity_key
+  SELECT user_id, affinity_type, affinity_key,
+         confirmed_order_count, external_spend_pence, last_confirmed_at
   FROM public.customer_campaign_affinity
   WHERE affinity_type IN ('reveal_type', 'presentation_type')
 ),
--- Campaigns a customer has already bought (affinity_type = 'campaign'); used as
--- the already-entered / already-purchased exclusion WITHOUT scanning checkouts.
+-- Campaigns a customer has already bought (affinity_type = 'campaign'); the
+-- already-entered / already-purchased exclusion WITHOUT scanning checkouts.
 bought_campaign AS (
   SELECT user_id, affinity_key AS campaign_key
   FROM public.customer_campaign_affinity
   WHERE affinity_type = 'campaign'
 ),
+-- Customer x live-campaign relevance pairs, matched on structured metadata only
+-- (never titles/slugs). via_reveal distinguishes a reveal_type match from a
+-- presentation_type-only match (G). Carries affinity stats + campaign end_at for
+-- deterministic ordering, and whether the customer already bought the campaign.
 match_pairs AS (
   SELECT
     ta.user_id,
     lc.campaign_id,
     lc.is_closing,
-    lower(lc.campaign_id::text)                                   AS campaign_key,
     (ta.affinity_type = 'reveal_type')                            AS via_reveal,
+    ta.confirmed_order_count,
+    ta.external_spend_pence,
+    ta.last_confirmed_at                                          AS affinity_last_confirmed_at,
+    lc.end_at,
     (bc.user_id IS NOT NULL)                                      AS already_entered
   FROM type_affinity ta
   JOIN live_campaigns lc
@@ -240,31 +281,73 @@ match_pairs AS (
     ON bc.user_id = ta.user_id
    AND bc.campaign_key = lower(lc.campaign_id::text)
 ),
-cust_match AS (
+-- Structured affinity ordering (H). Rank relevant, NOT-already-bought live
+-- campaigns per customer. NEVER MIN(uuid).
+--   1) confirmed_order_count DESC
+--   2) external_spend_pence  DESC
+--   3) last_confirmed_at     DESC NULLS LAST
+--   4) campaign end_at        ASC NULLS LAST
+--   5) campaign_id            ASC (deterministic tie-break)
+rel_ranked AS (
   SELECT
-    user_id,
-    bool_or(true)                                                 AS has_relevant_live_campaign,
-    bool_or(via_reveal)                                           AS has_reveal_match,
-    bool_or(NOT already_entered)                                  AS has_relevant_not_entered,
-    bool_or(is_closing)                                           AS has_relevant_closing,
-    bool_or(is_closing AND NOT already_entered)                   AS has_relevant_closing_not_entered,
-    min(campaign_id) FILTER (WHERE NOT already_entered)           AS relevant_campaign_id,
-    min(campaign_id) FILTER (WHERE is_closing AND NOT already_entered) AS closing_campaign_id
+    user_id, campaign_id, is_closing, via_reveal,
+    ROW_NUMBER() OVER (
+      PARTITION BY user_id
+      ORDER BY confirmed_order_count DESC,
+               external_spend_pence DESC,
+               affinity_last_confirmed_at DESC NULLS LAST,
+               end_at ASC NULLS LAST,
+               campaign_id ASC
+    ) AS rrn
   FROM match_pairs
-  GROUP BY user_id
+  WHERE NOT already_entered
 ),
--- Per-customer count of DISTINCT live campaigns already bought, to derive
--- "there exists a live campaign this recent buyer has NOT entered" without a
--- cross join blow-up.
-bought_live AS (
-  SELECT bc.user_id, count(DISTINCT bc.campaign_key)::int AS bought_live_n
-  FROM bought_campaign bc
-  JOIN live_campaigns lc ON lower(lc.campaign_id::text) = bc.campaign_key
-  GROUP BY bc.user_id
+rel_campaign_pick AS (
+  SELECT user_id, campaign_id AS relevant_campaign_id
+  FROM rel_ranked WHERE rrn = 1
+),
+-- Reveal-specific selector (G): restricted to via_reveal matches, so
+-- reveal_affinity_campaign can NEVER accidentally use a presentation-only match.
+reveal_ranked AS (
+  SELECT
+    user_id, campaign_id,
+    ROW_NUMBER() OVER (
+      PARTITION BY user_id
+      ORDER BY confirmed_order_count DESC,
+               external_spend_pence DESC,
+               affinity_last_confirmed_at DESC NULLS LAST,
+               end_at ASC NULLS LAST,
+               campaign_id ASC
+    ) AS rrn
+  FROM match_pairs
+  WHERE NOT already_entered AND via_reveal
+),
+reveal_campaign_pick AS (
+  SELECT user_id, campaign_id AS reveal_campaign_id
+  FROM reveal_ranked WHERE rrn = 1
+),
+-- Closing relevant selector: best relevant, not-entered campaign that is closing.
+closing_ranked AS (
+  SELECT
+    user_id, campaign_id,
+    ROW_NUMBER() OVER (
+      PARTITION BY user_id
+      ORDER BY confirmed_order_count DESC,
+               external_spend_pence DESC,
+               affinity_last_confirmed_at DESC NULLS LAST,
+               end_at ASC NULLS LAST,
+               campaign_id ASC
+    ) AS rrn
+  FROM match_pairs
+  WHERE NOT already_entered AND is_closing
+),
+closing_campaign_pick AS (
+  SELECT user_id, campaign_id AS closing_campaign_id
+  FROM closing_ranked WHERE rrn = 1
 ),
 -- Base feature row: one per customer. Profile is the population spine (every
--- Auth customer with a marketing profile); intelligence + match booleans are
--- LEFT JOINed so detection covers the whole population, not just the enriched.
+-- Auth customer with a marketing profile); intelligence + relevance picks are
+-- LEFT JOINed so DETECTION covers the whole population, not just the enriched.
 base AS (
   SELECT
     p.user_id,
@@ -275,48 +358,39 @@ base AS (
     p.last_confirmed_at,
     p.account_created_at,
     p.wallet_available_pence,
-    -- permission (reported separately; never filters detection)
+    -- permission + sendability inputs (reported separately; never filter)
+    p.marketing_enabled,
     p.marketing_eligible_snapshot,
     p.has_active_suppression,
-    -- intelligence
+    -- intelligence behaviour
     i.orders_30d,
     i.previous_confirmed_at,
     i.average_purchase_gap_hours,
     i.last_win_at,
     i.win_count,
     i.last_win_value_pence,
+    i.last_win_campaign_id,
     i.last_wallet_credit_at,
     i.last_abandoned_at,
+    i.last_abandoned_campaign_id,
     i.abandoned_7d_count,
     i.abandoned_30d_count,
-    -- campaign relevance
-    COALESCE(cm.has_relevant_live_campaign, false)        AS has_relevant_live_campaign,
-    COALESCE(cm.has_reveal_match, false)                  AS has_reveal_match,
-    COALESCE(cm.has_relevant_not_entered, false)          AS has_relevant_not_entered,
-    COALESCE(cm.has_relevant_closing_not_entered, false)  AS has_relevant_closing,
-    cm.relevant_campaign_id,
-    cm.closing_campaign_id,
-    -- a recent buyer has an un-entered live campaign if fewer live campaigns
-    -- bought than exist
-    (lcc.n > 0 AND COALESCE(bl.bought_live_n, 0) < lcc.n)  AS has_other_live_not_bought
+    -- concrete campaign picks (structured; NULL when none)
+    rp.relevant_campaign_id,
+    rvp.reveal_campaign_id,
+    clp.closing_campaign_id
   FROM public.customer_marketing_profiles p
   LEFT JOIN public.customer_marketing_intelligence i ON i.user_id = p.user_id
-  LEFT JOIN cust_match cm ON cm.user_id = p.user_id
-  LEFT JOIN bought_live bl ON bl.user_id = p.user_id
-  CROSS JOIN live_campaign_count lcc
+  LEFT JOIN rel_campaign_pick     rp  ON rp.user_id  = p.user_id
+  LEFT JOIN reveal_campaign_pick  rvp ON rvp.user_id = p.user_id
+  LEFT JOIN closing_campaign_pick clp ON clp.user_id = p.user_id
 ),
--- Derived, bounded features + reusable score components (computed once; each
--- component maps to ONE distinct underlying feature to avoid double counting).
+-- Derived, bounded features.
 feat AS (
   SELECT
     b.*,
     (b.confirmed_order_count >= 10 OR b.lifetime_external_pence >= 25000) AS is_vip,
     (b.confirmed_order_count >= 5)                                        AS is_frequent,
-    -- hours since last purchase
-    CASE WHEN b.last_confirmed_at IS NOT NULL
-         THEN extract(epoch FROM (now() - b.last_confirmed_at)) / 3600.0 END AS hours_since_last,
-    -- personal cadence ratio with a 12h minimum floor on the historical gap so
-    -- tiny historical gaps cannot manufacture absurd "overdue" ratios.
     CASE
       WHEN b.average_purchase_gap_hours IS NOT NULL
        AND b.last_confirmed_at IS NOT NULL
@@ -325,42 +399,30 @@ feat AS (
     END AS cadence_ratio
   FROM base b
 ),
+-- Reusable customer-level score components (computed once).
 comp AS (
   SELECT
     f.*,
-    -- value_c (universal): customer commercial value tier. Cap 80.
     (CASE WHEN f.is_vip THEN 80
           WHEN f.is_frequent THEN 50
           WHEN f.confirmed_order_count >= 1 THEN 20
           ELSE 0 END)::int AS value_c,
-    -- recency_c (universal): recency of last purchase. Cap 60.
     (CASE
        WHEN f.last_confirmed_at IS NULL THEN 0
        WHEN f.last_confirmed_at >= now() - interval '7 days'  THEN 60
        WHEN f.last_confirmed_at >= now() - interval '30 days' THEN 30
        WHEN f.last_confirmed_at >= now() - interval '90 days' THEN 10
        ELSE 0 END)::int AS recency_c,
-    -- cadence_c (cadence family only): overdue vs personal cadence. Cap 120.
     (CASE WHEN f.cadence_ratio IS NOT NULL AND f.cadence_ratio > 1.0
           THEN LEAST(120, GREATEST(0, round((f.cadence_ratio - 1.0) * 80)))
           ELSE 0 END)::int AS cadence_c,
-    -- wallet_c (wallet family + recent_winner_credit_available): 1 point / £1,
-    -- capped at 100 (£100+). Rewards spendable balance.
     LEAST(100, GREATEST(0, floor(f.wallet_available_pence / 100.0)))::int AS wallet_c,
-    -- winner_c (winner family): positive win recency only. Cap 100.
     (CASE
        WHEN f.last_win_at IS NULL THEN 0
        WHEN f.last_win_at >= now() - interval '7 days'  THEN 100
        WHEN f.last_win_at >= now() - interval '30 days' THEN 60
        WHEN f.last_win_at >= now() - interval '90 days' THEN 20
        ELSE 0 END)::int AS winner_c,
-    -- affinity_c (affinity + promotion families): structured campaign relevance
-    -- strength. Cap 80.
-    (CASE WHEN f.has_relevant_live_campaign THEN 60 ELSE 0 END
-      + CASE WHEN f.is_vip THEN 20 ELSE 0 END)::int AS affinity_c,
-    -- urgency_c (closing): a relevant live campaign closing within 48h. Cap 100.
-    (CASE WHEN f.has_relevant_closing THEN 100 ELSE 0 END)::int AS urgency_c,
-    -- abandon_c (checkout family): abandonment recency. Cap 80.
     (CASE
        WHEN f.last_abandoned_at IS NULL THEN 0
        WHEN f.last_abandoned_at >= now() - interval '2 days' THEN 80
@@ -369,29 +431,79 @@ comp AS (
       + CASE WHEN COALESCE(f.abandoned_30d_count, 0) >= 2 THEN 20 ELSE 0 END)::int AS abandon_c
   FROM feat f
 ),
-cfg_all AS (
-  SELECT c.na_delay_minutes, c.wtf_min_wallet_pence, p.vip_promo_count, p.rb_promo_count
-  FROM cfg c CROSS JOIN promo p
+-- Per-customer actionable-promotion campaign picks, excluding campaigns the
+-- customer already bought, ranked by soonest close then deterministic id.
+-- Restricted to the customers who can actually receive them (VIP / frequent).
+vip_promo_pick AS (
+  SELECT user_id, campaign_id AS vip_promo_campaign_id
+  FROM (
+    SELECT c.user_id, vpc.campaign_id,
+      ROW_NUMBER() OVER (
+        PARTITION BY c.user_id
+        ORDER BY vpc.end_at ASC NULLS LAST, vpc.campaign_id ASC
+      ) AS prn
+    FROM comp c
+    CROSS JOIN vip_promo_campaigns vpc
+    WHERE c.is_vip
+      AND NOT EXISTS (
+        SELECT 1 FROM bought_campaign bc
+        WHERE bc.user_id = c.user_id
+          AND bc.campaign_key = lower(vpc.campaign_id::text)
+      )
+  ) z WHERE prn = 1
+),
+rb_promo_pick AS (
+  SELECT user_id, campaign_id AS rb_promo_campaign_id
+  FROM (
+    SELECT c.user_id, rpc.campaign_id,
+      ROW_NUMBER() OVER (
+        PARTITION BY c.user_id
+        ORDER BY rpc.end_at ASC NULLS LAST, rpc.campaign_id ASC
+      ) AS prn
+    FROM comp c
+    CROSS JOIN rb_promo_campaigns rpc
+    WHERE c.is_frequent
+      AND NOT EXISTS (
+        SELECT 1 FROM bought_campaign bc
+        WHERE bc.user_id = c.user_id
+          AND bc.campaign_key = lower(rpc.campaign_id::text)
+      )
+  ) z WHERE prn = 1
+),
+-- Merge all concrete campaign picks onto the feature row.
+cc AS (
+  SELECT
+    c.*,
+    vpp.vip_promo_campaign_id,
+    rbp.rb_promo_campaign_id
+  FROM comp c
+  LEFT JOIN vip_promo_pick vpp ON vpp.user_id = c.user_id
+  LEFT JOIN rb_promo_pick  rbp ON rbp.user_id = c.user_id
 ),
 -- One row per (customer, opportunity) via a fixed VALUES set unnested per
--- customer. Only matched rows survive. campaign_id is attached where relevant.
+-- customer. Only matched rows survive. campaign_id is a CONCRETE id for every
+-- campaign-specific detector (NULL only for non-campaign-specific ones); any
+-- campaign-specific detector whose id is NULL is dropped by the invariant below.
 raw_candidates AS (
   SELECT
     c.user_id,
     d.opportunity_key,
     d.campaign_id
-  FROM comp c
-  CROSS JOIN cfg_all g
+  FROM cc c
+  CROSS JOIN cfg g
   CROSS JOIN LATERAL (VALUES
-    -- LIFECYCLE ---------------------------------------------------------------
+    -- LIFECYCLE (non-campaign-specific) --------------------------------------
     ('new_account_no_purchase',
       c.confirmed_order_count = 0
       AND c.account_created_at IS NOT NULL
       AND c.account_created_at >= now() - interval '7 days'
       AND c.account_created_at <= now() - make_interval(mins => g.na_delay_minutes),
       NULL::uuid),
+    -- (L) first -> second: exactly one order, recently, within 14 days.
     ('first_to_second_purchase',
-      c.confirmed_order_count = 1, NULL::uuid),
+      c.confirmed_order_count = 1
+      AND c.last_confirmed_at IS NOT NULL
+      AND c.last_confirmed_at >= now() - interval '14 days', NULL::uuid),
     ('lapsed_7_days',
       c.confirmed_order_count > 0 AND c.last_confirmed_at IS NOT NULL
       AND c.last_confirmed_at <  now() - interval '7 days'
@@ -415,70 +527,81 @@ raw_candidates AS (
       AND c.last_confirmed_at >= now() - interval '7 days'
       AND c.previous_confirmed_at IS NOT NULL
       AND c.last_confirmed_at - c.previous_confirmed_at >= interval '30 days', NULL::uuid),
-    -- CADENCE -----------------------------------------------------------------
+    -- CADENCE (non-campaign-specific) ----------------------------------------
     ('personal_cadence_overdue',
       c.confirmed_order_count > 0 AND c.cadence_ratio IS NOT NULL
       AND c.cadence_ratio > 1.5, NULL::uuid),
-    -- WALLET ------------------------------------------------------------------
+    -- WALLET -----------------------------------------------------------------
     ('wtf_credit_waiting',
       c.wallet_available_pence >= g.wtf_min_wallet_pence, NULL::uuid),
     ('fresh_wallet_credit',
       c.wallet_available_pence > 0 AND c.last_wallet_credit_at IS NOT NULL
       AND c.last_wallet_credit_at >= now() - interval '7 days', NULL::uuid),
+    -- (F) spendable credit + an ACTUAL relevant live unbought campaign.
     ('wallet_credit_campaign_match',
-      c.wallet_available_pence > 0 AND c.has_relevant_live_campaign,
+      c.wallet_available_pence > 0 AND c.relevant_campaign_id IS NOT NULL,
       c.relevant_campaign_id),
     -- WINNER (positive engagement only) --------------------------------------
+    -- (D) campaign-specific winner follow-ups require last_win_campaign_id.
     ('recent_winner_follow_up',
-      c.last_win_at IS NOT NULL AND c.last_win_at >= now() - interval '7 days', NULL::uuid),
+      c.last_win_at IS NOT NULL AND c.last_win_at >= now() - interval '7 days'
+      AND c.last_win_campaign_id IS NOT NULL, c.last_win_campaign_id),
     ('recent_winner_credit_available',
       c.last_win_at IS NOT NULL AND c.last_win_at >= now() - interval '30 days'
-      AND c.wallet_available_pence > 0, NULL::uuid),
+      AND c.wallet_available_pence > 0
+      AND c.last_win_campaign_id IS NOT NULL, c.last_win_campaign_id),
+    -- first_win_follow_up stays NON-campaign-specific.
     ('first_win_follow_up',
       c.win_count = 1 AND c.last_win_at IS NOT NULL
       AND c.last_win_at >= now() - interval '14 days', NULL::uuid),
     ('high_value_winner_follow_up',
       c.last_win_at IS NOT NULL AND c.last_win_at >= now() - interval '30 days'
-      AND c.last_win_value_pence IS NOT NULL AND c.last_win_value_pence >= 25000, NULL::uuid),
-    -- CHECKOUT ----------------------------------------------------------------
+      AND c.last_win_value_pence IS NOT NULL AND c.last_win_value_pence >= 25000
+      AND c.last_win_campaign_id IS NOT NULL, c.last_win_campaign_id),
+    -- CHECKOUT ---------------------------------------------------------------
+    -- (E) abandonment candidates require last_abandoned_campaign_id.
     ('abandoned_checkout',
-      COALESCE(c.abandoned_7d_count, 0) >= 1, NULL::uuid),
+      COALESCE(c.abandoned_7d_count, 0) >= 1
+      AND c.last_abandoned_campaign_id IS NOT NULL, c.last_abandoned_campaign_id),
     ('repeat_abandoner',
-      COALESCE(c.abandoned_30d_count, 0) >= 2, NULL::uuid),
-    -- AFFINITY / CAMPAIGN (require live campaigns) ----------------------------
+      COALESCE(c.abandoned_30d_count, 0) >= 2
+      AND c.last_abandoned_campaign_id IS NOT NULL, c.last_abandoned_campaign_id),
+    -- AFFINITY / CAMPAIGN (concrete relevant unbought live campaign) ---------
     ('frequent_buyer_relevant_campaign',
-      c.is_frequent AND c.has_relevant_live_campaign, c.relevant_campaign_id),
+      c.is_frequent AND c.relevant_campaign_id IS NOT NULL, c.relevant_campaign_id),
     ('vip_relevant_campaign',
-      c.is_vip AND c.has_relevant_live_campaign, c.relevant_campaign_id),
+      c.is_vip AND c.relevant_campaign_id IS NOT NULL, c.relevant_campaign_id),
+    -- (G) reveal match uses the reveal-only selector.
     ('reveal_affinity_campaign',
-      c.has_reveal_match, c.relevant_campaign_id),
+      c.reveal_campaign_id IS NOT NULL, c.reveal_campaign_id),
     ('recently_active_no_relevant_entry',
-      COALESCE(c.orders_30d, 0) >= 1 AND c.has_relevant_not_entered, c.relevant_campaign_id),
-    ('recent_buyer_cross_campaign',
-      (COALESCE(c.orders_30d, 0) >= 1
-        OR (c.last_confirmed_at IS NOT NULL AND c.last_confirmed_at >= now() - interval '14 days'))
-      AND c.has_other_live_not_bought, NULL::uuid),
-    -- PROMOTION (require configured promotions) -------------------------------
+      COALESCE(c.orders_30d, 0) >= 1 AND c.relevant_campaign_id IS NOT NULL,
+      c.relevant_campaign_id),
+    -- PROMOTION (concrete actionable-promotion campaign) ---------------------
     ('vip_early_access',
-      c.is_vip AND g.vip_promo_count > 0, NULL::uuid),
+      c.is_vip AND c.vip_promo_campaign_id IS NOT NULL, c.vip_promo_campaign_id),
     ('regular_buyer_campaign_alert',
-      c.is_frequent AND g.rb_promo_count > 0
-      AND NOT EXISTS (
-        SELECT 1 FROM rb_promo_campaigns rp
-        JOIN public.customer_campaign_affinity a
-          ON a.user_id = c.user_id
-         AND a.affinity_type = 'campaign'
-         AND a.affinity_key = rp.campaign_key
-      ), NULL::uuid),
+      c.is_frequent AND c.rb_promo_campaign_id IS NOT NULL, c.rb_promo_campaign_id),
     ('campaign_closing_relevant_customer',
-      c.has_relevant_closing, c.closing_campaign_id),
+      c.closing_campaign_id IS NOT NULL, c.closing_campaign_id),
     ('promotion_match',
-      (c.is_vip AND g.vip_promo_count > 0)
-      OR (c.is_frequent AND g.rb_promo_count > 0), NULL::uuid)
+      (c.is_vip AND c.vip_promo_campaign_id IS NOT NULL)
+      OR (c.is_frequent AND c.rb_promo_campaign_id IS NOT NULL),
+      CASE
+        WHEN c.is_vip AND c.vip_promo_campaign_id IS NOT NULL THEN c.vip_promo_campaign_id
+        WHEN c.is_frequent AND c.rb_promo_campaign_id IS NOT NULL THEN c.rb_promo_campaign_id
+        ELSE NULL::uuid
+      END)
+    -- NOTE: recent_buyer_cross_campaign is DELIBERATELY NOT detected here. It is
+    -- campaign-specific but a concrete "another live unbought campaign" cannot be
+    -- selected safely from the existing per-customer rollups without a broad
+    -- cross join, so per requirement (I) it is reported as UNSUPPORTED rather
+    -- than emitting a NULL campaign_id.
   ) AS d(opportunity_key, matched, campaign_id)
   WHERE d.matched
 ),
--- Attach the authoritative catalogue config + build transparent score.
+-- Attach the authoritative catalogue config (incl. campaign_specific) and carry
+-- the component inputs + the candidate's OWN closing status.
 scored AS (
   SELECT
     rc.user_id,
@@ -486,9 +609,9 @@ scored AS (
     def.family,
     def.default_priority,
     def.default_score,
+    def.campaign_specific,
     rc.campaign_id,
-    -- component picks: universal value/recency always apply; family-specific
-    -- components apply only to their family (no excessive double counting).
+    c.is_vip,
     c.value_c,
     c.recency_c,
     (CASE WHEN rc.opportunity_key = 'personal_cadence_overdue' THEN c.cadence_c ELSE 0 END) AS cadence_c,
@@ -496,28 +619,42 @@ scored AS (
             OR rc.opportunity_key = 'recent_winner_credit_available'
           THEN c.wallet_c ELSE 0 END) AS wallet_c,
     (CASE WHEN def.family = 'winner' THEN c.winner_c ELSE 0 END) AS winner_c,
-    (CASE WHEN def.family IN ('affinity', 'promotion') THEN c.affinity_c ELSE 0 END) AS affinity_c,
-    (CASE WHEN rc.opportunity_key IN ('campaign_closing_relevant_customer', 'wallet_credit_campaign_match')
-          THEN c.urgency_c ELSE 0 END) AS urgency_c,
     (CASE WHEN def.family = 'checkout' THEN c.abandon_c ELSE 0 END) AS abandon_c,
-    c.has_relevant_closing,
-    -- permission split (partition of the population)
-    (c.marketing_eligible_snapshot AND NOT c.has_active_suppression)         AS perm_backed,
+    -- (J) is_closing = THIS candidate's own campaign is closing. Non-campaign
+    -- candidate => false. Never a customer-wide flag.
+    (rc.campaign_id IS NOT NULL AND COALESCE(cl.is_closing, false)) AS is_closing,
+    -- permission split (partition of the population) + sendability (K)
+    (c.marketing_enabled AND NOT c.has_active_suppression)                   AS perm_backed,
     c.has_active_suppression                                                  AS perm_suppressed,
-    (NOT c.marketing_eligible_snapshot AND NOT c.has_active_suppression)      AS perm_not_backed
+    (NOT c.marketing_enabled AND NOT c.has_active_suppression)                AS perm_not_backed,
+    (c.marketing_eligible_snapshot AND NOT c.has_active_suppression)          AS sendable_now
   FROM raw_candidates rc
-  JOIN comp c ON c.user_id = rc.user_id
+  JOIN cc c ON c.user_id = rc.user_id
   JOIN public.marketing_opportunity_definitions def ON def.opportunity_key = rc.opportunity_key
+  LEFT JOIN closing_lu cl ON cl.campaign_id = rc.campaign_id
+  -- (C) CAMPAIGN-SPECIFIC INVARIANT, enforced in executable SQL: a
+  -- campaign_specific definition can NEVER survive with a NULL campaign_id.
+  WHERE NOT (def.campaign_specific AND rc.campaign_id IS NULL)
 ),
 final AS (
   SELECT
     s.*,
-    LEAST(1000, GREATEST(0,
-      round(s.default_score)::int
-      + s.value_c + s.recency_c + s.cadence_c + s.wallet_c
-      + s.winner_c + s.affinity_c + s.urgency_c + s.abandon_c
-    ))::int AS final_score
+    -- affinity_c (affinity + promotion families): concrete campaign relevance.
+    (CASE WHEN s.family IN ('affinity', 'promotion') AND s.campaign_id IS NOT NULL THEN 60 ELSE 0 END
+      + CASE WHEN s.is_vip AND s.family IN ('affinity', 'promotion') THEN 20 ELSE 0 END)::int AS affinity_c,
+    -- urgency_c: only a candidate whose OWN campaign is closing earns urgency.
+    (CASE WHEN s.is_closing THEN 100 ELSE 0 END)::int AS urgency_c
   FROM scored s
+),
+final2 AS (
+  SELECT
+    f.*,
+    LEAST(1000, GREATEST(0,
+      round(f.default_score)::int
+      + f.value_c + f.recency_c + f.cadence_c + f.wallet_c
+      + f.winner_c + f.affinity_c + f.urgency_c + f.abandon_c
+    ))::int AS final_score
+  FROM final f
 )
 SELECT
   f.user_id,
@@ -539,14 +676,15 @@ SELECT
     'abandon',  f.abandon_c,
     'final',    f.final_score
   ) AS score_components,
-  f.has_relevant_closing AS is_closing,
+  f.is_closing,
   f.perm_backed,
   f.perm_suppressed,
   f.perm_not_backed,
+  f.sendable_now,
   -- NEXT-BEST-ACTION arbitration (deterministic, set-based). Ordering:
   --   1) lower default_priority first  (catalogue-authoritative rank)
   --   2) higher final_score
-  --   3) campaign urgency (closing candidate first)
+  --   3) this candidate's campaign closing first
   --   4) opportunity_key ascending (stable deterministic tie-break)
   ROW_NUMBER() OVER (
     PARTITION BY f.user_id
@@ -555,11 +693,11 @@ SELECT
              f.is_closing DESC,
              f.opportunity_key ASC
   )::int AS rn
-FROM final f
+FROM final2 f
 $$;
 
 COMMENT ON FUNCTION public.wtf_marketing_opportunity_candidates_preview() IS
-  'Stage 3C2D PRIVATE read-only candidate model. One row per (user_id, opportunity_key) detected from the profile/intelligence/affinity rollups + campaign/promotion/automation config, with transparent 0-1000 score components and a deterministic per-customer next-best-action rank (rn=1 is the preview winner). Writes NOTHING. Owner-only: EXECUTE granted to nobody; reached only via the two top-level preview RPCs.';
+  'Stage 3C2D PRIVATE read-only candidate model. One row per (user_id, opportunity_key) detected from the profile/intelligence/affinity rollups + campaign/promotion/automation config, with transparent 0-1000 score components and a deterministic per-customer next-best-action rank (rn=1 is the preview winner). Every campaign_specific candidate carries a concrete campaign_id (winner=last_win_campaign_id, abandonment=last_abandoned_campaign_id, affinity=ranked relevant unbought live campaign, promotion=actionable-promotion campaign) or is dropped. Writes NOTHING. Owner-only: EXECUTE granted to nobody; reached only via the two top-level preview RPCs.';
 
 -- Owner-only: strip EXECUTE from everyone (incl. service_role). It is called
 -- only inside the two SECURITY DEFINER RPCs below, under the same owner.
@@ -614,10 +752,13 @@ BEGIN
       'uniqueCustomers',  (SELECT count(*)::bigint FROM per_customer)
     ),
 
+    -- Permission + sendability partition of the WINNING candidates (K). None of
+    -- these filter detection; they only describe who a winner could reach.
     'permission', jsonb_build_object(
       'winningPermissionBacked',    (SELECT count(*)::bigint FROM winners WHERE perm_backed),
       'winningNotPermissionBacked', (SELECT count(*)::bigint FROM winners WHERE perm_not_backed),
-      'winningSuppressed',          (SELECT count(*)::bigint FROM winners WHERE perm_suppressed)
+      'winningSuppressed',          (SELECT count(*)::bigint FROM winners WHERE perm_suppressed),
+      'winningSendableNow',         (SELECT count(*)::bigint FROM winners WHERE sendable_now)
     ),
 
     'countByOpportunityType', COALESCE(
@@ -651,34 +792,43 @@ BEGIN
         'new_account_no_purchase','first_to_second_purchase','lapsed_7_days',
         'lapsed_14_days','lapsed_30_days','high_value_customer_at_risk',
         'vip_reactivation','reactivated_customer_follow_up','personal_cadence_overdue',
-        'wtf_credit_waiting','fresh_wallet_credit','recent_winner_follow_up',
-        'recent_winner_credit_available','first_win_follow_up',
-        'high_value_winner_follow_up','abandoned_checkout','repeat_abandoner'
+        'wtf_credit_waiting','fresh_wallet_credit','first_win_follow_up'
       ),
       'requiresCampaignContext', jsonb_build_array(
+        'recent_winner_follow_up','recent_winner_credit_available',
+        'high_value_winner_follow_up','abandoned_checkout','repeat_abandoner',
         'wallet_credit_campaign_match','frequent_buyer_relevant_campaign',
         'vip_relevant_campaign','reveal_affinity_campaign',
-        'recently_active_no_relevant_entry','recent_buyer_cross_campaign',
-        'vip_early_access','regular_buyer_campaign_alert',
-        'campaign_closing_relevant_customer','promotion_match'
+        'recently_active_no_relevant_entry','vip_early_access',
+        'regular_buyer_campaign_alert','campaign_closing_relevant_customer',
+        'promotion_match'
       ),
       'futureUnsupported', jsonb_build_array(
-        'high_value_abandoned_checkout'
+        'high_value_abandoned_checkout','recent_buyer_cross_campaign'
       )
     ),
 
     'notes', jsonb_build_object(
       'detectionIsNotSendEligibility', true,
       'permissionReportedSeparately', true,
+      'sendabilityReportedSeparately', true,
       'substrate', 'customer_marketing_profiles + customer_marketing_intelligence + customer_campaign_affinity + campaigns/promotions/automations config',
       'operationalHistoryScanned', false,
+      'liveCampaignDefinition', 'status = live AND (end_at IS NULL OR end_at > now())',
+      'actionablePromotionDefinition', 'promotion status scheduled/processing on a still-live campaign',
+      'campaignSpecificInvariant', 'a campaign_specific definition can never survive with a NULL campaign_id',
+      'winnerCampaignContext', 'last_win_campaign_id',
+      'abandonmentCampaignContext', 'last_abandoned_campaign_id',
+      'campaignSelectionOrdering', 'confirmed_order_count DESC, external_spend_pence DESC, last_confirmed_at DESC NULLS LAST, end_at ASC NULLS LAST, campaign_id ASC (never MIN(uuid))',
+      'closingIsCandidateSpecific', true,
       'highValueAbandonedCheckoutUnsupportedReason', 'intelligence rollup carries no per-customer abandoned-checkout monetary value; computing it would require an unsafe broad checkout_intents scan',
+      'recentBuyerCrossCampaignUnsupportedReason', 'a concrete another-live-unbought campaign_id cannot be selected safely from existing per-customer rollups without a broad cross join; reported unsupported rather than emitting a NULL campaign_id',
       'cadenceMinimumGapFloorHours', 12,
       'cadenceOverdueRatioThreshold', 1.5,
-      'liveCampaignStatus', 'live',
       'campaignClosingWindowHours', 48,
       'vipDefinition', 'confirmed_order_count >= 10 OR lifetime_external_pence >= 25000',
       'frequentBuyerDefinition', 'confirmed_order_count >= 5',
+      'firstToSecondWindowDays', 14,
       'highValueWinValuePence', 25000,
       'promotionStatusesCounted', jsonb_build_array('scheduled','processing')
     )
@@ -690,7 +840,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION public.get_admin_marketing_opportunity_detection_preview() IS
-  'Stage 3C2D READ-ONLY opportunity detection + next-best-action arbitration preview. Returns ONE aggregate jsonb (population, overlap, permission split, count/winning by type + family, and the detector-support matrix). No identities, no rows, no writes, no AI/cron/email. Service-role only.';
+  'Stage 3C2D READ-ONLY opportunity detection + next-best-action arbitration preview. Returns ONE aggregate jsonb (population, overlap, permission + sendability split, count/winning by type + family, and the detector-support matrix). No identities, no rows, no writes, no AI/cron/email. Service-role only.';
 
 REVOKE ALL ON FUNCTION public.get_admin_marketing_opportunity_detection_preview() FROM public, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.get_admin_marketing_opportunity_detection_preview() TO service_role;
@@ -739,7 +889,8 @@ BEGIN
           'isClosingCampaign',  is_closing,
           'permissionBacked',   perm_backed,
           'suppressed',         perm_suppressed,
-          'notPermissionBacked',perm_not_backed
+          'notPermissionBacked',perm_not_backed,
+          'sendableNow',        sendable_now
         )
       ) ORDER BY final_score DESC, default_priority ASC, opportunity_key ASC)
        FROM winners),
@@ -752,7 +903,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION public.get_admin_marketing_opportunity_preview_sample(integer) IS
-  'Stage 3C2D READ-ONLY bounded (<=100) anonymised sample of winning next-best-action decisions. Returns an opaque userHash (never raw user_id/email/name), opportunity_key, family, campaign_id, score, default_priority, score components, and compact reason/permission flags. Writes NOTHING. Service-role only.';
+  'Stage 3C2D READ-ONLY bounded (<=100) anonymised sample of winning next-best-action decisions. Returns an opaque userHash (never raw user_id/email/name), opportunity_key, family, campaign_id, score, default_priority, score components, and compact reason/permission/sendability flags. Writes NOTHING. Service-role only.';
 
 REVOKE ALL ON FUNCTION public.get_admin_marketing_opportunity_preview_sample(integer) FROM public, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.get_admin_marketing_opportunity_preview_sample(integer) TO service_role;
@@ -768,4 +919,7 @@ COMMIT;
 --   * NO ALTER of any existing table, NO migration 001-010 modified.
 --   * Detection substrate is the profile/intelligence/affinity rollups + tiny
 --     campaign/promotion/automation config only; NO broad operational scan.
+--   * Every campaign_specific candidate carries a concrete campaign_id or is
+--     dropped; is_closing is candidate-specific; permission & sendability are
+--     reported separately and never filter detection.
 -- ============================================================================
