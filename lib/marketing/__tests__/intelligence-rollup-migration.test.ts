@@ -209,6 +209,19 @@ describe('010 rollup — canonical source semantics reused verbatim', () => {
     expect(FLAT).toMatch(/GREATEST\(COALESCE\(SUM\(ext_pence\), 0\), 0\)/i) // affinity
   })
 
+  it('forces derived 90d spend >= derived 30d spend so 009 monotonic CHECK is always satisfiable', () => {
+    // The 90d output is GREATEST(90d sum, 30d sum, 0): it can never fall below
+    // the 30d output even if an anomalous historical negative order sits outside
+    // the 30-day window. The raw per-order formula is NOT touched by this guard.
+    expect(FLAT).toMatch(
+      /GREATEST\( COALESCE\(SUM\(ext_pence\) FILTER \(WHERE confirmed_at >= v_now - interval '90 days'\), 0\), COALESCE\(SUM\(ext_pence\) FILTER \(WHERE confirmed_at >= v_now - interval '30 days'\), 0\), 0 \)::bigint AS external_spend_90d_pence/i,
+    )
+    // 30d output remains simply non-negative.
+    expect(FLAT).toMatch(
+      /GREATEST\(COALESCE\(SUM\(ext_pence\) FILTER \(WHERE confirmed_at >= v_now - interval '30 days'\), 0\), 0\)::bigint AS external_spend_30d_pence/i,
+    )
+  })
+
   it('builds source_updated_at from aggregates only — no correlated MAX subqueries', () => {
     // The removed correlated forms must be gone entirely.
     expect(/\(SELECT MAX\(confirmed_at\) FROM co/i.test(EXEC)).toBe(false)
@@ -430,6 +443,15 @@ describe('010 rollup — incremental is bounded, frozen-window + cursor', () => 
     expect(FLAT).toMatch(/ci\.confirmed_at > v_win_from AND ci\.confirmed_at <= v_win_to/i)
     expect(FLAT).toMatch(/a\.awarded_at > v_win_from AND a\.awarded_at <= v_win_to/i)
   })
+
+  it('confirmed-order candidate source C requires the canonical state = confirmed', () => {
+    // Source C must carry state = 'confirmed' together with its bounded
+    // confirmed_at range (so the confirmed_at partial index is applicable and
+    // the candidate scope matches the canonical confirmed-order predicate).
+    expect(FLAT).toMatch(
+      /AND ci\.state = 'confirmed' AND ci\.provider IS DISTINCT FROM 'debug' AND \(ci\.ref IS NULL OR ci\.ref NOT LIKE 'SIM-%'\) AND ci\.confirmed_at > v_win_from AND ci\.confirmed_at <= v_win_to/i,
+    )
+  })
 })
 
 describe('010 rollup — affinity rebuild is derived, structured, batch-scoped', () => {
@@ -481,12 +503,24 @@ describe('010 rollup — security hardening', () => {
     expect(/GRANT[^;]*\bDELETE\b/i.test(EXEC)).toBe(false)
   })
 
-  it('keeps the batch helper owner-only (no anon/authenticated/service_role EXECUTE)', () => {
+  it('keeps the batch helper owner-only (no PUBLIC/anon/authenticated/service_role EXECUTE)', () => {
+    // PUBLIC, anon and authenticated stripped.
     expect(FLAT).toMatch(
       /REVOKE ALL ON FUNCTION public\.refresh_customer_marketing_intelligence_batch\(uuid\[\]\) FROM public, anon, authenticated/i,
     )
+    // service_role ALSO explicitly stripped in its own statement.
+    expect(FLAT).toMatch(
+      /REVOKE ALL ON FUNCTION public\.refresh_customer_marketing_intelligence_batch\(uuid\[\]\) FROM service_role/i,
+    )
+    // EXECUTE is NEVER granted back to anyone (no role at all).
     expect(
       /GRANT EXECUTE ON FUNCTION public\.refresh_customer_marketing_intelligence_batch/i.test(EXEC),
+    ).toBe(false)
+    // Belt-and-braces: service_role never receives EXECUTE on the helper.
+    expect(
+      /GRANT EXECUTE ON FUNCTION public\.refresh_customer_marketing_intelligence_batch\(uuid\[\]\) TO service_role/i.test(
+        EXEC,
+      ),
     ).toBe(false)
   })
 

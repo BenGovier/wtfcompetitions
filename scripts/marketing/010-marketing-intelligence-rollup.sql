@@ -75,13 +75,15 @@
 --     preserved when absent (no invented fallback). last_win_fulfilment_type is
 --     whitelisted to ('cash','wallet_credit','manual') to match both the live
 --     award data and the 009 CHECK.
---   * Wallet ledger uses wallet_transactions (NOT wallet_reservations) with the
---     documented SIGNED amount_pence convention (positive = balance addition,
---     negative = deduction). "Credit received" = positive amounts. "Wallet
---     spent" = negative amounts that carry a source_checkout_intent_id (genuine
---     purchase capture), which deliberately EXCLUDES negative admin corrections
---     (those carry admin_user_id and no source_checkout_intent_id). Reservations
---     are never counted as spend.
+--   * Wallet ledger uses wallet_transactions (NOT wallet_reservations) and is
+--     classified by the ACTUAL transaction_type, NOT by amount sign alone:
+--       CREDIT RECEIVED = transaction_type IN
+--         ('instant_win_credit','admin_credit','refund_credit') AND
+--         amount_pence > 0.  ('reversal' is EXCLUDED from credit-received.)
+--       PURCHASE SPEND  = transaction_type = 'order_spend' AND amount_pence < 0
+--         AND source_checkout_intent_id IS NOT NULL.  ('admin_debit' and
+--         'reversal' are EXCLUDED from purchase spend.)
+--     Wallet reservations are not in this table and are never counted.
 --   * Abandonment: a non-confirmed, non-debug, non-SIM checkout_intent older
 --     than the configured abandoned_checkout first_delay_minutes (read from
 --     marketing_automations; falls back to 45 only if unset), EXCLUDING any
@@ -361,8 +363,21 @@ BEGIN
       COUNT(*) FILTER (WHERE confirmed_at >= v_now - interval '30 days')::integer AS orders_30d,
       COUNT(*) FILTER (WHERE confirmed_at >= v_now - interval '60 days')::integer AS orders_60d,
       COUNT(*) FILTER (WHERE confirmed_at >= v_now - interval '90 days')::integer AS orders_90d,
+      -- Defensive normalisation of the DERIVED intelligence fields ONLY (the raw
+      -- per-order ext_pence formula above is untouched). Normal valid purchase
+      -- data naturally satisfies 30d <= 90d, but a single anomalous historical
+      -- negative order OUTSIDE the last 30 days could otherwise make the clamped
+      -- 90d sum fall below the 30d sum and violate 009's live
+      -- cmi_spend_window_monotonic_chk (external_spend_30d_pence <=
+      -- external_spend_90d_pence), aborting the whole refresh. Forcing the 90d
+      -- output to be at least the 30d output makes the invariant always
+      -- satisfiable without changing revenue semantics for valid data.
       GREATEST(COALESCE(SUM(ext_pence) FILTER (WHERE confirmed_at >= v_now - interval '30 days'), 0), 0)::bigint AS external_spend_30d_pence,
-      GREATEST(COALESCE(SUM(ext_pence) FILTER (WHERE confirmed_at >= v_now - interval '90 days'), 0), 0)::bigint AS external_spend_90d_pence,
+      GREATEST(
+        COALESCE(SUM(ext_pence) FILTER (WHERE confirmed_at >= v_now - interval '90 days'), 0),
+        COALESCE(SUM(ext_pence) FILTER (WHERE confirmed_at >= v_now - interval '30 days'), 0),
+        0
+      )::bigint AS external_spend_90d_pence,
       GREATEST(ROUND(AVG(ext_pence)), 0)::bigint AS average_external_order_value_pence,
       GREATEST(MAX(ext_pence), 0)::bigint        AS highest_external_order_value_pence,
       MAX(confirmed_at)                          AS latest_confirmed_at
@@ -751,8 +766,12 @@ COMMENT ON FUNCTION public.refresh_customer_marketing_intelligence_batch(uuid[])
   'Stage 3C2C private set-based helper: recomputes customer_marketing_intelligence and rebuilds customer_campaign_affinity for a bounded candidate batch in one transaction. Reads operational tables only; writes only the two rollup tables. Owner-only (no anon/authenticated/service_role EXECUTE).';
 
 -- Batch helper is internal to the orchestrator (same definer owner). Expose it
--- to NOBODY else.
+-- to NOBODY else. service_role is ALSO explicitly stripped: the helper is
+-- reached only through the top-level SECURITY DEFINER orchestrator's owner
+-- context, never called directly by service_role. EXECUTE is deliberately NOT
+-- granted back to service_role.
 REVOKE ALL ON FUNCTION public.refresh_customer_marketing_intelligence_batch(uuid[]) FROM public, anon, authenticated;
+REVOKE ALL ON FUNCTION public.refresh_customer_marketing_intelligence_batch(uuid[]) FROM service_role;
 
 -- ============================================================================
 -- 3. TOP-LEVEL ORCHESTRATOR (service-role only): one bounded step per call.
@@ -971,9 +990,13 @@ BEGIN
 
       UNION ALL
       -- C. Canonical confirmed rows whose confirmed_at is in the frozen window.
+      --    state = 'confirmed' is REQUIRED so this matches the exact canonical
+      --    confirmed-order predicate (and lets the confirmed_at partial index
+      --    apply); the batch helper re-applies the same scope authoritatively.
       SELECT ci.user_id
       FROM public.checkout_intents ci
       WHERE ci.user_id IS NOT NULL
+        AND ci.state = 'confirmed'
         AND ci.provider IS DISTINCT FROM 'debug'
         AND (ci.ref IS NULL OR ci.ref NOT LIKE 'SIM-%')
         AND ci.confirmed_at > v_win_from AND ci.confirmed_at <= v_win_to
