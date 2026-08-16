@@ -228,6 +228,10 @@ COMMENT ON TABLE public.marketing_opportunity_definitions IS
 ALTER TABLE public.marketing_opportunity_definitions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.marketing_opportunity_definitions FORCE  ROW LEVEL SECURITY;
 REVOKE ALL ON public.marketing_opportunity_definitions FROM anon, authenticated;
+-- Security hardening: explicitly strip ALL privileges from service_role FIRST so
+-- it cannot inherit DELETE (or any other verb) via existing/default grants, then
+-- grant back EXACTLY the three verbs this catalogue needs. No DELETE is granted.
+REVOKE ALL ON public.marketing_opportunity_definitions FROM service_role;
 GRANT SELECT, INSERT, UPDATE ON public.marketing_opportunity_definitions TO service_role;
 
 -- ============================================================================
@@ -325,6 +329,13 @@ BEGIN
   END IF;
 END
 $add_fk$;
+
+-- D) Defensive hardening: explicitly revoke DELETE on the existing opportunity
+--    ledger from service_role. The ledger is append/update-only (immutable
+--    history); nothing should ever hard-delete an opportunity row. This does NOT
+--    otherwise change marketing_opportunities permissions (its existing
+--    SELECT/INSERT/UPDATE grants and RLS from migration 007 are untouched).
+REVOKE DELETE ON public.marketing_opportunities FROM service_role;
 
 -- ============================================================================
 -- 4. customer_marketing_intelligence
@@ -458,6 +469,10 @@ CREATE INDEX IF NOT EXISTS customer_marketing_intelligence_orders_30d_idx
 ALTER TABLE public.customer_marketing_intelligence ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customer_marketing_intelligence FORCE  ROW LEVEL SECURITY;
 REVOKE ALL ON public.customer_marketing_intelligence FROM anon, authenticated;
+-- Security hardening: explicitly strip ALL privileges from service_role FIRST so
+-- it cannot inherit DELETE (or any other verb) via existing/default grants, then
+-- grant back EXACTLY the three verbs this rollup needs. No DELETE is granted.
+REVOKE ALL ON public.customer_marketing_intelligence FROM service_role;
 GRANT SELECT, INSERT, UPDATE ON public.customer_marketing_intelligence TO service_role;
 
 -- ============================================================================
@@ -517,6 +532,10 @@ CREATE INDEX IF NOT EXISTS customer_campaign_affinity_type_key_idx
 ALTER TABLE public.customer_campaign_affinity ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customer_campaign_affinity FORCE  ROW LEVEL SECURITY;
 REVOKE ALL ON public.customer_campaign_affinity FROM anon, authenticated;
+-- Security hardening: explicitly strip ALL privileges from service_role FIRST so
+-- it cannot inherit DELETE (or any other verb) via existing/default grants, then
+-- grant back EXACTLY the three verbs this rollup needs. No DELETE is granted.
+REVOKE ALL ON public.customer_campaign_affinity FROM service_role;
 GRANT SELECT, INSERT, UPDATE ON public.customer_campaign_affinity TO service_role;
 
 -- ============================================================================

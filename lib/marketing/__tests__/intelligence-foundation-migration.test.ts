@@ -404,6 +404,58 @@ describe('009 — RLS, grants, and no-signal-table guarantees', () => {
     expect(/GRANT[^;]*\bDELETE\b/i.test(EXEC)).toBe(false)
   })
 
+  it('explicitly revokes ALL from service_role BEFORE the restricted grant on every new table', () => {
+    for (const t of [
+      'marketing_opportunity_definitions',
+      'customer_marketing_intelligence',
+      'customer_campaign_affinity',
+    ]) {
+      // The explicit hardening revoke exists...
+      const revokeRe = new RegExp(`REVOKE ALL ON public\\.${t} FROM service_role`, 'i')
+      expect(revokeRe.test(FLAT)).toBe(true)
+      // ...and it appears BEFORE the service_role grant for that same table.
+      const revokeIdx = EXEC.search(
+        new RegExp(`REVOKE ALL ON public\\.${t} FROM service_role`, 'i'),
+      )
+      const grantIdx = EXEC.search(
+        new RegExp(`GRANT SELECT, INSERT, UPDATE ON public\\.${t} TO service_role`, 'i'),
+      )
+      expect(revokeIdx).toBeGreaterThanOrEqual(0)
+      expect(grantIdx).toBeGreaterThanOrEqual(0)
+      expect(revokeIdx).toBeLessThan(grantIdx)
+    }
+  })
+
+  it('grants service_role EXACTLY SELECT, INSERT, UPDATE on every new table (no DELETE verb)', () => {
+    for (const t of [
+      'marketing_opportunity_definitions',
+      'customer_marketing_intelligence',
+      'customer_campaign_affinity',
+    ]) {
+      const grantMatch = FLAT.match(
+        new RegExp(`GRANT ([^;]*?) ON public\\.${t} TO service_role`, 'i'),
+      )
+      expect(grantMatch, `grant present for ${t}`).toBeTruthy()
+      const verbs = grantMatch![1]
+        .split(',')
+        .map((v) => v.trim().toUpperCase())
+        .sort()
+      expect(verbs).toEqual(['INSERT', 'SELECT', 'UPDATE'])
+      expect(verbs).not.toContain('DELETE')
+    }
+  })
+
+  it('explicitly revokes DELETE on the existing marketing_opportunities ledger', () => {
+    expect(FLAT).toMatch(/REVOKE DELETE ON public\.marketing_opportunities FROM service_role/i)
+  })
+
+  it('does NOT otherwise re-grant or alter marketing_opportunities permissions', () => {
+    // The only permission statement touching marketing_opportunities is the
+    // defensive DELETE revoke: no new GRANT and no REVOKE ALL on the ledger.
+    expect(/GRANT[^;]*ON public\.marketing_opportunities\b/i.test(EXEC)).toBe(false)
+    expect(/REVOKE ALL ON public\.marketing_opportunities\b/i.test(EXEC)).toBe(false)
+  })
+
   it('creates NO customer_marketing_signals or marketing_signal_definitions table', () => {
     expect(/CREATE TABLE[^;]*customer_marketing_signals/i.test(EXEC)).toBe(false)
     expect(/CREATE TABLE[^;]*marketing_signal_definitions/i.test(EXEC)).toBe(false)
