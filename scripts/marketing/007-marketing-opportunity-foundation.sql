@@ -180,9 +180,11 @@ CREATE TABLE IF NOT EXISTS public.marketing_opportunities (
   selected_at         timestamptz,
   actioned_at         timestamptz,
 
-  -- Ranking.
-  base_priority       integer     NOT NULL,
-  score               numeric,
+  -- Ranking. score is deliberately bounded to a fixed 0-1000 range (see the
+  -- score CHECK below) so future deterministic/AI selectors share one clear
+  -- scale; it is NEVER an unbounded numeric.
+  base_priority       integer        NOT NULL,
+  score               numeric(10,4),
   decision_mode       text,
 
   -- Lifecycle state.
@@ -249,6 +251,14 @@ CREATE TABLE IF NOT EXISTS public.marketing_opportunities (
     base_priority >= 1
   ),
 
+  -- 6b) score is NULL (until a later selection stage) or a bounded value on a
+  --     fixed 0-1000 scale. This hard range keeps deterministic/AI ranking
+  --     comparable and prevents runaway/garbage scores. Schema only — grants
+  --     AI no permission or functionality.
+  CONSTRAINT marketing_opportunities_score_range_chk CHECK (
+    score IS NULL OR (score >= 0 AND score <= 1000)
+  ),
+
   -- 7) An opportunity must expire strictly after it was detected.
   CONSTRAINT marketing_opportunities_expiry_chk CHECK (
     expires_at > detected_at
@@ -276,6 +286,17 @@ CREATE TABLE IF NOT EXISTS public.marketing_opportunities (
   ),
   CONSTRAINT marketing_opportunities_context_object_chk CHECK (
     jsonb_typeof(context_snapshot) = 'object'
+  ),
+
+  -- 12) Hard SIZE limits on the JSON payloads. These are enforced (not just
+  --     documented) so this table can NEVER become a store for full AI prompts,
+  --     full AI responses, checkout payloads, provider payloads, or arbitrary
+  --     large JSON. reason <= 4096 bytes; context_snapshot <= 8192 bytes.
+  CONSTRAINT marketing_opportunities_reason_size_chk CHECK (
+    octet_length(reason::text) <= 4096
+  ),
+  CONSTRAINT marketing_opportunities_context_size_chk CHECK (
+    octet_length(context_snapshot::text) <= 8192
   )
 );
 
@@ -373,8 +394,11 @@ BEGIN
            'expired',               count(*) FILTER (WHERE state = 'expired'),
            'superseded',            count(*) FILTER (WHERE state = 'superseded'),
            'actioned',              count(*) FILTER (WHERE state = 'actioned'),
-           'deterministicSelected', count(*) FILTER (WHERE decision_mode = 'deterministic'),
-           'aiSelected',            count(*) FILTER (WHERE decision_mode = 'ai')
+           -- CURRENTLY-selected decision counts only: a row counts here only
+           -- while it is in the 'selected' state, not merely because it once
+           -- carried that decision_mode.
+           'deterministicSelected', count(*) FILTER (WHERE decision_mode = 'deterministic' AND state = 'selected'),
+           'aiSelected',            count(*) FILTER (WHERE decision_mode = 'ai' AND state = 'selected')
          )
     INTO v_counts
     FROM public.marketing_opportunities;

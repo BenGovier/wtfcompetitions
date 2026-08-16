@@ -181,6 +181,23 @@ describe('Stage 3C1 — value constraints', () => {
     expect(FLAT).toMatch(/base_priority >= 1/i)
   })
 
+  it('score is a bounded numeric(10,4) column', () => {
+    expect(FLAT).toMatch(/score\s+numeric\(10,4\)/i)
+    // It is NOT an unbounded `numeric` with no precision.
+    expect(/score\s+numeric\s*,/i.test(FLAT)).toBe(false)
+  })
+
+  it('score permits NULL and is bounded to the 0-1000 range', () => {
+    expect(FLAT).toMatch(/score IS NULL OR \(score >= 0 AND score <= 1000\)/i)
+  })
+
+  it('score cannot be below 0 or above 1000 (explicit bounds present)', () => {
+    const m = FLAT.match(/score IS NULL OR \(([^)]*)\)/i)
+    expect(m, 'score range CHECK present').toBeTruthy()
+    expect(m![1]).toMatch(/score >= 0/i)
+    expect(m![1]).toMatch(/score <= 1000/i)
+  })
+
   it('requires expires_at strictly after detected_at', () => {
     expect(FLAT).toMatch(/expires_at > detected_at/i)
   })
@@ -197,6 +214,14 @@ describe('Stage 3C1 — value constraints', () => {
   it('requires reason and context_snapshot to be JSON objects', () => {
     expect(FLAT).toMatch(/jsonb_typeof\(reason\) = 'object'/i)
     expect(FLAT).toMatch(/jsonb_typeof\(context_snapshot\) = 'object'/i)
+  })
+
+  it('bounds reason to a maximum of 4096 bytes', () => {
+    expect(FLAT).toMatch(/octet_length\(reason::text\) <= 4096/i)
+  })
+
+  it('bounds context_snapshot to a maximum of 8192 bytes', () => {
+    expect(FLAT).toMatch(/octet_length\(context_snapshot::text\) <= 8192/i)
   })
 
   it('reason and context_snapshot default to empty objects', () => {
@@ -336,6 +361,20 @@ describe('Stage 3C1 — read-only aggregate RPC', () => {
     ]) {
       expect(FLAT, key).toContain(key)
     }
+  })
+
+  it('deterministicSelected counts only CURRENTLY-selected rows', () => {
+    expect(FLAT).toMatch(/'deterministicSelected',\s*count\(\*\) FILTER \(WHERE decision_mode = 'deterministic' AND state = 'selected'\)/i)
+  })
+
+  it('aiSelected counts only CURRENTLY-selected rows', () => {
+    expect(FLAT).toMatch(/'aiSelected',\s*count\(\*\) FILTER \(WHERE decision_mode = 'ai' AND state = 'selected'\)/i)
+  })
+
+  it('the selected-decision counters are never a bare decision_mode filter', () => {
+    // Guard against regressing to counting every row with that decision_mode.
+    expect(/FILTER \(WHERE decision_mode = 'deterministic'\)/i.test(FLAT)).toBe(false)
+    expect(/FILTER \(WHERE decision_mode = 'ai'\)/i.test(FLAT)).toBe(false)
   })
 
   it('exposes NO identities (no user_id/email/rows in the output payload)', () => {
