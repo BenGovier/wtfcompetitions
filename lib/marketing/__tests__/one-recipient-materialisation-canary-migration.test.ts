@@ -299,29 +299,118 @@ describe('021 — canary opportunity type & context', () => {
     expect(FLAT_EXEC).toMatch(/v_opp_auto_prov IS NOT NULL/i)
   })
 
-  it('definition defaults drive priority/score/expiry (14)', () => {
-    // The insert column list is annotated as definition-derived (comments in FLAT).
-    expect(FLAT).toMatch(/base_priority,\s*-- from definition default_priority/i)
-    expect(FLAT).toMatch(/score,\s*-- from definition default_score/i)
-    // The value list supplies the definition-read variables.
+  it('freezes the exact detector outputs needed for canonical persistence (1)', () => {
+    // Selection captures family / default_priority / default_score / final_score
+    // / score_components / is_closing from the detector, ONCE.
+    expect(FLAT_EXEC).toMatch(/detector\.family, detector\.default_priority, detector\.default_score,\s*detector\.final_score, detector\.score_components, detector\.is_closing/i)
+    expect(FLAT_EXEC).toMatch(/INTO v_user_id, v_email_lc, v_snapshot_diag,\s*v_det_family, v_det_def_priority, v_det_def_score,\s*v_det_final_score, v_det_score_comp, v_det_is_closing/i)
+    // rn=1 is inherent to the selection filter (detector.rn = 1).
+    expect(FLAT_EXEC).toMatch(/detector\.rn = 1/i)
+  })
+
+  it('persists score = detector.final_score, NOT definition.default_score (2,3)', () => {
     const insStart = FLAT_EXEC.indexOf('INSERT INTO public.marketing_opportunities')
     const insEnd = FLAT_EXEC.indexOf('RETURNING id INTO v_opp_id', insStart)
     const INS = insStart >= 0 && insEnd >= 0 ? FLAT_EXEC.slice(insStart, insEnd) : ''
-    expect(/v_def_priority/i.test(INS)).toBe(true)
-    expect(/v_def_score/i.test(INS)).toBe(true)
-    expect(FLAT_EXEC).toMatch(/make_interval\(hours => v_def_expiry\)/i)
-    // Asserts the exact authoritative defaults (5 / 350 / 336) before insert.
-    expect(FLAT_EXEC).toMatch(/c_exp_priority\s+constant integer := 5/i)
-    expect(FLAT_EXEC).toMatch(/c_exp_score\s+constant numeric := 350/i)
-    expect(FLAT_EXEC).toMatch(/c_exp_expiry_hours\s+constant integer := 336/i)
+    expect(INS.length).toBeGreaterThan(0)
+    // final_score is the persisted score.
+    expect(/v_det_final_score/i.test(INS)).toBe(true)
+    // definition default score is NEVER persisted.
+    expect(/v_def_score/i.test(INS)).toBe(false)
+    // score bounds check on the frozen final_score.
+    expect(FLAT_EXEC).toMatch(/v_det_final_score < 0\s*OR v_det_final_score > 1000/i)
   })
 
-  it('inserts with state open, deterministic dedupe key, and no fabricated content', () => {
-    expect(FLAT_EXEC).toMatch(/'stage-3d2c-one-recipient-canary:'/i)
+  it('persists base_priority = detector.default_priority (4)', () => {
+    const insStart = FLAT_EXEC.indexOf('INSERT INTO public.marketing_opportunities')
+    const insEnd = FLAT_EXEC.indexOf('RETURNING id INTO v_opp_id', insStart)
+    const INS = insStart >= 0 && insEnd >= 0 ? FLAT_EXEC.slice(insStart, insEnd) : ''
+    expect(/v_det_def_priority/i.test(INS)).toBe(true)
+    // Invariant: detector.default_priority == definition.default_priority.
+    expect(FLAT_EXEC).toMatch(/v_det_def_priority IS DISTINCT FROM v_def_priority/i)
+  })
+
+  it('uses ONE frozen detected_at for detected_at / expires_at / dedupe (5,6)', () => {
+    expect(FLAT_EXEC).toMatch(/v_detected_at := now\(\)/i)
+    expect(FLAT_EXEC).toMatch(/v_expires_at\s*:= v_detected_at \+ make_interval\(hours => v_def_expiry\)/i)
+    // The dedupe window uses the SAME frozen timestamp.
+    expect(FLAT_EXEC).toMatch(/extract\(epoch FROM v_detected_at\)\s*\/ \(GREATEST\(v_def_expiry, 1\) \* 3600\)/i)
+    // now() is NOT re-called per persistence field (only the one freeze + the
+    // temporary-enablement UPDATEs, which are unrelated to persistence values).
+    const insStart = FLAT_EXEC.indexOf('INSERT INTO public.marketing_opportunities')
+    const insEnd = FLAT_EXEC.indexOf('RETURNING id INTO v_opp_id', insStart)
+    const INS = insStart >= 0 && insEnd >= 0 ? FLAT_EXEC.slice(insStart, insEnd) : ''
+    expect(/now\(\)/i.test(INS)).toBe(false)
+  })
+
+  it('persists the canonical Stage 013 reason structure (7)', () => {
+    expect(FLAT_EXEC).toMatch(/'definitionKey', c_opp_type/i)
+    expect(FLAT_EXEC).toMatch(/'family',\s*v_det_family/i)
+    expect(FLAT_EXEC).toMatch(/'detector',\s*'wtf_marketing_opportunity_candidates_preview'/i)
+    expect(FLAT_EXEC).toMatch(/'stage',\s*'3C2F'/i)
+    expect(FLAT_EXEC).toMatch(/'basePriority',\s*v_det_def_priority/i)
+    expect(FLAT_EXEC).toMatch(/'finalScore',\s*v_det_final_score/i)
+    expect(FLAT_EXEC).toMatch(/'isClosing',\s*v_det_is_closing/i)
+  })
+
+  it('persists the canonical Stage 013 context_snapshot structure (8,9,10)', () => {
+    expect(FLAT_EXEC).toMatch(/'scoreComponents',\s*v_det_score_comp/i)
+    expect(FLAT_EXEC).toMatch(/'detectorStage',\s*'3C2F'/i)
+    expect(FLAT_EXEC).toMatch(/'selectedAsNextBestAction', true/i)
+    expect(FLAT_EXEC).toMatch(/'rn',\s*1/i)
+    // Post-insert asserts selectedAsNextBestAction=true and rn=1.
+    expect(FLAT_EXEC).toMatch(/'selectedAsNextBestAction'\)::boolean IS DISTINCT FROM true/i)
+    expect(FLAT_EXEC).toMatch(/v_o_ctx->>'rn'\)::int IS DISTINCT FROM 1/i)
+  })
+
+  it('uses the canonical discv1 expiry-window dedupe key (11,12)', () => {
+    // Canonical discv1 format present ...
+    expect(FLAT_EXEC).toMatch(/'discv1:' \|\| v_user_id::text/i)
+    expect(FLAT_EXEC).toMatch(/\|\| ':w' \|\| floor\(/i)
+    // ... and the old synthetic canary dedupe format is GONE.
+    expect(FLAT_EXEC_NOSTR.includes('stage-3d2c-one-recipient-canary:')).toBe(false)
+    expect(/'stage-3d2c-one-recipient-canary:'/i.test(FLAT_EXEC)).toBe(false)
+  })
+
+  it('aborts on canonical dedupe collision instead of inventing another key (13)', () => {
+    // A pre-INSERT existence check on the exact computed key raises and rolls back.
+    expect(FLAT_EXEC).toMatch(/o\.dedupe_key = v_dedupe_key/i)
+    expect(FLAT_EXEC).toMatch(/RAISE EXCEPTION 'canary_canonical_dedupe_conflict'/i)
+    // No fallback/alternate dedupe key is ever constructed.
+    expect(FLAT_EXEC_NOSTR.includes('fallback')).toBe(false)
+    expect((FLAT_EXEC.match(/v_dedupe_key\s*:=/gi) || []).length).toBe(1)
+  })
+
+  it('persisted reason/context contain NO canary-only payload markers (14)', () => {
+    // Scope the check to the INSERT statement itself (the durable payload).
+    const insStart = FLAT_EXEC.indexOf('INSERT INTO public.marketing_opportunities')
+    const insEnd = FLAT_EXEC.indexOf('RETURNING id INTO v_opp_id', insStart)
+    const INS = insStart >= 0 && insEnd >= 0 ? FLAT_EXEC.slice(insStart, insEnd) : ''
+    expect(INS.length).toBeGreaterThan(0)
+    // The persisted reason/context jsonb must not carry canary/source markers.
+    expect(INS.includes("'canary'")).toBe(false)
+    expect(INS.includes("'source'")).toBe(false)
+    expect(INS.includes("manual_canary")).toBe(false)
+    // And the canary explicitly guards against leakage post-insert (this guard
+    // legitimately references 'canary' as a key-existence probe OUTSIDE the insert).
+    expect(FLAT_EXEC).toMatch(/\(v_o_reason \? 'canary'\) OR \(v_o_ctx \? 'canary'\)/i)
+    expect(FLAT_EXEC).toMatch(/canary-only markers leaked into the canonical opportunity payload/i)
+  })
+
+  it('inserts with state open', () => {
     const insStart = FLAT_EXEC.indexOf('INSERT INTO public.marketing_opportunities')
     const insEnd = FLAT_EXEC.indexOf('RETURNING id INTO v_opp_id', insStart)
     const INS = FLAT_EXEC.slice(insStart, insEnd)
     expect(/'open'/i.test(INS)).toBe(true)
+  })
+
+  it('post-insert asserts the full canonical persisted shape (extra)', () => {
+    expect(FLAT_EXEC).toMatch(/v_o_detected IS DISTINCT FROM v_detected_at/i)
+    expect(FLAT_EXEC).toMatch(/v_o_expires\s+IS DISTINCT FROM v_expires_at/i)
+    expect(FLAT_EXEC).toMatch(/v_o_expires\s+IS DISTINCT FROM \(v_o_detected \+ make_interval\(hours => v_def_expiry\)\)/i)
+    expect(FLAT_EXEC).toMatch(/v_o_priority IS DISTINCT FROM v_det_def_priority/i)
+    expect(FLAT_EXEC).toMatch(/v_o_score\s+IS DISTINCT FROM v_det_final_score/i)
+    expect(FLAT_EXEC).toMatch(/v_o_dedupe\s+IS DISTINCT FROM v_dedupe_key/i)
   })
 })
 

@@ -10,7 +10,10 @@
 --       canonical-detector rn=1 new_account_no_purchase winner (NULL campaign)
 --         + independent permission authority (profile + is_marketing_email_eligible)
 --         + isolation from any pre-existing active opportunity/recipient
---         -> valid new_account_no_purchase opportunity (direct insert)
+--         -> valid new_account_no_purchase opportunity (direct insert in the
+--            EXACT canonical Stage 013 (3C2F) persisted shape: base_priority =
+--            detector.default_priority, score = detector.final_score, canonical
+--            reason/context_snapshot, discv1 expiry-window dedupe key)
 --         -> authoritative Stage 019 delivery route
 --         -> canonical Stage 019 private recipient gate (gate_eligible = true)
 --         -> preparing Stage 020 automation run
@@ -115,6 +118,18 @@ DECLARE
   v_user_id           uuid;
   v_email_lc          text;
   v_snapshot_diag     boolean;
+
+  -- FROZEN canonical detector outputs for the selected rn=1 winner. These are
+  -- captured ONCE at selection and are the commercial opportunity input that is
+  -- persisted verbatim in the Stage 013 canonical shape. Detector scoring is
+  -- NEVER re-evaluated after selection.
+  v_det_family        text;
+  v_det_def_priority  integer;   -- detector.default_priority (== definition.default_priority)
+  v_det_def_score     integer;   -- detector.default_score (catalogue default, audited only)
+  v_det_final_score   integer;   -- detector.final_score (PERSISTED score, 0..1000)
+  v_det_score_comp    jsonb;     -- detector.score_components
+  v_det_is_closing    boolean;   -- detector.is_closing
+  v_detected_at       timestamptz;  -- ONE frozen timestamp for detected_at/expires_at/dedupe
 
   -- Canonical-detector re-confirmation (drift guard before writes). The user is
   -- SELECTED from the detector and must STILL be a rn=1 new_account_no_purchase
@@ -351,8 +366,14 @@ BEGIN
   --       opportunity so it cannot interfere with NBA/materialisation, and free
   --       of any existing recipient.
   -- ========================================================================
-  SELECT p.user_id, p.email_lc, p.marketing_eligible_snapshot
-    INTO v_user_id, v_email_lc, v_snapshot_diag
+  SELECT p.user_id, p.email_lc, p.marketing_eligible_snapshot,
+         -- FREEZE the exact detector outputs needed to persist the canonical
+         -- Stage 013 opportunity shape. No re-scoring happens after this.
+         detector.family, detector.default_priority, detector.default_score,
+         detector.final_score, detector.score_components, detector.is_closing
+    INTO v_user_id, v_email_lc, v_snapshot_diag,
+         v_det_family, v_det_def_priority, v_det_def_score,
+         v_det_final_score, v_det_score_comp, v_det_is_closing
     -- DETECTION comes first and is authoritative for the opportunity itself.
     FROM public.wtf_marketing_opportunity_candidates_preview() detector
     JOIN public.customer_marketing_profiles p
@@ -413,6 +434,25 @@ BEGIN
       c_opp_type, v_det_key, v_det_rn, (v_det_campaign IS NOT NULL);
   END IF;
 
+  -- FROZEN-VALUE INVARIANTS.
+  --   (a) The detector's default_priority is catalogue-authoritative and MUST
+  --       equal the definition's configured default_priority (a contract of the
+  --       current detector — see 011: def.default_priority feeds the candidate).
+  --       base_priority is persisted from the DETECTOR value below.
+  IF v_det_def_priority IS DISTINCT FROM v_def_priority THEN
+    RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: detector.default_priority (%) <> definition.default_priority (%).',
+      v_det_def_priority, v_def_priority;
+  END IF;
+  --   (b) final_score is the DYNAMIC persisted score. It may differ from the
+  --       definition default (dynamic components), but MUST be within the
+  --       opportunity score bounds [0,1000] enforced by the detector/schema.
+  IF v_det_final_score IS NULL
+     OR v_det_final_score < 0
+     OR v_det_final_score > 1000 THEN
+    RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: detector.final_score % is outside the allowed [0,1000] opportunity score bounds.',
+      v_det_final_score;
+  END IF;
+
   -- ========================================================================
   -- TEMPORARY ENABLEMENT — ONLY these three switches, inside this txn.
   --   Sending / discovery / batch / daily cap / weekly cap are NEVER changed.
@@ -463,29 +503,62 @@ BEGIN
   END IF;
 
   -- ========================================================================
-  -- CANARY OPPORTUNITY CREATION — exactly ONE, directly inserted.
-  --   automation_id provenance stays NULL (Stage 019 routing is authoritative).
-  --   campaign_id / promotion_id NULL. Defaults drive priority/score/expiry.
-  --   Deterministic canary-specific dedupe key.
+  -- CANARY OPPORTUNITY CREATION — exactly ONE, directly inserted, in the
+  -- EXACT CANONICAL Stage 013 (3C2F) persisted shape. This row is intentionally
+  -- left permanently in the production ledger, so it MUST be indistinguishable
+  -- from a genuine discovery-persisted opportunity — no synthetic canary format.
+  --
+  --   Reproduces public.discover_marketing_opportunities()'s persistence
+  --   verbatim for an rn=1 winner (see migration 013):
+  --     * automation_id NULL, external_contact_id NULL, promotion_id NULL
+  --     * campaign_id = detector.campaign_id (NULL here by selection contract)
+  --     * base_priority = detector.default_priority (frozen)
+  --     * score        = detector.final_score      (frozen, NOT the definition)
+  --     * detected_at  = v_detected_at (ONE frozen timestamp)
+  --     * expires_at   = detected_at + definition.default_expiry_hours
+  --     * canonical reason / context_snapshot JSON (stage/detector = 3C2F)
+  --     * canonical discv1 expiry-window dedupe key
+  --   This is STILL a DIRECT insert — discovery is NEVER enabled or invoked.
   -- ========================================================================
-  v_expires_at := now() + make_interval(hours => v_def_expiry);
-  v_dedupe_key := 'stage-3d2c-one-recipient-canary:' || c_opp_type || ':' || v_user_id::text;
+  -- ONE frozen timestamp for detected_at, expires_at AND the dedupe window.
+  v_detected_at := now();
+  v_expires_at  := v_detected_at + make_interval(hours => v_def_expiry);
+
+  -- CANONICAL Stage 013 expiry-window-bucketed dedupe key (discv1). campaign_id
+  -- is NULL by selection contract, so COALESCE resolves to '-'. The bucket is
+  -- floor(detected_at_epoch / (GREATEST(default_expiry_hours,1) * 3600)).
+  v_dedupe_key :=
+    'discv1:' || v_user_id::text
+    || ':' || c_opp_type
+    || ':' || COALESCE(NULL::text, '-')     -- campaign_id IS NULL by contract
+    || ':w' || floor(
+         extract(epoch FROM v_detected_at)
+         / (GREATEST(v_def_expiry, 1) * 3600)
+       )::bigint::text;
+
+  -- Canonical dedupe MUST be collision-free. Do NOT invent an alternate key.
+  IF EXISTS (
+    SELECT 1 FROM public.marketing_opportunities o WHERE o.dedupe_key = v_dedupe_key
+  ) THEN
+    RAISE EXCEPTION 'canary_canonical_dedupe_conflict';
+  END IF;
 
   INSERT INTO public.marketing_opportunities (
     user_id,
     external_contact_id,
     email_lc,
-    automation_id,          -- NULL provenance (route is authoritative)
-    opportunity_type,
-    campaign_id,            -- NULL
-    promotion_id,           -- NULL
-    expires_at,
-    base_priority,          -- from definition default_priority
-    score,                  -- from definition default_score
+    automation_id,          -- NULL provenance (Stage 019 routing is authoritative)
+    opportunity_type,       -- detector.opportunity_key -> definitions FK
+    campaign_id,            -- detector.campaign_id (NULL by contract)
+    promotion_id,           -- NULL (no promotion context from candidates)
+    detected_at,            -- frozen invocation timestamp
+    expires_at,             -- detected_at + definition default_expiry_hours
+    base_priority,          -- detector.default_priority (frozen)
+    score,                  -- detector.final_score (frozen, NOT definition default)
     state,                  -- open
-    reason,                 -- bounded structured object
-    context_snapshot,       -- bounded structured object
-    dedupe_key
+    reason,                 -- CANONICAL Stage 013 reason
+    context_snapshot,       -- CANONICAL Stage 013 context
+    dedupe_key              -- CANONICAL discv1 expiry-window key
   )
   VALUES (
     v_user_id,
@@ -495,12 +568,27 @@ BEGIN
     c_opp_type,
     NULL,
     NULL,
+    v_detected_at,
     v_expires_at,
-    v_def_priority,
-    v_def_score,
+    v_det_def_priority,
+    v_det_final_score,
     'open',
-    jsonb_build_object('canary', 'stage_3d2c_one_recipient', 'source', 'manual_canary'),
-    jsonb_build_object('canary', 'stage_3d2c_one_recipient'),
+    jsonb_build_object(
+      'definitionKey', c_opp_type,
+      'family',        v_det_family,
+      'detector',      'wtf_marketing_opportunity_candidates_preview',
+      'stage',         '3C2F',
+      'basePriority',  v_det_def_priority,
+      'finalScore',    v_det_final_score,
+      'isClosing',     v_det_is_closing
+    ),
+    jsonb_build_object(
+      'scoreComponents',          v_det_score_comp,
+      'campaignId',               NULL,
+      'detectorStage',            '3C2F',
+      'selectedAsNextBestAction', true,
+      'rn',                       1
+    ),
     v_dedupe_key
   )
   RETURNING id INTO v_opp_id;
@@ -510,6 +598,87 @@ BEGIN
   IF v_opp_after <> 7 THEN
     RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: ledger is % after insert (expected 7).', v_opp_after;
   END IF;
+
+  -- ========================================================================
+  -- CANONICAL PERSISTED-SHAPE ASSERTIONS — the durable opportunity MUST match
+  -- the exact Stage 013 discovery shape, BEFORE we touch the gate.
+  -- ========================================================================
+  DECLARE
+    v_o_user      uuid;
+    v_o_external  uuid;
+    v_o_email     text;
+    v_o_auto      uuid;
+    v_o_type      text;
+    v_o_campaign  uuid;
+    v_o_promo     uuid;
+    v_o_detected  timestamptz;
+    v_o_expires   timestamptz;
+    v_o_priority  integer;
+    v_o_score     integer;
+    v_o_state     text;
+    v_o_reason    jsonb;
+    v_o_ctx       jsonb;
+    v_o_dedupe    text;
+  BEGIN
+    SELECT o.user_id, o.external_contact_id, o.email_lc, o.automation_id,
+           o.opportunity_type, o.campaign_id, o.promotion_id,
+           o.detected_at, o.expires_at, o.base_priority, o.score, o.state,
+           o.reason, o.context_snapshot, o.dedupe_key
+      INTO v_o_user, v_o_external, v_o_email, v_o_auto,
+           v_o_type, v_o_campaign, v_o_promo,
+           v_o_detected, v_o_expires, v_o_priority, v_o_score, v_o_state,
+           v_o_reason, v_o_ctx, v_o_dedupe
+      FROM public.marketing_opportunities o
+     WHERE o.id = v_opp_id;
+
+    IF v_o_user     IS DISTINCT FROM v_user_id
+       OR v_o_external IS NOT NULL
+       OR v_o_email    IS DISTINCT FROM v_email_lc
+       OR v_o_auto     IS NOT NULL
+       OR v_o_type     IS DISTINCT FROM c_opp_type
+       OR v_o_campaign IS NOT NULL
+       OR v_o_promo    IS NOT NULL
+       OR v_o_detected IS DISTINCT FROM v_detected_at
+       OR v_o_expires  IS DISTINCT FROM v_expires_at
+       -- expiry difference equals the definition's configured default_expiry_hours.
+       OR v_o_expires  IS DISTINCT FROM (v_o_detected + make_interval(hours => v_def_expiry))
+       OR v_o_priority IS DISTINCT FROM v_det_def_priority
+       OR v_o_score    IS DISTINCT FROM v_det_final_score
+       OR v_o_state    IS DISTINCT FROM 'open'
+       OR v_o_dedupe   IS DISTINCT FROM v_dedupe_key THEN
+      RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: persisted opportunity is not the canonical Stage 013 shape (type=%, auto set=%, campaign set=%, promo set=%, priority=%, score=%, state=%).',
+        v_o_type, (v_o_auto IS NOT NULL), (v_o_campaign IS NOT NULL),
+        (v_o_promo IS NOT NULL), v_o_priority, v_o_score, v_o_state;
+    END IF;
+
+    -- Canonical reason structure (Stage 013 / 3C2F).
+    IF v_o_reason->>'definitionKey' IS DISTINCT FROM c_opp_type
+       OR v_o_reason->>'family'     IS DISTINCT FROM v_det_family
+       OR v_o_reason->>'detector'   IS DISTINCT FROM 'wtf_marketing_opportunity_candidates_preview'
+       OR v_o_reason->>'stage'      IS DISTINCT FROM '3C2F'
+       OR (v_o_reason->>'basePriority')::int IS DISTINCT FROM v_det_def_priority
+       OR (v_o_reason->>'finalScore')::int   IS DISTINCT FROM v_det_final_score
+       OR (v_o_reason->>'isClosing')::boolean IS DISTINCT FROM v_det_is_closing THEN
+      RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: persisted reason is not the canonical Stage 013 structure (%).', v_o_reason;
+    END IF;
+
+    -- Canonical context_snapshot structure (Stage 013 / 3C2F).
+    IF v_o_ctx->'scoreComponents' IS DISTINCT FROM v_det_score_comp
+       OR (v_o_ctx->>'detectorStage') IS DISTINCT FROM '3C2F'
+       OR (v_o_ctx->>'selectedAsNextBestAction')::boolean IS DISTINCT FROM true
+       OR (v_o_ctx->>'rn')::int IS DISTINCT FROM 1
+       -- campaignId is JSON null (not present as a real campaign).
+       OR (v_o_ctx ? 'campaignId') IS DISTINCT FROM true
+       OR jsonb_typeof(v_o_ctx->'campaignId') IS DISTINCT FROM 'null' THEN
+      RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: persisted context_snapshot is not the canonical Stage 013 structure (%).', v_o_ctx;
+    END IF;
+
+    -- NO canary-only markers may leak into the durable production payload.
+    IF (v_o_reason ? 'canary') OR (v_o_ctx ? 'canary')
+       OR (v_o_reason ? 'source') THEN
+      RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: canary-only markers leaked into the canonical opportunity payload.';
+    END IF;
+  END;
 
   -- ========================================================================
   -- VERIFY THE GATE BEFORE MATERIALISING — call the PRIVATE canonical gate
