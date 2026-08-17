@@ -144,13 +144,20 @@ END
 $preflight$;
 
 -- ----------------------------------------------------------------------------
--- Recalibration: UPDATE ONLY the three target rows. default_priority is the
--- ONLY column changed (plus the table's conventional updated_at stamp). The
--- WHERE clause is doubly scoped: the exact three keys AND their exact expected
+-- Recalibration: UPDATE ONLY the three target rows, performed inside PL/pgSQL
+-- so we can assert the affected-row count with GET DIAGNOSTICS and RAISE
+-- EXCEPTION on any mismatch. There is NO deliberate division-by-zero (or any
+-- other synthetic runtime-error) abort mechanism. default_priority is the ONLY
+-- column changed (plus the table's conventional updated_at stamp). The WHERE
+-- clause is doubly scoped: the exact three keys AND their exact expected
 -- current priorities, so a concurrent change cannot be clobbered. enabled is
--- NOT touched.
+-- NOT touched. The resulting-priority and enabled invariants are re-asserted in
+-- the post-update verification block below.
 -- ----------------------------------------------------------------------------
-WITH calibrated AS (
+DO $calibrate$
+DECLARE
+  v_rows integer;
+BEGIN
   UPDATE public.marketing_opportunity_definitions AS d
      SET default_priority = CASE d.opportunity_key
                               WHEN 'high_value_customer_at_risk'    THEN 1
@@ -160,27 +167,17 @@ WITH calibrated AS (
          updated_at = now()
    WHERE (d.opportunity_key = 'high_value_customer_at_risk'    AND d.default_priority = 2)
       OR (d.opportunity_key = 'vip_relevant_campaign'          AND d.default_priority = 1)
-      OR (d.opportunity_key = 'reactivated_customer_follow_up' AND d.default_priority = 4)
-  RETURNING d.opportunity_key, d.default_priority, d.enabled
-)
-SELECT
-  CASE
-    WHEN (SELECT count(*) FROM calibrated) <> 3 THEN
-      -- Exactly three rows must have been recalibrated.
-      (SELECT 1 / 0)  -- force abort: unexpected affected-row count
-    WHEN EXISTS (
-      SELECT 1 FROM calibrated
-       WHERE NOT (
-         (opportunity_key = 'high_value_customer_at_risk'    AND default_priority = 1)
-         OR (opportunity_key = 'vip_relevant_campaign'          AND default_priority = 4)
-         OR (opportunity_key = 'reactivated_customer_follow_up' AND default_priority = 3)
-       )
-    ) THEN
-      (SELECT 1 / 0)  -- force abort: unexpected resulting priority
-    WHEN EXISTS (SELECT 1 FROM calibrated WHERE enabled IS DISTINCT FROM false) THEN
-      (SELECT 1 / 0)  -- force abort: a target row is enabled
-    ELSE 0
-  END AS calibration_ok;
+      OR (d.opportunity_key = 'reactivated_customer_follow_up' AND d.default_priority = 4);
+
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+
+  IF v_rows <> 3 THEN
+    RAISE EXCEPTION
+      'Stage 3C2E calibration failed: expected 3 updated rows, got %.',
+      v_rows;
+  END IF;
+END
+$calibrate$;
 
 -- ----------------------------------------------------------------------------
 -- Post-update verification: assert the FINAL state of the three rows and that

@@ -39,6 +39,13 @@ const TARGET_KEYS = [
   'reactivated_customer_follow_up',
 ]
 
+// The recalibration UPDATE statement, isolated from the comment-stripped
+// executable text (so a comment that merely mentions "GET DIAGNOSTICS" cannot
+// mis-bound the slice). Runs from the UPDATE keyword to the GET DIAGNOSTICS
+// statement that immediately follows it.
+const _updStart = FLAT_EXEC.indexOf('UPDATE public.marketing_opportunity_definitions')
+const UPDATE_BLOCK = FLAT_EXEC.slice(_updStart, FLAT_EXEC.indexOf('GET DIAGNOSTICS', _updStart))
+
 describe('012 priority calibration — transaction & safety envelope', () => {
   it('runs inside a single BEGIN/COMMIT transaction', () => {
     expect(FLAT_EXEC).toMatch(/BEGIN;/)
@@ -104,15 +111,11 @@ describe('012 priority calibration — targets exactly three keys', () => {
     expect(FLAT_EXEC).toMatch(/v_prio_vipr IS DISTINCT FROM 1/i)
     // vip_reactivation must never appear as an UPDATE target (CASE WHEN arm or
     // WHERE opportunity_key = 'vip_reactivation' inside the UPDATE).
-    const updateBlock = FLAT.slice(FLAT.indexOf('UPDATE public.marketing_opportunity_definitions'), FLAT.indexOf('RETURNING'))
-    expect(updateBlock).not.toContain('vip_reactivation')
+    expect(UPDATE_BLOCK).not.toContain('vip_reactivation')
   })
 
   it('the UPDATE WHERE clause is scoped to only the three target keys', () => {
-    const updateBlock = FLAT.slice(
-      FLAT.indexOf('UPDATE public.marketing_opportunity_definitions'),
-      FLAT.indexOf('RETURNING'),
-    )
+    const updateBlock = UPDATE_BLOCK
     const keysInUpdate = TARGET_KEYS.filter((k) => updateBlock.includes(k))
     expect(keysInUpdate.sort()).toEqual([...TARGET_KEYS].sort())
     // No OTHER opportunity_key literal appears in the UPDATE.
@@ -131,10 +134,7 @@ describe('012 priority calibration — targets exactly three keys', () => {
 })
 
 describe('012 priority calibration — exact before -> after expectations', () => {
-  const updateBlock = FLAT.slice(
-    FLAT.indexOf('UPDATE public.marketing_opportunity_definitions'),
-    FLAT.indexOf('RETURNING'),
-  )
+  const updateBlock = UPDATE_BLOCK
 
   it('high_value_customer_at_risk: 2 -> 1', () => {
     expect(updateBlock).toMatch(/WHEN 'high_value_customer_at_risk'\s+THEN 1/)
@@ -157,8 +157,35 @@ describe('012 priority calibration — exact before -> after expectations', () =
     )
   })
 
-  it('asserts exactly three rows were recalibrated', () => {
-    expect(FLAT_EXEC).toMatch(/count\(\*\) FROM calibrated\) <> 3/i)
+  it('asserts exactly three rows were recalibrated via GET DIAGNOSTICS ROW_COUNT', () => {
+    // The UPDATE runs inside PL/pgSQL and the affected-row count is captured
+    // with GET DIAGNOSTICS and asserted to be exactly 3.
+    expect(FLAT_EXEC).toMatch(/GET DIAGNOSTICS\s+v_rows\s*=\s*ROW_COUNT/i)
+    expect(FLAT_EXEC).toMatch(/IF\s+v_rows\s*<>\s*3\s+THEN/i)
+    expect(FLAT).toMatch(/expected 3 updated rows, got %/i)
+  })
+})
+
+describe('012 priority calibration — NO deliberate runtime-error abort mechanism', () => {
+  it('contains NO division-by-zero (or equivalent) synthetic abort expression', () => {
+    // No "1 / 0" in any spacing, in executable SQL or comments.
+    expect(/\b1\s*\/\s*0\b/.test(CODE)).toBe(false)
+    // The old CTE-based abort machinery is gone entirely.
+    expect(/WITH\s+calibrated\s+AS/i.test(FLAT)).toBe(false)
+    expect(/calibration_ok/i.test(FLAT)).toBe(false)
+    expect(/force abort/i.test(CODE)).toBe(false)
+  })
+
+  it('uses PL/pgSQL RAISE EXCEPTION as the failure mechanism', () => {
+    // The row-count guard raises rather than dividing by zero.
+    expect(FLAT_EXEC).toMatch(/IF\s+v_rows\s*<>\s*3\s+THEN\s+RAISE EXCEPTION/i)
+    // Overall the migration relies exclusively on RAISE EXCEPTION to abort.
+    expect((FLAT_EXEC.match(/RAISE EXCEPTION/gi) || []).length).toBeGreaterThanOrEqual(5)
+  })
+
+  it('performs the UPDATE inside a PL/pgSQL DO block', () => {
+    // The calibration UPDATE lives in a DO $...$ block (not a bare CTE SELECT).
+    expect(FLAT).toMatch(/DO \$calibrate\$[\s\S]*UPDATE public\.marketing_opportunity_definitions[\s\S]*\$calibrate\$;/i)
   })
 })
 
