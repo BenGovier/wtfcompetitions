@@ -234,12 +234,19 @@ describe('020 — canonical gate as the only eligibility source', () => {
 // 7. Run creation / reuse.
 // ===========================================================================
 describe('020 — run grouping, creation and reuse', () => {
-  it('R1. groups by (delivery_automation_id, promotion_id)', () => {
-    expect(/SELECT DISTINCT delivery_automation_id, promotion_id\s+FROM candidates/i.test(MATERIALISE)).toBe(true)
+  it('R1. groups by (delivery_automation_id, promotion_id) from the FROZEN set', () => {
+    expect(/SELECT DISTINCT delivery_automation_id, promotion_id\s+FROM tmp_materialise_candidates/i.test(MATERIALISE)).toBe(true)
   })
 
-  it('R2. reuses an existing active (preparing/queued/processing) run per group', () => {
-    expect(/ar\.status IN \('preparing', 'queued', 'processing'\)/i.test(MATERIALISE)).toBe(true)
+  it('R2. reuses ONLY a preparing run per group (never queued/processing)', () => {
+    // Both the reused CTE and the run_map fallback lookup must restrict to
+    // status = 'preparing'. Neither may attach to queued/processing runs.
+    const reuseLookups = MATERIALISE.match(/ar\.status\s*=\s*'preparing'/gi) ?? []
+    expect(reuseLookups.length).toBeGreaterThanOrEqual(2)
+    // No reuse/attachment path uses the 3-state active predicate.
+    expect(/ar\.status IN \('preparing', 'queued', 'processing'\)/i.test(MATERIALISE)).toBe(false)
+    // A queued/processing run is only ever inspected by the BLOCKER check.
+    expect(/ar\.status IN \('queued', 'processing'\)/i.test(MATERIALISE)).toBe(true)
   })
 
   it('R3. new runs are created with status preparing (never queued/processing/completed)', () => {
@@ -270,9 +277,10 @@ describe('020 — run grouping, creation and reuse', () => {
   })
 
   it('R5. only groups with candidates exist, so no empty run is created', () => {
-    // groups is derived from candidates; created only inserts for groups without
-    // a reusable run. There is no path that inserts a run independent of a group.
-    expect(/groups AS \(\s*SELECT DISTINCT delivery_automation_id, promotion_id\s+FROM candidates\s*\)/i.test(MATERIALISE)).toBe(true)
+    // groups is derived from the frozen candidate set; created only inserts for
+    // groups without a reusable preparing run. There is no path that inserts a run
+    // independent of a group, and the atomic invariant rolls back empty runs.
+    expect(/groups AS \(\s*SELECT DISTINCT delivery_automation_id, promotion_id\s+FROM tmp_materialise_candidates\s*\)/i.test(MATERIALISE)).toBe(true)
   })
 })
 
@@ -350,11 +358,13 @@ describe('020 — return contract', () => {
       'requestedLimit',
       'effectiveLimit',
       'candidateCount',
+      'finalCandidateCount',
       'insertedRecipients',
       'opportunitiesSelected',
       'runsCreated',
       'runsReused',
       'groupCount',
+      'blockedRunGroups',
     ]) {
       expect(new RegExp(`'${key}'`).test(MATERIALISE)).toBe(true)
     }
@@ -366,8 +376,15 @@ describe('020 — return contract', () => {
     expect(/'userId'|'email'|'opportunityId'|'recipientId'|'runId'|'automationId'|'campaignId'|'providerId'/i.test(MATERIALISE)).toBe(false)
   })
 
-  it('N3. no candidates yields no_eligible_candidates', () => {
-    expect(/WHEN v_candidate_count = 0 THEN 'no_eligible_candidates' ELSE 'ok'/i.test(MATERIALISE)).toBe(true)
+  it('N3. no candidates yields no_eligible_candidates with zero writes', () => {
+    expect(/IF v_candidate_count = 0 THEN/i.test(MATERIALISE)).toBe(true)
+    expect(/'status', 'no_eligible_candidates'/i.test(MATERIALISE)).toBe(true)
+  })
+
+  it('N4. the ok path reports finalCandidateCount and blockedRunGroups=0', () => {
+    const okObj = MATERIALISE.slice(MATERIALISE.indexOf("'status', 'ok'"))
+    expect(/'finalCandidateCount', v_candidate_count/i.test(okObj)).toBe(true)
+    expect(/'blockedRunGroups', 0/i.test(okObj)).toBe(true)
   })
 })
 
@@ -449,5 +466,174 @@ describe('020 — install preflight and inert post-install', () => {
   it('P9. wraps everything in a single transaction (BEGIN ... COMMIT)', () => {
     expect(/^\s*BEGIN;/im.test(RAW)).toBe(true)
     expect(/COMMIT;/i.test(RAW)).toBe(true)
+  })
+})
+
+// ===========================================================================
+// 13. RUN-LIFECYCLE SAFETY — recipients attach ONLY to preparing runs.
+// ===========================================================================
+describe('020 — run-lifecycle safety (preparing-only attachment)', () => {
+  // The reused CTE and the run_map fallback both attach only to preparing runs.
+  const attachLookups = MATERIALISE.match(/ar\.status\s*=\s*'preparing'/gi) ?? []
+
+  it('LC1. recipient attachment reuses ONLY run.status = preparing', () => {
+    expect(attachLookups.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('LC2. a queued run is NOT reused for attachment', () => {
+    // No attachment/reuse lookup references queued as an eligible reuse status.
+    // queued only appears inside the blocker predicate IN ('queued','processing').
+    expect(/status\s*=\s*'queued'\s+ORDER BY ar\.started_at/i.test(MATERIALISE)).toBe(false)
+    expect(/ar\.status IN \('preparing', 'queued', 'processing'\)\s+ORDER BY/i.test(MATERIALISE)).toBe(false)
+  })
+
+  it('LC3. a processing run is NOT reused for attachment', () => {
+    expect(/status\s*=\s*'processing'\s+ORDER BY ar\.started_at/i.test(MATERIALISE)).toBe(false)
+  })
+
+  it('LC4. a group with a queued/processing active run yields active_run_not_preparing', () => {
+    // Blocker check detects queued/processing active runs on the frozen set.
+    expect(/ar\.status IN \('queued', 'processing'\)/i.test(MATERIALISE)).toBe(true)
+    expect(/IF v_blocked_groups > 0 THEN/i.test(MATERIALISE)).toBe(true)
+    expect(/'status', 'active_run_not_preparing'/i.test(MATERIALISE)).toBe(true)
+  })
+
+  it('LC5/6/7. active_run_not_preparing performs zero recipient/run/opportunity writes', () => {
+    // The blocked return sits BEFORE the write CTE (section I). Everything from
+    // the blocked branch to its RETURN contains no INSERT/UPDATE.
+    const blockedIdx = MATERIALISE.indexOf("'status', 'active_run_not_preparing'")
+    const branchStart = MATERIALISE.lastIndexOf('IF v_blocked_groups > 0 THEN', blockedIdx)
+    const branchEnd = MATERIALISE.indexOf('END IF;', blockedIdx)
+    const branch = MATERIALISE.slice(branchStart, branchEnd)
+    expect(/INSERT INTO/i.test(branch)).toBe(false)
+    expect(/UPDATE public\./i.test(branch)).toBe(false)
+    // The blocked return zeroes all write counters.
+    expect(/'insertedRecipients', 0/i.test(branch)).toBe(true)
+    expect(/'opportunitiesSelected', 0/i.test(branch)).toBe(true)
+    expect(/'runsCreated', 0/i.test(branch)).toBe(true)
+    // The blocker check precedes the write CTE.
+    const writeIdx = MATERIALISE.indexOf('INSERT INTO public.marketing_automation_runs')
+    expect(blockedIdx).toBeLessThan(writeIdx)
+  })
+
+  it('LC8. no fallback ever attaches a recipient to a queued/processing run', () => {
+    // The ONLY 3-state IN (...) predicate left in the migration is the ON CONFLICT
+    // clause matching the (unchanged) active-run unique index — never a reuse/
+    // attachment SELECT. Reuse SELECTs and run_map fallback use = 'preparing'.
+    const threeState = MATERIALISE.match(/IN \('preparing', 'queued', 'processing'\)/gi) ?? []
+    // Exactly one occurrence: the ON CONFLICT ... WHERE status IN (...) predicate
+    // that mirrors the (unchanged) active-run unique index.
+    expect(threeState.length).toBe(1)
+    // That sole occurrence is the ON CONFLICT index predicate, never a reuse SELECT.
+    expect(
+      /ON CONFLICT \(automation_id, COALESCE\(promotion_id, '00000000-0000-0000-0000-000000000000'::uuid\)\)\s+WHERE status IN \('preparing', 'queued', 'processing'\)/i.test(
+        MATERIALISE,
+      ),
+    ).toBe(true)
+    // And it is immediately followed by DO NOTHING (an upsert guard, not an attach).
+    const idx = MATERIALISE.indexOf("IN ('preparing', 'queued', 'processing')")
+    expect(/^\s*DO NOTHING/i.test(MATERIALISE.slice(idx + "IN ('preparing', 'queued', 'processing')".length))).toBe(true)
+  })
+})
+
+// ===========================================================================
+// 14. FROZEN CANDIDATE SET — one gate evaluation shared by every step.
+// ===========================================================================
+describe('020 — frozen candidate set', () => {
+  it('FZ1. the gate is evaluated once into an ON COMMIT DROP temp relation', () => {
+    expect(/CREATE TEMP TABLE IF NOT EXISTS tmp_materialise_candidates/i.test(MATERIALISE)).toBe(true)
+    expect(/\)\s*ON COMMIT DROP;/i.test(MATERIALISE)).toBe(true)
+    expect(/TRUNCATE tmp_materialise_candidates;/i.test(MATERIALISE)).toBe(true)
+    // The gate function is called exactly once in the whole body.
+    const gateCalls = MATERIALISE.match(/wtf_marketing_recipient_gate_preview\(\)/gi) ?? []
+    expect(gateCalls.length).toBe(1)
+  })
+
+  it('FZ2. blocker check, grouping, insert and transition all read the SAME frozen set', () => {
+    // Blocker check reads the temp table.
+    expect(/FROM \(SELECT DISTINCT delivery_automation_id, promotion_id FROM tmp_materialise_candidates\)/i.test(MATERIALISE)).toBe(true)
+    // Grouping reads the temp table.
+    expect(/SELECT DISTINCT delivery_automation_id, promotion_id\s+FROM tmp_materialise_candidates/i.test(MATERIALISE)).toBe(true)
+    // Recipient insert reads the temp table.
+    expect(/FROM tmp_materialise_candidates c\b/i.test(MATERIALISE)).toBe(true)
+    // The gate itself is only ever read into the temp table, never re-queried.
+    expect(/FROM public\.wtf_marketing_recipient_gate_preview\(\) g/i.test(MATERIALISE)).toBe(true)
+    const insertFromGate = MATERIALISE.indexOf('INSERT INTO tmp_materialise_candidates')
+    const gateIdx = MATERIALISE.indexOf('wtf_marketing_recipient_gate_preview()')
+    expect(insertFromGate).toBeGreaterThanOrEqual(0)
+    expect(gateIdx).toBeGreaterThan(insertFromGate)
+  })
+
+  it('FZ3. no row-by-row recipient loop (set-based only)', () => {
+    // No PL/pgSQL cursor / FOR ... LOOP over candidates driving recipient inserts.
+    expect(/\bFOR\b[\s\S]{0,80}\bIN\b[\s\S]{0,120}\bLOOP\b/i.test(MATERIALISE)).toBe(false)
+    expect(/\bLOOP\b/i.test(MATERIALISE)).toBe(false)
+    expect(/OPEN\s+\w+\s+FOR|FETCH\s+\w+|CURSOR/i.test(MATERIALISE)).toBe(false)
+    // Candidate count is taken from a single set INSERT via GET DIAGNOSTICS.
+    expect(/GET DIAGNOSTICS v_candidate_count = ROW_COUNT/i.test(MATERIALISE)).toBe(true)
+  })
+})
+
+// ===========================================================================
+// 15. ATOMIC ALL-OR-NOTHING INVARIANT — mismatch RAISES (rolls back).
+// ===========================================================================
+describe('020 — atomic all-or-nothing invariant', () => {
+  it('AT1. requires insertedRecipients == finalCandidateCount == opportunitiesSelected', () => {
+    expect(/IF v_inserted <> v_candidate_count OR v_opps_selected <> v_inserted THEN/i.test(MATERIALISE)).toBe(true)
+  })
+
+  it('AT2. a mismatch RAISES an exception (rollback), not a returned error JSON', () => {
+    const guardIdx = MATERIALISE.indexOf('IF v_inserted <> v_candidate_count')
+    const guard = MATERIALISE.slice(guardIdx, MATERIALISE.indexOf('END IF;', guardIdx))
+    expect(/RAISE EXCEPTION/i.test(guard)).toBe(true)
+    // The guard must NOT merely RETURN a status object.
+    expect(/RETURN jsonb_build_object/i.test(guard)).toBe(false)
+    // Uses a serialization_failure error code so callers can retry safely.
+    expect(/USING ERRCODE = 'serialization_failure'/i.test(MATERIALISE)).toBe(true)
+  })
+
+  it('AT3. the ok RETURN is only reachable AFTER the invariant passes', () => {
+    const guardIdx = MATERIALISE.indexOf('IF v_inserted <> v_candidate_count')
+    const okIdx = MATERIALISE.indexOf("'status', 'ok'")
+    expect(guardIdx).toBeGreaterThan(0)
+    expect(okIdx).toBeGreaterThan(guardIdx)
+  })
+
+  it('AT4. unresolved-race rows are excluded from insert so the invariant can catch them', () => {
+    // Recipient insert only proceeds for a resolved (non-null) run_id; an
+    // unresolved concurrent run lowers the inserted count and trips the invariant.
+    expect(/WHERE rm\.run_id IS NOT NULL/i.test(MATERIALISE)).toBe(true)
+  })
+
+  it('AT5. the state=open guard means a non-open race lowers selected and rolls back', () => {
+    // Opportunity transition is guarded on open; combined with the invariant this
+    // means a candidate that is no longer open cannot commit a recipient.
+    expect(/AND o\.state = 'open'/i.test(MATERIALISE)).toBe(true)
+  })
+
+  it('AT6. a newly created run cannot commit empty (invariant rolls runs back too)', () => {
+    // All writes (created runs, inserted recipients, selected opps) are in one
+    // WITH statement inside one function invocation; a RAISE after the SELECT..INTO
+    // rolls the entire invocation back, so no orphan preparing run can persist.
+    expect(/created AS \(\s*INSERT INTO public\.marketing_automation_runs/i.test(MATERIALISE)).toBe(true)
+    const raiseIdx = MATERIALISE.indexOf('RAISE EXCEPTION', MATERIALISE.indexOf('IF v_inserted <> v_candidate_count'))
+    const createdIdx = MATERIALISE.indexOf('created AS (')
+    expect(createdIdx).toBeGreaterThan(0)
+    expect(raiseIdx).toBeGreaterThan(createdIdx)
+  })
+})
+
+// ===========================================================================
+// 16. NORMAL REPEAT INVOCATION stays duplicate-safe.
+// ===========================================================================
+describe('020 — repeat invocation safety', () => {
+  it('RP1. duplicate protection: ON CONFLICT DO NOTHING + canonical opportunity key', () => {
+    // Already-linked opportunities are filtered by the gate before becoming
+    // candidates; the unique indexes are a backstop, and any genuine race that
+    // shrinks the insert set trips the atomic invariant instead of committing a
+    // partial batch.
+    expect(/ON CONFLICT DO NOTHING/i.test(MATERIALISE)).toBe(true)
+    expect(/'marketing-opportunity:' \|\| c\.opportunity_id::text/i.test(MATERIALISE)).toBe(true)
+    expect(/IF v_inserted <> v_candidate_count OR v_opps_selected <> v_inserted THEN/i.test(MATERIALISE)).toBe(true)
   })
 })

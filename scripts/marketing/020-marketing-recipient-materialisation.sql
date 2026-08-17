@@ -57,13 +57,42 @@
 --     the Stage 017 UNIQUE(opportunity_id) WHERE opportunity_id IS NOT NULL index
 --     this provides TWO independent deterministic duplicate protections.
 --
---   RUN GROUPING (exact existing contract, verified):
+--   RUN GROUPING + LIFECYCLE (exact contract, verified):
 --     marketing_automation_runs_active_uidx is UNIQUE on
 --       (automation_id, COALESCE(promotion_id, '000...'::uuid))
---       WHERE status IN ('preparing','queued','processing').
---     So the canonical grouping is (delivery_automation_id, promotion_id) and a
---     compatible ACTIVE run is REUSED; otherwise a new 'preparing' run is created.
---     Runs are created ONLY for groups that yield >= 1 recipient (no empty runs).
+--       WHERE status IN ('preparing','queued','processing').  [index NOT changed]
+--     Canonical grouping is (delivery_automation_id, promotion_id). The MATERIALISER
+--     may attach recipients ONLY to a run whose status = 'preparing':
+--       * If a compatible PREPARING run exists  -> REUSE it.
+--       * If NO active run exists               -> CREATE a new 'preparing' run.
+--       * If an active run exists but its status is 'queued' or 'processing' -> that
+--         group is BLOCKED. The run has advanced beyond the content-staging boundary
+--         and a future delivery worker may legitimately consume it, so a content-
+--         unprepared recipient must NEVER be appended to it. The whole invocation
+--         performs ZERO writes and returns status='active_run_not_preparing' with a
+--         safe aggregate blockedRunGroups count (fail-whole-batch, never partial).
+--     Stage 020 NEVER creates 'queued'/'processing' runs and NEVER falls back to a
+--     non-preparing run. Runs are created ONLY for groups that yield >= 1 recipient,
+--     and the atomic invariant below guarantees no empty/orphan run can commit.
+--
+--     FUTURE LIFECYCLE CONTRACT (documented for the later workers):
+--       MATERIALISER (this RPC): may add recipients ONLY to PREPARING runs.
+--       CONTENT/PREPARATION WORKER: later finishes recipient content and advances
+--         the run OUT of 'preparing' (to 'queued'/'processing').
+--       Once a run is 'queued' or 'processing', Stage 020 can NEVER append another
+--         recipient to it — those states belong to the delivery pipeline.
+--
+--   ATOMIC ALL-OR-NOTHING INVARIANT:
+--     The gate is evaluated EXACTLY ONCE into a frozen ON COMMIT DROP temp relation
+--     (tmp_materialise_candidates); the blocked-run check, grouping, run reuse/
+--     creation, recipient insert and opportunity transition all read that SAME set.
+--     On the 'ok' path the RPC REQUIRES
+--       finalCandidateCount == insertedRecipients == opportunitiesSelected.
+--     Any divergence (idempotency/opportunity-unique race, unresolved concurrent
+--     run, or an opportunity no longer 'open') RAISEs, rolling back the ENTIRE
+--     invocation — runs, recipients and opportunity transitions together. Repeat
+--     NORMAL invocations stay duplicate-safe because already-linked opportunities
+--     are filtered out by the canonical gate before they can become candidates.
 --
 --   INSTALLATION IS INERT: creating the function performs 0 recipient/run inserts
 --   and 0 opportunity updates. Post-install invokes the RPC ONCE while
@@ -322,12 +351,13 @@ DECLARE
   v_discovery       boolean;
   v_rollout         integer;
   v_batch           integer;
-  v_candidate_count bigint := 0;
+  v_candidate_count bigint := 0;   -- frozen candidate set size (== finalCandidateCount)
   v_inserted        bigint := 0;
   v_runs_created    bigint := 0;
   v_runs_reused     bigint := 0;
   v_group_count     bigint := 0;
   v_opps_selected   bigint := 0;
+  v_blocked_groups  bigint := 0;   -- selected groups blocked by a non-preparing active run
 BEGIN
   -- (A) Requested clamp 1..500 (deterministic; NULL -> default 100 -> clamped).
   v_requested := LEAST(GREATEST(COALESCE(p_limit, 100), 1), 500);
@@ -337,8 +367,9 @@ BEGIN
   IF NOT pg_try_advisory_xact_lock(hashtext('wtf_marketing_materialize_recipients')) THEN
     RETURN jsonb_build_object(
       'status', 'busy', 'requestedLimit', v_requested, 'effectiveLimit', 0,
-      'candidateCount', 0, 'insertedRecipients', 0, 'opportunitiesSelected', 0,
-      'runsCreated', 0, 'runsReused', 0, 'groupCount', 0
+      'candidateCount', 0, 'finalCandidateCount', 0, 'insertedRecipients', 0,
+      'opportunitiesSelected', 0, 'runsCreated', 0, 'runsReused', 0,
+      'groupCount', 0, 'blockedRunGroups', 0
     );
   END IF;
 
@@ -351,16 +382,18 @@ BEGIN
   IF NOT FOUND THEN
     RETURN jsonb_build_object(
       'status', 'control_missing', 'requestedLimit', v_requested, 'effectiveLimit', 0,
-      'candidateCount', 0, 'insertedRecipients', 0, 'opportunitiesSelected', 0,
-      'runsCreated', 0, 'runsReused', 0, 'groupCount', 0
+      'candidateCount', 0, 'finalCandidateCount', 0, 'insertedRecipients', 0,
+      'opportunitiesSelected', 0, 'runsCreated', 0, 'runsReused', 0,
+      'groupCount', 0, 'blockedRunGroups', 0
     );
   END IF;
 
   IF v_batch IS NULL OR v_batch <= 0 THEN
     RETURN jsonb_build_object(
       'status', 'invalid_control', 'requestedLimit', v_requested, 'effectiveLimit', 0,
-      'candidateCount', 0, 'insertedRecipients', 0, 'opportunitiesSelected', 0,
-      'runsCreated', 0, 'runsReused', 0, 'groupCount', 0
+      'candidateCount', 0, 'finalCandidateCount', 0, 'insertedRecipients', 0,
+      'opportunitiesSelected', 0, 'runsCreated', 0, 'runsReused', 0,
+      'groupCount', 0, 'blockedRunGroups', 0
     );
   END IF;
 
@@ -369,8 +402,9 @@ BEGIN
   IF v_rollout IS NULL OR v_rollout <= 0 THEN
     RETURN jsonb_build_object(
       'status', 'rollout_disabled', 'requestedLimit', v_requested, 'effectiveLimit', 0,
-      'candidateCount', 0, 'insertedRecipients', 0, 'opportunitiesSelected', 0,
-      'runsCreated', 0, 'runsReused', 0, 'groupCount', 0
+      'candidateCount', 0, 'finalCandidateCount', 0, 'insertedRecipients', 0,
+      'opportunitiesSelected', 0, 'runsCreated', 0, 'runsReused', 0,
+      'groupCount', 0, 'blockedRunGroups', 0
     );
   END IF;
 
@@ -379,46 +413,107 @@ BEGIN
   IF v_effective <= 0 THEN
     RETURN jsonb_build_object(
       'status', 'rollout_disabled', 'requestedLimit', v_requested, 'effectiveLimit', 0,
-      'candidateCount', 0, 'insertedRecipients', 0, 'opportunitiesSelected', 0,
-      'runsCreated', 0, 'runsReused', 0, 'groupCount', 0
+      'candidateCount', 0, 'finalCandidateCount', 0, 'insertedRecipients', 0,
+      'opportunitiesSelected', 0, 'runsCreated', 0, 'runsReused', 0,
+      'groupCount', 0, 'blockedRunGroups', 0
     );
   END IF;
 
-  -- (F) SET-BASED materialisation. All CTEs share the same snapshot/transaction.
+  -- (F) FREEZE THE CANDIDATE SET.
+  --     The canonical Stage 019 gate is evaluated EXACTLY ONCE and its ordered,
+  --     limited result is captured into a session-local ON COMMIT DROP temp table.
+  --     EVERY subsequent step (blocked-run check, grouping, run reuse/creation,
+  --     recipient insert, opportunity transition) reads ONLY from this frozen
+  --     relation, so they can never observe a different gate result. The temp
+  --     table is truncated first so a re-invocation in the SAME transaction (the
+  --     lock is transaction-scoped, so this is the only way it can be reused)
+  --     starts clean. It is bounded by v_effective and holds no data after COMMIT.
+  CREATE TEMP TABLE IF NOT EXISTS tmp_materialise_candidates (
+    opportunity_id         uuid PRIMARY KEY,
+    user_id                uuid    NOT NULL,
+    email_lc               text    NOT NULL,
+    delivery_automation_id uuid    NOT NULL,
+    promotion_id           uuid,
+    base_priority          integer,
+    score                  numeric,
+    detected_at            timestamptz
+  ) ON COMMIT DROP;
+  TRUNCATE tmp_materialise_candidates;
+
+  INSERT INTO tmp_materialise_candidates
+  SELECT
+    g.opportunity_id,
+    g.user_id,
+    g.email_lc,
+    g.delivery_automation_id,
+    o.promotion_id,
+    g.base_priority,
+    g.score,
+    g.detected_at
+  FROM public.wtf_marketing_recipient_gate_preview() g
+  JOIN public.marketing_opportunities o ON o.id = g.opportunity_id
+  WHERE g.gate_eligible = true
+    AND g.delivery_route_ready = true
+    AND g.delivery_automation_id IS NOT NULL
+    AND g.user_id IS NOT NULL
+  ORDER BY g.base_priority ASC,
+           g.score DESC NULLS LAST,
+           g.detected_at DESC,
+           g.opportunity_id ASC
+  LIMIT v_effective;
+
+  GET DIAGNOSTICS v_candidate_count = ROW_COUNT;
+  v_group_count := (SELECT count(DISTINCT (delivery_automation_id, promotion_id)) FROM tmp_materialise_candidates);
+
+  -- (G) No candidates -> no_eligible_candidates, zero writes.
+  IF v_candidate_count = 0 THEN
+    RETURN jsonb_build_object(
+      'status', 'no_eligible_candidates', 'requestedLimit', v_requested, 'effectiveLimit', v_effective,
+      'candidateCount', 0, 'finalCandidateCount', 0, 'insertedRecipients', 0,
+      'opportunitiesSelected', 0, 'runsCreated', 0, 'runsReused', 0,
+      'groupCount', 0, 'blockedRunGroups', 0
+    );
+  END IF;
+
+  -- (H) RUN-LIFECYCLE SAFETY GATE (fail-whole-batch).
+  --     A recipient may only ever be attached to a PREPARING run. If ANY selected
+  --     candidate group is currently occupied by an active run that has advanced
+  --     to 'queued' or 'processing', the whole invocation performs ZERO writes and
+  --     returns active_run_not_preparing. We must never (a) append a content-
+  --     unprepared recipient to a run a future delivery worker may consume, nor
+  --     (b) try to create a second preparing run for that group (the active-run
+  --     unique index would reject it anyway). The frozen candidate set is used.
+  SELECT count(*) INTO v_blocked_groups
+    FROM (SELECT DISTINCT delivery_automation_id, promotion_id FROM tmp_materialise_candidates) gr
+   WHERE EXISTS (
+     SELECT 1
+       FROM public.marketing_automation_runs ar
+      WHERE ar.automation_id = gr.delivery_automation_id
+        AND COALESCE(ar.promotion_id, '00000000-0000-0000-0000-000000000000'::uuid)
+          = COALESCE(gr.promotion_id, '00000000-0000-0000-0000-000000000000'::uuid)
+        AND ar.status IN ('queued', 'processing')
+   );
+
+  IF v_blocked_groups > 0 THEN
+    RETURN jsonb_build_object(
+      'status', 'active_run_not_preparing', 'requestedLimit', v_requested, 'effectiveLimit', v_effective,
+      'candidateCount', v_candidate_count, 'finalCandidateCount', v_candidate_count,
+      'insertedRecipients', 0, 'opportunitiesSelected', 0,
+      'runsCreated', 0, 'runsReused', 0,
+      'groupCount', v_group_count, 'blockedRunGroups', v_blocked_groups
+    );
+  END IF;
+
+  -- (I) SET-BASED WRITES over the FROZEN candidate set. All CTEs read only from
+  --     tmp_materialise_candidates.
   WITH
-  -- Canonical eligibility: ONLY gate_eligible user-identity rows with a ready,
-  -- non-null delivery route. Ordered + limited deterministically. promotion_id
-  -- is metadata-only, joined from the authoritative opportunity row.
-  candidates AS (
-    SELECT
-      g.opportunity_id,
-      g.user_id,
-      g.email_lc,
-      g.delivery_automation_id,
-      o.promotion_id,
-      g.base_priority,
-      g.score,
-      g.detected_at
-    FROM public.wtf_marketing_recipient_gate_preview() g
-    JOIN public.marketing_opportunities o ON o.id = g.opportunity_id
-    WHERE g.gate_eligible = true
-      AND g.delivery_route_ready = true
-      AND g.delivery_automation_id IS NOT NULL
-      AND g.user_id IS NOT NULL
-    ORDER BY g.base_priority ASC,
-             g.score DESC NULLS LAST,
-             g.detected_at DESC,
-             g.opportunity_id ASC
-    LIMIT v_effective
-  ),
-  -- Distinct run groups = (delivery_automation_id, promotion_id). Only groups
-  -- that actually have >= 1 candidate appear here, so no empty run is created.
   groups AS (
     SELECT DISTINCT delivery_automation_id, promotion_id
-      FROM candidates
+      FROM tmp_materialise_candidates
   ),
-  -- Reuse an existing ACTIVE run for the group if one exists (canonical per the
-  -- active-run uniqueness contract). Deterministic pick: newest started_at.
+  -- Reuse an existing PREPARING run only (queued/processing were already excluded
+  -- by the (H) gate, but we restrict to 'preparing' here too as the authoritative
+  -- attachment rule). Deterministic pick: newest started_at.
   reused AS (
     SELECT gr.delivery_automation_id, gr.promotion_id, r.id AS run_id
       FROM groups gr
@@ -428,15 +523,14 @@ BEGIN
          WHERE ar.automation_id = gr.delivery_automation_id
            AND COALESCE(ar.promotion_id, '00000000-0000-0000-0000-000000000000'::uuid)
              = COALESCE(gr.promotion_id, '00000000-0000-0000-0000-000000000000'::uuid)
-           AND ar.status IN ('preparing', 'queued', 'processing')
+           AND ar.status = 'preparing'
          ORDER BY ar.started_at DESC, ar.id ASC
          LIMIT 1
       ) r ON true
   ),
-  -- Create a new PREPARING run for each group WITHOUT a reusable active run.
-  -- rollout_limit_snapshot records the effective limit for audit. ON CONFLICT on
-  -- the active-run unique index makes concurrent creators converge safely; the
-  -- conflicting row is recovered in run_map below.
+  -- Create a new PREPARING run for each group WITHOUT a reusable preparing run.
+  -- ON CONFLICT on the active-run unique index makes concurrent creators converge;
+  -- the conflicting row is recovered (as 'preparing' ONLY) in run_map below.
   created AS (
     INSERT INTO public.marketing_automation_runs (automation_id, promotion_id, status, rollout_limit_snapshot)
     SELECT gr.delivery_automation_id, gr.promotion_id, 'preparing', v_effective
@@ -452,8 +546,11 @@ BEGIN
     RETURNING id AS run_id, automation_id AS delivery_automation_id, promotion_id
   ),
   -- Final authoritative run per group: prefer a freshly created run, else the
-  -- reused run, else (if ON CONFLICT skipped our insert due to a concurrent
-  -- creator) look the active run up again. Guarantees one run_id per group.
+  -- reused preparing run, else (if ON CONFLICT skipped our insert due to a
+  -- concurrent creator) look up the active run AS 'preparing' ONLY. If that
+  -- lookup finds nothing (the concurrent run advanced past preparing), run_id is
+  -- NULL, its candidates cannot attach, and the (J) atomic invariant will force a
+  -- rollback rather than partial materialisation.
   run_map AS (
     SELECT
       gr.delivery_automation_id,
@@ -467,7 +564,7 @@ BEGIN
            WHERE ar.automation_id = gr.delivery_automation_id
              AND COALESCE(ar.promotion_id, '00000000-0000-0000-0000-000000000000'::uuid)
                = COALESCE(gr.promotion_id, '00000000-0000-0000-0000-000000000000'::uuid)
-             AND ar.status IN ('preparing', 'queued', 'processing')
+             AND ar.status = 'preparing'
            ORDER BY ar.started_at DESC, ar.id ASC
            LIMIT 1
         )
@@ -483,11 +580,13 @@ BEGIN
      AND COALESCE(ru.promotion_id, '00000000-0000-0000-0000-000000000000'::uuid)
        = COALESCE(gr.promotion_id, '00000000-0000-0000-0000-000000000000'::uuid)
   ),
-  -- Recipient INSERT. Snapshots OMITTED (schema defaults '{}' apply). status
-  -- OMITTED (schema default 'queued'). sent_at/provider_email_id/locks/attempts
-  -- all left at their NULL/zero defaults. Idempotency key is opportunity-derived.
-  -- ON CONFLICT DO NOTHING makes repeat/concurrent invocations race-safe against
-  -- BOTH the global idempotency unique index AND the Stage 017 opportunity index.
+  -- Recipient INSERT over the FROZEN set. Snapshots OMITTED (schema defaults '{}'),
+  -- status OMITTED (schema default 'queued'), sent_at/provider_email_id/locks/
+  -- attempts left at NULL/zero. Idempotency key opportunity-derived. Rows whose
+  -- run_id is NULL (unresolved concurrent race) are excluded here and thus cannot
+  -- insert -> the (J) invariant then rolls the whole invocation back.
+  -- ON CONFLICT DO NOTHING is a race BACKSTOP only; a genuine conflict lowers the
+  -- inserted count and (J) converts that into a rollback (no partial batch).
   inserted AS (
     INSERT INTO public.marketing_recipients (
       run_id, user_id, external_contact_id, email_lc, opportunity_id, idempotency_key
@@ -499,17 +598,20 @@ BEGIN
       c.email_lc,
       c.opportunity_id,
       'marketing-opportunity:' || c.opportunity_id::text
-    FROM candidates c
+    FROM tmp_materialise_candidates c
     JOIN run_map rm
       ON rm.delivery_automation_id = c.delivery_automation_id
      AND COALESCE(rm.promotion_id, '00000000-0000-0000-0000-000000000000'::uuid)
        = COALESCE(c.promotion_id, '00000000-0000-0000-0000-000000000000'::uuid)
+    WHERE rm.run_id IS NOT NULL
     ON CONFLICT DO NOTHING
     RETURNING id AS recipient_id, run_id, opportunity_id
   ),
   -- ATOMIC opportunity transition: ONLY opportunities whose recipient actually
   -- INSERTED move open -> selected with selected_at=now(). actioned_at untouched.
-  -- Guard on state='open' so an already-selected row is never rewritten.
+  -- Guard on state='open' so any non-open row (selected/deferred/expired/
+  -- suppressed/superseded/actioned) is never rewritten; such a row simply fails
+  -- to transition, lowering opportunitiesSelected, which (J) turns into a rollback.
   selected AS (
     UPDATE public.marketing_opportunities o
        SET state = 'selected', selected_at = now(), updated_at = now()
@@ -519,25 +621,39 @@ BEGIN
     RETURNING o.id
   )
   SELECT
-    (SELECT count(*) FROM candidates),
     (SELECT count(*) FROM inserted),
     (SELECT count(*) FROM selected),
     (SELECT count(*) FROM run_map WHERE was_created),
-    (SELECT count(*) FROM run_map WHERE NOT was_created),
-    (SELECT count(*) FROM groups)
-  INTO v_candidate_count, v_inserted, v_opps_selected, v_runs_created, v_runs_reused, v_group_count;
+    (SELECT count(*) FROM run_map WHERE NOT was_created)
+  INTO v_inserted, v_opps_selected, v_runs_created, v_runs_reused;
 
-  -- (G) Result. If no candidates, report no_eligible_candidates (zero writes).
+  -- (J) ATOMIC ALL-OR-NOTHING INVARIANT.
+  --     The exact frozen candidate set MUST have produced one recipient AND one
+  --     open->selected transition each. If any of the three counts diverge, a
+  --     concurrent race (idempotency/opportunity-uniqueness conflict, unresolved
+  --     run, or a state change out of 'open') has occurred: RAISE so the ENTIRE
+  --     invocation rolls back — newly-created runs, recipient inserts and
+  --     opportunity transitions ALL revert. This guarantees no partial batch and
+  --     no empty/orphan preparing run can ever commit.
+  IF v_inserted <> v_candidate_count OR v_opps_selected <> v_inserted THEN
+    RAISE EXCEPTION 'Stage 3D2B materialisation atomicity violation: finalCandidates=%, inserted=%, selected=%; rolling back entire invocation.',
+      v_candidate_count, v_inserted, v_opps_selected
+      USING ERRCODE = 'serialization_failure';
+  END IF;
+
+  -- (K) Success. finalCandidateCount == insertedRecipients == opportunitiesSelected.
   RETURN jsonb_build_object(
-    'status', CASE WHEN v_candidate_count = 0 THEN 'no_eligible_candidates' ELSE 'ok' END,
+    'status', 'ok',
     'requestedLimit', v_requested,
     'effectiveLimit', v_effective,
     'candidateCount', v_candidate_count,
+    'finalCandidateCount', v_candidate_count,
     'insertedRecipients', v_inserted,
     'opportunitiesSelected', v_opps_selected,
     'runsCreated', v_runs_created,
     'runsReused', v_runs_reused,
-    'groupCount', v_group_count
+    'groupCount', v_group_count,
+    'blockedRunGroups', 0
   );
 END
 $materialise$;
@@ -695,6 +811,11 @@ COMMIT;
 --   * Opportunity checksum, definitions, automations and controls all unchanged;
 --     Stage 019 gate still reports gateEligible=0 / sendableNow=0.
 --   * Canonical idempotency: marketing-opportunity:<opportunity_id>.
---   * Runs grouped by (delivery_automation_id, promotion_id); new runs stay
---     'preparing'; no empty runs; reuse follows the active-run unique index.
+--   * Runs grouped by (delivery_automation_id, promotion_id); recipients attach
+--     ONLY to 'preparing' runs; a group whose active run is 'queued'/'processing'
+--     blocks the WHOLE batch (active_run_not_preparing, zero writes); new runs are
+--     always 'preparing'; the atomic invariant guarantees no empty/orphan runs.
+--   * Frozen candidate set: gate evaluated once into an ON COMMIT DROP temp table;
+--     ok path enforces finalCandidateCount==insertedRecipients==opportunitiesSelected
+--     via RAISE-on-mismatch (whole-invocation rollback), never a partial batch.
 -- ============================================================================
