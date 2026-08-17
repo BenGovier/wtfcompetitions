@@ -68,11 +68,44 @@
 --   before any provider call. Preparation is deliberately frequency-agnostic.
 --   This does NOT weaken delivery safety.
 --
--- CONTENT-READINESS CONTRACT (documented; NOT executed here):
---   content_prepared = (template_snapshot satisfies the future canonical
---   preparation snapshot contract) AND (context_snapshot satisfies the future
---   canonical preparation context contract). The current canary has both = '{}'::
---   jsonb, so content_prepared = false. Stage 022 DOES NOT populate snapshots.
+-- CONTENT-READINESS CONTRACT — VERSION 1 (formally ESTABLISHED here; NOT
+-- populated here). Stage 022 defines schemaVersion=1 of the prepared-snapshot
+-- contract that a FUTURE Stage 023 preparation worker will populate. The gate
+-- deterministically VALIDATES this contract; merely non-empty JSON is NOT
+-- "prepared". content_prepared is TRUE only when BOTH snapshots are JSON
+-- OBJECTS satisfying:
+--
+--   template_snapshot (schemaVersion=1):
+--     {
+--       "schemaVersion": 1,                 -- exactly 1
+--       "templateKey":     <non-empty string>,
+--       "templateVersion": <integer >= 1>,
+--       "subject":         <non-empty string>,
+--       "previewText":     <string or null>,   -- optional
+--       "heading":         <non-empty string>,
+--       "bodyText":        <non-empty string>,
+--       "ctaLabel":        <non-empty string>
+--     }
+--
+--   context_snapshot (schemaVersion=1):
+--     {
+--       "schemaVersion":   1,               -- exactly 1
+--       "opportunityType": <non-empty string; MUST equal the linked
+--                            opportunity.opportunity_type>,
+--       "campaign": {                       -- REQUIRED for campaign-specific
+--         "title": <non-empty string>,      -- opportunities (abandoned_checkout)
+--         "url":   <non-empty string>       -- resolved campaign URL
+--       }
+--     }
+--
+--   Forbidden in EITHER snapshot (privacy): user id, email, recipient id,
+--   opportunity id, run id, raw consent data, unsubscribe token, provider data,
+--   and any financial-vulnerability / loss / chasing data. Unsubscribe URL is
+--   NOT part of the prepared contract (minted at final render/delivery time).
+--
+--   The current live canary has template_snapshot = '{}'::jsonb and
+--   context_snapshot = '{}'::jsonb, so content_prepared = false. Stage 022 DOES
+--   NOT populate snapshots. Future Stage 023 preparation will populate the above.
 --
 -- RECIPIENT STATUS CONTRACT (documented; CHECK NOT altered; no new status):
 --   recipient.status='queued' ALONE does NOT mean content-ready or delivery-ready.
@@ -440,6 +473,113 @@ UPDATE public.marketing_automations a
    AND a.template_id IS NULL;   -- idempotent guard: never overwrite an existing map
 
 -- ============================================================================
+-- PART A0 — PRIVATE DB TEMPLATE-VALIDATION HELPER (authoritative at the
+--   preparation boundary). Reproduces the CURRENT application validation
+--   contract from lib/admin/marketing/hub-validation.ts + placeholders.ts
+--   EXACTLY, so the gate NEVER trusts that the admin API validated the row.
+--
+--   Contract reproduced (all must hold for a template to be "valid"):
+--     * template_key: lower(key) matches ^[a-z][a-z0-9_]*$ AND length 1..100.
+--     * name        : required, trimmed length 1..200,  no angle brackets [<>].
+--     * subject     : required, trimmed length 1..300,  no angle brackets.
+--     * preview_text: optional; if present trimmed length 1..300, no brackets.
+--     * heading     : required, trimmed length 1..300,  no angle brackets.
+--     * body_text   : required, trimmed length 1..5000, no angle brackets.
+--     * cta_label   : required, trimmed length 1..100,  no angle brackets.
+--     * default_url : optional; if present length 1..2048, no angle brackets,
+--                     AND a syntactically valid http(s):// URL.
+--     * version     : integer >= 1.
+--     * Placeholders: every {{ token }} across subject/preview/heading/body/
+--                     cta/default_url must, after trimming, be one of the exact
+--                     canonical allowlist:
+--                       first_name, campaign_title, campaign_url,
+--                       credit_balance, discount_code, unsubscribe_url
+--                     An empty/whitespace token {{}} is INVALID. The token
+--                     grammar is exactly the app engine's /\{\{([^{}]*)\}\}/g:
+--                     inner content may not contain '{' or '}'.
+--
+--   Owner-only; STABLE (reads marketing_templates by id); no writes; EXECUTE
+--   revoked from PUBLIC/anon/authenticated/service_role. Returns false for a
+--   NULL / missing template id (fail-closed).
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.wtf_marketing_template_is_valid(p_template_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $tmplvalid$
+  WITH t AS (
+    SELECT *
+      FROM public.marketing_templates
+     WHERE id = p_template_id
+  ),
+  -- Every {{...}} token across all rendered slots (inner captured, no braces).
+  toks AS (
+    SELECT btrim(m[1]) AS token
+      FROM t,
+           LATERAL regexp_matches(
+             coalesce(t.subject, '')      || ' ' ||
+             coalesce(t.preview_text, '') || ' ' ||
+             coalesce(t.heading, '')      || ' ' ||
+             coalesce(t.body_text, '')    || ' ' ||
+             coalesce(t.cta_label, '')    || ' ' ||
+             coalesce(t.default_url, ''),
+             '\{\{([^{}]*)\}\}',
+             'g'
+           ) AS m
+  )
+  SELECT COALESCE((
+    SELECT
+          -- template_key
+          lower(t.template_key) ~ '^[a-z][a-z0-9_]*$'
+      AND char_length(t.template_key) BETWEEN 1 AND 100
+          -- name
+      AND t.name IS NOT NULL AND char_length(btrim(t.name)) BETWEEN 1 AND 200
+      AND t.name !~ '[<>]'
+          -- subject (required)
+      AND t.subject IS NOT NULL AND char_length(btrim(t.subject)) BETWEEN 1 AND 300
+      AND t.subject !~ '[<>]'
+          -- preview_text (optional)
+      AND (t.preview_text IS NULL
+           OR (char_length(btrim(t.preview_text)) BETWEEN 1 AND 300 AND t.preview_text !~ '[<>]'))
+          -- heading (required)
+      AND t.heading IS NOT NULL AND char_length(btrim(t.heading)) BETWEEN 1 AND 300
+      AND t.heading !~ '[<>]'
+          -- body_text (required)
+      AND t.body_text IS NOT NULL AND char_length(btrim(t.body_text)) BETWEEN 1 AND 5000
+      AND t.body_text !~ '[<>]'
+          -- cta_label (required)
+      AND t.cta_label IS NOT NULL AND char_length(btrim(t.cta_label)) BETWEEN 1 AND 100
+      AND t.cta_label !~ '[<>]'
+          -- default_url (optional, http(s), bounded, no brackets)
+      AND (t.default_url IS NULL
+           OR (char_length(t.default_url) BETWEEN 1 AND 2048
+               AND t.default_url !~ '[<>]'
+               AND t.default_url ~* '^https?://[^[:space:]]+$'))
+          -- version
+      AND coalesce(t.version, 0) >= 1
+          -- placeholders: no unknown/empty token anywhere
+      AND NOT EXISTS (
+            SELECT 1 FROM toks
+             WHERE toks.token NOT IN (
+               'first_name', 'campaign_title', 'campaign_url',
+               'credit_balance', 'discount_code', 'unsubscribe_url'
+             )
+          )
+      FROM t
+  ), false)
+$tmplvalid$;
+
+COMMENT ON FUNCTION public.wtf_marketing_template_is_valid(uuid) IS
+  'Stage 3D3B PRIVATE authoritative template validator (owner-only; EXECUTE revoked from every role). Reproduces the CURRENT application validation contract (lib/admin/marketing/hub-validation.ts + placeholders.ts): template_key regex ^[a-z][a-z0-9_]*$ (1..100); required subject/heading/body/cta + optional preview within DB length caps and with NO angle brackets; optional default_url must be a bounded http(s) URL; version >= 1; and EVERY {{token}} (grammar /\{\{([^{}]*)\}\}/g, trimmed) must belong to the exact allowlist {first_name, campaign_title, campaign_url, credit_balance, discount_code, unsubscribe_url} with empty tokens rejected. Fail-closed: NULL/missing id => false. Read-only; the preparation boundary NEVER trusts prior admin-API validation.';
+
+REVOKE ALL ON FUNCTION public.wtf_marketing_template_is_valid(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.wtf_marketing_template_is_valid(uuid) FROM anon;
+REVOKE ALL ON FUNCTION public.wtf_marketing_template_is_valid(uuid) FROM authenticated;
+REVOKE ALL ON FUNCTION public.wtf_marketing_template_is_valid(uuid) FROM service_role;
+
+-- ============================================================================
 -- PART A — PRIVATE POST-MATERIALISATION CONTENT PREPARATION GATE.
 --   Owner-only (EXECUTE revoked from PUBLIC/anon/authenticated/service_role).
 --   STABLE, SECURITY DEFINER, locked search_path. Read-only. Evaluates EXISTING
@@ -632,15 +772,44 @@ flags AS (
     (b.auto_template_id IS NOT NULL)                         AS template_mapped,
     (b.tmpl_row_id IS NOT NULL)                              AS template_exists,
     b.tmpl_active                                            AS template_active,
+    -- Authoritative validation via the private helper — reproduces the full
+    -- application template-validation contract (key regex, length caps, no
+    -- angle brackets, http(s) default_url, version>=1, allowlisted placeholders).
     (b.tmpl_row_id IS NOT NULL
-       AND COALESCE(b.tmpl_version, 0) >= 1
-       AND b.tmpl_subject IS NOT NULL AND btrim(b.tmpl_subject) <> ''
-       AND b.tmpl_heading IS NOT NULL AND btrim(b.tmpl_heading) <> ''
-       AND b.tmpl_body    IS NOT NULL AND btrim(b.tmpl_body)    <> ''
-       AND b.tmpl_cta     IS NOT NULL AND btrim(b.tmpl_cta)     <> '') AS template_valid,
-    -- CONTENT: current canary snapshots are empty {} => not prepared.
-    (b.template_snapshot IS DISTINCT FROM '{}'::jsonb
-       AND b.context_snapshot IS DISTINCT FROM '{}'::jsonb)  AS content_prepared
+       AND public.wtf_marketing_template_is_valid(b.tmpl_row_id))          AS template_valid,
+    -- CONTENT-READINESS: deterministic validation of the VERSION 1 canonical
+    -- prepared-snapshot contract (see header). Merely non-empty JSON is NOT
+    -- prepared. Both snapshots must be JSON OBJECTS with schemaVersion=1 and all
+    -- required non-empty fields; opportunityType must equal the linked
+    -- opportunity.opportunity_type; campaign-specific opportunities additionally
+    -- require a context_snapshot.campaign object with non-empty title + url.
+    -- The current canary snapshots are {}/{} => content_prepared = false.
+    (
+          jsonb_typeof(b.template_snapshot) = 'object'
+      AND jsonb_typeof(b.context_snapshot)  = 'object'
+          -- template_snapshot v1
+      AND (b.template_snapshot ->> 'schemaVersion') = '1'
+      AND coalesce(btrim(b.template_snapshot ->> 'templateKey'), '') <> ''
+      AND (b.template_snapshot ->> 'templateVersion') ~ '^[0-9]+$'
+      AND (b.template_snapshot ->> 'templateVersion')::bigint >= 1
+      AND coalesce(btrim(b.template_snapshot ->> 'subject'), '')  <> ''
+      AND coalesce(btrim(b.template_snapshot ->> 'heading'), '')  <> ''
+      AND coalesce(btrim(b.template_snapshot ->> 'bodyText'), '') <> ''
+      AND coalesce(btrim(b.template_snapshot ->> 'ctaLabel'), '') <> ''
+          -- context_snapshot v1
+      AND (b.context_snapshot ->> 'schemaVersion') = '1'
+      AND coalesce(btrim(b.context_snapshot ->> 'opportunityType'), '') <> ''
+      AND (b.context_snapshot ->> 'opportunityType') = b.opportunity_type
+          -- campaign-specific opportunities require a valid campaign block
+      AND (
+            NOT b.def_campaign_specific
+            OR (
+                  jsonb_typeof(b.context_snapshot -> 'campaign') = 'object'
+              AND coalesce(btrim(b.context_snapshot #>> '{campaign,title}'), '') <> ''
+              AND coalesce(btrim(b.context_snapshot #>> '{campaign,url}'), '')   <> ''
+            )
+          )
+    )                                                                      AS content_prepared
   FROM base b
 ),
 computed AS (
@@ -701,8 +870,9 @@ SELECT
   c.content_prepared,
 
   -- preparation_eligible: everything required to CONTENT-PREPARE this recipient.
-  -- Deliberately EXCLUDES frequency (authoritative at delivery time) and does NOT
-  -- require content_prepared (that is the OUTPUT of preparation, not a precond).
+  -- Deliberately EXCLUDES frequency (authoritative at delivery time). It REQUIRES
+  -- NOT content_prepared: an already-prepared recipient does not require
+  -- preparation, so it is ineligible (and carries the already_prepared blocker).
   (
         c.recipient_user_identity
     AND c.recipient_queued
@@ -731,6 +901,10 @@ SELECT
     AND c.authoritative_marketing_eligible
     AND c.campaign_context_valid
     AND c.template_ready
+    -- A recipient that is ALREADY content-prepared does NOT require preparation,
+    -- so it must NOT be selected by a preparation worker. This makes the
+    -- already_prepared blocker consistent with preparation_eligible=false.
+    AND NOT c.content_prepared
   )                                                          AS preparation_eligible,
 
   -- Deterministic, PII-free blocker codes in a FIXED, stable order.
@@ -769,7 +943,7 @@ FROM computed c
 $prep$;
 
 COMMENT ON FUNCTION public.wtf_marketing_recipient_preparation_preview() IS
-  'Stage 3D3B PRIVATE post-materialisation CONTENT-PREPARATION gate (owner-only; EXECUTE revoked from PUBLIC/anon/authenticated/service_role). NOT the Stage 019 pre-materialisation recipient gate: it evaluates EXISTING materialised recipients, expects opportunity.state=selected WITH an existing recipient, and never applies gate_eligible/pre_nba_gate_eligible/next_best_rank/no-existing-recipient/state=open. Delivery route is sourced from marketing_opportunity_definitions.delivery_automation_id (run.automation_id must match); opportunity provenance automation_id is ignored. Re-checks CURRENT contact permission via is_marketing_email_eligible + profile flags (never a snapshot). Frequency is intentionally EXCLUDED (authoritative at delivery time). content_prepared is the OUTPUT of preparation and is NOT required for preparation_eligible. Read-only; AI never influences it. Internal infrastructure for a future owner-executed preparation worker; NOT for direct application use.';
+  'Stage 3D3B PRIVATE post-materialisation CONTENT-PREPARATION gate (owner-only; EXECUTE revoked from PUBLIC/anon/authenticated/service_role). NOT the Stage 019 pre-materialisation recipient gate: it evaluates EXISTING materialised recipients, expects opportunity.state=selected WITH an existing recipient, and never applies gate_eligible/pre_nba_gate_eligible/next_best_rank/no-existing-recipient/state=open. Delivery route is sourced from marketing_opportunity_definitions.delivery_automation_id (run.automation_id must match); opportunity provenance automation_id is ignored. Re-checks CURRENT contact permission via is_marketing_email_eligible + profile flags (never a snapshot). Frequency is intentionally EXCLUDED (authoritative at delivery time). content_prepared is the OUTPUT of preparation and is deterministically validated against the VERSION 1 canonical snapshot contract (schemaVersion=1 objects with required non-empty fields; opportunityType must equal the linked opportunity; campaign-specific opportunities require campaign.title + campaign.url); merely non-empty JSON is NOT prepared. preparation_eligible REQUIRES NOT content_prepared, so an already-prepared recipient is ineligible (blocker already_prepared) and never re-selected. Read-only; AI never influences it. Internal infrastructure for a future owner-executed preparation worker; NOT for direct application use.';
 
 REVOKE ALL ON FUNCTION public.wtf_marketing_recipient_preparation_preview() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.wtf_marketing_recipient_preparation_preview() FROM anon;
@@ -1093,6 +1267,13 @@ BEGIN
      OR has_function_privilege('authenticated', 'public.wtf_marketing_recipient_preparation_preview()', 'EXECUTE')
      OR has_function_privilege('service_role', 'public.wtf_marketing_recipient_preparation_preview()', 'EXECUTE') THEN
     RAISE EXCEPTION 'Stage 3D3B (022) verify aborted: PRIVATE preparation gate EXECUTE is granted to an application role.';
+  END IF;
+
+  -- PRIVATE template validator: direct EXECUTE denied to every role.
+  IF has_function_privilege('anon', 'public.wtf_marketing_template_is_valid(uuid)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public.wtf_marketing_template_is_valid(uuid)', 'EXECUTE')
+     OR has_function_privilege('service_role', 'public.wtf_marketing_template_is_valid(uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'Stage 3D3B (022) verify aborted: PRIVATE template validator EXECUTE is granted to an application role.';
   END IF;
 
   -- Admin overview + sample: service_role only.

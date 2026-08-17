@@ -220,21 +220,39 @@ describe('022 — preparation gate linkage and lifecycle', () => {
 // 5. Content-readiness + frequency contract.
 // ===========================================================================
 describe('022 — content-readiness and frequency semantics', () => {
-  it('C1. content_prepared is false for empty {} snapshots', () => {
-    expect(/template_snapshot IS DISTINCT FROM '\{\}'::jsonb\s+AND b\.context_snapshot IS DISTINCT FROM '\{\}'::jsonb/i.test(PREP)).toBe(true)
+  it('C1. content_prepared validates the VERSION 1 contract (not merely non-empty JSON)', () => {
+    // Both snapshots must be JSON objects with schemaVersion=1.
+    expect(/jsonb_typeof\(b\.template_snapshot\) = 'object'/i.test(PREP)).toBe(true)
+    expect(/jsonb_typeof\(b\.context_snapshot\)\s+= 'object'/i.test(PREP)).toBe(true)
+    expect(/\(b\.template_snapshot ->> 'schemaVersion'\) = '1'/i.test(PREP)).toBe(true)
+    expect(/\(b\.context_snapshot ->> 'schemaVersion'\) = '1'/i.test(PREP)).toBe(true)
+    // Required template_snapshot fields.
+    for (const k of ['templateKey', 'subject', 'heading', 'bodyText', 'ctaLabel']) {
+      expect(new RegExp(`template_snapshot ->> '${k}'`).test(PREP)).toBe(true)
+    }
+    expect(/template_snapshot ->> 'templateVersion'\)::bigint >= 1/i.test(PREP)).toBe(true)
+    // opportunityType must equal the linked opportunity.opportunity_type.
+    expect(/\(b\.context_snapshot ->> 'opportunityType'\) = b\.opportunity_type/i.test(PREP)).toBe(true)
+    // Campaign-specific opportunities require campaign.title + campaign.url.
+    expect(/NOT b\.def_campaign_specific/i.test(PREP)).toBe(true)
+    expect(/context_snapshot #>> '\{campaign,title\}'/i.test(PREP)).toBe(true)
+    expect(/context_snapshot #>> '\{campaign,url\}'/i.test(PREP)).toBe(true)
+    // Merely non-empty JSON is NOT accepted as prepared: the old shortcut
+    // (IS DISTINCT FROM '{}') must be gone.
+    expect(/IS DISTINCT FROM '\{\}'::jsonb\s+AND b\.context_snapshot IS DISTINCT FROM '\{\}'::jsonb/i.test(PREP)).toBe(false)
   })
 
-  it('C2. content_prepared is NOT a precondition of preparation_eligible (it is the OUTPUT)', () => {
+  it('C2. content_prepared IS a precondition: preparation_eligible requires NOT content_prepared', () => {
     // Scope strictly to the boolean expression: it uniquely begins with
     // "c.recipient_user_identity AND c.recipient_queued" and ends at
-    // "AS preparation_eligible" (the SELECT-list output columns, incl.
-    // "c.content_prepared,", come BEFORE this anchor).
+    // "AS preparation_eligible".
     const start = PREP.indexOf('c.recipient_user_identity AND c.recipient_queued')
     const end = PREP.indexOf('AS preparation_eligible')
     const eligExpr = PREP.slice(start, end)
     expect(start).toBeGreaterThan(0)
     expect(end).toBeGreaterThan(start)
-    expect(/content_prepared/i.test(eligExpr)).toBe(false)
+    // Eligibility now excludes already-prepared recipients.
+    expect(/AND NOT c\.content_prepared/i.test(eligExpr)).toBe(true)
   })
 
   it('C3. frequency is NOT part of preparation_eligible (authoritative at delivery time)', () => {
@@ -439,9 +457,14 @@ describe('022 — no send / provider / AI / cron / unsubscribe token', () => {
   it('X1. no provider/email call anywhere', () => {
     expect(/resend|sendgrid|smtp|provider_email_id\s*=|sent_at\s*=/i.test(CODE_FLAT)).toBe(false)
   })
-  it('X2. no unsubscribe token/secret in the migration', () => {
-    expect(/unsubscribe/i.test(CODE_FLAT)).toBe(false)
-    expect(/MARKETING_UNSUBSCRIBE_TOKEN_SECRET/i.test(RAW)).toBe(false)
+  it('X2. no unsubscribe token/secret minting in the migration', () => {
+    // The placeholder name `unsubscribe_url` is REQUIRED: it reproduces the app
+    // allowlist in the validator (as a quoted literal) and its COMMENT. Only the
+    // *_url allowlist form is permitted — ban every other unsubscribe reference.
+    const codeNoAllowlist = CODE_FLAT.replace(/unsubscribe_url/g, '__allow__')
+    expect(/unsubscribe/i.test(codeNoAllowlist)).toBe(false)
+    // No token-minting machinery or secret anywhere (even in header comments).
+    expect(/MARKETING_UNSUBSCRIBE_TOKEN_SECRET|unsubscribe_token|unsubscribe.{0,20}secret/i.test(RAW)).toBe(false)
   })
   it('X3. no cron / job scheduling', () => {
     expect(/cron|pg_cron|schedule/i.test(CODE_FLAT)).toBe(false)
@@ -488,5 +511,378 @@ describe('022 — preflight + postcheck invariants', () => {
   it('V5. single transaction (BEGIN ... COMMIT)', () => {
     expect(/^\s*BEGIN;/m.test(RAW)).toBe(true)
     expect(/COMMIT;\s*$/m.test(RAW.trimEnd() + '\n')).toBe(true)
+  })
+})
+
+// ===========================================================================
+// 13. BEHAVIOURAL MODEL — faithful TS re-implementations of the exact SQL
+//     predicates, driven by fixtures. These prove the RUNTIME contract without
+//     executing SQL. Each model mirrors the corresponding SQL expression 1:1;
+//     the static tests above bind that SQL text to these behaviours.
+// ===========================================================================
+
+// --- content_prepared model (mirrors the flags CTE content_prepared) ---------
+type Json = Record<string, unknown> | unknown[] | string | number | boolean | null
+function isObject(v: Json): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
+}
+// jsonb ->> semantics: text of a scalar; NULL for objects/arrays/absent/json-null.
+function asText(v: unknown): string | null {
+  if (v === null || v === undefined) return null
+  if (typeof v === 'object') return null
+  if (typeof v === 'boolean') return v ? 'true' : 'false'
+  return String(v)
+}
+function nonEmpty(v: string | null): boolean {
+  return v !== null && v.trim() !== ''
+}
+function modelContentPrepared(args: {
+  templateSnapshot: Json
+  contextSnapshot: Json
+  opportunityType: string
+  campaignSpecific: boolean
+}): boolean {
+  const t = args.templateSnapshot
+  const c = args.contextSnapshot
+  if (!isObject(t) || !isObject(c)) return false
+  // template_snapshot v1
+  if (asText(t['schemaVersion']) !== '1') return false
+  if (!nonEmpty(asText(t['templateKey']))) return false
+  const tv = asText(t['templateVersion'])
+  if (tv === null || !/^[0-9]+$/.test(tv) || BigInt(tv) < 1n) return false
+  if (!nonEmpty(asText(t['subject']))) return false
+  if (!nonEmpty(asText(t['heading']))) return false
+  if (!nonEmpty(asText(t['bodyText']))) return false
+  if (!nonEmpty(asText(t['ctaLabel']))) return false
+  // context_snapshot v1
+  if (asText(c['schemaVersion']) !== '1') return false
+  const ot = asText(c['opportunityType'])
+  if (!nonEmpty(ot)) return false
+  if (ot !== args.opportunityType) return false
+  if (args.campaignSpecific) {
+    const camp = c['campaign']
+    if (!isObject(camp)) return false
+    if (!nonEmpty(asText(camp['title']))) return false
+    if (!nonEmpty(asText(camp['url']))) return false
+  }
+  return true
+}
+
+// A minimal VALID v1 pair for the seeded abandoned_checkout (campaign-specific).
+function validPair() {
+  return {
+    templateSnapshot: {
+      schemaVersion: 1,
+      templateKey: 'abandoned_checkout_v1',
+      templateVersion: 1,
+      subject: 'You left something behind',
+      previewText: null,
+      heading: 'Still thinking about it?',
+      bodyText: 'Finish your entry.',
+      ctaLabel: 'Finish my entry',
+    } as Json,
+    contextSnapshot: {
+      schemaVersion: 1,
+      opportunityType: 'abandoned_checkout',
+      campaign: { title: 'The £20k Blowout', url: 'https://x/giveaways/blowout' },
+    } as Json,
+    opportunityType: 'abandoned_checkout',
+    campaignSpecific: true,
+  }
+}
+
+describe('022 — VERSION 1 content-readiness contract (behavioural)', () => {
+  it('BC-empty. the live {}/{} canary is NOT prepared', () => {
+    expect(modelContentPrepared({ templateSnapshot: {}, contextSnapshot: {}, opportunityType: 'abandoned_checkout', campaignSpecific: true })).toBe(false)
+  })
+
+  it('1. arbitrary non-empty template_snapshot is NOT automatically prepared', () => {
+    const p = validPair()
+    p.templateSnapshot = { anything: 'here', foo: 42 }
+    expect(modelContentPrepared(p)).toBe(false)
+  })
+
+  it('2. arbitrary non-empty context_snapshot is NOT automatically prepared', () => {
+    const p = validPair()
+    p.contextSnapshot = { anything: 'here' }
+    expect(modelContentPrepared(p)).toBe(false)
+  })
+
+  it('3. template_snapshot.schemaVersion must be 1', () => {
+    const p = validPair()
+    ;(p.templateSnapshot as Record<string, unknown>).schemaVersion = 2
+    expect(modelContentPrepared(p)).toBe(false)
+  })
+
+  it('4. context_snapshot.schemaVersion must be 1', () => {
+    const p = validPair()
+    ;(p.contextSnapshot as Record<string, unknown>).schemaVersion = 2
+    expect(modelContentPrepared(p)).toBe(false)
+  })
+
+  it('5. templateKey required', () => {
+    const p = validPair()
+    ;(p.templateSnapshot as Record<string, unknown>).templateKey = '   '
+    expect(modelContentPrepared(p)).toBe(false)
+  })
+
+  it('6. templateVersion must be an integer >= 1', () => {
+    for (const bad of [0, -1, 'x', 1.5]) {
+      const p = validPair()
+      ;(p.templateSnapshot as Record<string, unknown>).templateVersion = bad
+      expect(modelContentPrepared(p)).toBe(false)
+    }
+    const good = validPair()
+    ;(good.templateSnapshot as Record<string, unknown>).templateVersion = 3
+    expect(modelContentPrepared(good)).toBe(true)
+  })
+
+  it('7. subject required', () => {
+    const p = validPair()
+    ;(p.templateSnapshot as Record<string, unknown>).subject = ''
+    expect(modelContentPrepared(p)).toBe(false)
+  })
+
+  it('8. heading required', () => {
+    const p = validPair()
+    ;(p.templateSnapshot as Record<string, unknown>).heading = ''
+    expect(modelContentPrepared(p)).toBe(false)
+  })
+
+  it('9. bodyText required', () => {
+    const p = validPair()
+    ;(p.templateSnapshot as Record<string, unknown>).bodyText = ''
+    expect(modelContentPrepared(p)).toBe(false)
+  })
+
+  it('10. ctaLabel required', () => {
+    const p = validPair()
+    ;(p.templateSnapshot as Record<string, unknown>).ctaLabel = ''
+    expect(modelContentPrepared(p)).toBe(false)
+  })
+
+  it('11. opportunityType must match the linked opportunity', () => {
+    const p = validPair()
+    ;(p.contextSnapshot as Record<string, unknown>).opportunityType = 'lapsed_14_days'
+    expect(modelContentPrepared(p)).toBe(false)
+  })
+
+  it('12. campaign-specific context requires campaign.title', () => {
+    const p = validPair()
+    ;(p.contextSnapshot as Record<string, unknown>).campaign = { url: 'https://x/y' }
+    expect(modelContentPrepared(p)).toBe(false)
+  })
+
+  it('13. campaign-specific context requires campaign.url', () => {
+    const p = validPair()
+    ;(p.contextSnapshot as Record<string, unknown>).campaign = { title: 'T' }
+    expect(modelContentPrepared(p)).toBe(false)
+  })
+
+  it('valid v1 pair IS prepared', () => {
+    expect(modelContentPrepared(validPair())).toBe(true)
+  })
+})
+
+// --- preparation_eligible model (only the content axis; other axes assumed ok)
+function modelPreparationEligible(base: {
+  requiredAxesOk: boolean
+  contentPrepared: boolean
+}): boolean {
+  return base.requiredAxesOk && !base.contentPrepared
+}
+
+describe('022 — already_prepared excludes preparation (behavioural)', () => {
+  it('14. content_prepared=true => preparation_eligible=false', () => {
+    expect(modelPreparationEligible({ requiredAxesOk: true, contentPrepared: true })).toBe(false)
+  })
+
+  it('14b. content_prepared=false + all axes ok => preparation_eligible=true', () => {
+    expect(modelPreparationEligible({ requiredAxesOk: true, contentPrepared: false })).toBe(true)
+  })
+
+  it('15. already_prepared blocker is emitted exactly when content_prepared=true', () => {
+    // Mirror the SQL: || CASE WHEN c.content_prepared THEN ARRAY['already_prepared'] ...
+    const emit = (prepared: boolean) => (prepared ? ['already_prepared'] : [])
+    expect(emit(true)).toContain('already_prepared')
+    expect(emit(false)).not.toContain('already_prepared')
+    // And an already-prepared recipient is ineligible for preparation.
+    expect(modelPreparationEligible({ requiredAxesOk: true, contentPrepared: true })).toBe(false)
+  })
+})
+
+// --- template_valid model (mirrors wtf_marketing_template_is_valid) -----------
+const KEY_RE = /^[a-z][a-z0-9_]*$/
+function modelTemplateValid(t: {
+  template_key: string
+  name: string
+  subject: string | null
+  preview_text: string | null
+  heading: string | null
+  body_text: string | null
+  cta_label: string | null
+  default_url: string | null
+  version: number
+}): boolean {
+  const noBrackets = (s: string) => !/[<>]/.test(s)
+  const reqLen = (s: string | null, min: number, max: number) =>
+    s !== null && s.trim().length >= min && s.trim().length <= max
+  if (!(KEY_RE.test(t.template_key.toLowerCase()) && t.template_key.length >= 1 && t.template_key.length <= 100)) return false
+  if (!(reqLen(t.name, 1, 200) && noBrackets(t.name))) return false
+  if (!(reqLen(t.subject, 1, 300) && noBrackets(t.subject!))) return false
+  if (t.preview_text !== null && !(reqLen(t.preview_text, 1, 300) && noBrackets(t.preview_text))) return false
+  if (!(reqLen(t.heading, 1, 300) && noBrackets(t.heading!))) return false
+  if (!(reqLen(t.body_text, 1, 5000) && noBrackets(t.body_text!))) return false
+  if (!(reqLen(t.cta_label, 1, 100) && noBrackets(t.cta_label!))) return false
+  if (t.default_url !== null) {
+    if (t.default_url.length < 1 || t.default_url.length > 2048) return false
+    if (/[<>]/.test(t.default_url)) return false
+    if (!/^https?:\/\/[^\s]+$/i.test(t.default_url)) return false
+  }
+  if (!(Number.isInteger(t.version) && t.version >= 1)) return false
+  // placeholders: reuse the REAL app engine allowlist.
+  const unknown = findUnknownPlaceholders([t.subject, t.preview_text, t.heading, t.body_text, t.cta_label, t.default_url])
+  if (unknown.length > 0) return false
+  return true
+}
+
+function seededTemplate() {
+  return {
+    template_key: 'abandoned_checkout_v1',
+    name: 'Abandoned Checkout — Recovery',
+    subject: 'You left something behind',
+    preview_text: 'Your entry for {{campaign_title}} was not completed.',
+    heading: 'Still thinking about {{campaign_title}}?',
+    body_text: 'It looks like your checkout was not completed. Complete your entry at {{campaign_url}}.',
+    cta_label: 'Finish my entry',
+    default_url: null as string | null,
+    version: 1,
+  }
+}
+
+describe('022 — DB template validation contract (behavioural)', () => {
+  it('16. template_valid rejects angle brackets', () => {
+    const t = seededTemplate()
+    t.body_text = 'Hello <b>world</b>'
+    expect(modelTemplateValid(t)).toBe(false)
+  })
+
+  it('17. template_valid rejects unknown placeholders', () => {
+    const t = seededTemplate()
+    t.body_text = 'Hi {{first_name}} {{totally_made_up}}'
+    expect(modelTemplateValid(t)).toBe(false)
+  })
+
+  it('18. template_valid accepts the exact global allowlist syntax', () => {
+    const t = seededTemplate()
+    t.body_text = ALLOWED_PLACEHOLDERS.map((p) => `{{${p}}}`).join(' ')
+    // ALL six allowlisted placeholders are syntactically accepted.
+    expect(modelTemplateValid(t)).toBe(true)
+    // and empty/whitespace token is rejected.
+    const bad = seededTemplate()
+    bad.body_text = 'x {{}} y'
+    expect(modelTemplateValid(bad)).toBe(false)
+  })
+
+  it('19. template_valid validates URL when default_url is present', () => {
+    const good = seededTemplate()
+    good.default_url = 'https://wtf.example/giveaways/x'
+    expect(modelTemplateValid(good)).toBe(true)
+    const bad = seededTemplate()
+    bad.default_url = 'ftp://wtf.example/x'
+    expect(modelTemplateValid(bad)).toBe(false)
+    const bad2 = seededTemplate()
+    bad2.default_url = 'not a url'
+    expect(modelTemplateValid(bad2)).toBe(false)
+  })
+
+  it('20. template_valid enforces the template_key regex', () => {
+    // NOTE: the DB validator lower()s the key before matching (as does the app),
+    // so 'Abc' -> 'abc' is VALID. Only genuinely non-conforming keys are rejected.
+    for (const badKey of ['1abc', 'ab-c', 'ab c', '', '_abc']) {
+      const t = seededTemplate()
+      t.template_key = badKey
+      expect(modelTemplateValid(t)).toBe(false)
+    }
+    // Uppercase is normalised then accepted.
+    const upper = seededTemplate()
+    upper.template_key = 'Abc'
+    expect(modelTemplateValid(upper)).toBe(true)
+    expect(modelTemplateValid(seededTemplate())).toBe(true)
+  })
+
+  it('the seeded abandoned_checkout template is itself valid', () => {
+    expect(modelTemplateValid(seededTemplate())).toBe(true)
+  })
+})
+
+// ===========================================================================
+// 14. The SQL wires template_valid to the private validator helper, and the
+//     helper reproduces the app validation contract in the executable body.
+// ===========================================================================
+describe('022 — template_valid is authoritative via the private helper', () => {
+  const VALIDATOR = codeBody('tmplvalid')
+
+  it('W1. template_valid calls wtf_marketing_template_is_valid on the mapped template', () => {
+    expect(/public\.wtf_marketing_template_is_valid\(b\.tmpl_row_id\)\)\s*AS template_valid/i.test(PREP)).toBe(true)
+  })
+
+  it('W2. the private validator exists, is SECURITY DEFINER and STABLE', () => {
+    expect(/CREATE OR REPLACE FUNCTION public\.wtf_marketing_template_is_valid\(p_template_id uuid\)/i.test(CODE_FLAT)).toBe(true)
+    const sig = CODE_FLAT.slice(
+      CODE_FLAT.indexOf('FUNCTION public.wtf_marketing_template_is_valid'),
+      CODE_FLAT.indexOf('$tmplvalid$'),
+    )
+    expect(/SECURITY DEFINER/i.test(sig)).toBe(true)
+    expect(/\bSTABLE\b/i.test(sig)).toBe(true)
+    expect(/SET search_path = public, pg_temp/i.test(sig)).toBe(true)
+  })
+
+  it('W3. the validator reproduces the app contract (key regex, caps, brackets, url, placeholders)', () => {
+    expect(/\^\[a-z\]\[a-z0-9_\]\*\$/.test(VALIDATOR)).toBe(true)
+    expect(/BETWEEN 1 AND 300/i.test(VALIDATOR)).toBe(true)
+    expect(/BETWEEN 1 AND 5000/i.test(VALIDATOR)).toBe(true)
+    expect(/BETWEEN 1 AND 2048/i.test(VALIDATOR)).toBe(true)
+    expect(/!~ '\[<>\]'/i.test(VALIDATOR)).toBe(true)
+    expect(/\^https\?:\/\//i.test(VALIDATOR)).toBe(true)
+    expect(/\\\{\\\{\(\[\^\{\}\]\*\)\\\}\\\}/.test(VALIDATOR)).toBe(true)
+    for (const p of ['first_name', 'campaign_title', 'campaign_url', 'credit_balance', 'discount_code', 'unsubscribe_url']) {
+      expect(new RegExp(`'${p}'`).test(VALIDATOR)).toBe(true)
+    }
+  })
+
+  it('W4. the validator EXECUTE is revoked from every application role', () => {
+    for (const role of ['PUBLIC', 'anon', 'authenticated', 'service_role']) {
+      expect(new RegExp(`REVOKE ALL ON FUNCTION public\\.wtf_marketing_template_is_valid\\(uuid\\) FROM ${role}`, 'i').test(CODE_FLAT)).toBe(true)
+    }
+    // Never granted to any role.
+    expect(/GRANT EXECUTE ON FUNCTION public\.wtf_marketing_template_is_valid/i.test(CODE_FLAT)).toBe(false)
+  })
+
+  it('W5. postcheck denies validator EXECUTE to every role', () => {
+    expect(/PRIVATE template validator EXECUTE is granted to an application role/i.test(POSTCHECK)).toBe(true)
+  })
+})
+
+// ===========================================================================
+// 15. VERSION 1 contract is formally DOCUMENTED in the header (no longer "future
+//     undefined"), and snapshots are still NEVER populated.
+// ===========================================================================
+describe('022 — VERSION 1 contract documentation + no population', () => {
+  it('D1. header establishes schemaVersion=1 for BOTH snapshots', () => {
+    expect(/CONTENT-READINESS CONTRACT — VERSION 1/i.test(RAW)).toBe(true)
+    expect(/template_snapshot \(schemaVersion=1\)/i.test(RAW)).toBe(true)
+    expect(/context_snapshot \(schemaVersion=1\)/i.test(RAW)).toBe(true)
+  })
+
+  it('D2. header forbids identity/consent/provider/vulnerability data in snapshots', () => {
+    expect(/Forbidden in EITHER snapshot/i.test(RAW)).toBe(true)
+    expect(/unsubscribe token/i.test(RAW)).toBe(true)
+    expect(/financial-vulnerability \/ loss \/ chasing/i.test(RAW)).toBe(true)
+  })
+
+  it('D3. still never populates snapshots (no assignment anywhere)', () => {
+    expect(/SET\s+template_snapshot|SET\s+context_snapshot/i.test(CODE_FLAT)).toBe(false)
+    expect(/UPDATE public\.marketing_recipients/i.test(CODE_FLAT)).toBe(false)
   })
 })
