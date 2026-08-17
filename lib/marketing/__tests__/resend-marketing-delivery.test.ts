@@ -405,10 +405,15 @@ function stripComments(src: string): string {
 describe('Stage 029 — isolation', () => {
   const allCodeFiles = walk(REPO_ROOT)
 
-  it('39. no production import/call of sendMarketingEmailViaResend outside the provider module', () => {
+  it('39. only the Stage 030 delivery worker consumes sendMarketingEmailViaResend', () => {
+    // Stage 029 shipped the provider with ZERO consumers. Stage 030 introduced
+    // lib/marketing/delivery-worker.ts as the SINGLE authorised production
+    // consumer. No other production module may import the provider.
+    const AUTHORISED_CONSUMER = 'lib/marketing/delivery-worker.ts'
     const offenders: string[] = []
     for (const rel of allCodeFiles) {
       if (rel === PROVIDER_REL) continue // its own declaration/export
+      if (rel === AUTHORISED_CONSUMER) continue // the Stage 030 worker
       if (isTestFile(rel)) continue // tests may import it
       const src = readFileSync(join(REPO_ROOT, rel), 'utf8')
       if (src.includes('sendMarketingEmailViaResend') || src.includes('resend-provider')) {

@@ -337,13 +337,16 @@ describe('029.5 — isolation & scope', () => {
     expect(/supabase|createClient|\.rpc\(|CREATE TABLE|ALTER TABLE/i.test(src)).toBe(false)
   })
 
-  it('34/35. no marketing delivery worker or job/cron route exists', () => {
+  it('34/35. Stage 030 delivery worker + job route now exist (introduced after this patch)', () => {
+    // This guard originally asserted the worker/route did NOT exist yet. Stage
+    // 030 has since introduced both; the one-click patch itself still created
+    // neither, and neither of them modifies this unsubscribe route.
     const { existsSync } = require('node:fs') as typeof import('node:fs')
-    expect(existsSync(join(REPO_ROOT, 'lib/marketing/delivery-worker.ts'))).toBe(false)
-    expect(existsSync(join(REPO_ROOT, 'app/api/jobs/marketing-delivery/route.ts'))).toBe(false)
+    expect(existsSync(join(REPO_ROOT, 'lib/marketing/delivery-worker.ts'))).toBe(true)
+    expect(existsSync(join(REPO_ROOT, 'app/api/jobs/marketing-delivery/route.ts'))).toBe(true)
   })
 
-  it('36. sendMarketingEmailViaResend still has ZERO production consumers', () => {
+  it('36. sendMarketingEmailViaResend has exactly ONE production consumer (the Stage 030 worker)', () => {
     // Grep across production code (exclude tests) for any import/call.
     const { execSync } = require('node:child_process') as typeof import('node:child_process')
     const out = execSync(
@@ -356,6 +359,8 @@ describe('029.5 — isolation & scope', () => {
       .filter((line) => !line.includes('__tests__') && !/\.test\.[cm]?tsx?:/.test(line))
       // The provider's own declaration file is allowed.
       .filter((line) => !line.startsWith('lib/marketing/resend-provider.ts:'))
+      // The Stage 030 worker is the single authorised consumer.
+      .filter((line) => !line.startsWith('lib/marketing/delivery-worker.ts:'))
     expect(offenders).toEqual([])
   })
 })
