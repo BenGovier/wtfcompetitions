@@ -22,7 +22,10 @@ export const runtime = 'nodejs'
  * never sends a user id or email. We validate + decrypt server-side, then call
  * the idempotent unsubscribe function. It never requires login/cookies/CSRF, is
  * safe to call repeatedly (repeat calls still return success), and never reveals
- * whether an account exists. A conservative IP rate limit blunts abuse.
+ * whether an account exists. Rate limiting is PER MODE: Mode A uses the caller's
+ * IP (browser), Mode B uses a SHA-256 digest of the opaque token (mailbox
+ * provider IPs are shared across unrelated recipients, so an IP bucket would
+ * wrongly throttle legitimate one-click unsubscribes).
  *
  * GET never mutates — the human confirmation page lives at /unsubscribe and is
  * a separate concern; this route only mutates via POST.
