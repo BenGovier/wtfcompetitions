@@ -53,7 +53,8 @@ function sliceBetween(flat: string, startMarker: string, endMarker: string): str
 
 // Parse ordered column names from the private gate's RETURNS TABLE ( ... ).
 function privateReturnsColumns(): string[] {
-  const start = FLAT.indexOf('FUNCTION public.wtf_marketing_recipient_gate_preview()')
+  // Anchor on the CREATE (not the DROP) so we parse the new return contract.
+  const start = FLAT.indexOf('CREATE FUNCTION public.wtf_marketing_recipient_gate_preview()')
   const rtStart = FLAT.indexOf('RETURNS TABLE (', start)
   if (rtStart < 0) return []
   const open = rtStart + 'RETURNS TABLE ('.length
@@ -70,16 +71,81 @@ function privateReturnsColumns(): string[] {
     .filter((name) => /^[a-z_][a-z0-9_]*$/i.test(name))
 }
 
-describe('019 delivery automation routing — untouched prior migrations', () => {
-  // (1) migrations 001-018 untouched — enforced at the git level, but we assert
-  // 019 never rewrites those files by confirming it only references its own
-  // objects and re-creates (not ALTERs) the three shared gate functions.
-  it('1. does not DROP or ALTER migration-018 gate functions destructively', () => {
-    expect(/DROP FUNCTION/i.test(FLAT)).toBe(false)
-    // Only CREATE OR REPLACE is used for the shared functions.
-    expect(FLAT.includes('CREATE OR REPLACE FUNCTION public.wtf_marketing_recipient_gate_preview()')).toBe(true)
-    expect(FLAT.includes('CREATE OR REPLACE FUNCTION public.get_admin_marketing_recipient_gate_overview()')).toBe(true)
-    expect(FLAT.includes('CREATE OR REPLACE FUNCTION public.get_admin_marketing_recipient_gate_sample(')).toBe(true)
+describe('019 delivery automation routing — transactional function replacement', () => {
+  // Ordered list of DDL verbs applied to the three shared gate functions,
+  // in source order, so we can assert drop-before-create and drop ordering.
+  function fnDdlSequence(): Array<{ verb: 'DROP' | 'CREATE'; fn: string }> {
+    const out: Array<{ verb: 'DROP' | 'CREATE'; fn: string }> = []
+    const re =
+      /(DROP FUNCTION|CREATE FUNCTION|CREATE OR REPLACE FUNCTION)\s+public\.(wtf_marketing_recipient_gate_preview|get_admin_marketing_recipient_gate_overview|get_admin_marketing_recipient_gate_sample)/gi
+    for (const m of RAW.matchAll(re)) {
+      out.push({ verb: m[1].toUpperCase().startsWith('DROP') ? 'DROP' : 'CREATE', fn: m[2] })
+    }
+    return out
+  }
+
+  it('R1. migration does NOT CREATE OR REPLACE the private gate (return contract changes)', () => {
+    expect(/CREATE OR REPLACE FUNCTION public\.wtf_marketing_recipient_gate_preview\(\)/i.test(RAW)).toBe(false)
+    // It uses a plain CREATE after an explicit DROP instead.
+    expect(/CREATE FUNCTION public\.wtf_marketing_recipient_gate_preview\(\)/i.test(RAW)).toBe(true)
+  })
+
+  it('R2. wrapper functions are dropped BEFORE the private gate', () => {
+    const seq = fnDdlSequence()
+    const drops = seq.filter((s) => s.verb === 'DROP').map((s) => s.fn)
+    const iSample = drops.indexOf('get_admin_marketing_recipient_gate_sample')
+    const iOverview = drops.indexOf('get_admin_marketing_recipient_gate_overview')
+    const iGate = drops.indexOf('wtf_marketing_recipient_gate_preview')
+    expect(iSample).toBeGreaterThanOrEqual(0)
+    expect(iOverview).toBeGreaterThanOrEqual(0)
+    expect(iGate).toBeGreaterThanOrEqual(0)
+    // Both wrappers dropped before the private gate.
+    expect(iSample).toBeLessThan(iGate)
+    expect(iOverview).toBeLessThan(iGate)
+  })
+
+  it('R3. no DROP ... CASCADE anywhere in the migration', () => {
+    // No CASCADE modifier on any DROP statement (comments stripped in CODE_FLAT).
+    expect(/DROP\s+\w+[^;]*\bCASCADE\b/i.test(CODE_FLAT)).toBe(false)
+    // The only surviving "CASCADE" token in code is inside the abort RAISE
+    // message string literal ("refusing to DROP (no CASCADE)"); assert that is
+    // the sole occurrence so a real CASCADE can never hide.
+    const occurrences = (CODE_FLAT.match(/CASCADE/gi) ?? []).length
+    expect(occurrences).toBe(1)
+    expect(/refusing to DROP \(no CASCADE\)/i.test(CODE_FLAT)).toBe(true)
+  })
+
+  it('R4. exactly the three Stage 018 functions are dropped, and each recreated once', () => {
+    const seq = fnDdlSequence()
+    const dropped = seq.filter((s) => s.verb === 'DROP').map((s) => s.fn).sort()
+    const created = seq.filter((s) => s.verb === 'CREATE').map((s) => s.fn).sort()
+    const expected = [
+      'get_admin_marketing_recipient_gate_overview',
+      'get_admin_marketing_recipient_gate_sample',
+      'wtf_marketing_recipient_gate_preview',
+    ]
+    expect(dropped).toEqual(expected)
+    expect(created).toEqual(expected)
+    // Each dropped/created exactly once.
+    expect(seq.filter((s) => s.verb === 'DROP')).toHaveLength(3)
+    expect(seq.filter((s) => s.verb === 'CREATE')).toHaveLength(3)
+  })
+
+  it('R5. every DROP/CREATE occurs inside the single BEGIN/COMMIT transaction', () => {
+    const begin = RAW.indexOf('BEGIN;')
+    const commit = RAW.indexOf('COMMIT;')
+    expect(begin).toBeGreaterThanOrEqual(0)
+    expect(commit).toBeGreaterThan(begin)
+    for (const m of RAW.matchAll(/(DROP FUNCTION|CREATE FUNCTION)\s+public\./gi)) {
+      const idx = m.index ?? -1
+      expect(idx).toBeGreaterThan(begin)
+      expect(idx).toBeLessThan(commit)
+    }
+  })
+
+  it('R6. a pre-drop guard rejects unexpected dependents (no accidental CASCADE need)', () => {
+    expect(/unexpected dependent function/i.test(RAW)).toBe(true)
+    expect(/pg_depend/i.test(RAW)).toBe(true)
   })
 })
 
@@ -244,12 +310,81 @@ describe('019 delivery automation routing — private gate upgrade', () => {
     ).toBe(true)
   })
 
-  it('final SELECT emits the three delivery booleans in RETURNS-TABLE order', () => {
+  it('final SELECT emits the delivery columns in RETURNS-TABLE order', () => {
     expect(
-      /r\.campaign_context_valid, r\.delivery_automation_mapped, r\.delivery_automation_enabled, r\.delivery_route_ready, r\.existing_recipient,/i.test(
+      /r\.campaign_context_valid, r\.delivery_automation_id, r\.delivery_automation_mapped, r\.delivery_automation_enabled, r\.delivery_route_ready, r\.existing_recipient,/i.test(
         FLAT,
       ),
     ).toBe(true)
+  })
+})
+
+describe('019 delivery automation routing — private route id for Stage 020', () => {
+  const gate = () => fnBody(FLAT, 'gate')
+
+  it('D1. private RETURNS TABLE declares delivery_automation_id uuid', () => {
+    const cols = privateReturnsColumns()
+    expect(cols).toContain('delivery_automation_id')
+    expect(/delivery_automation_id\s+uuid/i.test(FLAT)).toBe(true)
+  })
+
+  it('D2. delivery_automation_id is sourced from the DEFINITION column', () => {
+    expect(/d\.delivery_automation_id\s+AS delivery_automation_id/i.test(gate())).toBe(true)
+  })
+
+  it('D3. delivery_automation_id is NOT sourced from opportunity provenance', () => {
+    // The opportunity provenance column must never feed the returned route id.
+    expect(/o\.automation_id\s+AS delivery_automation_id/i.test(gate())).toBe(false)
+    // Belt-and-braces: the gate body never selects o.automation_id at all.
+    expect(/\bo\.automation_id\b/i.test(gate())).toBe(false)
+  })
+
+  it('D4. pre_nba_gate_eligible still requires delivery_route_ready (unchanged by id addition)', () => {
+    const preExpr = sliceBetween(gate(), 'f.is_user_identity', ') AS pre_nba_gate_eligible')
+    expect(/AND f\.delivery_route_ready/i.test(preExpr)).toBe(true)
+  })
+
+  it('D5. post-install verifies the private gate returns delivery_automation_id uuid', () => {
+    expect(/private gate does not return delivery_automation_id uuid/i.test(RAW)).toBe(true)
+    expect(/proallargtypes/i.test(RAW)).toBe(true)
+  })
+})
+
+describe('019 delivery automation routing — privacy boundary for route id', () => {
+  const overview = () => fnBody(FLAT, 'overview')
+  const sample = () => fnBody(FLAT, 'sample')
+
+  it('P1. overview never references delivery_automation_id', () => {
+    expect(/delivery_automation_id/i.test(overview())).toBe(false)
+    expect(/deliveryAutomationId/i.test(overview())).toBe(false)
+  })
+
+  it('P2. sample never references delivery_automation_id', () => {
+    expect(/delivery_automation_id/i.test(sample())).toBe(false)
+    expect(/deliveryAutomationId/i.test(sample())).toBe(false)
+  })
+
+  it('P3. neither admin RPC exposes any automation id or key', () => {
+    for (const body of [overview(), sample()]) {
+      expect(/automation_key/i.test(body)).toBe(false)
+      expect(/da\.id\b/i.test(body)).toBe(false)
+      expect(/\.automation_id\b/i.test(body)).toBe(false)
+    }
+  })
+
+  it('P4. post-install re-verifies neither RPC output leaks delivery_automation_id', () => {
+    expect(/overview output leaks delivery_automation_id/i.test(RAW)).toBe(true)
+    expect(/sample output leaks delivery_automation_id/i.test(RAW)).toBe(true)
+  })
+
+  it('P5. every column referenced by overview/sample is declared by the private RETURNS TABLE', () => {
+    const declared = new Set(privateReturnsColumns())
+    for (const body of [overview(), sample()]) {
+      const refs = new Set<string>()
+      for (const m of body.matchAll(/\bg\.([a-z_][a-z0-9_]*)/gi)) refs.add(m[1])
+      expect(refs.size).toBeGreaterThan(0)
+      for (const r of refs) expect(declared.has(r), `admin RPC references undeclared g.${r}`).toBe(true)
+    }
   })
 })
 

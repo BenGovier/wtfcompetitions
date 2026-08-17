@@ -28,9 +28,14 @@
 --             (NOT VALID then VALIDATE) so an unmapped definition can never be
 --             enabled. delivery_automation_id is NOT made UNIQUE (many
 --             definitions may legitimately share one automation later).
---   Gate      CREATE OR REPLACE the three Stage 018 functions (private gate +
---             admin overview + admin sample) as a faithful SUPERSET adding
---             delivery-route readiness. Migration 018 itself is NOT modified.
+--   Gate      REPLACE the three Stage 018 functions (private gate + admin
+--             overview + admin sample) as a faithful SUPERSET adding delivery-
+--             route readiness. Because the private gate's RETURNS TABLE contract
+--             changes (new delivery_automation_id + routing columns), the stack
+--             is DROPped (wrappers first, private gate last; NO CASCADE) and
+--             recreated inside this same transaction — PostgreSQL cannot
+--             CREATE OR REPLACE a function while changing its OUT columns.
+--             Migration 018 itself is NOT modified.
 --
 -- WHAT THIS MIGRATION MUST NOT DO
 --   No automation rows created. No placeholder/fake automations. No templates.
@@ -299,12 +304,61 @@ ALTER TABLE public.marketing_opportunity_definitions
   VALIDATE CONSTRAINT marketing_opportunity_definitions_enabled_requires_route_chk;
 
 -- ============================================================================
--- STAGE 018 GATE UPGRADE (CREATE OR REPLACE; migration 018 file NOT modified).
---   PART A — PRIVATE canonical gate, now including delivery-route readiness.
---   pre_nba_gate_eligible additionally requires delivery_route_ready.
---   delivery_route_ready = mapped AND routed automation exists AND enabled.
+-- STAGE 018 GATE UPGRADE — TRANSACTIONAL FUNCTION REPLACEMENT.
+--   The private gate's RETURNS TABLE contract CHANGES (new delivery-routing
+--   columns), and PostgreSQL cannot CREATE OR REPLACE a function while altering
+--   its OUT-column structure. We therefore DROP the exact Stage 018 stack and
+--   recreate it, all inside this single transaction so there is never a
+--   committed state where any function is missing.
+--
+--   Dependency-safe DROP order: the two admin wrappers (which SELECT * FROM the
+--   private gate) FIRST, then the private gate LAST. NO "DROP ... CASCADE" is
+--   used anywhere: if an unexpected live dependency blocks a DROP, the whole
+--   migration RAISEs and rolls back rather than silently deleting unrelated
+--   objects.
+--
+--   Guard: confirm the ONLY dependents of the private gate are exactly the two
+--   known admin wrappers before dropping anything. Any other dependent aborts.
 -- ============================================================================
-CREATE OR REPLACE FUNCTION public.wtf_marketing_recipient_gate_preview()
+DO $replace_guard$
+DECLARE
+  v_unexpected text;
+BEGIN
+  -- Enumerate functions that depend on the private gate via pg_depend, excluding
+  -- the two wrappers we intend to drop and the private gate itself. Any row here
+  -- means DROP would fail (or would require CASCADE) — we abort instead.
+  SELECT string_agg(DISTINCT dependent.oid::regprocedure::text, ', ')
+    INTO v_unexpected
+    FROM pg_depend dep
+    JOIN pg_proc dependent ON dependent.oid = dep.objid
+   WHERE dep.refobjid = 'public.wtf_marketing_recipient_gate_preview()'::regprocedure
+     AND dep.classid = 'pg_proc'::regclass
+     AND dep.deptype IN ('n', 'a')
+     AND dependent.oid <> 'public.wtf_marketing_recipient_gate_preview()'::regprocedure
+     AND dependent.oid <> 'public.get_admin_marketing_recipient_gate_overview()'::regprocedure
+     AND dependent.oid <> 'public.get_admin_marketing_recipient_gate_sample(integer)'::regprocedure;
+  IF v_unexpected IS NOT NULL THEN
+    RAISE EXCEPTION 'Stage 3D2A (019) aborted: private gate has unexpected dependent function(s) [%]; refusing to DROP (no CASCADE).', v_unexpected;
+  END IF;
+END
+$replace_guard$;
+
+-- Drop the wrappers FIRST (they reference the private gate), then the gate.
+-- Plain DROP (no CASCADE, no IF EXISTS — preflight already proved they exist):
+-- any unexpected dependency makes these fail and roll back the transaction.
+DROP FUNCTION public.get_admin_marketing_recipient_gate_sample(integer);
+DROP FUNCTION public.get_admin_marketing_recipient_gate_overview();
+DROP FUNCTION public.wtf_marketing_recipient_gate_preview();
+
+-- ----------------------------------------------------------------------------
+-- PART A — PRIVATE canonical gate (recreated), now including delivery-route
+--   readiness AND the authoritative delivery_automation_id for Stage 020
+--   materialisation. pre_nba_gate_eligible additionally requires
+--   delivery_route_ready. delivery_route_ready = mapped AND routed automation
+--   exists AND enabled. delivery_automation_id is INTERNAL-ONLY (never surfaced
+--   through either admin RPC) and is sourced ONLY from the definition column.
+-- ----------------------------------------------------------------------------
+CREATE FUNCTION public.wtf_marketing_recipient_gate_preview()
 RETURNS TABLE (
   opportunity_id                 uuid,
   user_id                        uuid,
@@ -327,6 +381,7 @@ RETURNS TABLE (
   definition_enabled             boolean,
   campaign_specific              boolean,
   campaign_context_valid         boolean,
+  delivery_automation_id         uuid,
   delivery_automation_mapped     boolean,
   delivery_automation_enabled    boolean,
   delivery_route_ready           boolean,
@@ -403,6 +458,9 @@ base AS (
     COALESCE(d.enabled, false)             AS definition_enabled,
     COALESCE(d.campaign_specific, false)   AS campaign_specific,
     -- Delivery routing (Stage 3D2A): authoritative route from the DEFINITION.
+    -- INTERNAL-ONLY id for Stage 020 run.automation_id; NEVER exposed by admin RPCs.
+    -- Sourced ONLY from the definition column, never from opportunity provenance.
+    d.delivery_automation_id               AS delivery_automation_id,
     (d.delivery_automation_id IS NOT NULL) AS delivery_automation_mapped,
     (da.id IS NOT NULL)                    AS delivery_automation_exists,
     COALESCE(da.enabled, false)            AS delivery_automation_enabled,
@@ -510,6 +568,7 @@ SELECT
   r.definition_enabled,
   r.campaign_specific,
   r.campaign_context_valid,
+  r.delivery_automation_id,
   r.delivery_automation_mapped,
   r.delivery_automation_enabled,
   r.delivery_route_ready,
@@ -567,7 +626,7 @@ REVOKE ALL ON FUNCTION public.wtf_marketing_recipient_gate_preview() FROM servic
 --   deliveryAutomationMapped. New safe routing blockers appear naturally in
 --   blockedByReason via unnest.
 -- ============================================================================
-CREATE OR REPLACE FUNCTION public.get_admin_marketing_recipient_gate_overview()
+CREATE FUNCTION public.get_admin_marketing_recipient_gate_overview()
 RETURNS jsonb
 LANGUAGE sql
 STABLE
@@ -674,7 +733,7 @@ GRANT EXECUTE ON FUNCTION public.get_admin_marketing_recipient_gate_overview() T
 --   deliveryRouteReady. NEVER exposes delivery_automation_id, automation id/key,
 --   template id, or internal config.
 -- ============================================================================
-CREATE OR REPLACE FUNCTION public.get_admin_marketing_recipient_gate_sample(
+CREATE FUNCTION public.get_admin_marketing_recipient_gate_sample(
   p_limit integer DEFAULT 25
 )
 RETURNS jsonb
@@ -970,6 +1029,33 @@ BEGIN
      OR has_function_privilege('anon', 'public.get_admin_marketing_recipient_gate_sample(integer)', 'EXECUTE')
      OR has_function_privilege('authenticated', 'public.get_admin_marketing_recipient_gate_sample(integer)', 'EXECUTE') THEN
     RAISE EXCEPTION 'Stage 3D2A (019) verify aborted: admin sample privileges are not service-role-only.';
+  END IF;
+
+  -- 12. Private gate return contract MUST expose delivery_automation_id (uuid)
+  --     for Stage 020 materialisation. Verify via the function's declared OUT
+  --     parameters (pg_proc.proargnames / proallargtypes).
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_proc pr
+      CROSS JOIN LATERAL unnest(pr.proallargtypes, pr.proargmodes, pr.proargnames)
+                    AS t(argtype, argmode, argname)
+     WHERE pr.oid = 'public.wtf_marketing_recipient_gate_preview()'::regprocedure
+       AND t.argmode = 't'                    -- TABLE (OUT) column
+       AND t.argname = 'delivery_automation_id'
+       AND t.argtype = 'uuid'::regtype
+  ) THEN
+    RAISE EXCEPTION 'Stage 3D2A (019) verify aborted: private gate does not return delivery_automation_id uuid.';
+  END IF;
+
+  -- 13. delivery_automation_id MUST NOT leak through either admin RPC. The JSON
+  --     produced by the overview must contain no such key anywhere in its text.
+  IF v_overview::text ILIKE '%delivery_automation_id%'
+     OR v_overview::text ILIKE '%deliveryAutomationId%' THEN
+    RAISE EXCEPTION 'Stage 3D2A (019) verify aborted: overview output leaks delivery_automation_id.';
+  END IF;
+  IF public.get_admin_marketing_recipient_gate_sample(100)::text ILIKE '%delivery_automation_id%'
+     OR public.get_admin_marketing_recipient_gate_sample(100)::text ILIKE '%deliveryAutomationId%' THEN
+    RAISE EXCEPTION 'Stage 3D2A (019) verify aborted: sample output leaks delivery_automation_id.';
   END IF;
 END
 $postcheck$;
