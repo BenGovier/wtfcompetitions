@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { parseUnsubscribeToken } from '@/lib/marketing/unsubscribe-token'
 import { unsubscribeMarketingEmail } from '@/lib/marketing/service'
@@ -27,18 +28,10 @@ export const runtime = 'nodejs'
  * a separate concern; this route only mutates via POST.
  */
 export async function POST(req: Request) {
-  const ip = getClientIp(req)
-  const limit = rateLimit(`unsub:${ip}`, { limit: 10, windowMs: 60_000 })
-  if (!limit.allowed) {
-    return NextResponse.json(
-      { ok: false, error: 'rate_limited' },
-      { status: 429, headers: { 'Retry-After': String(limit.retryAfterSeconds) } },
-    )
-  }
-
   // Route strictly by media type (ignoring parameters like "; charset=utf-8").
   // We never parse a form body as JSON or vice versa, and never mix token
-  // sources between the two modes.
+  // sources between the two modes. Rate limiting is applied PER MODE (see below)
+  // because the two flows have fundamentally different callers.
   const mediaType = (req.headers.get('content-type') ?? '')
     .split(';')[0]
     .trim()
@@ -47,12 +40,28 @@ export async function POST(req: Request) {
   let token: unknown
 
   if (mediaType === 'application/json') {
-    // MODE A — unchanged. Token comes ONLY from the JSON body.
+    // MODE A — human confirmation flow (unchanged). Rate limited by the caller's
+    // IP: this is a browser fetch from the /unsubscribe page. Key + thresholds
+    // are byte-for-byte the original Stage 029.5 contract.
+    const ip = getClientIp(req)
+    const limit = rateLimit(`unsub:${ip}`, { limit: 10, windowMs: 60_000 })
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { ok: false, error: 'rate_limited' },
+        { status: 429, headers: { 'Retry-After': String(limit.retryAfterSeconds) } },
+      )
+    }
+
+    // Token comes ONLY from the JSON body.
     const body = (await req.json().catch(() => null)) as { token?: unknown } | null
     token = body?.token
   } else if (mediaType === 'application/x-www-form-urlencoded') {
-    // MODE B — one-click. Token comes ONLY from the query string; the body is
-    // the standards confirmation flag and MUST equal "List-Unsubscribe=One-Click".
+    // MODE B — RFC 8058 one-click. The caller is a mailbox provider's server, so
+    // its IP is shared across unrelated recipients: an IP bucket would falsely
+    // throttle legitimate unsubscribes. Instead we validate the request, then
+    // rate-limit on a privacy-safe, deterministic ONE-WAY digest of the opaque
+    // query token — never the raw token, never the user id/email, and without
+    // decrypting the token to build the key.
     const queryToken = new URL(req.url).searchParams.get('token')
     if (!queryToken) {
       // Missing or empty ?token= — reveal nothing, mutate nothing.
@@ -63,6 +72,19 @@ export async function POST(req: Request) {
     const form = new URLSearchParams(rawBody)
     if (form.get('List-Unsubscribe') !== 'One-Click') {
       return NextResponse.json({ ok: false, error: 'invalid_request' }, { status: 400 })
+    }
+
+    // SHA-256 the OPAQUE query token (not the decrypted identity) for the key.
+    const tokenDigest = createHash('sha256').update(queryToken).digest('hex')
+    const limit = rateLimit(`unsub-one-click:${tokenDigest}`, {
+      limit: 5,
+      windowMs: 5 * 60_000,
+    })
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { ok: false, error: 'rate_limited' },
+        { status: 429, headers: { 'Retry-After': String(limit.retryAfterSeconds) } },
+      )
     }
 
     token = queryToken
