@@ -278,7 +278,12 @@ describe('Stage 3A — no email route / Resend call added to the app surface', (
   }
 
   it('creates no new marketing email/cron/webhook route file', () => {
-    const routeFiles = walk('app/api').filter((p) => /marketing/i.test(p))
+    const routeFiles = walk('app/api')
+      .filter((p) => /marketing/i.test(p))
+      // The Stage 030 marketing-delivery job route + its tests are introduced by
+      // a LATER stage, not by Stage 3A. This guard asserts Stage 3A itself adds
+      // no sending/cron/webhook route, so exclude the Stage 030 path.
+      .filter((p) => !p.includes('marketing-delivery'))
     // The only pre-existing marketing API routes are the audiences reader and
     // the public unsubscribe handler + account preference route. Stage 3A adds
     // no sending/cron/webhook route.
