@@ -503,7 +503,11 @@ BEGIN
   SELECT count(*) INTO v_bad_rows
     FROM public.marketing_opportunities
    WHERE opportunity_type = 'recent_winner_credit_available'
-     AND NOT (
+     -- NULL-SAFE (fail-closed): a valid row makes the conjunction TRUE and is
+     -- NOT counted; any FALSE or unexpected NULL predicate makes it NOT TRUE and
+     -- IS counted as bad. Never use "AND NOT (...)" here — NOT(NULL) is NULL and
+     -- would let a malformed row slip through.
+     AND (
        user_id IS NOT NULL
        AND external_contact_id IS NULL
        AND campaign_id IS NOT NULL
@@ -517,7 +521,7 @@ BEGIN
        AND (context_snapshot ->> 'selectedAsNextBestAction')::boolean = true
        AND (context_snapshot ->> 'rn')::int = 1
        AND dedupe_key IS NOT NULL AND length(dedupe_key) > 0
-     );
+     ) IS NOT TRUE;
   IF v_bad_rows <> 0 THEN
     RAISE EXCEPTION 'Stage 3C2I verify aborted: % recent_winner_credit_available row(s) fail the invariant checks.', v_bad_rows;
   END IF;
@@ -527,7 +531,9 @@ BEGIN
   SELECT count(*) INTO v_bad_rows
     FROM public.marketing_opportunities
    WHERE opportunity_type = 'high_value_customer_at_risk'
-     AND NOT (
+     -- NULL-SAFE (fail-closed): see the recent_winner_credit_available block.
+     -- TRUE => valid (not counted); FALSE or NULL => bad (counted).
+     AND (
        user_id IS NOT NULL
        AND external_contact_id IS NULL
        AND campaign_id IS NULL
@@ -541,7 +547,7 @@ BEGIN
        AND (context_snapshot ->> 'selectedAsNextBestAction')::boolean = true
        AND (context_snapshot ->> 'rn')::int = 1
        AND dedupe_key IS NOT NULL AND length(dedupe_key) > 0
-     );
+     ) IS NOT TRUE;
   IF v_bad_rows <> 0 THEN
     RAISE EXCEPTION 'Stage 3C2I verify aborted: % high_value_customer_at_risk row(s) fail the invariant checks.', v_bad_rows;
   END IF;
@@ -551,7 +557,9 @@ BEGIN
   SELECT count(*) INTO v_bad_rows
     FROM public.marketing_opportunities
    WHERE opportunity_type = 'abandoned_checkout'
-     AND NOT (
+     -- NULL-SAFE (fail-closed): see the recent_winner_credit_available block.
+     -- TRUE => valid (not counted); FALSE or NULL => bad (counted).
+     AND (
        user_id IS NOT NULL
        AND external_contact_id IS NULL
        AND campaign_id IS NOT NULL
@@ -565,7 +573,7 @@ BEGIN
        AND (context_snapshot ->> 'selectedAsNextBestAction')::boolean = true
        AND (context_snapshot ->> 'rn')::int = 1
        AND dedupe_key IS NOT NULL AND length(dedupe_key) > 0
-     );
+     ) IS NOT TRUE;
   IF v_bad_rows <> 0 THEN
     RAISE EXCEPTION 'Stage 3C2I verify aborted: % abandoned_checkout row(s) fail the invariant checks.', v_bad_rows;
   END IF;

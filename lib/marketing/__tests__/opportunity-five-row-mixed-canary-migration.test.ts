@@ -231,8 +231,9 @@ describe('016 mixed canary — five-row distribution verification', () => {
     // recent_winner + abandoned_checkout verification requires campaign_id NOT NULL.
     const campaignNotNull = FLAT_EXEC.match(/AND campaign_id IS NOT NULL/gi) || []
     expect(campaignNotNull.length).toBeGreaterThanOrEqual(2)
-    // high_value verification requires campaign_id IS NULL.
-    expect(FLAT_EXEC).toMatch(/high_value_customer_at_risk'\s+AND NOT \([^)]*campaign_id IS NULL/i)
+    // high_value verification requires campaign_id IS NULL, inside the
+    // NULL-SAFE "AND ( ... ) IS NOT TRUE" wrapper (never "AND NOT (").
+    expect(FLAT_EXEC).toMatch(/high_value_customer_at_risk'\s+AND \([^;]*campaign_id IS NULL/i)
   })
 
   it('checks base priorities 1,1,2 in verification (14)', () => {
@@ -261,6 +262,77 @@ describe('016 mixed canary — five-row distribution verification', () => {
   it('only user identity accepted (external_contact_id NULL) for all new rows (12)', () => {
     const userId = FLAT_EXEC.match(/user_id IS NOT NULL\s+AND external_contact_id IS NULL/gi) || []
     expect(userId.length).toBeGreaterThanOrEqual(3)
+  })
+})
+
+describe('016 mixed canary — NULL-SAFE (fail-closed) invariant verification', () => {
+  // Isolate each type-specific verification region: from the WHERE type filter
+  // up to (and including) the null-safe "( ... ) IS NOT TRUE;" terminator.
+  // FLAT_EXEC has comments stripped and whitespace collapsed.
+  function invariantRegion(type: string): string {
+    const m = FLAT_EXEC.match(
+      new RegExp(`opportunity_type = '${type}'\\s+AND \\((.*?)\\) IS NOT TRUE;`, 'i'),
+    )
+    return m ? m[1] : ''
+  }
+
+  const RW = invariantRegion('recent_winner_credit_available')
+  const HV = invariantRegion('high_value_customer_at_risk')
+  const AC = invariantRegion('abandoned_checkout')
+
+  it('all THREE persisted-row invariant blocks use "( ... ) IS NOT TRUE"', () => {
+    const isNotTrue = FLAT_EXEC.match(/\) IS NOT TRUE;/gi) || []
+    expect(isNotTrue.length).toBe(3)
+    expect(RW.length).toBeGreaterThan(0)
+    expect(HV.length).toBeGreaterThan(0)
+    expect(AC.length).toBeGreaterThan(0)
+  })
+
+  it('does NOT use the null-unsafe "AND NOT (...)" pattern anywhere in executable SQL', () => {
+    // FLAT_EXEC_NOSTR strips comments AND string literals, so the explanatory
+    // comment and RAISE prose cannot mask a real occurrence.
+    expect(/AND NOT \(/i.test(FLAT_EXEC_NOSTR)).toBe(false)
+    // And specifically not attached to any of the three type filters.
+    expect(/recent_winner_credit_available'\s+AND NOT \(/i.test(FLAT_EXEC)).toBe(false)
+    expect(/high_value_customer_at_risk'\s+AND NOT \(/i.test(FLAT_EXEC)).toBe(false)
+    expect(/abandoned_checkout'\s+AND NOT \(/i.test(FLAT_EXEC)).toBe(false)
+  })
+
+  it('score NULL would logically fail each invariant (bounds live inside the IS NOT TRUE wrapper)', () => {
+    // Because the whole conjunction is evaluated as "... IS NOT TRUE", a NULL
+    // score makes "score >= 0 AND score <= 1000" NULL -> the conjunction is NULL
+    // -> IS NOT TRUE is TRUE -> the row is counted as bad. Prove the bounds are
+    // inside each wrapper region (not merely somewhere in the file).
+    for (const region of [RW, HV, AC]) {
+      expect(/score >= 0 AND score <= 1000/i.test(region)).toBe(true)
+    }
+  })
+
+  it('missing/NULL context values cannot silently pass (rn + selectedAsNextBestAction inside each wrapper)', () => {
+    for (const region of [RW, HV, AC]) {
+      expect(/\(context_snapshot ->> 'rn'\)::int = 1/i.test(region)).toBe(true)
+      expect(/\(context_snapshot ->> 'selectedAsNextBestAction'\)::boolean = true/i.test(region)).toBe(true)
+      // JSON shape guards and dedupe presence are also inside the wrapper.
+      expect(/jsonb_typeof\(context_snapshot\) = 'object'/i.test(region)).toBe(true)
+      expect(/dedupe_key IS NOT NULL AND length\(dedupe_key\) > 0/i.test(region)).toBe(true)
+    }
+  })
+
+  it('preserves every required invariant inside each null-safe wrapper (no weakening)', () => {
+    // RW + AC are campaign-specific; HV is not.
+    expect(/campaign_id IS NOT NULL/i.test(RW)).toBe(true)
+    expect(/campaign_id IS NULL/i.test(HV)).toBe(true)
+    expect(/campaign_id IS NOT NULL/i.test(AC)).toBe(true)
+    // Shared invariants present in all three regions.
+    for (const region of [RW, HV, AC]) {
+      expect(/user_id IS NOT NULL/i.test(region)).toBe(true)
+      expect(/external_contact_id IS NULL/i.test(region)).toBe(true)
+      expect(/state = 'open'/i.test(region)).toBe(true)
+      expect(/base_priority = c_[a-z]{2}_priority/i.test(region)).toBe(true)
+      expect(/= c_[a-z]{2}_expiry/i.test(region)).toBe(true)
+      expect(/expires_at > detected_at/i.test(region)).toBe(true)
+      expect(/jsonb_typeof\(reason\) = 'object'/i.test(region)).toBe(true)
+    }
   })
 })
 
