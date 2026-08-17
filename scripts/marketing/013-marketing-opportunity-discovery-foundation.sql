@@ -21,10 +21,25 @@
 --     enablement gate independently force zero writes.
 --
 -- GATES (all independent; ALL must pass before any write)
+--   0. The marketing_control_state singleton (key='default') must exist. If it
+--      is missing the RPC FAILS CLOSED (status=control_state_missing, 0 writes).
 --   1. discovery_enabled = true  (marketing_control_state, key = 'default').
 --      sending_enabled is IRRELEVANT here — discovery and sending are separate.
---   2. The candidate's definition row must have enabled = true.
---   3. Only rn = 1 winners are ever persisted.
+--   2. rollout_limit > 0. rollout_limit <= 0 is an INDEPENDENT hard stop even if
+--      discovery_enabled is accidentally turned on (status=rollout_disabled).
+--   3. The candidate's definition row must have enabled = true.
+--   4. Only rn = 1 winners are ever persisted.
+--
+-- GLOBAL CONTROL CEILINGS (read in ONE query from the control singleton)
+--   discovery_enabled, rollout_limit, maximum_batch_size are all read together.
+--   The number of rows a single invocation may insert is:
+--       effective_limit = LEAST(requested_limit, maximum_batch_size, rollout_limit)
+--   where requested_limit = LEAST(GREATEST(COALESCE(p_limit,100),1),500). The
+--   INSERT uses effective_limit, so a run can NEVER exceed the requested limit,
+--   the global batch ceiling (DB-constrained 1..100), or the global rollout
+--   ceiling — whichever is lowest. For this bounded stage rollout_limit is the
+--   maximum allowed rows for THIS invocation; cumulative lifetime rollout
+--   semantics are deliberately deferred to later run/recipient stages.
 --
 -- PERMISSION / SENDABILITY IS NOT A DISCOVERY FILTER
 --   Commercial opportunity != permission != sendability. This engine NEVER
@@ -41,9 +56,15 @@
 --     (b) a NOT EXISTS guard that skips a candidate while an ACTIVE
 --         (open/selected/deferred and not-yet-expired) opportunity already
 --         exists for the same (user_id, opportunity_type, campaign_id);
---     (c) a DETERMINISTIC, date-bucketed dedupe_key so a NEW generation can be
---         created after the previous one expires, while repeated runs within the
---         same day are a hard no-op via ON CONFLICT (dedupe_key) DO NOTHING.
+--     (c) a DETERMINISTIC, EXPIRY-WINDOW-bucketed dedupe_key. The bucket is the
+--         ordinal window floor(now_epoch / (default_expiry_hours * 3600)), so
+--         its length equals the opportunity's own lifetime. A NEW generation can
+--         appear only once the clock advances into a later window (i.e. after
+--         the previous opportunity has expired), while repeated runs within the
+--         SAME expiry window are a hard no-op via ON CONFLICT (dedupe_key) DO
+--         NOTHING. This is EXPIRY-WINDOW idempotency, NOT calendar-day: it is
+--         correct for every allowed default_expiry_hours (1..2160), including a
+--         1-hour definition that must be able to recur hourly.
 --   (a)+(b) prevent duplicate ACTIVE opportunities; (c) both enables future
 --   recurrence and provides a database-level idempotency backstop.
 --
@@ -189,20 +210,51 @@ AS $$
 DECLARE
   v_start            timestamptz := clock_timestamp();
   v_now              timestamptz := now();
-  v_limit            integer := LEAST(GREATEST(COALESCE(p_limit, 100), 1), 500);
+  -- Public request, hard-clamped to the absolute [1, 500] envelope. This is the
+  -- ceiling BEFORE the live global control ceilings are applied.
+  v_requested_limit  integer := LEAST(GREATEST(COALESCE(p_limit, 100), 1), 500);
+  -- The actual INSERT ceiling: LEAST(requested, maximum_batch_size, rollout_limit).
+  v_effective_limit  integer;
   v_discovery        boolean;
+  v_rollout          integer;
+  v_max_batch        integer;
   v_evaluated        bigint := 0;
   v_eligible         bigint := 0;
   v_skipped_existing bigint := 0;
   v_skipped_disabled bigint := 0;
   v_inserted         bigint := 0;
 BEGIN
-  -- DISCOVERY GATE. sending_enabled is intentionally NOT considered here.
-  SELECT discovery_enabled INTO v_discovery
+  -- Read ALL global control ceilings in ONE query. sending_enabled is
+  -- intentionally NOT read: sending is a separate downstream gate, irrelevant to
+  -- DISCOVERY. rollout_limit and maximum_batch_size are global rollout/batch
+  -- safety controls that MUST bound every discovery run.
+  SELECT discovery_enabled, rollout_limit, maximum_batch_size
+    INTO v_discovery, v_rollout, v_max_batch
     FROM public.marketing_control_state
    WHERE key = 'default';
 
-  IF NOT FOUND OR v_discovery IS DISTINCT FROM true THEN
+  -- GATE 0 — FAIL CLOSED. If the singleton control row is missing we cannot
+  -- confirm any ceiling, so we refuse to write anything.
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object(
+      'ok', false,
+      'status', 'control_state_missing',
+      'evaluated', 0,
+      'eligible', 0,
+      'inserted', 0,
+      'skippedExisting', 0,
+      'skippedDisabledDefinition', 0,
+      'requestedLimit', v_requested_limit,
+      'effectiveLimit', 0,
+      'rolloutLimit', NULL,
+      'maximumBatchSize', NULL,
+      'durationMs', round(extract(epoch FROM clock_timestamp() - v_start) * 1000)::bigint,
+      'generatedAt', v_now
+    );
+  END IF;
+
+  -- GATE 1 — DISCOVERY. discovery_enabled must be exactly true.
+  IF v_discovery IS DISTINCT FROM true THEN
     RETURN jsonb_build_object(
       'ok', true,
       'status', 'discovery_disabled',
@@ -211,10 +263,42 @@ BEGIN
       'inserted', 0,
       'skippedExisting', 0,
       'skippedDisabledDefinition', 0,
+      'requestedLimit', v_requested_limit,
+      'effectiveLimit', 0,
+      'rolloutLimit', v_rollout,
+      'maximumBatchSize', v_max_batch,
       'durationMs', round(extract(epoch FROM clock_timestamp() - v_start) * 1000)::bigint,
       'generatedAt', v_now
     );
   END IF;
+
+  -- GATE 2 — ROLLOUT. rollout_limit <= 0 is an INDEPENDENT hard stop: even if
+  -- discovery_enabled were accidentally turned on, rollout_limit=0 forces zero
+  -- writes. (For this bounded invocation rollout_limit is treated as the maximum
+  -- allowed number of rows; cumulative lifetime rollout semantics are a later
+  -- run/recipient-stage concern and are deliberately NOT invented here.)
+  IF COALESCE(v_rollout, 0) <= 0 THEN
+    RETURN jsonb_build_object(
+      'ok', true,
+      'status', 'rollout_disabled',
+      'evaluated', 0,
+      'eligible', 0,
+      'inserted', 0,
+      'skippedExisting', 0,
+      'skippedDisabledDefinition', 0,
+      'requestedLimit', v_requested_limit,
+      'effectiveLimit', 0,
+      'rolloutLimit', v_rollout,
+      'maximumBatchSize', v_max_batch,
+      'durationMs', round(extract(epoch FROM clock_timestamp() - v_start) * 1000)::bigint,
+      'generatedAt', v_now
+    );
+  END IF;
+
+  -- EFFECTIVE LIMIT — never exceed the requested limit, the global batch ceiling,
+  -- or the global rollout ceiling, whichever is lowest. maximum_batch_size is
+  -- DB-constrained to [1,100] and rollout_limit is > 0 here, so this is >= 1.
+  v_effective_limit := LEAST(v_requested_limit, v_max_batch, v_rollout);
 
   -- CONCURRENCY. Only one discovery run may persist at a time; this makes the
   -- NOT EXISTS active-duplicate guard race-safe. Bail cleanly if another run
@@ -228,6 +312,10 @@ BEGIN
       'inserted', 0,
       'skippedExisting', 0,
       'skippedDisabledDefinition', 0,
+      'requestedLimit', v_requested_limit,
+      'effectiveLimit', v_effective_limit,
+      'rolloutLimit', v_rollout,
+      'maximumBatchSize', v_max_batch,
       'durationMs', round(extract(epoch FROM clock_timestamp() - v_start) * 1000)::bigint,
       'generatedAt', v_now
     );
@@ -295,7 +383,7 @@ BEGIN
 
   -- Bounded, deterministic, set-based persistence of the top eligible winners
   -- that have no active duplicate. ON CONFLICT (dedupe_key) DO NOTHING makes a
-  -- same-day repeat run (or a concurrent duplicate key) a hard no-op.
+  -- same-expiry-window repeat run (or a concurrent duplicate key) a hard no-op.
   WITH to_persist AS (
     SELECT
       w.user_id,
@@ -320,7 +408,7 @@ BEGIN
            AND o.expires_at > v_now
       )
     ORDER BY w.final_score DESC, w.default_priority ASC, w.user_id ASC
-    LIMIT v_limit
+    LIMIT v_effective_limit
   )
   INSERT INTO public.marketing_opportunities (
     user_id,
@@ -368,13 +456,22 @@ BEGIN
       'selectedAsNextBestAction', true,
       'rn',                       1
     ),
-    -- Deterministic, date-bucketed idempotency spine (<= 300 chars). The day
-    -- bucket lets a fresh generation appear only AFTER the prior one expires,
-    -- while same-day retries collide on the unique index and are ignored.
+    -- Deterministic, EXPIRY-WINDOW-bucketed idempotency spine (<= 300 chars).
+    -- The bucket is floor(now_epoch / (default_expiry_hours * 3600)), i.e. the
+    -- ordinal of the current window whose length equals the opportunity's own
+    -- lifetime. Retries WITHIN a window collide on the global unique dedupe_key
+    -- index and are ignored; once the previous opportunity has expired the clock
+    -- has advanced into a later window, yielding a new key and allowing a fresh
+    -- generation. Correct for every allowed default_expiry_hours (1..2160): a
+    -- 1-hour definition rebuckets hourly, a 2160-hour definition every 90 days.
+    -- GREATEST(..., 1) is a defensive guard against a zero divisor.
     'discv1:' || tp.user_id::text
       || ':' || tp.opportunity_key
       || ':' || COALESCE(tp.campaign_id::text, '-')
-      || ':' || to_char((v_now AT TIME ZONE 'UTC')::date, 'YYYYMMDD')
+      || ':w' || floor(
+                   extract(epoch FROM v_now)
+                   / (GREATEST(tp.default_expiry_hours, 1) * 3600)
+                 )::bigint::text
   FROM to_persist tp
   ON CONFLICT (dedupe_key) DO NOTHING;
 
@@ -395,7 +492,7 @@ END
 $$;
 
 COMMENT ON FUNCTION public.discover_marketing_opportunities(integer) IS
-  'Stage 3C2F controlled persistence engine. Reuses wtf_marketing_opportunity_candidates_preview() as the sole detector/arbitrator and persists ONLY rn=1 winners into marketing_opportunities. Gated on discovery_enabled=true AND per-definition enabled=true; NEVER filters on permission/sendability. Set-based, advisory-locked, bounded p_limit in [1,500] (default 100). Idempotent via NOT EXISTS active guard + date-bucketed dedupe_key (existing global unique index). Returns compact JSON stats (no identities/emails). Service-role only.';
+  'Stage 3C2F controlled persistence engine. Reuses wtf_marketing_opportunity_candidates_preview() as the sole detector/arbitrator and persists ONLY rn=1 winners into marketing_opportunities. Reads discovery_enabled, rollout_limit and maximum_batch_size in one query; fails closed if the control row is missing. Gated on discovery_enabled=true AND rollout_limit>0 AND per-definition enabled=true; NEVER filters on permission/sendability. INSERT ceiling = LEAST(requested (p_limit clamped 1..500), maximum_batch_size, rollout_limit). Set-based, advisory-locked. Idempotent via NOT EXISTS active guard + EXPIRY-WINDOW-bucketed dedupe_key (existing global unique index). Returns compact JSON stats incl. requestedLimit/effectiveLimit/rolloutLimit/maximumBatchSize (no identities/emails). Service-role only.';
 
 -- ============================================================================
 -- Security: service_role-only EXECUTE. The function is SECURITY DEFINER and
@@ -413,6 +510,8 @@ COMMIT;
 --   * marketing_control_state UNCHANGED (still sending=false/discovery=false/
 --     rollout_limit=0); no definition enabled; ledger still empty.
 --   * With discovery_enabled=false the RPC short-circuits to
---     {"ok":true,"status":"discovery_disabled","inserted":0} and writes nothing.
+--     {"ok":true,"status":"discovery_disabled","inserted":0} and writes nothing;
+--     independently, rollout_limit=0 short-circuits to status=rollout_disabled
+--     with 0 writes even if discovery_enabled were true.
 --   * No detector/scoring/schema change; no recipients/runs/email/cron/AI.
 -- ============================================================================

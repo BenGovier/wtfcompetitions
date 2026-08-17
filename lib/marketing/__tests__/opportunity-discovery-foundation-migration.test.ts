@@ -100,9 +100,10 @@ describe('013 discovery — persistence occurs ONLY inside the invoked RPC', () 
 })
 
 describe('013 discovery — discovery_enabled gate required before writes', () => {
-  it('reads discovery_enabled from the control-state singleton (key = default)', () => {
-    expect(FLAT_EXEC).toMatch(/SELECT discovery_enabled\s+INTO/i)
-    expect(FLAT_EXEC).toMatch(/FROM public\.marketing_control_state\s+WHERE key = 'default'/i)
+  it('reads discovery_enabled, rollout_limit and maximum_batch_size in ONE query from the singleton', () => {
+    expect(FN_BODY).toMatch(
+      /SELECT discovery_enabled, rollout_limit, maximum_batch_size\s+INTO v_discovery, v_rollout, v_max_batch\s+FROM public\.marketing_control_state\s+WHERE key = 'default'/i,
+    )
   })
 
   it('short-circuits to discovery_disabled with zero inserts when not enabled', () => {
@@ -113,6 +114,55 @@ describe('013 discovery — discovery_enabled gate required before writes', () =
   it('does NOT require sending_enabled for discovery', () => {
     // The gate checks discovery only; sending_enabled is never read in the body.
     expect(FN_BODY).not.toMatch(/sending_enabled/i)
+  })
+})
+
+describe('013 discovery — global control ceilings (rollout_limit + maximum_batch_size)', () => {
+  it('fails CLOSED when the control-state singleton is missing', () => {
+    expect(FN_BODY).toMatch(/IF NOT FOUND THEN/i)
+    expect(FLAT).toMatch(/'status', 'control_state_missing'/)
+    // The fail-closed branch must be marked ok:false (a refusal, not a success).
+    expect(FN_BODY).toMatch(/'ok', false,\s*'status', 'control_state_missing'/i)
+  })
+
+  it('rollout_limit <= 0 is an INDEPENDENT hard stop even if discovery could run', () => {
+    expect(FN_BODY).toMatch(/COALESCE\(v_rollout, 0\) <= 0/i)
+    expect(FLAT).toMatch(/'status', 'rollout_disabled'/)
+    // The rollout gate is evaluated AFTER the discovery gate but is its own IF,
+    // so rollout_limit=0 blocks writes regardless of discovery_enabled.
+    const rolloutIdx = FN_BODY.indexOf('rollout_disabled')
+    const insertIdx = FN_BODY.indexOf('INSERT INTO public.marketing_opportunities')
+    expect(rolloutIdx).toBeGreaterThan(0)
+    expect(rolloutIdx).toBeLessThan(insertIdx)
+  })
+
+  it('reads maximum_batch_size and rollout_limit from control state', () => {
+    expect(FN_BODY).toMatch(/INTO v_discovery, v_rollout, v_max_batch/i)
+  })
+
+  it('effective INSERT limit is LEAST(requested, maximum_batch_size, rollout_limit)', () => {
+    expect(FN_BODY).toMatch(
+      /v_effective_limit := LEAST\(v_requested_limit, v_max_batch, v_rollout\)/i,
+    )
+  })
+
+  it('requested limit remains hard-capped at [1,500] before the ceilings apply', () => {
+    expect(FN_BODY).toMatch(
+      /v_requested_limit\s+integer := LEAST\(GREATEST\(COALESCE\(p_limit, 100\), 1\), 500\)/i,
+    )
+  })
+
+  it('no code path can bypass rollout_limit or maximum_batch_size', () => {
+    // The ONLY LIMIT feeding the INSERT is the effective (LEAST) limit.
+    const limits = FN_BODY.match(/LIMIT v_\w+/gi) || []
+    expect(limits.length).toBe(1)
+    expect(limits[0]).toMatch(/LIMIT v_effective_limit/i)
+  })
+
+  it('returns the config-only ceiling fields (no identity)', () => {
+    for (const key of ["'requestedLimit'", "'effectiveLimit'", "'rolloutLimit'", "'maximumBatchSize'"]) {
+      expect(FLAT.includes(key)).toBe(true)
+    }
   })
 })
 
@@ -153,8 +203,11 @@ describe('013 discovery — bounded execution', () => {
     expect(FN_BODY).toMatch(/LEAST\(GREATEST\(COALESCE\(p_limit, 100\), 1\), 500\)/i)
   })
 
-  it('applies a LIMIT to the persisted set', () => {
-    expect(FN_BODY).toMatch(/LIMIT v_limit/i)
+  it('applies the EFFECTIVE limit (not the raw requested limit) to the persisted set', () => {
+    expect(FN_BODY).toMatch(/LIMIT v_effective_limit/i)
+    // The raw requested-limit variable must NOT be what the INSERT limits by.
+    expect(/LIMIT v_requested_limit\b/i.test(FN_BODY)).toBe(false)
+    expect(/LIMIT v_limit\b/i.test(FN_BODY)).toBe(false)
   })
 
   it('orders deterministically before limiting', () => {
@@ -205,9 +258,22 @@ describe('013 discovery — idempotency / dedupe uses the EXISTING schema', () =
     expect(FN_BODY).toMatch(/o\.campaign_id IS NOT DISTINCT FROM/i)
   })
 
-  it('builds a deterministic, date-bucketed dedupe_key enabling later recurrence', () => {
+  it('builds a deterministic, EXPIRY-WINDOW-bucketed dedupe_key (NOT calendar-day)', () => {
     expect(FN_BODY).toMatch(/'discv1:'/)
-    expect(FN_BODY).toMatch(/to_char\(\(v_now AT TIME ZONE 'UTC'\)::date, 'YYYYMMDD'\)/i)
+    // The calendar-day bucket must be GONE.
+    expect(/to_char\([^)]*YYYYMMDD/i.test(FN_BODY)).toBe(false)
+    expect(/YYYYMMDD/i.test(CODE)).toBe(false)
+    // Bucket = floor(now_epoch / (default_expiry_hours * 3600)), so the window
+    // length equals the opportunity's own lifetime.
+    expect(FN_BODY).toMatch(
+      /floor\(\s*extract\(epoch FROM v_now\)\s*\/\s*\(GREATEST\(tp\.default_expiry_hours, 1\) \* 3600\)\s*\)/i,
+    )
+  })
+
+  it('the expiry-window bucket is driven by default_expiry_hours and works for a 1-hour definition', () => {
+    // default_expiry_hours is the divisor basis (a 1-hour def rebuckets hourly);
+    // GREATEST(...,1) guards the divisor so hours as low as 1 are valid.
+    expect(FN_BODY).toMatch(/GREATEST\(tp\.default_expiry_hours, 1\) \* 3600/i)
   })
 
   it('does not create a new unique index or alter the opportunity schema', () => {
