@@ -324,12 +324,14 @@ BEGIN
   -- Materialise the rn = 1 winners ONCE (the detector is the expensive part),
   -- joined to their definition (enablement + expiry + campaign-specificity) and
   -- to their marketing profile (for the NOT NULL email_lc). Re-callable within a
-  -- single transaction via DROP IF EXISTS. The working relation is ALWAYS
-  -- schema-qualified as pg_temp.tmp_disc_winners so this SECURITY DEFINER
-  -- function resolves it unambiguously to the session temp schema, never to a
-  -- same-named relation planted earlier on the search_path.
+  -- single transaction via DROP IF EXISTS. CREATE TEMP TABLE must NOT be schema-
+  -- qualified (PostgreSQL places it in the session temp schema automatically),
+  -- but every DROP and every read AFTER creation IS explicitly pg_temp-qualified
+  -- so this SECURITY DEFINER function resolves the working relation unambiguously
+  -- to the session temp schema, never to a same-named relation planted earlier
+  -- on the search_path.
   DROP TABLE IF EXISTS pg_temp.tmp_disc_winners;
-  CREATE TEMP TABLE pg_temp.tmp_disc_winners ON COMMIT DROP AS
+  CREATE TEMP TABLE tmp_disc_winners ON COMMIT DROP AS
   SELECT
     c.user_id,
     c.opportunity_key,

@@ -62,14 +62,22 @@ describe('013 discovery — transaction & inert install', () => {
   it('creates exactly one function and only a TEMP working table (no persistent table)', () => {
     const creates = FLAT_EXEC.match(/CREATE (OR REPLACE )?FUNCTION/gi) || []
     expect(creates.length).toBe(1)
-    // The only CREATE TABLE is the pg_temp ON COMMIT DROP temp table in the body.
+    // The only CREATE TABLE is the ON COMMIT DROP temp table in the body. Per
+    // valid PostgreSQL syntax, CREATE TEMP TABLE is UNQUALIFIED (the temp schema
+    // is chosen automatically); it must NOT be schema-qualified.
     const tableCreates = FLAT_EXEC.match(/CREATE\s+(TEMP\s+)?TABLE/gi) || []
     expect(tableCreates.length).toBe(1)
-    expect(FN_BODY).toMatch(/CREATE TEMP TABLE pg_temp\.tmp_disc_winners ON COMMIT DROP/i)
+    expect(FN_BODY).toMatch(/CREATE TEMP TABLE tmp_disc_winners ON COMMIT DROP/i)
   })
 })
 
 describe('013 discovery — SECURITY DEFINER temp working table is explicitly pg_temp', () => {
+  it('CREATE TEMP TABLE is UNQUALIFIED (valid PostgreSQL syntax)', () => {
+    // A schema qualification on CREATE TEMP TABLE is a syntax error in Postgres.
+    expect(FN_BODY).toMatch(/CREATE TEMP TABLE tmp_disc_winners ON COMMIT DROP AS/i)
+    expect(/CREATE TEMP TABLE pg_temp\.tmp_disc_winners/i.test(FN_BODY)).toBe(false)
+  })
+
   it('drops the temp working table with an explicit pg_temp qualification', () => {
     expect(FN_BODY).toMatch(/DROP TABLE IF EXISTS pg_temp\.tmp_disc_winners;/i)
     // No unqualified DROP of the working relation may remain.
@@ -77,22 +85,29 @@ describe('013 discovery — SECURITY DEFINER temp working table is explicitly pg
   })
 
   it('creates it as a TEMP table (still supporting repeated same-transaction calls)', () => {
-    expect(FN_BODY).toMatch(/CREATE TEMP TABLE pg_temp\.tmp_disc_winners ON COMMIT DROP AS/i)
+    expect(FN_BODY).toMatch(/CREATE TEMP TABLE tmp_disc_winners ON COMMIT DROP AS/i)
     // DROP IF EXISTS before CREATE keeps the function re-callable in one txn.
     const dropIdx = FN_BODY.indexOf('DROP TABLE IF EXISTS pg_temp.tmp_disc_winners')
-    const createIdx = FN_BODY.indexOf('CREATE TEMP TABLE pg_temp.tmp_disc_winners')
+    const createIdx = FN_BODY.indexOf('CREATE TEMP TABLE tmp_disc_winners')
     expect(dropIdx).toBeGreaterThan(0)
     expect(createIdx).toBeGreaterThan(dropIdx)
   })
 
-  it('every executable reference to the working relation is pg_temp-qualified', () => {
-    // No unqualified "tmp_disc_winners" token may appear in executable SQL:
-    // every occurrence must be immediately preceded by "pg_temp.".
+  it('every reference AFTER creation is pg_temp-qualified (only the CREATE is unqualified)', () => {
+    // Exactly ONE unqualified occurrence is allowed — the CREATE TEMP TABLE
+    // statement itself. Every other reference (DROP, FROM, INTO) must be
+    // immediately preceded by "pg_temp.".
     const re = /(pg_temp\.)?tmp_disc_winners/gi
     let m: RegExpExecArray | null
     const unqualified: string[] = []
     while ((m = re.exec(FN_BODY)) !== null) {
-      if (!m[1]) unqualified.push(FN_BODY.slice(Math.max(0, m.index - 12), m.index + 20))
+      if (!m[1]) {
+        const preceding = FN_BODY.slice(Math.max(0, m.index - 24), m.index)
+        // Allow the single unqualified CREATE TEMP TABLE reference.
+        if (!/CREATE TEMP TABLE\s*$/i.test(preceding)) {
+          unqualified.push(FN_BODY.slice(Math.max(0, m.index - 20), m.index + 20))
+        }
+      }
     }
     expect(unqualified).toEqual([])
   })
