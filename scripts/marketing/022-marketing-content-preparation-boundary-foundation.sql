@@ -99,8 +99,10 @@
 --   The template therefore uses the {{campaign_url}} placeholder in the body and
 --   leaves default_url NULL. The future preparation layer MUST resolve
 --   {{campaign_url}} into the per-recipient context_snapshot (from the frozen
---   opportunity.campaign_id -> campaigns.slug), plus {{campaign_title}} and
---   optional {{first_name}}. NO URL is fabricated in this migration.
+--   opportunity.campaign_id -> campaigns.slug), plus {{campaign_title}}. The
+--   seeded copy uses ONLY these two campaign-driven, authoritatively-resolvable
+--   placeholders; {{first_name}} is intentionally NOT used (no confirmed source).
+--   NO URL is fabricated in this migration.
 --
 -- UNSUBSCRIBE (explicit decision):
 --   No unsubscribe token/URL is placed in the template record OR any recipient
@@ -378,9 +380,17 @@ SELECT
 
 -- ============================================================================
 -- CONFIG WRITE 1 — SEED THE CANONICAL abandoned_checkout TEMPLATE.
---   Structured slots only. Only allowlisted placeholders are used:
---     {{first_name}}, {{campaign_title}}, {{campaign_url}}
---   NO angle brackets, NO raw HTML, NO emoji, NO loss/near-miss/chasing framing.
+--   Structured slots only. Only CURRENTLY-RESOLVABLE allowlisted placeholders
+--   are used:
+--     {{campaign_title}}, {{campaign_url}}
+--   {{first_name}} is deliberately NOT used: the Stage 022 audit established that
+--   customer_marketing_profiles has NO confirmed authoritative first_name source,
+--   and this migration must not invent one or expand the marketing projection.
+--   Allowlisting only proves SYNTAX validity, not DATA resolvability, so the
+--   seeded copy is limited to values the next preparation layer can resolve
+--   authoritatively from its approved campaign-driven inputs.
+--   NO angle brackets, NO raw HTML, NO emoji, NO loss/near-miss/chasing/scarcity/
+--   guaranteed-win framing.
 --   default_url is intentionally NULL: abandoned_checkout is campaign-specific,
 --   so the destination is resolved per-recipient by the future preparation layer
 --   into context_snapshot (from campaign.slug), NEVER hard-coded to one campaign.
@@ -403,13 +413,12 @@ INSERT INTO public.marketing_templates (
 VALUES (
   'abandoned_checkout_v1',
   'Abandoned Checkout — Recovery',
-  'Still thinking it over, {{first_name}}?',
-  'Your entry to {{campaign_title}} is still waiting.',
-  'Still thinking it over?',
-  'Hi {{first_name}}, you started entering {{campaign_title}} but did not finish at checkout. '
-    || 'Good news: the competition is still open and your entry is only a step away. '
-    || 'Pick up right where you left off and secure your numbers before it closes. '
-    || 'Head to {{campaign_url}} to complete your entry.',
+  'You left something behind',
+  'Your entry for {{campaign_title}} was not completed.',
+  'Still thinking about {{campaign_title}}?',
+  'It looks like your checkout was not completed. If you still want to enter, '
+    || 'you can head back to the competition and pick up right where you left off '
+    || 'before it closes. Complete your entry at {{campaign_url}}.',
   'Finish my entry',
   NULL,          -- campaign-dynamic; resolved later via {{campaign_url}}
   NULL,          -- no discount attached to this recovery template

@@ -313,18 +313,49 @@ describe('022 — canonical abandoned_checkout template', () => {
     expect(used.length).toBeGreaterThan(0)
   })
 
+  it('TP2a. seeded template uses ONLY currently-resolvable campaign placeholders', () => {
+    const literals = TEMPLATE_INSERT.match(/'(?:[^']|'')*'/g) ?? []
+    const used = new Set(literals.flatMap((l) => extractPlaceholders(l)))
+    // Allowlisted (syntax-valid) is NOT the same as data-resolvable. For the
+    // abandoned_checkout seed, only campaign-driven values are authoritatively
+    // resolvable by the next preparation layer.
+    const resolvable = new Set(['campaign_title', 'campaign_url'])
+    for (const tok of used) {
+      expect(resolvable.has(tok)).toBe(true)
+    }
+    // Both campaign placeholders are exercised.
+    expect(used.has('campaign_title')).toBe(true)
+    expect(used.has('campaign_url')).toBe(true)
+  })
+
+  it('TP2b. {{first_name}} is NOT used (no confirmed authoritative source)', () => {
+    // first_name is allowlisted but not data-resolvable from the marketing
+    // projection, so it must not appear anywhere in the seeded template content.
+    const literals = TEMPLATE_INSERT.match(/'(?:[^']|'')*'/g) ?? []
+    const used = literals.flatMap((l) => extractPlaceholders(l))
+    expect(used).not.toContain('first_name')
+    expect(/first_name/i.test(TEMPLATE_INSERT)).toBe(false)
+  })
+
   it('TP3. no angle brackets / raw HTML in the template content', () => {
     expect(/[<>]/.test(TEMPLATE_INSERT)).toBe(false)
   })
 
-  it('TP4. no loss / near-miss / chasing framing in the template copy', () => {
+  it('TP4. no loss / near-miss / chasing / scarcity / guaranteed-win framing', () => {
     const banned = [
       /so close/i,
       /near[- ]?miss/i,
       /win back/i,
+      /win it back/i,
       /due a win/i,
       /chasing/i,
       /last chance to win/i,
+      /guaranteed win/i,
+      /guaranteed to win/i,
+      /don'?t miss out/i,
+      /hurry/i,
+      /running out/i,
+      /only \d+ left/i,
     ]
     for (const re of banned) {
       expect(re.test(TEMPLATE_INSERT)).toBe(false)
