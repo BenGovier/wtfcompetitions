@@ -7,7 +7,9 @@
 --   Prove the ENTIRE Stage 019/020 recipient chain end-to-end, ONCE, without
 --   sending anything:
 --
---       permission-backed user
+--       canonical-detector rn=1 new_account_no_purchase winner (NULL campaign)
+--         + independent permission authority (profile + is_marketing_email_eligible)
+--         + isolation from any pre-existing active opportunity/recipient
 --         -> valid new_account_no_purchase opportunity (direct insert)
 --         -> authoritative Stage 019 delivery route
 --         -> canonical Stage 019 private recipient gate (gate_eligible = true)
@@ -114,6 +116,14 @@ DECLARE
   v_email_lc          text;
   v_snapshot_diag     boolean;
 
+  -- Canonical-detector re-confirmation (drift guard before writes). The user is
+  -- SELECTED from the detector and must STILL be a rn=1 new_account_no_purchase
+  -- winner with a NULL campaign_id immediately before we materialise.
+  v_det_key           text;
+  v_det_rn            integer;
+  v_det_campaign      uuid;
+  v_det_found         boolean;
+
   -- Inserted canary opportunity.
   v_opp_id            uuid;
   v_dedupe_key        text;
@@ -161,6 +171,8 @@ DECLARE
   v_r_bounced         timestamptz;
   v_r_complained      timestamptz;
   v_r_attempts        integer;
+  v_r_locked_at       timestamptz;
+  v_r_locked_until    timestamptz;
 
   v_run_auto_id       uuid;
   v_run_promo_id      uuid;
@@ -207,6 +219,12 @@ BEGIN
 
   IF to_regprocedure('public.is_marketing_email_eligible(uuid, text)') IS NULL THEN
     RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: is_marketing_email_eligible(uuid,text) is missing.';
+  END IF;
+  -- The canonical Stage 011/013 detector/arbitrator is the SOLE source of truth
+  -- for which users have a genuine new_account_no_purchase opportunity (7-day
+  -- account-age window + configured first_delay_minutes + rn=1 arbitration).
+  IF to_regprocedure('public.wtf_marketing_opportunity_candidates_preview()') IS NULL THEN
+    RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: canonical detector wtf_marketing_opportunity_candidates_preview() is missing (Stage 011).';
   END IF;
   IF to_regprocedure('public.wtf_marketing_recipient_gate_preview()') IS NULL THEN
     RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: private gate wtf_marketing_recipient_gate_preview() is missing (Stage 019).';
@@ -310,44 +328,89 @@ BEGIN
   END IF;
 
   -- ========================================================================
-  -- CANARY USER SELECTION — deterministic, permission-backed, zero-purchase.
-  --   Authoritative selector RE-CHECKS is_marketing_email_eligible AT RUNTIME.
-  --   marketing_eligible_snapshot is captured ONLY as a diagnostic and is NOT
-  --   used as the authority.
+  -- CANARY USER SELECTION — SOURCED FROM THE CANONICAL DETECTOR.
+  --   COMMERCIAL DETECTION and CONTACT PERMISSION are kept STRICTLY separate:
+  --
+  --   (1) DETECTION AUTHORITY — public.wtf_marketing_opportunity_candidates_preview():
+  --       The detector alone decides who has a genuine new_account_no_purchase
+  --       opportunity. We require detector.opportunity_key = the canary type,
+  --       detector.rn = 1 (the arbitrated winner) and detector.campaign_id IS NULL
+  --       (a non-campaign opportunity). This inherits — WITHOUT re-deriving — the
+  --       detector's 7-day account-age window and configured first_delay_minutes
+  --       semantics. We deliberately do NOT re-express those date predicates here.
+  --       Detector permission-snapshot fields (perm_backed / sendable_now / ...)
+  --       are NEVER used as contact authority.
+  --
+  --   (2) PERMISSION AUTHORITY — the profile flags + is_marketing_email_eligible():
+  --       Independently of detection, the chosen user MUST be a live, confirmed,
+  --       marketing-enabled, unsuppressed profile AND pass the authoritative
+  --       runtime consent function. marketing_eligible_snapshot is captured ONLY
+  --       as a diagnostic and is NOT the authority.
+  --
+  --   (3) ISOLATION — the user must be free of any pre-existing ACTIVE (working)
+  --       opportunity so it cannot interfere with NBA/materialisation, and free
+  --       of any existing recipient.
   -- ========================================================================
   SELECT p.user_id, p.email_lc, p.marketing_eligible_snapshot
     INTO v_user_id, v_email_lc, v_snapshot_diag
-    FROM public.customer_marketing_profiles p
-   WHERE p.user_id IS NOT NULL
+    -- DETECTION comes first and is authoritative for the opportunity itself.
+    FROM public.wtf_marketing_opportunity_candidates_preview() detector
+    JOIN public.customer_marketing_profiles p
+      ON p.user_id = detector.user_id
+   WHERE detector.opportunity_key = c_opp_type   -- new_account_no_purchase
+     AND detector.rn = 1                          -- arbitrated winner ONLY
+     AND detector.campaign_id IS NULL             -- non-campaign opportunity
+     -- PERMISSION AUTHORITY (kept separate from detection).
+     AND p.user_id IS NOT NULL
      AND p.email_lc IS NOT NULL
      AND length(btrim(p.email_lc)) > 0
      AND p.account_active = true
      AND p.email_confirmed = true
      AND p.marketing_enabled = true
      AND p.has_active_suppression = false
-     -- Opportunity semantics: a genuinely new account with no first purchase.
-     AND p.confirmed_order_count = 0
-     AND p.last_confirmed_at IS NULL
-     -- AUTHORITATIVE consent re-check (NOT the snapshot).
+     -- AUTHORITATIVE consent re-check (NOT the detector/profile snapshot).
      AND public.is_marketing_email_eligible(p.user_id, p.email_lc) IS TRUE
-     -- No existing recipient for that user (any run).
+     -- ISOLATION 1: no existing recipient for that user (any run).
      AND NOT EXISTS (
        SELECT 1 FROM public.marketing_recipients r WHERE r.user_id = p.user_id
      )
-     -- No existing active/non-expired new_account_no_purchase opportunity.
+     -- ISOLATION 2: no pre-existing ACTIVE (working) opportunity of ANY type.
+     -- The opportunity state CHECK is: open, selected, suppressed, deferred,
+     -- expired, superseded, actioned. The still-active/working states that could
+     -- interfere with NBA/materialisation are open, selected and deferred; we
+     -- exclude any non-expired row in those states, of ANY opportunity_type.
      AND NOT EXISTS (
        SELECT 1 FROM public.marketing_opportunities o
         WHERE o.user_id = p.user_id
-          AND o.opportunity_type = c_opp_type
-          AND o.state NOT IN ('expired', 'superseded')
+          AND o.state IN ('open', 'selected', 'deferred')
           AND o.expires_at > now()
      )
    ORDER BY p.account_created_at ASC NULLS LAST, p.user_id ASC
    LIMIT 1;
 
   IF v_user_id IS NULL THEN
-    -- Do NOT relax eligibility to manufacture a candidate.
+    -- Do NOT relax detection, permission or isolation to manufacture a candidate.
     RAISE EXCEPTION 'no_safe_canary_user';
+  END IF;
+
+  -- DETECTOR CONSISTENCY RE-CONFIRMATION (drift guard).
+  --   Prove — BEFORE any write — that the chosen user is STILL present in the
+  --   canonical detector as an rn=1 new_account_no_purchase winner with a NULL
+  --   campaign_id. This makes the canary robust against detector-state drift
+  --   between selection and materialisation.
+  SELECT true, detector.opportunity_key, detector.rn, detector.campaign_id
+    INTO v_det_found, v_det_key, v_det_rn, v_det_campaign
+    FROM public.wtf_marketing_opportunity_candidates_preview() detector
+   WHERE detector.user_id = v_user_id
+     AND detector.opportunity_key = c_opp_type
+     AND detector.rn = 1
+     AND detector.campaign_id IS NULL;
+  IF v_det_found IS DISTINCT FROM true
+     OR v_det_key IS DISTINCT FROM c_opp_type
+     OR v_det_rn  IS DISTINCT FROM 1
+     OR v_det_campaign IS NOT NULL THEN
+    RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: canonical detector no longer confirms the chosen user as an rn=1 % winner with NULL campaign_id (key=%, rn=%, campaign set=%).',
+      c_opp_type, v_det_key, v_det_rn, (v_det_campaign IS NOT NULL);
   END IF;
 
   -- ========================================================================
@@ -544,11 +607,13 @@ BEGIN
   SELECT r.user_id, r.external_contact_id, r.email_lc, r.run_id, r.status,
          r.idempotency_key, r.template_snapshot, r.context_snapshot,
          r.discount_code_snapshot, r.sent_at, r.provider_email_id,
-         r.delivered_at, r.clicked_at, r.bounced_at, r.complained_at, r.attempts
+         r.delivered_at, r.clicked_at, r.bounced_at, r.complained_at, r.attempts,
+         r.locked_at, r.locked_until
     INTO v_r_user_id, v_r_external, v_r_email_lc, v_r_run_id, v_r_status,
          v_r_idem, v_r_tmpl, v_r_ctx,
          v_r_discount, v_r_sent_at, v_r_provider,
-         v_r_delivered, v_r_clicked, v_r_bounced, v_r_complained, v_r_attempts
+         v_r_delivered, v_r_clicked, v_r_bounced, v_r_complained, v_r_attempts,
+         v_r_locked_at, v_r_locked_until
     FROM public.marketing_recipients r
    WHERE r.opportunity_id = v_opp_id;
   IF NOT FOUND THEN
@@ -570,10 +635,15 @@ BEGIN
      OR v_r_clicked   IS NOT NULL
      OR v_r_bounced   IS NOT NULL
      OR v_r_complained IS NOT NULL
-     OR v_r_attempts  IS DISTINCT FROM 0 THEN
-    RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: recipient contract violated (status=%, sent_at set=%, provider set=%, attempts=%, tmpl=%, ctx=%).',
+     OR v_r_attempts  IS DISTINCT FROM 0
+     -- Materialisation NEVER acquires a processing/delivery lock: both lock
+     -- columns MUST be NULL on a freshly staged recipient.
+     OR v_r_locked_at    IS NOT NULL
+     OR v_r_locked_until IS NOT NULL THEN
+    RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: recipient contract violated (status=%, sent_at set=%, provider set=%, attempts=%, locked_at set=%, locked_until set=%, tmpl=%, ctx=%).',
       v_r_status, (v_r_sent_at IS NOT NULL), (v_r_provider IS NOT NULL),
-      v_r_attempts, v_r_tmpl, v_r_ctx;
+      v_r_attempts, (v_r_locked_at IS NOT NULL), (v_r_locked_until IS NOT NULL),
+      v_r_tmpl, v_r_ctx;
   END IF;
 
   -- No stray recipient exists beyond the one linked to the canary opportunity.

@@ -158,48 +158,94 @@ describe('021 — global sending & discovery kill switches', () => {
 // (6,7,8) Deterministic permission-backed selection; authoritative eligibility;
 //         snapshot is NOT the authority.
 // ===========================================================================
-describe('021 — canary user selection', () => {
-  it('selects deterministically (account_created_at ASC, user_id ASC) with LIMIT 1 (6)', () => {
-    expect(FLAT_EXEC).toMatch(/ORDER BY p\.account_created_at ASC NULLS LAST, p\.user_id ASC\s+LIMIT 1/i)
+describe('021 — canary user selection (canonical detector + separate permission)', () => {
+  // The selector spans from the detector FROM clause to LIMIT 1.
+  const selStart = FLAT_EXEC.indexOf('FROM public.wtf_marketing_opportunity_candidates_preview() detector')
+  const selEnd = FLAT_EXEC.indexOf('LIMIT 1', selStart)
+  const SELECTOR = selStart >= 0 && selEnd >= 0 ? FLAT_EXEC.slice(selStart, selEnd) : ''
+
+  it('depends on the canonical detector wtf_marketing_opportunity_candidates_preview() (1)', () => {
+    // Declared as a required preflight dependency.
+    expect(FLAT_EXEC).toMatch(/to_regprocedure\('public\.wtf_marketing_opportunity_candidates_preview\(\)'\) IS NULL/i)
+    expect(FLAT_EXEC).toMatch(/canonical detector wtf_marketing_opportunity_candidates_preview\(\) is missing/i)
   })
 
-  it('re-checks authoritative is_marketing_email_eligible at runtime (7)', () => {
-    expect(FLAT_EXEC).toMatch(/public\.is_marketing_email_eligible\(p\.user_id, p\.email_lc\) IS TRUE/i)
-  })
-
-  it('does NOT use marketing_eligible_snapshot as the authority — diagnostic only (8)', () => {
-    // The snapshot column is only ever SELECTed into a diagnostic variable.
-    // It must NOT appear in a WHERE predicate of the selector.
-    const selStart = FLAT_EXEC.indexOf('FROM public.customer_marketing_profiles p')
-    const selEnd = FLAT_EXEC.indexOf('LIMIT 1', selStart)
-    const SELECTOR = selStart >= 0 && selEnd >= 0 ? FLAT_EXEC.slice(selStart, selEnd) : ''
+  it('sources user selection THROUGH the canonical detector, joined to the profile (2)', () => {
     expect(SELECTOR.length).toBeGreaterThan(0)
-    // No "AND marketing_eligible_snapshot" gate in the WHERE clause.
+    // Detection is the FROM root; the profile is JOINed on detector.user_id.
+    expect(FLAT_EXEC).toMatch(/FROM public\.wtf_marketing_opportunity_candidates_preview\(\) detector\s+JOIN public\.customer_marketing_profiles p\s+ON p\.user_id = detector\.user_id/i)
+  })
+
+  it('requires detector.opportunity_key = new_account_no_purchase (3)', () => {
+    expect(SELECTOR).toMatch(/detector\.opportunity_key = c_opp_type/i)
+    // c_opp_type is bound to the canary type constant.
+    expect(FLAT_EXEC).toMatch(/c_opp_type\s+constant text\s*:=\s*'new_account_no_purchase'/i)
+  })
+
+  it('requires detector.rn = 1 (arbitrated winner) (4)', () => {
+    expect(SELECTOR).toMatch(/detector\.rn = 1/i)
+  })
+
+  it('requires detector.campaign_id IS NULL (5)', () => {
+    expect(SELECTOR).toMatch(/detector\.campaign_id IS NULL/i)
+  })
+
+  it('does NOT reintroduce the loose confirmed_order_count-only selector (6)', () => {
+    // Account-age / first-delay semantics are inherited from the detector, NOT
+    // re-expressed here. The old loose predicates must be gone from the selector.
+    expect(/p\.confirmed_order_count\s*=\s*0/i.test(SELECTOR)).toBe(false)
+    expect(/p\.last_confirmed_at\s+IS NULL/i.test(SELECTOR)).toBe(false)
+    // And the canary does not hand-roll the detector's 7-day / delay window.
+    expect(/account_created_at\s*>=\s*now\(\)\s*-\s*interval '7 days'/i.test(SELECTOR)).toBe(false)
+    expect(/make_interval\(mins =>/i.test(SELECTOR)).toBe(false)
+  })
+
+  it('still requires authoritative is_marketing_email_eligible independently (7)', () => {
+    expect(SELECTOR).toMatch(/public\.is_marketing_email_eligible\(p\.user_id, p\.email_lc\) IS TRUE/i)
+    // Plus all independent permission flags.
+    expect(SELECTOR).toMatch(/p\.account_active = true/i)
+    expect(SELECTOR).toMatch(/p\.email_confirmed = true/i)
+    expect(SELECTOR).toMatch(/p\.marketing_enabled = true/i)
+    expect(SELECTOR).toMatch(/p\.has_active_suppression = false/i)
+    expect(SELECTOR).toMatch(/p\.user_id IS NOT NULL/i)
+    expect(SELECTOR).toMatch(/length\(btrim\(p\.email_lc\)\) > 0/i)
+  })
+
+  it('does NOT use any permission snapshot as authority — diagnostic only (8)', () => {
+    // marketing_eligible_snapshot never gates the WHERE clause.
     expect(/AND\s+p?\.?marketing_eligible_snapshot/i.test(SELECTOR)).toBe(false)
+    // Detector permission-snapshot fields are never used as contact authority.
+    expect(/detector\.(perm_backed|perm_suppressed|perm_not_backed|sendable_now)/i.test(SELECTOR)).toBe(false)
   })
 
-  it('requires all permission flags in the selector', () => {
-    expect(FLAT_EXEC).toMatch(/p\.account_active = true/i)
-    expect(FLAT_EXEC).toMatch(/p\.email_confirmed = true/i)
-    expect(FLAT_EXEC).toMatch(/p\.marketing_enabled = true/i)
-    expect(FLAT_EXEC).toMatch(/p\.has_active_suppression = false/i)
-    expect(FLAT_EXEC).toMatch(/p\.user_id IS NOT NULL/i)
-    expect(FLAT_EXEC).toMatch(/length\(btrim\(p\.email_lc\)\) > 0/i)
+  it('isolates the canary user from pre-existing active opportunities + recipients (9)', () => {
+    // No existing recipient for the user (any run).
+    expect(SELECTOR).toMatch(/NOT EXISTS \(\s*SELECT 1 FROM public\.marketing_recipients r WHERE r\.user_id = p\.user_id\s*\)/i)
+    // No pre-existing ACTIVE (working) opportunity of ANY type. Uses the exact
+    // working-state semantics from the opportunity CHECK: open/selected/deferred.
+    expect(SELECTOR).toMatch(/o\.state IN \('open', 'selected', 'deferred'\)\s+AND o\.expires_at > now\(\)/i)
+    // The isolation is NOT narrowed to only the canary type any more.
+    expect(/o\.opportunity_type = c_opp_type\s+AND o\.state NOT IN/i.test(SELECTOR)).toBe(false)
   })
 
-  it('requires zero confirmed orders and NULL last_confirmed_at (9)', () => {
-    expect(FLAT_EXEC).toMatch(/p\.confirmed_order_count = 0/i)
-    expect(FLAT_EXEC).toMatch(/p\.last_confirmed_at IS NULL/i)
-  })
-
-  it('requires no existing recipient and no active non-expired opportunity for the user', () => {
-    expect(FLAT_EXEC).toMatch(/NOT EXISTS \(\s*SELECT 1 FROM public\.marketing_recipients r WHERE r\.user_id = p\.user_id\s*\)/i)
-    expect(FLAT_EXEC).toMatch(/o\.opportunity_type = c_opp_type\s+AND o\.state NOT IN \('expired', 'superseded'\)\s+AND o\.expires_at > now\(\)/i)
-  })
-
-  it('raises no_safe_canary_user and never relaxes eligibility when none qualifies', () => {
+  it('raises no_safe_canary_user and never relaxes detection/permission/isolation (10)', () => {
     expect(FLAT_EXEC).toMatch(/RAISE EXCEPTION 'no_safe_canary_user'/i)
     expect(FLAT_EXEC).toMatch(/IF v_user_id IS NULL THEN/i)
+  })
+
+  it('re-confirms detector membership BEFORE any write (drift guard) (11)', () => {
+    // A second detector read after selection, requiring the same rn=1 / key /
+    // NULL campaign, positioned before the opportunity INSERT.
+    const reconfirmIdx = FLAT_EXEC.indexOf('SELECT true, detector.opportunity_key, detector.rn, detector.campaign_id')
+    const insertIdx = FLAT_EXEC.indexOf('INSERT INTO public.marketing_opportunities')
+    expect(reconfirmIdx).toBeGreaterThan(0)
+    expect(insertIdx).toBeGreaterThan(reconfirmIdx)
+    expect(FLAT_EXEC).toMatch(/detector\.user_id = v_user_id\s+AND detector\.opportunity_key = c_opp_type\s+AND detector\.rn = 1\s+AND detector\.campaign_id IS NULL/i)
+    expect(FLAT_EXEC).toMatch(/canonical detector no longer confirms the chosen user/i)
+  })
+
+  it('selects deterministically (account_created_at ASC, user_id ASC) with LIMIT 1', () => {
+    expect(FLAT_EXEC).toMatch(/ORDER BY p\.account_created_at ASC NULLS LAST, p\.user_id ASC\s+LIMIT 1/i)
   })
 })
 
@@ -240,14 +286,15 @@ describe('021 — canary opportunity type & context', () => {
   it('opportunity automation_id provenance is NULL, not a delivery route (13)', () => {
     // The insert lists automation_id in its column list (comment retained in FLAT).
     expect(FLAT).toMatch(/automation_id,\s*-- NULL provenance/i)
-    // The delivery route variable is only used for the run/gate, never as the
-    // opportunity's automation_id.
-    expect(/automation_id\s*=\s*v_def_route_id/i.test(FLAT_EXEC)).toBe(false)
-    // The insert column list supplies NULL (not the route id) for automation_id.
+    // The opportunity INSERT never supplies the delivery route as automation_id.
+    // (The route id legitimately scopes the RUN elsewhere, so we scope this
+    // assertion strictly to the opportunity insert statement.)
     const insStart = FLAT_EXEC.indexOf('INSERT INTO public.marketing_opportunities')
     const insEnd = FLAT_EXEC.indexOf('RETURNING id INTO v_opp_id', insStart)
     const INS = insStart >= 0 && insEnd >= 0 ? FLAT_EXEC.slice(insStart, insEnd) : ''
+    expect(INS.length).toBeGreaterThan(0)
     expect(/v_def_route_id/i.test(INS)).toBe(false)
+    expect(/automation_id\s*=\s*v_def_route_id/i.test(INS)).toBe(false)
     // Post-assertion requires provenance stays NULL.
     expect(FLAT_EXEC).toMatch(/v_opp_auto_prov IS NOT NULL/i)
   })
@@ -413,14 +460,33 @@ describe('021 — recipient assertions', () => {
     expect(FLAT_EXEC).toMatch(/v_r_discount IS NOT NULL/i)
   })
 
-  it('sent/provider/engagement state remains NULL and attempts 0 (31)', () => {
+  it('sent/provider/engagement state remains NULL and attempts 0 (31, 16)', () => {
     expect(FLAT_EXEC).toMatch(/v_r_sent_at\s+IS NOT NULL/i)
     expect(FLAT_EXEC).toMatch(/v_r_provider\s+IS NOT NULL/i)
     expect(FLAT_EXEC).toMatch(/v_r_delivered IS NOT NULL/i)
     expect(FLAT_EXEC).toMatch(/v_r_clicked\s+IS NOT NULL/i)
     expect(FLAT_EXEC).toMatch(/v_r_bounced\s+IS NOT NULL/i)
     expect(FLAT_EXEC).toMatch(/v_r_complained IS NOT NULL/i)
+    // (16) attempts remains 0.
     expect(FLAT_EXEC).toMatch(/v_r_attempts\s+IS DISTINCT FROM 0/i)
+  })
+
+  it('reads locked_at and locked_until from the canary recipient (12, 13)', () => {
+    // Both lock columns are pulled in the recipient SELECT ...
+    expect(FLAT_EXEC).toMatch(/r\.locked_at, r\.locked_until\s+INTO/i)
+    // ... into their dedicated variables.
+    expect(FLAT_EXEC).toMatch(/v_r_locked_at, v_r_locked_until\s+FROM public\.marketing_recipients r/i)
+    // And the variables are declared.
+    expect(FLAT_EXEC).toMatch(/v_r_locked_at\s+timestamptz/i)
+    expect(FLAT_EXEC).toMatch(/v_r_locked_until\s+timestamptz/i)
+  })
+
+  it('requires locked_at IS NULL and locked_until IS NULL — no delivery lock (14, 15)', () => {
+    expect(FLAT_EXEC).toMatch(/v_r_locked_at\s+IS NOT NULL/i)
+    expect(FLAT_EXEC).toMatch(/v_r_locked_until IS NOT NULL/i)
+    // Neither lock field is ever populated by the canary.
+    expect(/v_r_locked_at\s*:=|locked_at\s*=\s*now\(\)/i.test(FLAT_EXEC)).toBe(false)
+    expect(/v_r_locked_until\s*:=|locked_until\s*=\s*now\(\)/i.test(FLAT_EXEC)).toBe(false)
   })
 
   it('recipient is a user identity, external_contact_id NULL', () => {
