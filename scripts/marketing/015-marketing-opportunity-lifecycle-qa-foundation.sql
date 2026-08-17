@@ -271,19 +271,23 @@ BEGIN
        GROUP BY state
     ) c ON c.state = s.state;
 
-  -- Count by opportunity type (every allowed type present, zero when absent).
-  SELECT jsonb_object_agg(t.type, COALESCE(c.cnt, 0))
+  -- Count by opportunity type. The AUTHORITATIVE catalogue is
+  -- marketing_opportunity_definitions (28+ definitions today and growing), so we
+  -- read the type list DYNAMICALLY from it — no opportunity key is hardcoded
+  -- here. EVERY current definition appears exactly once; definitions with zero
+  -- persisted opportunities return 0 (via LEFT JOIN + COALESCE) so newer types
+  -- can NEVER be silently omitted. Deterministic ordering by opportunity_key.
+  SELECT COALESCE(
+           jsonb_object_agg(d.opportunity_key, COALESCE(c.cnt, 0) ORDER BY d.opportunity_key),
+           '{}'::jsonb
+         )
     INTO v_by_type
-    FROM (VALUES
-            ('vip_early_access'), ('abandoned_checkout'), ('wtf_credit_waiting'),
-            ('regular_buyer_campaign_alert'), ('new_account_no_purchase'),
-            ('lapsed_14_days')
-         ) AS t(type)
+    FROM public.marketing_opportunity_definitions d
     LEFT JOIN (
       SELECT opportunity_type, count(*)::bigint AS cnt
         FROM public.marketing_opportunities
        GROUP BY opportunity_type
-    ) c ON c.opportunity_type = t.type;
+    ) c ON c.opportunity_type = d.opportunity_key;
 
   -- Priority distribution (dynamic keys — base_priority is a small 1-based rank).
   SELECT COALESCE(

@@ -228,6 +228,57 @@ describe('015 — Part A: ledger overview RPC', () => {
   })
 })
 
+describe('015 overview — byOpportunityType is sourced DYNAMICALLY from the definition catalogue', () => {
+  // Isolate the v_by_type assignment (from "INTO v_by_type" back to the SELECT
+  // that feeds it) so these checks concern only the byOpportunityType build.
+  const byTypeIdx = OVERVIEW_BODY.indexOf('INTO v_by_type')
+  const beforeIdx = OVERVIEW_BODY.lastIndexOf('SELECT', byTypeIdx)
+  // Extend to the terminating semicolon of that statement.
+  const semiIdx = OVERVIEW_BODY.indexOf(';', byTypeIdx)
+  const BY_TYPE_SQL = OVERVIEW_BODY.slice(beforeIdx, semiIdx + 1)
+
+  it('reads the type list from public.marketing_opportunity_definitions (not a hardcoded catalogue)', () => {
+    expect(byTypeIdx).toBeGreaterThan(-1)
+    expect(/FROM\s+public\.marketing_opportunity_definitions\s+d/i.test(BY_TYPE_SQL)).toBe(true)
+    // Aggregates each definition's opportunity_key.
+    expect(/jsonb_object_agg\(\s*d\.opportunity_key/i.test(BY_TYPE_SQL)).toBe(true)
+  })
+
+  it('joins persisted counts by opportunity_type = opportunity_key', () => {
+    expect(/opportunity_type,\s*count\(\*\)::bigint\s+AS\s+cnt/i.test(BY_TYPE_SQL)).toBe(true)
+    expect(/FROM\s+public\.marketing_opportunities/i.test(BY_TYPE_SQL)).toBe(true)
+    expect(/ON\s+c\.opportunity_type\s*=\s*d\.opportunity_key/i.test(BY_TYPE_SQL)).toBe(true)
+  })
+
+  it('retains zero-count definitions via LEFT JOIN + COALESCE', () => {
+    expect(/LEFT JOIN/i.test(BY_TYPE_SQL)).toBe(true)
+    expect(/COALESCE\(\s*c\.cnt,\s*0\s*\)/i.test(BY_TYPE_SQL)).toBe(true)
+  })
+
+  it('orders deterministically by opportunity_key', () => {
+    expect(/ORDER BY\s+d\.opportunity_key/i.test(BY_TYPE_SQL)).toBe(true)
+  })
+
+  it('has NO hardcoded six-type VALUES catalogue anywhere in the overview', () => {
+    // The obsolete VALUES(...) AS t(type) catalogue must be gone entirely.
+    expect(/AS\s+t\(type\)/i.test(OVERVIEW_BODY)).toBe(false)
+    expect(/VALUES\s*\(\s*'vip_early_access'/i.test(OVERVIEW_BODY)).toBe(false)
+  })
+
+  it('does NOT hardcode any of the obsolete opportunity keys in the byOpportunityType build', () => {
+    for (const key of [
+      'vip_early_access',
+      'abandoned_checkout',
+      'wtf_credit_waiting',
+      'regular_buyer_campaign_alert',
+      'new_account_no_purchase',
+      'lapsed_14_days',
+    ]) {
+      expect(BY_TYPE_SQL.includes(`'${key}'`)).toBe(false)
+    }
+  })
+})
+
 describe('015 — Part B: QA sample RPC', () => {
   // Requirements 5, 6, 7, 22.
   it('is STABLE, SECURITY DEFINER, fixed search_path, defaults to 25', () => {
