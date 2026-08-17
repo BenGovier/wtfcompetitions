@@ -293,6 +293,7 @@ RETURNS TABLE (
   sends_last_7d                  bigint,
   daily_frequency_limit          integer,
   weekly_frequency_limit         integer,
+  frequency_config_valid         boolean,
   frequency_eligible             boolean,
   pre_nba_gate_eligible          boolean,
   next_best_rank                 bigint,
@@ -307,9 +308,16 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $gate$
 WITH cs AS (
-  SELECT sending_enabled, maximum_daily_per_contact, maximum_weekly_per_contact
-    FROM public.marketing_control_state
-   WHERE key = 'default'
+  -- Guaranteed EXACTLY-ONE-ROW singleton. A FROM-less SELECT of scalar
+  -- subqueries always yields one row: if the control singleton (key='default')
+  -- is absent, every column is NULL rather than the CTE being empty. This is
+  -- deliberate so the later CROSS JOIN cs can NEVER annihilate opportunities —
+  -- each opportunity stays represented and fails CLOSED (NULL sending -> false;
+  -- NULL frequency limits -> frequency_config_valid = false).
+  SELECT
+    (SELECT mcs.sending_enabled            FROM public.marketing_control_state mcs WHERE mcs.key = 'default') AS sending_enabled,
+    (SELECT mcs.maximum_daily_per_contact  FROM public.marketing_control_state mcs WHERE mcs.key = 'default') AS maximum_daily_per_contact,
+    (SELECT mcs.maximum_weekly_per_contact FROM public.marketing_control_state mcs WHERE mcs.key = 'default') AS maximum_weekly_per_contact
 ),
 freq AS (
   -- A send consumes frequency the moment sent_at is recorded — never
@@ -456,6 +464,7 @@ SELECT
   r.sends_last_7d,
   r.daily_frequency_limit,
   r.weekly_frequency_limit,
+  r.frequency_config_valid,
   r.frequency_eligible,
   r.pre_nba_gate_eligible,
   r.next_best_rank,

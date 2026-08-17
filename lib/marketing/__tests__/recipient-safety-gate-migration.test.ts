@@ -306,9 +306,135 @@ describe('018 recipient safety gate — forbidden operations', () => {
   })
 })
 
+describe('018 recipient safety gate — frequency-config contract fix', () => {
+  it('C1. private RETURNS TABLE declares frequency_config_valid boolean', () => {
+    const cols = privateReturnsColumns()
+    expect(cols).toContain('frequency_config_valid')
+    // Declared as boolean.
+    expect(/frequency_config_valid\s+boolean/i.test(FLAT_EXEC)).toBe(true)
+  })
+
+  it('C2. private final SELECT emits frequency_config_valid in the matching position', () => {
+    // It must be emitted between weekly_frequency_limit and frequency_eligible,
+    // exactly mirroring the RETURNS TABLE ordering.
+    expect(
+      /r\.weekly_frequency_limit,\s*r\.frequency_config_valid,\s*r\.frequency_eligible,/i.test(FLAT_EXEC),
+    ).toBe(true)
+    const cols = privateReturnsColumns()
+    const iLimit = cols.indexOf('weekly_frequency_limit')
+    const iCfg = cols.indexOf('frequency_config_valid')
+    const iElig = cols.indexOf('frequency_eligible')
+    expect(iLimit).toBeGreaterThanOrEqual(0)
+    expect(iCfg).toBe(iLimit + 1)
+    expect(iElig).toBe(iCfg + 1)
+  })
+
+  it('C3. overview references ONLY columns actually returned by the private gate', () => {
+    const declared = new Set(privateReturnsColumns())
+    const overviewDecl = sliceFn(FLAT_EXEC, 'get_admin_marketing_recipient_gate_overview')
+    // (a) No qualified g.<col> reference may be undeclared.
+    const refs = qualifiedGRefs(overviewDecl)
+    expect(refs.length).toBeGreaterThan(0)
+    for (const r of refs) expect(declared.has(r), `overview references undeclared g.${r}`).toBe(true)
+    // (b) frequency_config_valid — the previously-undeclared column — is now both
+    // declared by the private gate AND referenced by the overview (unqualified,
+    // inside the frequency FILTER clauses).
+    expect(declared.has('frequency_config_valid')).toBe(true)
+    expect(/FILTER \(WHERE frequency_config_valid\b/i.test(overviewDecl)).toBe(true)
+  })
+
+  it('C3b. sample references ONLY columns actually returned by the private gate', () => {
+    const declared = new Set(privateReturnsColumns())
+    const refs = qualifiedGRefs(sliceFn(FLAT_EXEC, 'get_admin_marketing_recipient_gate_sample'))
+    expect(refs.length).toBeGreaterThan(0)
+    for (const r of refs) expect(declared.has(r), `sample references undeclared g.${r}`).toBe(true)
+  })
+
+  it('C4. underDailyCap uses frequency_config_valid + sends_last_24h + daily_frequency_limit', () => {
+    expect(
+      /'underDailyCap',\s*\(SELECT count\(\*\) FILTER \(WHERE frequency_config_valid AND sends_last_24h < daily_frequency_limit\)/i.test(
+        FLAT_EXEC,
+      ),
+    ).toBe(true)
+  })
+
+  it('C5. underWeeklyCap uses frequency_config_valid + sends_last_7d + weekly_frequency_limit', () => {
+    expect(
+      /'underWeeklyCap',\s*\(SELECT count\(\*\) FILTER \(WHERE frequency_config_valid AND sends_last_7d < weekly_frequency_limit\)/i.test(
+        FLAT_EXEC,
+      ),
+    ).toBe(true)
+  })
+
+  it('C6. frequency_config_valid is fail-closed: present + strictly-positive both limits, no hardcoded 1/3', () => {
+    expect(
+      /\(b\.daily_frequency_limit IS NOT NULL AND b\.weekly_frequency_limit IS NOT NULL AND b\.daily_frequency_limit > 0 AND b\.weekly_frequency_limit > 0\) AS frequency_config_valid/i.test(
+        FLAT_EXEC,
+      ),
+    ).toBe(true)
+    // Caps come from control columns, never literal 1/3 defaults.
+    expect(/COALESCE\([^)]*,\s*[13]\)\s+AS (daily|weekly)_frequency_limit/i.test(FLAT_EXEC)).toBe(false)
+  })
+
+  it('C7. control singleton is a guaranteed single-row CTE (no zero-row CROSS JOIN annihilation)', () => {
+    // The cs CTE must be a FROM-less scalar-subquery singleton, not a direct
+    // SELECT ... FROM marketing_control_state WHERE key='default' that can be empty.
+    const csDecl = sliceBetween(FLAT_EXEC, 'WITH cs AS (', '), freq AS (')
+    expect(csDecl.length).toBeGreaterThan(0)
+    // Three scalar subqueries, one per control field.
+    expect((csDecl.match(/\(SELECT [^)]*FROM public\.marketing_control_state[^)]*\)/gi) || []).length).toBe(3)
+    // The old empty-prone shape (bare FROM ... WHERE key='default' as the CTE body) is gone.
+    expect(/WITH cs AS \(\s*SELECT sending_enabled, maximum_daily_per_contact, maximum_weekly_per_contact\s+FROM public\.marketing_control_state/i.test(FLAT_EXEC)).toBe(false)
+    // CROSS JOIN cs remains (now safe because cs always has exactly one row).
+    expect(/CROSS JOIN cs/i.test(FLAT_EXEC)).toBe(true)
+  })
+
+  it('C8. missing control singleton fails closed per-opportunity (NULLs -> false), never drops rows', () => {
+    // sending -> COALESCE(...,false) at final SELECT.
+    expect(/COALESCE\(r\.global_sending_enabled, false\)\s*AS global_sending_enabled/i.test(FLAT_EXEC)).toBe(true)
+    // NULL frequency limits force frequency_config_valid=false via the IS NOT NULL guards (already asserted in C6),
+    // which forces frequency_configuration_invalid and pre_nba=false. No filtering of opportunities on cs.
+    // Assert base CTE selects FROM marketing_opportunities as the driving table (so all opps are represented).
+    expect(/FROM public\.marketing_opportunities o\b/i.test(FLAT_EXEC)).toBe(true)
+    // cs contributes columns via CROSS JOIN only; it is never referenced in a
+    // predicate that could exclude an opportunity (no "WHERE cs." / "cs. IS NULL").
+    expect(/WHERE\s+cs\./i.test(FLAT_EXEC)).toBe(false)
+    expect(/AND\s+cs\.\w+\s+IS/i.test(FLAT_EXEC)).toBe(false)
+  })
+})
+
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
+
+// Parse the ordered list of column names declared in the private gate's
+// RETURNS TABLE ( ... ) clause.
+function privateReturnsColumns(): string[] {
+  const start = FLAT_EXEC.indexOf('FUNCTION public.wtf_marketing_recipient_gate_preview()')
+  const rtStart = FLAT_EXEC.indexOf('RETURNS TABLE (', start)
+  if (rtStart < 0) return []
+  const open = rtStart + 'RETURNS TABLE ('.length
+  // Find matching close paren.
+  let depth = 1
+  let i = open
+  for (; i < FLAT_EXEC.length && depth > 0; i++) {
+    if (FLAT_EXEC[i] === '(') depth++
+    else if (FLAT_EXEC[i] === ')') depth--
+  }
+  const body = FLAT_EXEC.slice(open, i - 1)
+  return body
+    .split(',')
+    .map((seg) => seg.trim().split(/\s+/)[0])
+    .filter((name) => /^[a-z_][a-z0-9_]*$/i.test(name))
+}
+
+// Collect distinct qualified g.<column> references within a function body slice.
+function qualifiedGRefs(decl: string): string[] {
+  const out = new Set<string>()
+  for (const m of decl.matchAll(/\bg\.([a-z_][a-z0-9_]*)/gi)) out.add(m[1])
+  return Array.from(out)
+}
+
 function escapeFn(sig: string): string {
   return sig.replace(/[.()]/g, (m) => `\\${m}`)
 }
