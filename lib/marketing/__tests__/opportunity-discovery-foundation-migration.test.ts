@@ -62,10 +62,45 @@ describe('013 discovery — transaction & inert install', () => {
   it('creates exactly one function and only a TEMP working table (no persistent table)', () => {
     const creates = FLAT_EXEC.match(/CREATE (OR REPLACE )?FUNCTION/gi) || []
     expect(creates.length).toBe(1)
-    // The only CREATE TABLE is the ON COMMIT DROP temp table inside the body.
+    // The only CREATE TABLE is the pg_temp ON COMMIT DROP temp table in the body.
     const tableCreates = FLAT_EXEC.match(/CREATE\s+(TEMP\s+)?TABLE/gi) || []
     expect(tableCreates.length).toBe(1)
-    expect(FN_BODY).toMatch(/CREATE TEMP TABLE tmp_disc_winners ON COMMIT DROP/i)
+    expect(FN_BODY).toMatch(/CREATE TEMP TABLE pg_temp\.tmp_disc_winners ON COMMIT DROP/i)
+  })
+})
+
+describe('013 discovery — SECURITY DEFINER temp working table is explicitly pg_temp', () => {
+  it('drops the temp working table with an explicit pg_temp qualification', () => {
+    expect(FN_BODY).toMatch(/DROP TABLE IF EXISTS pg_temp\.tmp_disc_winners;/i)
+    // No unqualified DROP of the working relation may remain.
+    expect(/DROP TABLE IF EXISTS tmp_disc_winners\b/i.test(FN_BODY)).toBe(false)
+  })
+
+  it('creates it as a TEMP table (still supporting repeated same-transaction calls)', () => {
+    expect(FN_BODY).toMatch(/CREATE TEMP TABLE pg_temp\.tmp_disc_winners ON COMMIT DROP AS/i)
+    // DROP IF EXISTS before CREATE keeps the function re-callable in one txn.
+    const dropIdx = FN_BODY.indexOf('DROP TABLE IF EXISTS pg_temp.tmp_disc_winners')
+    const createIdx = FN_BODY.indexOf('CREATE TEMP TABLE pg_temp.tmp_disc_winners')
+    expect(dropIdx).toBeGreaterThan(0)
+    expect(createIdx).toBeGreaterThan(dropIdx)
+  })
+
+  it('every executable reference to the working relation is pg_temp-qualified', () => {
+    // No unqualified "tmp_disc_winners" token may appear in executable SQL:
+    // every occurrence must be immediately preceded by "pg_temp.".
+    const re = /(pg_temp\.)?tmp_disc_winners/gi
+    let m: RegExpExecArray | null
+    const unqualified: string[] = []
+    while ((m = re.exec(FN_BODY)) !== null) {
+      if (!m[1]) unqualified.push(FN_BODY.slice(Math.max(0, m.index - 12), m.index + 20))
+    }
+    expect(unqualified).toEqual([])
+  })
+
+  it('creates NO persistent public.tmp_disc_winners (executable SQL only)', () => {
+    // Check executable SQL, not comments: no CREATE/DROP/FROM/INTO of a
+    // public-schema tmp_disc_winners relation may exist anywhere.
+    expect(/public\.tmp_disc_winners/i.test(FLAT_EXEC)).toBe(false)
   })
 })
 
@@ -210,8 +245,16 @@ describe('013 discovery — bounded execution', () => {
     expect(/LIMIT v_limit\b/i.test(FN_BODY)).toBe(false)
   })
 
-  it('orders deterministically before limiting', () => {
-    expect(FN_BODY).toMatch(/ORDER BY w\.final_score DESC, w\.default_priority ASC, w\.user_id ASC/i)
+  it('orders PRIORITY-FIRST before limiting (default_priority ASC, final_score DESC, user_id ASC)', () => {
+    expect(FN_BODY).toMatch(
+      /ORDER BY w\.default_priority ASC, w\.final_score DESC, w\.user_id ASC/i,
+    )
+  })
+
+  it('does NOT use score-first ordering', () => {
+    // The pre-patch score-first order must be gone: a Priority 1 winner must be
+    // admitted to the bounded batch ahead of Priority 2/3/4 winners.
+    expect(/ORDER BY w\.final_score DESC, w\.default_priority ASC/i.test(FN_BODY)).toBe(false)
   })
 })
 
@@ -368,6 +411,38 @@ describe('013 discovery — result contract returns no raw identity', () => {
     }
   })
 
+  it('the successful status=ok result exposes requested/effective/rollout/batch limits', () => {
+    // Isolate the final successful RETURN payload (status = 'ok').
+    const okReturns = (FN_BODY.match(/RETURN jsonb_build_object\([\s\S]*?\);/gi) || []).filter((r) =>
+      /'status', 'ok'/.test(r),
+    )
+    expect(okReturns.length).toBe(1)
+    const okReturn = okReturns[0]
+    for (const kv of [
+      /'requestedLimit', v_requested_limit/,
+      /'effectiveLimit', v_effective_limit/,
+      /'rolloutLimit', v_rollout/,
+      /'maximumBatchSize', v_max_batch/,
+    ]) {
+      expect(kv.test(okReturn)).toBe(true)
+    }
+    // Existing stat fields remain present in the same payload.
+    for (const kv of [/'inserted', v_inserted/, /'evaluated', v_evaluated/]) {
+      expect(kv.test(okReturn)).toBe(true)
+    }
+  })
+
+  it('EVERY result path exposes the config ceiling fields when available', () => {
+    const allReturns = FN_BODY.match(/RETURN jsonb_build_object\([\s\S]*?\);/gi) || []
+    expect(allReturns.length).toBeGreaterThanOrEqual(4)
+    for (const r of allReturns) {
+      expect(/'requestedLimit'/.test(r)).toBe(true)
+      expect(/'effectiveLimit'/.test(r)).toBe(true)
+      expect(/'rolloutLimit'/.test(r)).toBe(true)
+      expect(/'maximumBatchSize'/.test(r)).toBe(true)
+    }
+  })
+
   it('never returns user_id or email in the result JSON', () => {
     // The RETURN jsonb_build_object payloads must not surface identities.
     const returns = FN_BODY.match(/RETURN jsonb_build_object\([\s\S]*?\);/gi) || []
@@ -420,8 +495,10 @@ function FN_PREFLIGHT(): string {
 describe('013 discovery — migrations 001-012 untouched', () => {
   it('references migrations 001-012 only as a dependency note, never edits them', () => {
     // This file only creates its own function; it does not DROP/ALTER earlier
-    // objects or reference other migration files as editable.
-    expect(/DROP\s+(TABLE|FUNCTION)\s+public\./i.test(EXEC.replace(/DROP TABLE IF EXISTS tmp_disc_winners;?/i, ''))).toBe(false)
+    // objects. The only DROP is of its own pg_temp working table, which is
+    // stripped before checking for any DROP of a permanent public object.
+    const execNoTempDrop = EXEC.replace(/DROP TABLE IF EXISTS pg_temp\.tmp_disc_winners;?/i, '')
+    expect(/DROP\s+(TABLE|FUNCTION)\s+public\./i.test(execNoTempDrop)).toBe(false)
     expect(/ALTER\s+TABLE\s+public\./i.test(FLAT_EXEC)).toBe(false)
   })
 })

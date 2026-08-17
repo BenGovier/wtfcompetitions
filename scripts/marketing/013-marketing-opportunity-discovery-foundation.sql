@@ -324,9 +324,12 @@ BEGIN
   -- Materialise the rn = 1 winners ONCE (the detector is the expensive part),
   -- joined to their definition (enablement + expiry + campaign-specificity) and
   -- to their marketing profile (for the NOT NULL email_lc). Re-callable within a
-  -- single transaction via DROP IF EXISTS.
-  DROP TABLE IF EXISTS tmp_disc_winners;
-  CREATE TEMP TABLE tmp_disc_winners ON COMMIT DROP AS
+  -- single transaction via DROP IF EXISTS. The working relation is ALWAYS
+  -- schema-qualified as pg_temp.tmp_disc_winners so this SECURITY DEFINER
+  -- function resolves it unambiguously to the session temp schema, never to a
+  -- same-named relation planted earlier on the search_path.
+  DROP TABLE IF EXISTS pg_temp.tmp_disc_winners;
+  CREATE TEMP TABLE pg_temp.tmp_disc_winners ON COMMIT DROP AS
   SELECT
     c.user_id,
     c.opportunity_key,
@@ -356,20 +359,20 @@ BEGIN
          ON p.user_id = c.user_id
   WHERE c.rn = 1;
 
-  SELECT count(*) INTO v_evaluated FROM tmp_disc_winners;
+  SELECT count(*) INTO v_evaluated FROM pg_temp.tmp_disc_winners;
 
   SELECT count(*) INTO v_skipped_disabled
-    FROM tmp_disc_winners
+    FROM pg_temp.tmp_disc_winners
    WHERE NOT (def_found AND def_enabled);
 
   SELECT count(*) INTO v_eligible
-    FROM tmp_disc_winners
+    FROM pg_temp.tmp_disc_winners
    WHERE is_eligible;
 
   -- Eligible winners that already have an ACTIVE opportunity are skipped (no
   -- duplicate active). Active = open/selected/deferred and not yet expired.
   SELECT count(*) INTO v_skipped_existing
-    FROM tmp_disc_winners w
+    FROM pg_temp.tmp_disc_winners w
    WHERE w.is_eligible
      AND EXISTS (
        SELECT 1
@@ -396,7 +399,7 @@ BEGIN
       w.is_closing,
       w.email_lc,
       w.default_expiry_hours
-    FROM tmp_disc_winners w
+    FROM pg_temp.tmp_disc_winners w
     WHERE w.is_eligible
       AND NOT EXISTS (
         SELECT 1
@@ -407,7 +410,14 @@ BEGIN
            AND o.state IN ('open', 'selected', 'deferred')
            AND o.expires_at > v_now
       )
-    ORDER BY w.final_score DESC, w.default_priority ASC, w.user_id ASC
+    -- PRIORITY-FIRST admission into the LIMITED discovery batch. Migration 011
+    -- arbitration is priority-first and each rn=1 row is already the chosen
+    -- next-best action per customer; here we choose WHICH customers enter the
+    -- bounded batch. A Priority 1 winner must be admitted ahead of Priority
+    -- 2/3/4 winners; final_score then ranks customers WITHIN the same priority;
+    -- user_id is the final deterministic tie-break. (default_priority is the
+    -- 011-arbitrated value, unchanged; scoring/rn are untouched.)
+    ORDER BY w.default_priority ASC, w.final_score DESC, w.user_id ASC
     LIMIT v_effective_limit
   )
   INSERT INTO public.marketing_opportunities (
@@ -485,6 +495,10 @@ BEGIN
     'inserted', v_inserted,
     'skippedExisting', v_skipped_existing,
     'skippedDisabledDefinition', v_skipped_disabled,
+    'requestedLimit', v_requested_limit,
+    'effectiveLimit', v_effective_limit,
+    'rolloutLimit', v_rollout,
+    'maximumBatchSize', v_max_batch,
     'durationMs', round(extract(epoch FROM clock_timestamp() - v_start) * 1000)::bigint,
     'generatedAt', v_now
   );
