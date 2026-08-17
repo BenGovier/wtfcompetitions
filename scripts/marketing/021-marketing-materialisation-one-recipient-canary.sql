@@ -5,17 +5,21 @@
 --
 -- PURPOSE
 --   Prove the ENTIRE Stage 019/020 recipient chain end-to-end, ONCE, without
---   sending anything:
+--   sending anything, for the CAMPAIGN-SPECIFIC opportunity type
+--   abandoned_checkout (the only type with isolated safe canary candidates in
+--   the current live universe):
 --
---       canonical-detector rn=1 new_account_no_purchase winner (NULL campaign)
+--       canonical-detector rn=1 abandoned_checkout winner (NON-NULL campaign)
 --         + independent permission authority (profile + is_marketing_email_eligible)
 --         + isolation from any pre-existing active opportunity/recipient
---         -> valid new_account_no_purchase opportunity (direct insert in the
---            EXACT canonical Stage 013 (3C2F) persisted shape: base_priority =
---            detector.default_priority, score = detector.final_score, canonical
---            reason/context_snapshot, discv1 expiry-window dedupe key)
+--         -> valid abandoned_checkout opportunity (direct insert in the EXACT
+--            canonical Stage 013 (3C2F) persisted shape: campaign_id = frozen
+--            detector campaign, base_priority = detector.default_priority,
+--            score = detector.final_score, canonical reason/context_snapshot,
+--            discv1 expiry-window dedupe key CONTAINING the real campaign UUID)
 --         -> authoritative Stage 019 delivery route
---         -> canonical Stage 019 private recipient gate (gate_eligible = true)
+--         -> canonical Stage 019 private recipient gate (gate_eligible = true,
+--            campaign_context_valid = true)
 --         -> preparing Stage 020 automation run
 --         -> exactly ONE queued recipient
 --         -> opportunity open -> selected
@@ -38,6 +42,7 @@
 --     * NEVER fabricates content (template_snapshot / context_snapshot /
 --       discount_code_snapshot are left at schema defaults by the materialiser).
 --     * Uses gate_eligible (staging), NOT sendable_now (which stays false).
+--     * NEVER modifies consent, campaigns, checkout, payment, tickets or wallet.
 --
 -- ATOMICITY
 --   Single BEGIN/COMMIT, NO exception handler. ANY RAISE rolls back EVERYTHING —
@@ -57,12 +62,12 @@
 -- SCOPE
 --   Migrations 001-020 are NOT modified. NO schema/RLS/policy/trigger change.
 --   NO AI, NO cron, NO external contacts, NO consent/frequency-cap change, NO
---   checkout/payment/ticket/wallet/customer-facing change.
+--   campaign change, NO checkout/payment/ticket/wallet/customer-facing change.
 --
 -- PRIVACY
 --   The single returned JSON payload is PII-free: no user_id, email_lc,
---   opportunity_id, recipient_id, run_id or automation_id. Identity columns are
---   used ONLY inside boolean NULL predicates and internal joins.
+--   campaign_id, opportunity_id, recipient_id, run_id or automation_id. Identity
+--   columns are used ONLY inside boolean NULL predicates and internal joins.
 -- ============================================================================
 
 BEGIN;
@@ -73,13 +78,9 @@ SET LOCAL statement_timeout = '60s';
 
 DO $canary$
 DECLARE
-  -- Authoritative definition defaults for new_account_no_purchase (READ, then
-  -- asserted; NEVER invented). Expected live-planning values from Stage 009.
-  c_opp_type          constant text    := 'new_account_no_purchase';
-  c_exp_priority      constant integer := 5;
-  c_exp_score         constant numeric := 350;
-  c_exp_expiry_hours  constant integer := 336;
-  c_exp_campaign_spec constant boolean := false;
+  -- CAMPAIGN-SPECIFIC canary type. abandoned_checkout is the only opportunity
+  -- type with isolated safe canary candidates in the current live universe.
+  c_opp_type          constant text    := 'abandoned_checkout';
 
   v_dep               text;
   v_missing           text[] := ARRAY[]::text[];
@@ -103,13 +104,15 @@ DECLARE
   v_enabled_autos     bigint;
   v_enabled_autos_before bigint;
 
-  -- new_account_no_purchase definition snapshot.
+  -- abandoned_checkout definition snapshot. default_priority / default_score /
+  -- default_expiry_hours are READ from the LIVE definition and used only where
+  -- the canonical detector / Stage 013 contract requires them (NEVER invented).
   v_def_enabled       boolean;
-  v_def_campaign      boolean;
-  v_def_priority      integer;
-  v_def_score         numeric;
-  v_def_expiry        integer;
-  v_def_route_id      uuid;
+  v_def_campaign      boolean;   -- campaign_specific (MUST be true)
+  v_def_priority      integer;   -- default_priority (live)
+  v_def_score         numeric;   -- default_score (live, audited only)
+  v_def_expiry        integer;   -- default_expiry_hours (live)
+  v_def_route_id      uuid;      -- delivery_automation_id (MUST be non-null)
 
   -- Routed delivery automation snapshot.
   v_auto_enabled      boolean;
@@ -119,25 +122,30 @@ DECLARE
   v_email_lc          text;
   v_snapshot_diag     boolean;
 
-  -- FROZEN canonical detector outputs for the selected rn=1 winner. These are
-  -- captured ONCE at selection and are the commercial opportunity input that is
-  -- persisted verbatim in the Stage 013 canonical shape. Detector scoring is
-  -- NEVER re-evaluated after selection.
+  -- FROZEN canonical detector outputs for the selected rn=1 winner. Captured
+  -- ONCE at selection and persisted verbatim in the Stage 013 canonical shape.
+  -- Detector scoring is NEVER re-evaluated after selection.
   v_det_family        text;
   v_det_def_priority  integer;   -- detector.default_priority (== definition.default_priority)
   v_det_def_score     integer;   -- detector.default_score (catalogue default, audited only)
+  v_det_campaign_id   uuid;      -- detector.campaign_id (MUST be non-null; the real campaign)
   v_det_final_score   integer;   -- detector.final_score (PERSISTED score, 0..1000)
   v_det_score_comp    jsonb;     -- detector.score_components
   v_det_is_closing    boolean;   -- detector.is_closing
   v_detected_at       timestamptz;  -- ONE frozen timestamp for detected_at/expires_at/dedupe
 
   -- Canonical-detector re-confirmation (drift guard before writes). The user is
-  -- SELECTED from the detector and must STILL be a rn=1 new_account_no_purchase
-  -- winner with a NULL campaign_id immediately before we materialise.
+  -- SELECTED from the detector and must STILL be a rn=1 abandoned_checkout winner
+  -- with the EXACT SAME campaign_id immediately before we materialise.
   v_det_key           text;
   v_det_rn            integer;
   v_det_campaign      uuid;
   v_det_found         boolean;
+
+  -- Defence-in-depth campaign validity (Stage 019 gate remains authoritative).
+  v_camp_found        boolean;
+  v_camp_status       text;
+  v_camp_end_at       timestamptz;
 
   -- Inserted canary opportunity.
   v_opp_id            uuid;
@@ -197,6 +205,7 @@ DECLARE
   v_opp_selected_at   timestamptz;
   v_opp_actioned_at   timestamptz;
   v_opp_auto_prov     uuid;
+  v_opp_campaign_final uuid;
   v_other_changed     bigint;
 
   -- Final gate re-check.
@@ -222,7 +231,8 @@ BEGIN
     'public.marketing_automations',
     'public.marketing_recipients',
     'public.marketing_automation_runs',
-    'public.marketing_control_state'
+    'public.marketing_control_state',
+    'public.campaigns'
   ] LOOP
     IF to_regclass(v_dep) IS NULL THEN
       v_missing := array_append(v_missing, v_dep);
@@ -236,8 +246,8 @@ BEGIN
     RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: is_marketing_email_eligible(uuid,text) is missing.';
   END IF;
   -- The canonical Stage 011/013 detector/arbitrator is the SOLE source of truth
-  -- for which users have a genuine new_account_no_purchase opportunity (7-day
-  -- account-age window + configured first_delay_minutes + rn=1 arbitration).
+  -- for which users have a genuine abandoned_checkout opportunity (including the
+  -- campaign-specific live-campaign universe + rn=1 arbitration).
   IF to_regprocedure('public.wtf_marketing_opportunity_candidates_preview()') IS NULL THEN
     RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: canonical detector wtf_marketing_opportunity_candidates_preview() is missing (Stage 011).';
   END IF;
@@ -294,8 +304,11 @@ BEGIN
     RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: % automation(s) already enabled; expected 0.', v_enabled_autos_before;
   END IF;
 
-  -- 5. new_account_no_purchase definition exists, disabled, mapped to a route,
-  --    with EXACT authoritative defaults (read, then asserted — never invented).
+  -- 5. abandoned_checkout definition exists, disabled, campaign-specific, mapped
+  --    to a route. default_priority/default_score/default_expiry_hours are READ
+  --    from the LIVE definition (NEVER invented / no hardcoded constants). The
+  --    only asserted real invariants are: enabled=false, campaign_specific=true,
+  --    delivery_automation_id IS NOT NULL.
   SELECT enabled, campaign_specific, default_priority, default_score,
          default_expiry_hours, delivery_automation_id
     INTO v_def_enabled, v_def_campaign, v_def_priority, v_def_score,
@@ -308,15 +321,14 @@ BEGIN
   IF v_def_enabled THEN
     RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: definition % is already enabled.', c_opp_type;
   END IF;
-  IF v_def_campaign IS DISTINCT FROM c_exp_campaign_spec THEN
-    RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: %.campaign_specific=% (expected %).', c_opp_type, v_def_campaign, c_exp_campaign_spec;
+  IF v_def_campaign IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: %.campaign_specific=% (expected true — abandoned_checkout is campaign-specific).', c_opp_type, v_def_campaign;
   END IF;
-  IF v_def_priority IS DISTINCT FROM c_exp_priority
-     OR v_def_score  IS DISTINCT FROM c_exp_score
-     OR v_def_expiry IS DISTINCT FROM c_exp_expiry_hours THEN
-    RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: % defaults priority/score/expiry = %/%/% (expected %/%/%).',
-      c_opp_type, v_def_priority, v_def_score, v_def_expiry,
-      c_exp_priority, c_exp_score, c_exp_expiry_hours;
+  IF v_def_priority IS NULL OR v_def_score IS NULL OR v_def_expiry IS NULL THEN
+    RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: % definition defaults are NULL (priority=%, score=%, expiry=%).', c_opp_type, v_def_priority, v_def_score, v_def_expiry;
+  END IF;
+  IF v_def_expiry <= 0 THEN
+    RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: %.default_expiry_hours=% is not positive.', c_opp_type, v_def_expiry;
   END IF;
   IF v_def_route_id IS NULL THEN
     RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: %.delivery_automation_id is NULL (no authoritative Stage 019 route).', c_opp_type;
@@ -332,7 +344,8 @@ BEGIN
     RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: routed delivery automation for % is already enabled.', c_opp_type;
   END IF;
 
-  -- 7. No active (preparing/queued/processing) run for the routed automation + NULL promotion.
+  -- 7. No active (preparing/queued/processing) run for the routed automation +
+  --    NULL promotion (the Stage 020 run group for this canary).
   PERFORM 1
      FROM public.marketing_automation_runs
     WHERE automation_id = v_def_route_id
@@ -347,12 +360,12 @@ BEGIN
   --   COMMERCIAL DETECTION and CONTACT PERMISSION are kept STRICTLY separate:
   --
   --   (1) DETECTION AUTHORITY — public.wtf_marketing_opportunity_candidates_preview():
-  --       The detector alone decides who has a genuine new_account_no_purchase
+  --       The detector alone decides who has a genuine abandoned_checkout
   --       opportunity. We require detector.opportunity_key = the canary type,
-  --       detector.rn = 1 (the arbitrated winner) and detector.campaign_id IS NULL
-  --       (a non-campaign opportunity). This inherits — WITHOUT re-deriving — the
-  --       detector's 7-day account-age window and configured first_delay_minutes
-  --       semantics. We deliberately do NOT re-express those date predicates here.
+  --       detector.rn = 1 (the arbitrated winner) and detector.campaign_id
+  --       IS NOT NULL (abandoned_checkout is campaign-specific). This inherits —
+  --       WITHOUT re-deriving — the detector's campaign-specific + live-campaign
+  --       semantics. We deliberately do NOT re-express those predicates here.
   --       Detector permission-snapshot fields (perm_backed / sendable_now / ...)
   --       are NEVER used as contact authority.
   --
@@ -370,17 +383,19 @@ BEGIN
          -- FREEZE the exact detector outputs needed to persist the canonical
          -- Stage 013 opportunity shape. No re-scoring happens after this.
          detector.family, detector.default_priority, detector.default_score,
-         detector.final_score, detector.score_components, detector.is_closing
+         detector.campaign_id, detector.final_score, detector.score_components,
+         detector.is_closing
     INTO v_user_id, v_email_lc, v_snapshot_diag,
          v_det_family, v_det_def_priority, v_det_def_score,
-         v_det_final_score, v_det_score_comp, v_det_is_closing
+         v_det_campaign_id, v_det_final_score, v_det_score_comp,
+         v_det_is_closing
     -- DETECTION comes first and is authoritative for the opportunity itself.
     FROM public.wtf_marketing_opportunity_candidates_preview() detector
     JOIN public.customer_marketing_profiles p
       ON p.user_id = detector.user_id
-   WHERE detector.opportunity_key = c_opp_type   -- new_account_no_purchase
+   WHERE detector.opportunity_key = c_opp_type   -- abandoned_checkout
      AND detector.rn = 1                          -- arbitrated winner ONLY
-     AND detector.campaign_id IS NULL             -- non-campaign opportunity
+     AND detector.campaign_id IS NOT NULL         -- campaign-specific opportunity
      -- PERMISSION AUTHORITY (kept separate from detection).
      AND p.user_id IS NOT NULL
      AND p.email_lc IS NOT NULL
@@ -414,24 +429,48 @@ BEGIN
     RAISE EXCEPTION 'no_safe_canary_user';
   END IF;
 
+  -- The frozen detector campaign MUST be a real campaign (non-null) — the
+  -- selection already required it, but assert the frozen value explicitly.
+  IF v_det_campaign_id IS NULL THEN
+    RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: frozen detector campaign_id is NULL (abandoned_checkout MUST carry a real campaign).';
+  END IF;
+
   -- DETECTOR CONSISTENCY RE-CONFIRMATION (drift guard).
   --   Prove — BEFORE any write — that the chosen user is STILL present in the
-  --   canonical detector as an rn=1 new_account_no_purchase winner with a NULL
-  --   campaign_id. This makes the canary robust against detector-state drift
-  --   between selection and materialisation.
+  --   canonical detector as an rn=1 abandoned_checkout winner carrying the EXACT
+  --   SAME campaign_id (not merely "some" non-null campaign). Robust against
+  --   detector/campaign drift between selection and materialisation.
   SELECT true, detector.opportunity_key, detector.rn, detector.campaign_id
     INTO v_det_found, v_det_key, v_det_rn, v_det_campaign
     FROM public.wtf_marketing_opportunity_candidates_preview() detector
    WHERE detector.user_id = v_user_id
      AND detector.opportunity_key = c_opp_type
      AND detector.rn = 1
-     AND detector.campaign_id IS NULL;
+     AND detector.campaign_id = v_det_campaign_id;   -- EXACT campaign equality
   IF v_det_found IS DISTINCT FROM true
      OR v_det_key IS DISTINCT FROM c_opp_type
      OR v_det_rn  IS DISTINCT FROM 1
-     OR v_det_campaign IS NOT NULL THEN
-    RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: canonical detector no longer confirms the chosen user as an rn=1 % winner with NULL campaign_id (key=%, rn=%, campaign set=%).',
-      c_opp_type, v_det_key, v_det_rn, (v_det_campaign IS NOT NULL);
+     OR v_det_campaign IS DISTINCT FROM v_det_campaign_id THEN
+    RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: canonical detector no longer confirms the chosen user as an rn=1 % winner with the frozen campaign (key=%, rn=%, campaign matches=%).',
+      c_opp_type, v_det_key, v_det_rn, (v_det_campaign IS NOT DISTINCT FROM v_det_campaign_id);
+  END IF;
+
+  -- CAMPAIGN VALIDITY RE-CHECK (defence in depth only — the Stage 019 private
+  -- gate remains the final authoritative campaign-context check). Independently
+  -- verify the frozen detector campaign exists in public.campaigns and satisfies
+  -- the SAME live/open semantics the gate uses:
+  --     status = 'live' AND (end_at IS NULL OR end_at > now())
+  -- We do NOT update the campaign.
+  SELECT true, c.status, c.end_at
+    INTO v_camp_found, v_camp_status, v_camp_end_at
+    FROM public.campaigns c
+   WHERE c.id = v_det_campaign_id;
+  IF v_camp_found IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: frozen detector campaign does not exist in public.campaigns.';
+  END IF;
+  IF NOT (v_camp_status = 'live' AND (v_camp_end_at IS NULL OR v_camp_end_at > now())) THEN
+    RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: frozen detector campaign is not live/open (status=%, end_at in future=%).',
+      v_camp_status, (v_camp_end_at IS NULL OR v_camp_end_at > now());
   END IF;
 
   -- FROZEN-VALUE INVARIANTS.
@@ -462,7 +501,7 @@ BEGIN
      SET enabled = true, updated_at = now()
    WHERE id = v_def_route_id;
 
-  -- 2) new_account_no_purchase definition false -> true
+  -- 2) abandoned_checkout definition false -> true
   UPDATE public.marketing_opportunity_definitions
      SET enabled = true, updated_at = now()
    WHERE opportunity_key = c_opp_type;
@@ -509,28 +548,29 @@ BEGIN
   -- from a genuine discovery-persisted opportunity — no synthetic canary format.
   --
   --   Reproduces public.discover_marketing_opportunities()'s persistence
-  --   verbatim for an rn=1 winner (see migration 013):
+  --   verbatim for an rn=1 campaign-specific winner (see migration 013):
   --     * automation_id NULL, external_contact_id NULL, promotion_id NULL
-  --     * campaign_id = detector.campaign_id (NULL here by selection contract)
+  --     * campaign_id = frozen detector.campaign_id (a REAL campaign)
   --     * base_priority = detector.default_priority (frozen)
   --     * score        = detector.final_score      (frozen, NOT the definition)
   --     * detected_at  = v_detected_at (ONE frozen timestamp)
   --     * expires_at   = detected_at + definition.default_expiry_hours
   --     * canonical reason / context_snapshot JSON (stage/detector = 3C2F)
-  --     * canonical discv1 expiry-window dedupe key
+  --     * canonical discv1 expiry-window dedupe key CONTAINING the real campaign
   --   This is STILL a DIRECT insert — discovery is NEVER enabled or invoked.
   -- ========================================================================
   -- ONE frozen timestamp for detected_at, expires_at AND the dedupe window.
   v_detected_at := now();
   v_expires_at  := v_detected_at + make_interval(hours => v_def_expiry);
 
-  -- CANONICAL Stage 013 expiry-window-bucketed dedupe key (discv1). campaign_id
-  -- is NULL by selection contract, so COALESCE resolves to '-'. The bucket is
+  -- CANONICAL Stage 013 expiry-window-bucketed dedupe key (discv1). Because
+  -- abandoned_checkout is campaign-specific, campaign_id is the REAL frozen
+  -- detector campaign UUID (NEVER '-'). Bucket is
   -- floor(detected_at_epoch / (GREATEST(default_expiry_hours,1) * 3600)).
   v_dedupe_key :=
     'discv1:' || v_user_id::text
     || ':' || c_opp_type
-    || ':' || COALESCE(NULL::text, '-')     -- campaign_id IS NULL by contract
+    || ':' || v_det_campaign_id::text     -- REAL campaign UUID (never '-')
     || ':w' || floor(
          extract(epoch FROM v_detected_at)
          / (GREATEST(v_def_expiry, 1) * 3600)
@@ -549,7 +589,7 @@ BEGIN
     email_lc,
     automation_id,          -- NULL provenance (Stage 019 routing is authoritative)
     opportunity_type,       -- detector.opportunity_key -> definitions FK
-    campaign_id,            -- detector.campaign_id (NULL by contract)
+    campaign_id,            -- frozen detector.campaign_id (REAL campaign)
     promotion_id,           -- NULL (no promotion context from candidates)
     detected_at,            -- frozen invocation timestamp
     expires_at,             -- detected_at + definition default_expiry_hours
@@ -558,7 +598,7 @@ BEGIN
     state,                  -- open
     reason,                 -- CANONICAL Stage 013 reason
     context_snapshot,       -- CANONICAL Stage 013 context
-    dedupe_key              -- CANONICAL discv1 expiry-window key
+    dedupe_key              -- CANONICAL discv1 expiry-window key (with campaign)
   )
   VALUES (
     v_user_id,
@@ -566,7 +606,7 @@ BEGIN
     v_email_lc,
     NULL,
     c_opp_type,
-    NULL,
+    v_det_campaign_id,
     NULL,
     v_detected_at,
     v_expires_at,
@@ -584,7 +624,7 @@ BEGIN
     ),
     jsonb_build_object(
       'scoreComponents',          v_det_score_comp,
-      'campaignId',               NULL,
+      'campaignId',               v_det_campaign_id,
       'detectorStage',            '3C2F',
       'selectedAsNextBestAction', true,
       'rn',                       1
@@ -636,7 +676,9 @@ BEGIN
        OR v_o_email    IS DISTINCT FROM v_email_lc
        OR v_o_auto     IS NOT NULL
        OR v_o_type     IS DISTINCT FROM c_opp_type
-       OR v_o_campaign IS NOT NULL
+       -- campaign_id is the frozen REAL detector campaign (NOT NULL).
+       OR v_o_campaign IS DISTINCT FROM v_det_campaign_id
+       OR v_o_campaign IS NULL
        OR v_o_promo    IS NOT NULL
        OR v_o_detected IS DISTINCT FROM v_detected_at
        OR v_o_expires  IS DISTINCT FROM v_expires_at
@@ -646,8 +688,8 @@ BEGIN
        OR v_o_score    IS DISTINCT FROM v_det_final_score
        OR v_o_state    IS DISTINCT FROM 'open'
        OR v_o_dedupe   IS DISTINCT FROM v_dedupe_key THEN
-      RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: persisted opportunity is not the canonical Stage 013 shape (type=%, auto set=%, campaign set=%, promo set=%, priority=%, score=%, state=%).',
-        v_o_type, (v_o_auto IS NOT NULL), (v_o_campaign IS NOT NULL),
+      RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: persisted opportunity is not the canonical Stage 013 shape (type=%, auto set=%, campaign matches=%, promo set=%, priority=%, score=%, state=%).',
+        v_o_type, (v_o_auto IS NOT NULL), (v_o_campaign IS NOT DISTINCT FROM v_det_campaign_id),
         (v_o_promo IS NOT NULL), v_o_priority, v_o_score, v_o_state;
     END IF;
 
@@ -662,15 +704,17 @@ BEGIN
       RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: persisted reason is not the canonical Stage 013 structure (%).', v_o_reason;
     END IF;
 
-    -- Canonical context_snapshot structure (Stage 013 / 3C2F).
+    -- Canonical context_snapshot structure (Stage 013 / 3C2F). Unlike the old
+    -- new-account version, campaignId MUST be the REAL detector campaign UUID —
+    -- NEVER JSON null.
     IF v_o_ctx->'scoreComponents' IS DISTINCT FROM v_det_score_comp
        OR (v_o_ctx->>'detectorStage') IS DISTINCT FROM '3C2F'
        OR (v_o_ctx->>'selectedAsNextBestAction')::boolean IS DISTINCT FROM true
        OR (v_o_ctx->>'rn')::int IS DISTINCT FROM 1
-       -- campaignId is JSON null (not present as a real campaign).
        OR (v_o_ctx ? 'campaignId') IS DISTINCT FROM true
-       OR jsonb_typeof(v_o_ctx->'campaignId') IS DISTINCT FROM 'null' THEN
-      RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: persisted context_snapshot is not the canonical Stage 013 structure (%).', v_o_ctx;
+       OR jsonb_typeof(v_o_ctx->'campaignId') IS DISTINCT FROM 'string'
+       OR (v_o_ctx->>'campaignId')::uuid IS DISTINCT FROM v_det_campaign_id THEN
+      RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: persisted context_snapshot is not the canonical Stage 013 structure or campaignId is not the frozen detector campaign (%).', v_o_ctx;
     END IF;
 
     -- NO canary-only markers may leak into the durable production payload.
@@ -682,7 +726,8 @@ BEGIN
 
   -- ========================================================================
   -- VERIFY THE GATE BEFORE MATERIALISING — call the PRIVATE canonical gate
-  -- directly (as owner). Require gate_eligible = true, sendable_now = FALSE.
+  -- directly (as owner). Require gate_eligible = true, campaign_context_valid =
+  -- true, sendable_now = FALSE.
   -- ========================================================================
   SELECT true,
          g.profile_matched, g.account_active, g.email_confirmed,
@@ -841,19 +886,22 @@ BEGIN
   END IF;
 
   -- ========================================================================
-  -- OPPORTUNITY ASSERTIONS — canary selected; provenance NULL; the original
-  -- six unchanged.
+  -- OPPORTUNITY ASSERTIONS — canary selected; provenance NULL; campaign frozen;
+  -- the original six unchanged.
   -- ========================================================================
-  SELECT o.state, o.selected_at, o.actioned_at, o.automation_id
-    INTO v_opp_state, v_opp_selected_at, v_opp_actioned_at, v_opp_auto_prov
+  SELECT o.state, o.selected_at, o.actioned_at, o.automation_id, o.campaign_id
+    INTO v_opp_state, v_opp_selected_at, v_opp_actioned_at, v_opp_auto_prov, v_opp_campaign_final
     FROM public.marketing_opportunities o
    WHERE o.id = v_opp_id;
   IF v_opp_state IS DISTINCT FROM 'selected'
      OR v_opp_selected_at IS NULL
      OR v_opp_actioned_at IS NOT NULL
-     OR v_opp_auto_prov IS NOT NULL THEN
-    RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: canary opportunity lifecycle wrong (state=%, selected_at set=%, actioned_at set=%, automation_id set=%).',
-      v_opp_state, (v_opp_selected_at IS NOT NULL), (v_opp_actioned_at IS NOT NULL), (v_opp_auto_prov IS NOT NULL);
+     OR v_opp_auto_prov IS NOT NULL
+     -- campaign_id remains the frozen detector campaign after materialisation.
+     OR v_opp_campaign_final IS DISTINCT FROM v_det_campaign_id THEN
+    RAISE EXCEPTION 'Stage 3D2C (021) canary aborted: canary opportunity lifecycle wrong (state=%, selected_at set=%, actioned_at set=%, automation_id set=%, campaign matches=%).',
+      v_opp_state, (v_opp_selected_at IS NOT NULL), (v_opp_actioned_at IS NOT NULL),
+      (v_opp_auto_prov IS NOT NULL), (v_opp_campaign_final IS NOT DISTINCT FROM v_det_campaign_id);
   END IF;
 
   -- The original six must remain open and unselected/unactioned.
@@ -924,11 +972,14 @@ BEGIN
 
   -- ========================================================================
   -- ANONYMIZED RESULT — PII-free proof payload (via a temp table so the tests
-  -- can assert its contents contain no identifiers).
+  -- can assert its contents contain no identifiers). NO campaign_id/user_id/
+  -- email/recipient_id/opportunity_id/run_id/automation_id are exposed.
   -- ========================================================================
   CREATE TEMP TABLE tmp_one_recipient_canary_result ON COMMIT DROP AS
   SELECT jsonb_build_object(
     'status',                'canary_complete',
+    'opportunityType',       c_opp_type,
+    'campaignSpecific',      true,
     'opportunitiesBefore',   v_opp_before,
     'opportunitiesAfter',    v_opp_after,
     'recipientsBefore',      v_recip_before,
@@ -961,7 +1012,8 @@ SELECT one_recipient_canary_result FROM tmp_one_recipient_canary_result;
 COMMIT;
 
 -- ============================================================================
--- END Stage 3D2C (021). On success exactly THREE rows are added (1 opportunity
--- selected, 1 recipient queued/unsent, 1 run preparing); global sending was
--- never enabled; all kill switches were restored to fully paused before COMMIT.
+-- END Stage 3D2C (021). On success exactly THREE rows are added (1 campaign-
+-- specific abandoned_checkout opportunity selected, 1 recipient queued/unsent,
+-- 1 run preparing); global sending was never enabled; all kill switches were
+-- restored to fully paused before COMMIT.
 -- ============================================================================
