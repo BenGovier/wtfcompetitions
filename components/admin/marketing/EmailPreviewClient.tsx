@@ -3,23 +3,16 @@
 import { useState } from "react"
 import { Monitor, Smartphone } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import type { MarketingPreviewMeta } from "@/lib/marketing/preview-samples"
 
-export interface EmailPreviewMeta {
-  key: string
-  label: string
-  opportunityType: string
-  subject: string
-  previewText: string | null
-  heading: string
-  campaignTitle: string
-  ctaLabel: string
-  ctaUrl: string
+export interface EmailPreviewItem {
+  /** Fully-rendered, production email HTML (already escaped/safe by the renderer). */
+  html: string
+  meta: MarketingPreviewMeta
 }
 
 interface EmailPreviewClientProps {
-  /** Fully-rendered, production email HTML (already escaped/safe by the renderer). */
-  html: string
-  meta: EmailPreviewMeta
+  items: EmailPreviewItem[]
 }
 
 type Viewport = "desktop" | "mobile"
@@ -30,18 +23,59 @@ const VIEWPORT_WIDTH: Record<Viewport, number> = {
 }
 
 /**
- * Admin-only responsive preview of a marketing email. It renders the EXACT
- * production HTML produced by `renderMarketingEmail` inside a fully sandboxed
- * iframe (no scripts, no same-origin, no forms), so what an operator sees is
- * byte-for-byte what the delivery pipeline would send. Nothing here can send an
- * email — it only displays representative, non-personal HTML.
+ * Admin-only responsive preview of EVERY marketing automation email. It renders
+ * the EXACT production HTML produced by `renderMarketingEmail` inside a fully
+ * sandboxed iframe (no scripts, no same-origin, no forms), so what an operator
+ * sees is byte-for-byte what the delivery pipeline would send. An automation
+ * selector switches between the six emails and a viewport toggle checks the
+ * responsive layout. Nothing here can send an email — it only displays
+ * representative, non-personal HTML.
  */
-export function EmailPreviewClient({ html, meta }: EmailPreviewClientProps) {
+export function EmailPreviewClient({ items }: EmailPreviewClientProps) {
+  const [activeKey, setActiveKey] = useState<string>(items[0]?.meta.key ?? "")
   const [viewport, setViewport] = useState<Viewport>("desktop")
   const width = VIEWPORT_WIDTH[viewport]
 
+  const active = items.find((item) => item.meta.key === activeKey) ?? items[0]
+  if (!active) {
+    return <p className="text-sm text-muted-foreground">No email templates to preview.</p>
+  }
+  const { meta, html } = active
+
   return (
     <div className="flex flex-col gap-6">
+      {/* Automation selector */}
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Marketing automation">
+        {items.map((item) => {
+          const selected = item.meta.key === active.meta.key
+          return (
+            <button
+              key={item.meta.key}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              onClick={() => setActiveKey(item.meta.key)}
+              className={
+                selected
+                  ? "rounded-lg border border-primary bg-primary px-3 py-2 text-sm font-medium text-primary-foreground"
+                  : "rounded-lg border px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+              }
+            >
+              {item.meta.label}
+              <span
+                className={
+                  selected
+                    ? "ml-2 text-xs text-primary-foreground/70"
+                    : "ml-2 text-xs text-muted-foreground"
+                }
+              >
+                {item.meta.campaignSpecific ? "Campaign" : "Lifecycle"}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
       {/* Metadata: what will land in the inbox */}
       <dl className="grid grid-cols-1 gap-3 rounded-lg border bg-card p-4 text-sm sm:grid-cols-2">
         <div>
@@ -55,6 +89,10 @@ export function EmailPreviewClient({ html, meta }: EmailPreviewClientProps) {
         <div>
           <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Heading</dt>
           <dd className="mt-0.5 text-foreground">{meta.heading}</dd>
+        </div>
+        <div>
+          <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Campaign card</dt>
+          <dd className="mt-0.5 text-foreground">{meta.campaignTitle ?? "None (lifecycle email)"}</dd>
         </div>
         <div>
           <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Call to action</dt>
@@ -103,6 +141,7 @@ export function EmailPreviewClient({ html, meta }: EmailPreviewClientProps) {
           style={{ width, maxWidth: "100%" }}
         >
           <iframe
+            key={`${active.meta.key}-${viewport}`}
             title={`${meta.label} email preview (${viewport})`}
             srcDoc={html}
             sandbox=""
