@@ -49,6 +49,9 @@ describe('Stage 032 — admin canary route authorization', () => {
     })
     const res = await POST()
     expect(res.status).toBe(200)
+    // Server independently authorizes admin, restricted to the 'admin' role.
+    expect(authorizeAdminApi).toHaveBeenCalledTimes(1)
+    expect(authorizeAdminApi).toHaveBeenCalledWith(expect.anything(), { roles: ['admin'] })
     // 10. Route passes NO arguments — recipient is hard-coded server-side.
     expect(runStage032Canary).toHaveBeenCalledTimes(1)
     expect(runStage032Canary).toHaveBeenCalledWith()

@@ -230,3 +230,111 @@ describe('Stage 032 — canary orchestrator preflight', () => {
     expect(workerMock).not.toHaveBeenCalled()
   })
 })
+
+// ---------------------------------------------------------------------------
+// Audit-gap coverage: each individual fail-closed gate proven independently.
+// Every case must abort with the exact safe `check` and leave the worker mock
+// untouched (no provider attempt, no live client, no real worker).
+// ---------------------------------------------------------------------------
+
+describe('Stage 032 — per-field fail-closed gates (audit gaps)', () => {
+  // ---- BEN recipient state: each field independently -> ben_state_mismatch --
+  const benFieldCases: Array<[string, Row]> = [
+    ['wrong email_lc', { email_lc: 'someone-else@example.com' }],
+    ['attempts = 1', { attempts: 1 }],
+    ['sent_at non-null', { sent_at: '2026-01-01T00:00:00Z' }],
+    ['provider_email_id non-null', { provider_email_id: 'prov_123' }],
+    ['locked_at non-null', { locked_at: '2026-01-01T00:00:00Z' }],
+    ['locked_until non-null', { locked_until: '2026-01-01T00:05:00Z' }],
+  ]
+  for (const [label, override] of benFieldCases) {
+    it(`Ben ${label} => ben_state_mismatch, worker NOT called`, async () => {
+      const s = happyScenario()
+      s.ben = { ...(s.ben as Row), ...override }
+      const r = await run(s)
+      expect(r).toEqual({ ok: false, error: 'preflight_failed', check: 'ben_state_mismatch' })
+      expect(workerMock).not.toHaveBeenCalled()
+      expect(realGetClient).not.toHaveBeenCalled()
+      expect(realRunWorker).not.toHaveBeenCalled()
+    })
+  }
+
+  // ---- BEN opportunity state != 'selected' -> ben_opportunity_mismatch ------
+  it('Ben opportunity state != selected => ben_opportunity_mismatch, worker NOT called', async () => {
+    const s = happyScenario()
+    s.benOpp = { id: 'opp-ben', state: 'open', base_priority: 1 }
+    const r = await run(s)
+    expect(r).toEqual({ ok: false, error: 'preflight_failed', check: 'ben_opportunity_mismatch' })
+    expect(workerMock).not.toHaveBeenCalled()
+  })
+
+  // ---- CUSTOMER (Kayleigh) safety: each field independently -----------------
+  const customerFieldCases: Array<[string, Row]> = [
+    ['status != queued', { status: 'sent' }],
+    ['sent_at non-null', { sent_at: '2026-01-01T00:00:00Z' }],
+    ['provider_email_id non-null', { provider_email_id: 'prov_999' }],
+    ['locked_at non-null', { locked_at: '2026-01-01T00:00:00Z' }],
+    ['locked_until non-null', { locked_until: '2026-01-01T00:05:00Z' }],
+  ]
+  for (const [label, override] of customerFieldCases) {
+    it(`customer ${label} => customer_state_mismatch, worker NOT called`, async () => {
+      const s = happyScenario()
+      s.customer = { ...(s.customer as Row), ...override }
+      const r = await run(s)
+      expect(r).toEqual({ ok: false, error: 'preflight_failed', check: 'customer_state_mismatch' })
+      expect(workerMock).not.toHaveBeenCalled()
+      expect(realRunWorker).not.toHaveBeenCalled()
+    })
+  }
+
+  // ---- GLOBAL controls: each flag independently -> control_mismatch ---------
+  it('sending_enabled = false => control_mismatch, worker NOT called', async () => {
+    const s = happyScenario()
+    s.control = { sending_enabled: false, discovery_enabled: false, rollout_limit: 1 }
+    const r = await run(s)
+    expect(r).toEqual({ ok: false, error: 'preflight_failed', check: 'control_mismatch' })
+    expect(workerMock).not.toHaveBeenCalled()
+  })
+
+  it('discovery_enabled = true => control_mismatch, worker NOT called', async () => {
+    const s = happyScenario()
+    s.control = { sending_enabled: true, discovery_enabled: true, rollout_limit: 1 }
+    const r = await run(s)
+    expect(r).toEqual({ ok: false, error: 'preflight_failed', check: 'control_mismatch' })
+    expect(workerMock).not.toHaveBeenCalled()
+  })
+
+  // ---- AUTOMATIONS: zero enabled, and single wrong key ----------------------
+  it('zero enabled automations => automations_mismatch, worker NOT called', async () => {
+    const s = happyScenario()
+    s.automations = []
+    const r = await run(s)
+    expect(r).toEqual({ ok: false, error: 'preflight_failed', check: 'automations_mismatch' })
+    expect(workerMock).not.toHaveBeenCalled()
+  })
+
+  it('single enabled automation with wrong key => automations_mismatch, worker NOT called', async () => {
+    const s = happyScenario()
+    s.automations = [{ automation_key: 'high_value_customer_at_risk' }]
+    const r = await run(s)
+    expect(r).toEqual({ ok: false, error: 'preflight_failed', check: 'automations_mismatch' })
+    expect(workerMock).not.toHaveBeenCalled()
+  })
+
+  // ---- DEFINITIONS: zero enabled, and single wrong key ----------------------
+  it('zero enabled definitions => definitions_mismatch, worker NOT called', async () => {
+    const s = happyScenario()
+    s.definitions = []
+    const r = await run(s)
+    expect(r).toEqual({ ok: false, error: 'preflight_failed', check: 'definitions_mismatch' })
+    expect(workerMock).not.toHaveBeenCalled()
+  })
+
+  it('single enabled definition with wrong key => definitions_mismatch, worker NOT called', async () => {
+    const s = happyScenario()
+    s.definitions = [{ opportunity_key: 'new_account_no_purchase' }]
+    const r = await run(s)
+    expect(r).toEqual({ ok: false, error: 'preflight_failed', check: 'definitions_mismatch' })
+    expect(workerMock).not.toHaveBeenCalled()
+  })
+})
