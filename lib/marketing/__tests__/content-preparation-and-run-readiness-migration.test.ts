@@ -140,3 +140,145 @@ describe('Stage 037 content-preparation + run-readiness migration (static)', () 
     expect(SQL).not.toContain('mark_marketing_runs_ready')
   })
 })
+
+// -----------------------------------------------------------------------------
+// Stage 037 FINAL SAFETY CORRECTION — control/rollout bounds, concurrency, and
+// campaign_specific branching. Static guards over the corrected migration text.
+// -----------------------------------------------------------------------------
+
+// Executable SQL with COMMENT ON FUNCTION ... IS '...'; doc strings ALSO removed,
+// so "never invokes X" guards test actual call sites rather than prose that may
+// legitimately name a neighbouring RPC for documentation.
+const EXEC = CODE.replace(/COMMENT\s+ON\s+FUNCTION[\s\S]*?';/gi, '')
+
+const PREP = CODE.slice(
+  CODE.indexOf('FUNCTION public.prepare_marketing_recipient_content'),
+  CODE.indexOf('FUNCTION public.queue_prepared_marketing_runs'),
+)
+const READY = CODE.slice(CODE.indexOf('FUNCTION public.queue_prepared_marketing_runs'))
+
+describe('Stage 037 correction — control + rollout bounds (both executors)', () => {
+  it('BOTH read the marketing_control_state singleton (key = default)', () => {
+    for (const body of [PREP, READY]) {
+      expect(body).toContain('FROM public.marketing_control_state')
+      expect(body).toMatch(/key\s*=\s*'default'/)
+    }
+  })
+
+  it('BOTH fail closed when the control singleton is missing', () => {
+    for (const body of [PREP, READY]) {
+      expect(body).toMatch(/IF\s+NOT\s+FOUND\s+THEN/i)
+      expect(body).toContain("'control_missing'")
+    }
+  })
+
+  it('BOTH fail closed on invalid maximum_batch_size', () => {
+    for (const body of [PREP, READY]) {
+      expect(body).toMatch(/v_batch\s+IS\s+NULL\s+OR\s+v_batch\s*<=\s*0/i)
+      expect(body).toContain("'invalid_control'")
+    }
+  })
+
+  it('BOTH fail closed when rollout_limit <= 0', () => {
+    for (const body of [PREP, READY]) {
+      expect(body).toMatch(/v_rollout\s+IS\s+NULL\s+OR\s+v_rollout\s*<=\s*0/i)
+      expect(body).toContain("'rollout_disabled'")
+    }
+  })
+
+  it('BOTH compute effective limit = LEAST(requested, maximum_batch_size, rollout_limit)', () => {
+    for (const body of [PREP, READY]) {
+      expect(body).toMatch(/LEAST\s*\(\s*v_requested\s*,\s*v_batch\s*,\s*v_rollout\s*\)/i)
+    }
+  })
+
+  it('BOTH bound their work by the effective limit, not the raw requested limit', () => {
+    // Preparation loops LIMIT v_effective; readiness selects eligible LIMIT v_effective.
+    expect(PREP).toMatch(/LIMIT\s+v_effective/i)
+    expect(READY).toMatch(/LIMIT\s+v_effective/i)
+  })
+
+  it('NEITHER requires sending_enabled or discovery_enabled to proceed', () => {
+    // The columns may be selected, but there must be no early-return guard on them.
+    for (const body of [PREP, READY]) {
+      expect(body).not.toMatch(/IF\s+NOT\s+v_sending/i)
+      expect(body).not.toMatch(/IF\s+NOT\s+v_discovery/i)
+      expect(body).not.toMatch(/v_sending\s+IS\s+NOT\s+TRUE/i)
+      expect(body).not.toMatch(/v_discovery\s+IS\s+NOT\s+TRUE/i)
+      expect(body).not.toMatch(/sending_enabled\s*=\s*true/i)
+      expect(body).not.toMatch(/discovery_enabled\s*=\s*true/i)
+    }
+  })
+})
+
+describe('Stage 037 correction — concurrency (advisory locks)', () => {
+  it('BOTH use a transaction-scoped pg_try_advisory_xact_lock and return busy on contention', () => {
+    for (const body of [PREP, READY]) {
+      expect(body).toMatch(/pg_try_advisory_xact_lock\s*\(/i)
+      expect(body).toContain("'busy'")
+      // The busy branch returns before any control read or write.
+      expect(body).toMatch(/IF\s+NOT\s+pg_try_advisory_xact_lock[\s\S]*RETURN\s+jsonb_build_object[\s\S]*'busy'/i)
+    }
+  })
+
+  it('the two executors use DISTINCT advisory lock keys', () => {
+    expect(PREP).toContain("hashtext('wtf_marketing_prepare_recipient_content')")
+    expect(READY).toContain("hashtext('wtf_marketing_queue_prepared_runs')")
+    expect(PREP).not.toContain("hashtext('wtf_marketing_queue_prepared_runs')")
+    expect(READY).not.toContain("hashtext('wtf_marketing_prepare_recipient_content')")
+  })
+})
+
+describe('Stage 037 correction — campaign_specific branching (preparation)', () => {
+  it('branches on r.campaign_specific for campaign resolution', () => {
+    expect(PREP).toMatch(/IF\s+r\.campaign_specific\s+THEN/i)
+  })
+
+  it('campaign-specific requires a resolvable campaign (title + slug -> canonical url)', () => {
+    expect(PREP).toMatch(/v_title\s+IS\s+NULL\s+OR\s+btrim\(v_title\)\s*=\s*''/i)
+    expect(PREP).toMatch(/v_url\s+NOT\s+LIKE\s+'https:\/\/%\/giveaways\/%'/i)
+    expect(PREP).toMatch(/'\/giveaways\/'\s*\|\|\s*c\.slug/)
+  })
+
+  it('builds the context campaign block ONLY for campaign-specific opportunities', () => {
+    // Base context is schemaVersion + opportunityType; the campaign object is
+    // appended conditionally inside the campaign_specific branch.
+    expect(PREP).toMatch(/jsonb_build_object\(\s*'schemaVersion',\s*1,\s*'opportunityType'/i)
+    expect(PREP).toMatch(/IF\s+r\.campaign_specific\s+THEN[\s\S]*'campaign',\s*jsonb_build_object\('title'/i)
+  })
+
+  it('non-campaign path resolves the template WITHOUT joining campaigns', () => {
+    // There must be an ELSE branch that selects template copy with no campaign join.
+    expect(PREP).toMatch(/ELSE[\s\S]*FROM\s+public\.marketing_templates\s+t\s+WHERE\s+t\.id\s*=\s*r\.template_id/i)
+  })
+
+  it('fails closed on ANY unresolved mustache placeholder (either opportunity type)', () => {
+    expect(PREP).toMatch(/~\s*'\\\{\\\{'/)
+    expect(PREP).toMatch(/v_failed\s*:=\s*v_failed\s*\+\s*1/i)
+  })
+
+  it('passes campaign_specific through to the existing production validator', () => {
+    expect(PREP).toMatch(new RegExp(`${VALIDATOR}\\s*\\([\\s\\S]*r\\.campaign_specific`, 'i'))
+  })
+})
+
+describe('Stage 037 correction — readiness safety', () => {
+  it('only transitions runs currently status = preparing', () => {
+    expect(READY).toMatch(/run\.status\s*=\s*'preparing'/i)
+  })
+
+  it('requires every recipient prepared and at least one recipient', () => {
+    expect(READY).toMatch(/total\s*>\s*0\s+AND\s+prepared\s*=\s*total/i)
+  })
+
+  it('does NOT call wtf_refresh_marketing_run_delivery_state', () => {
+    // Executable SQL only (doc-string COMMENTs stripped): the readiness COMMENT
+    // documents that it never calls this RPC, but no code path invokes it.
+    expect(EXEC).not.toContain('wtf_refresh_marketing_run_delivery_state')
+  })
+
+  it('mutates no recipient row (only marketing_automation_runs)', () => {
+    expect(READY).not.toMatch(/UPDATE\s+public\.marketing_recipients/i)
+    expect(READY).toMatch(/UPDATE\s+public\.marketing_automation_runs/i)
+  })
+})
