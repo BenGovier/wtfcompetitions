@@ -126,8 +126,16 @@ const NON_CAMPAIGN_CTA_URL: Readonly<Record<string, string>> = {
   lapsed_14_days: `${WTF_SITE_URL}/giveaways`,
 }
 
-/** Homepage fallback for any unknown, non-campaign opportunity type. */
-const FALLBACK_CTA_URL = `${WTF_SITE_URL}/`
+/**
+ * The complete set of opportunity types this renderer supports in production:
+ * the three campaign-specific plus the three known non-campaign types. There is
+ * NO catch-all fallback — any type outside this set FAILS CLOSED
+ * (`unsupported_opportunity_type`) rather than rendering to a generic homepage.
+ */
+const SUPPORTED_OPPORTUNITY_TYPES: ReadonlySet<string> = new Set<string>([
+  ...CAMPAIGN_SPECIFIC_OPPORTUNITY_TYPES,
+  ...Object.keys(NON_CAMPAIGN_CTA_URL),
+])
 
 const OPPORTUNITY_PRESENTATION: Readonly<Record<string, OpportunityPresentation>> = {
   abandoned_checkout: {
@@ -156,21 +164,35 @@ const OPPORTUNITY_PRESENTATION: Readonly<Record<string, OpportunityPresentation>
   },
 }
 
-const DEFAULT_PRESENTATION: OpportunityPresentation = {
-  eyebrow: 'LIVE NOW',
-  trustItems: ['Secure checkout', 'Instant confirmation', 'Live competitions'],
+function isSupportedOpportunityType(opportunityType: string): boolean {
+  return SUPPORTED_OPPORTUNITY_TYPES.has(opportunityType)
 }
 
 function isCampaignSpecificType(opportunityType: string): boolean {
   return CAMPAIGN_SPECIFIC_OPPORTUNITY_TYPES.has(opportunityType)
 }
 
+/**
+ * Resolve the fixed CTA for a KNOWN non-campaign type. Never falls back to the
+ * homepage: an unmapped type throws (fail closed). In practice
+ * validateContextSnapshot has already rejected unsupported types before this is
+ * reached, so this is defence in depth.
+ */
 function resolveNonCampaignCtaUrl(opportunityType: string): string {
-  return NON_CAMPAIGN_CTA_URL[opportunityType] ?? FALLBACK_CTA_URL
+  const url = NON_CAMPAIGN_CTA_URL[opportunityType]
+  if (!url) {
+    throw new MarketingRenderError('unsupported_opportunity_type')
+  }
+  return url
 }
 
+/** Presentation for a supported type; throws for anything else (fail closed). */
 function presentationFor(opportunityType: string): OpportunityPresentation {
-  return OPPORTUNITY_PRESENTATION[opportunityType] ?? DEFAULT_PRESENTATION
+  const presentation = OPPORTUNITY_PRESENTATION[opportunityType]
+  if (!presentation) {
+    throw new MarketingRenderError('unsupported_opportunity_type')
+  }
+  return presentation
 }
 
 // ---------------------------------------------------------------------------
@@ -281,6 +303,12 @@ function validateContextSnapshot(input: unknown): MarketingContextSnapshotV1 {
     throw new MarketingRenderError('context_schema_version_invalid')
   }
   const opportunityType = requiredResolvedString(input.opportunityType, 'opportunity_type', 100)
+
+  // FAIL CLOSED on any opportunity type outside the six supported production
+  // types. There is no homepage fallback: an unknown type is never rendered.
+  if (!isSupportedOpportunityType(opportunityType)) {
+    throw new MarketingRenderError('unsupported_opportunity_type')
+  }
 
   // Campaign-specific types MUST carry a valid campaign block (fail closed);
   // non-campaign types MUST NOT — their context is frozen with no campaign.
