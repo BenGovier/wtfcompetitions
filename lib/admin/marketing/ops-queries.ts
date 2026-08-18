@@ -2,7 +2,7 @@ import 'server-only'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getServiceSupabase, serializeControl, RECIPIENT_STATUSES } from '@/lib/admin/marketing/hub-queries'
 import type { ControlDTO } from '@/lib/admin/marketing/hub-queries'
-import { maskEmail } from '@/lib/admin/marketing/ops-validation'
+import { maskEmail, canEnableSending } from '@/lib/admin/marketing/ops-validation'
 
 /**
  * Stage 034 — Marketing Operations Console server-only reads + serialisers.
@@ -362,5 +362,66 @@ export async function fetchArmingState(svc: SupabaseClient): Promise<ArmingState
     enabledAutomationCount: enabledAutomations.count ?? 0,
     enabledDefinitionCount: enabledDefinitions.count ?? 0,
     queuedRecipientCount: queued.count ?? 0,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Full snapshot assembly — the SINGLE source of truth shared by the read route
+// and the server-rendered admin page, so both always agree. Read-only: it never
+// sends, enqueues, claims, creates a run, or invokes the worker.
+// ---------------------------------------------------------------------------
+
+export interface OpsSummary {
+  generatedAt: string
+  control: ControlDTO
+  automations: OpsAutomationDTO[]
+  definitions: OpsDefinitionDTO[]
+  queue: QueueSummaryDTO
+  recentRecipients: RecentRecipientDTO[]
+  recentRuns: RecentRunDTO[]
+  suppressions: SuppressionSummaryDTO
+  derived: {
+    enabledAutomationCount: number
+    enabledDefinitionCount: number
+    sendingBlocker: string | null
+  }
+}
+
+export async function assembleOpsSummary(svc: SupabaseClient): Promise<OpsSummary> {
+  const [control, automations, definitions, queue, recentRecipients, recentRuns, suppressions] =
+    await Promise.all([
+      fetchOpsControl(svc),
+      fetchOpsAutomations(svc),
+      fetchOpsDefinitions(svc),
+      fetchQueueSummary(svc),
+      fetchRecentRecipients(svc),
+      fetchRecentRuns(svc),
+      fetchSuppressionSummary(svc),
+    ])
+
+  const enabledAutomationCount = automations.filter((a) => a.enabled).length
+  const enabledDefinitionCount = definitions.filter((d) => d.enabled).length
+
+  // Advisory only — the authoritative re-read + block happens in the mutation.
+  const armingCheck = canEnableSending({
+    rolloutLimit: control.rolloutLimit,
+    enabledAutomationCount,
+    enabledDefinitionCount,
+  })
+
+  return {
+    generatedAt: new Date().toISOString(),
+    control,
+    automations,
+    definitions,
+    queue,
+    recentRecipients,
+    recentRuns,
+    suppressions,
+    derived: {
+      enabledAutomationCount,
+      enabledDefinitionCount,
+      sendingBlocker: armingCheck.ok ? null : armingCheck.error,
+    },
   }
 }
