@@ -296,6 +296,12 @@ describe('Stage 3A — no email route / Resend call added to the app surface', (
       // stage. It only invokes the existing recipient materialisation RPC (no
       // send, no Resend, no delivery), so exclude the Stage 036 path too.
       .filter((p) => !p.includes('marketing-materialisation'))
+      // The Stage 037 marketing-preparation + marketing-readiness cron routes are
+      // likewise LATER stages. Preparation only populates snapshot columns and
+      // readiness only transitions runs preparing->queued; neither sends, calls
+      // Resend, or delivers. Exclude both Stage 037 paths too.
+      .filter((p) => !p.includes('marketing-preparation'))
+      .filter((p) => !p.includes('marketing-readiness'))
     // The only pre-existing marketing API routes are the audiences reader and
     // the public unsubscribe handler + account preference route. Stage 3A adds
     // no sending/cron/webhook route.

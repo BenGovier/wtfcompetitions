@@ -69,7 +69,8 @@ $base$;
 REVOKE ALL ON FUNCTION public.wtf_marketing_site_base_url() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.wtf_marketing_site_base_url() FROM anon;
 REVOKE ALL ON FUNCTION public.wtf_marketing_site_base_url() FROM authenticated;
-REVOKE ALL ON FUNCTION public.wtf_marketing_site_base_url() FROM service_role;
+-- Executors run as owner (SECURITY DEFINER); this helper is called inside them.
+GRANT EXECUTE ON FUNCTION public.wtf_marketing_site_base_url() TO service_role;
 
 -- ----------------------------------------------------------------------------
 -- VERSION 1 snapshot validator (authoritative; mirrors Stage 022 content_prepared
@@ -135,7 +136,7 @@ COMMENT ON FUNCTION public.wtf_marketing_content_snapshots_are_prepared(jsonb, j
 REVOKE ALL ON FUNCTION public.wtf_marketing_content_snapshots_are_prepared(jsonb, jsonb, text, boolean) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.wtf_marketing_content_snapshots_are_prepared(jsonb, jsonb, text, boolean) FROM anon;
 REVOKE ALL ON FUNCTION public.wtf_marketing_content_snapshots_are_prepared(jsonb, jsonb, text, boolean) FROM authenticated;
-REVOKE ALL ON FUNCTION public.wtf_marketing_content_snapshots_are_prepared(jsonb, jsonb, text, boolean) FROM service_role;
+GRANT EXECUTE ON FUNCTION public.wtf_marketing_content_snapshots_are_prepared(jsonb, jsonb, text, boolean) TO service_role;
 
 -- ============================================================================
 -- PART A — CONTENT PREPARATION EXECUTOR.
@@ -287,7 +288,8 @@ COMMENT ON FUNCTION public.prepare_marketing_recipient_content(integer) IS
 REVOKE ALL ON FUNCTION public.prepare_marketing_recipient_content(integer) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.prepare_marketing_recipient_content(integer) FROM anon;
 REVOKE ALL ON FUNCTION public.prepare_marketing_recipient_content(integer) FROM authenticated;
-REVOKE ALL ON FUNCTION public.prepare_marketing_recipient_content(integer) FROM service_role;
+-- Invoked by the /api/cron/marketing-preparation route via the service-role client.
+GRANT EXECUTE ON FUNCTION public.prepare_marketing_recipient_content(integer) TO service_role;
 
 -- ============================================================================
 -- PART B — RUN READINESS EXECUTOR.
@@ -358,4 +360,5 @@ COMMENT ON FUNCTION public.mark_marketing_runs_ready(integer) IS
 REVOKE ALL ON FUNCTION public.mark_marketing_runs_ready(integer) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.mark_marketing_runs_ready(integer) FROM anon;
 REVOKE ALL ON FUNCTION public.mark_marketing_runs_ready(integer) FROM authenticated;
-REVOKE ALL ON FUNCTION public.mark_marketing_runs_ready(integer) FROM service_role;
+-- Invoked by the /api/cron/marketing-readiness route via the service-role client.
+GRANT EXECUTE ON FUNCTION public.mark_marketing_runs_ready(integer) TO service_role;
