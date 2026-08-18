@@ -77,8 +77,12 @@ export interface WtfEmailContent {
   eyebrow?: string | null
   /** The dominant conversion hook (frozen heading snapshot). */
   heading: string
-  /** The frozen campaign title, shown as the dominant campaign card. */
-  campaignTitle: string
+  /**
+   * The frozen campaign title, shown as the dominant campaign card. Null or
+   * omitted for NON-campaign emails (e.g. WTF Credit, new-account welcome,
+   * lapsed): the campaign card is dropped and the footer uses generic copy.
+   */
+  campaignTitle?: string | null
   /** Supporting copy. Treated as TEXT; newlines become <br /> AFTER escaping. */
   bodyText: string
   /** One dominant CTA. `url` must already be a validated http(s) URL. */
@@ -170,6 +174,8 @@ ${eyebrowHtml}${hook}
 }
 
 function campaignCardBlock(content: WtfEmailContent): string {
+  // Non-campaign emails carry no campaign title: omit the card entirely.
+  if (!content.campaignTitle || content.campaignTitle.trim().length === 0) return ''
   const title = escapeHtml(content.campaignTitle)
   return `<tr>
 <td class="wtf-pad" style="padding:24px 40px 0 40px;background-color:${P.panel};">
@@ -227,7 +233,6 @@ function trustBlock(content: WtfEmailContent): string {
 }
 
 function footerBlock(content: WtfEmailContent): string {
-  const campaignTitle = escapeHtml(content.campaignTitle)
   const unsubHref = escapeHtml(content.unsubscribeUrl)
   const legalLinks = content.legalLinks ?? WTF_DEFAULT_LEGAL_LINKS
   const legalHtml = legalLinks.length > 0
@@ -235,10 +240,15 @@ function footerBlock(content: WtfEmailContent): string {
         .map((l) => `<a href="${escapeHtml(l.url)}" style="color:${P.muted};text-decoration:underline;">${escapeHtml(l.label)}</a>`)
         .join(`<span style="padding:0 8px;">&bull;</span>`)}</p>`
     : ''
+  // Campaign emails name the competition; non-campaign emails use generic copy.
+  const relatesHtml =
+    content.campaignTitle && content.campaignTitle.trim().length > 0
+      ? `<p style="margin:0 0 10px 0;font-size:12px;line-height:1.6;color:${P.muted};">This email relates to ${escapeHtml(content.campaignTitle)}.</p>`
+      : ''
   return `<tr>
 <td class="wtf-pad" style="padding:28px 40px 34px 40px;background-color:${P.bg};border-top:1px solid ${P.border};font-family:${FONT};">
 <div style="margin:0 0 12px 0;font-size:15px;font-weight:800;letter-spacing:0.5px;color:${P.text};">WTF<span style="color:${P.accent};">GIVEAWAYS</span></div>
-<p style="margin:0 0 10px 0;font-size:12px;line-height:1.6;color:${P.muted};">This email relates to ${campaignTitle}.</p>
+${relatesHtml}
 <p style="margin:0 0 10px 0;font-size:12px;line-height:1.6;color:${P.muted};">You&#39;re receiving this because you opted in to WTF Giveaways marketing emails. You can stop them at any time &mdash; <a href="${unsubHref}" style="color:${P.text};text-decoration:underline;">unsubscribe here</a>.</p>
 ${legalHtml}
 <p style="margin:0;font-size:12px;line-height:1.6;color:${P.muted};">&copy; WTF Giveaways. All rights reserved.</p>
@@ -300,12 +310,16 @@ ${footerBlock(content)}
  */
 export function renderWtfEmailText(content: WtfEmailContent): string {
   const lines: string[] = []
+  const hasCampaign = !!(content.campaignTitle && content.campaignTitle.trim().length > 0)
+  const campaignTitle = hasCampaign ? content.campaignTitle!.trim() : ''
   const eyebrow = content.eyebrow === undefined ? WTF_DEFAULT_EYEBROW : content.eyebrow
   if (eyebrow && eyebrow.trim().length > 0) lines.push(eyebrow.trim().toUpperCase())
   lines.push(content.heading)
   lines.push('')
-  lines.push(content.campaignTitle)
-  lines.push('')
+  if (hasCampaign) {
+    lines.push(campaignTitle)
+    lines.push('')
+  }
   lines.push(content.bodyText)
   lines.push('')
   lines.push(`${content.cta.label}: ${content.cta.url}`)
@@ -314,7 +328,7 @@ export function renderWtfEmailText(content: WtfEmailContent): string {
   if (items.length > 0) lines.push(items.join(' | '))
   lines.push('')
   lines.push('---')
-  lines.push(`This email relates to ${content.campaignTitle}.`)
+  if (hasCampaign) lines.push(`This email relates to ${campaignTitle}.`)
   lines.push('You are receiving this because you opted in to WTF Giveaways marketing emails.')
   lines.push(`Unsubscribe: ${content.unsubscribeUrl}`)
   return lines.join('\n')
