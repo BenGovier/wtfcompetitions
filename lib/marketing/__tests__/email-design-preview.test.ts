@@ -205,9 +205,21 @@ describe('Stage 038 — abandoned checkout preview sample', () => {
   })
 
   it('sample content is fully resolved (no leftover {{placeholders}})', () => {
-    const serialised = JSON.stringify(ABANDONED_CHECKOUT_PREVIEW.input)
-    expect(serialised).not.toContain('{{')
-    expect(serialised).not.toContain('}}')
+    // Assert on the actual copy fields, not JSON.stringify output (whose nested
+    // object boundaries legitimately contain "}}"). A mustache placeholder is an
+    // opening "{{" — the renderer fails closed on any such delimiter.
+    const { templateSnapshot, contextSnapshot } = ABANDONED_CHECKOUT_PREVIEW.input
+    const copy = [
+      templateSnapshot.subject,
+      templateSnapshot.previewText ?? '',
+      templateSnapshot.heading,
+      templateSnapshot.bodyText,
+      templateSnapshot.ctaLabel,
+      contextSnapshot.campaign.title,
+      contextSnapshot.campaign.url,
+    ].join('\n')
+    expect(copy).not.toContain('{{')
+    expect(copy).not.toContain('}}')
   })
 
   it('exposes exactly the abandoned-checkout sample for now', () => {
