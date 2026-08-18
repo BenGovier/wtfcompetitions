@@ -292,6 +292,10 @@ describe('Stage 3A — no email route / Resend call added to the app surface', (
       // LATER stage. It only invokes the existing discovery RPC (no send, no
       // Resend, no delivery), so exclude the Stage 035 path too.
       .filter((p) => !p.includes('marketing-discovery'))
+      // The Stage 036 marketing-materialisation cron route is likewise a LATER
+      // stage. It only invokes the existing recipient materialisation RPC (no
+      // send, no Resend, no delivery), so exclude the Stage 036 path too.
+      .filter((p) => !p.includes('marketing-materialisation'))
     // The only pre-existing marketing API routes are the audiences reader and
     // the public unsubscribe handler + account preference route. Stage 3A adds
     // no sending/cron/webhook route.
