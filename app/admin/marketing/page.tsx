@@ -1,5 +1,6 @@
 import { requireAdmin } from '@/lib/admin/auth'
 import { MarketingDashboard } from '@/components/admin/marketing/MarketingDashboard'
+import { Stage032CanaryButton } from '@/components/admin/marketing/Stage032CanaryButton'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -15,5 +16,11 @@ export const revalidate = 0
 export default async function AdminMarketingPage() {
   await requireAdmin({ roles: ['admin'] })
 
-  return <MarketingDashboard />
+  return (
+    <>
+      <MarketingDashboard />
+      {/* TEMPORARY Stage 032 canary control — remove after the one live send. */}
+      <Stage032CanaryButton />
+    </>
+  )
 }

@@ -50,6 +50,20 @@ export interface DeliveryWorkerDeps {
   sendProvider?: typeof sendMarketingEmailViaResend
   /** Existing opaque unsubscribe-token minter. */
   createToken?: (userId: string, emailLc: string) => string
+  /**
+   * OPTIONAL Stage 032 canary safety guard — INTERNAL SERVER-SIDE ONLY.
+   *
+   * When omitted, the worker behaves EXACTLY as before (normal batch delivery).
+   * When supplied, after the normal recovery + claim, the worker refuses to
+   * proceed to JIT authorization / the provider unless the claim batch is
+   * EXACTLY one claim whose recipientId equals this value. Any other shape
+   * (zero, more than one, or a different/malformed recipient) aborts BEFORE the
+   * provider, calls NO failure finalizer, and leaves leases for normal recovery.
+   *
+   * This must NEVER be sourced from HTTP input (query/body/form/cookie) — the
+   * Stage 032 admin route hard-codes it server-side.
+   */
+  expectedRecipientId?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -257,6 +271,8 @@ export async function runMarketingDeliveryBatch(
   const getClient = deps.getClient ?? (() => getMarketingServiceClient() as unknown as MarketingRpcClient)
   const sendProvider = deps.sendProvider ?? sendMarketingEmailViaResend
   const createToken = deps.createToken ?? createUnsubscribeToken
+  // Optional internal canary guard target (never from HTTP; see DeliveryWorkerDeps).
+  const expectedRecipientId = deps.expectedRecipientId
 
   // Build the service-role client ONLY after the kill switch passed.
   let supabase: MarketingRpcClient
@@ -315,6 +331,32 @@ export async function runMarketingDeliveryBatch(
     result.status = 'no_work'
     console.log(`${LOG_PREFIX} no_work: 0 claims`)
     return result
+  }
+
+  // STEP 2.5 — OPTIONAL Stage 032 CANARY GUARD (additive; no-op when omitted).
+  //
+  // Only runs when an internal expectedRecipientId was supplied. It gates the
+  // transition from "claimed" to "about to send": if the batch is anything
+  // other than exactly one claim for the expected recipient, we abort BEFORE
+  // JIT authorization / the provider, call NO failure finalizer, and leave the
+  // lease(s) for the existing recovery mechanism. Normal (non-canary) delivery
+  // never enters this block.
+  if (expectedRecipientId !== undefined) {
+    if (claims.length !== 1) {
+      result.status = 'blocked'
+      result.reason = 'canary_multiple_claims'
+      console.log(`${LOG_PREFIX} blocked: canary_multiple_claims claimed=${claims.length}`)
+      return result
+    }
+    const only = claims[0]
+    const onlyRecipientId = isPlainObject(only) ? only.recipientId : undefined
+    if (onlyRecipientId !== expectedRecipientId) {
+      result.status = 'blocked'
+      result.reason = 'canary_recipient_mismatch'
+      // Never log either recipient id — only the safe machine reason.
+      console.log(`${LOG_PREFIX} blocked: canary_recipient_mismatch`)
+      return result
+    }
   }
 
   // STEP 3 — process SEQUENTIALLY (never in parallel), capped at CLAIM_LIMIT.
