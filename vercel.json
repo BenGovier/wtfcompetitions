@@ -27,6 +27,14 @@
     {
       "path": "/api/cron/marketing-materialisation",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/marketing-preparation",
+      "schedule": "2-59/10 * * * *"
+    },
+    {
+      "path": "/api/cron/marketing-readiness",
+      "schedule": "4-59/10 * * * *"
     }
   ]
 }
