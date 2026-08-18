@@ -13,7 +13,7 @@ const READINESS_LIMIT = 100
 
 /**
  * Vercel Cron trigger for the marketing RUN READINESS RPC
- * `public.mark_marketing_runs_ready(p_limit)` (script 023).
+ * `public.queue_prepared_marketing_runs(p_limit)` (script 023).
  *
  * Vercel Cron invokes configured paths with GET and automatically attaches
  * `Authorization: Bearer <CRON_SECRET>`. This route shares the SAME strict auth
@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
 
   // Exactly one readiness invocation with a FIXED limit. No request input is ever
   // forwarded. The all-recipients-prepared contract remains the RPC's authority.
-  const { data, error } = await supabase.rpc('mark_marketing_runs_ready', {
+  const { data, error } = await supabase.rpc('queue_prepared_marketing_runs', {
     p_limit: READINESS_LIMIT,
   })
 

@@ -7,13 +7,13 @@
 --
 --     1. prepare_marketing_recipient_content(p_limit)
 --          Populates each eligible recipient's template_snapshot + context_snapshot
---          to the canonical VERSION 1 contract, resolving {{campaign_title}} and
---          {{campaign_url}} from the FROZEN opportunity.campaign_id -> campaigns
---          (title + slug). Writes ONLY the two snapshot columns; never touches
---          status/attempts/locks/sent_at/provider_email_id, never sends, never
---          transitions runs.
+--          to the canonical VERSION 1 contract, resolving the campaign_title and
+--          campaign_url placeholders from the FROZEN opportunity.campaign_id ->
+--          campaigns (title + slug). Writes ONLY the two snapshot columns; never
+--          touches status/attempts/locks/sent_at/provider_email_id, never sends,
+--          never transitions runs.
 --
---     2. mark_marketing_runs_ready(p_limit)
+--     2. queue_prepared_marketing_runs(p_limit)
 --          Transitions a run 'preparing' -> 'queued' ONLY when every recipient in
 --          that run is content_prepared (deterministically validated). This is the
 --          delivery-ready state the claim RPC consumes. Sends nothing.
@@ -29,114 +29,29 @@
 --   sending_enabled — sending remains authoritative only at delivery/claim time.
 --
 -- Canonical destination URL
---   {{campaign_url}} resolves to  https://www.wtf-giveaways.co.uk/giveaways/<slug>
---   (matches the public route app/giveaways/[slug]). The base host is a constant
---   here because a SECURITY DEFINER SQL function cannot read NEXT_PUBLIC_SITE_URL;
---   an operator may override it via the GUC app.marketing_site_url if ever needed.
+--   The campaign_url placeholder resolves to the FIXED canonical production base:
+--     https://www.wtf-giveaways.co.uk/giveaways/<slug>
+--   (matches the public route app/giveaways/[slug]). The base host is a hard
+--   constant constructed directly in the preparation RPC; there is NO runtime URL
+--   configuration, NO GUC, and NO current_setting lookup.
 --
 -- Snapshot validator
---   public.wtf_marketing_content_snapshots_are_prepared(...) is (re)defined here to
---   the EXACT VERSION 1 contract enforced by the Stage 022 preview's content_prepared
---   column and by the TypeScript renderer (lib/marketing/delivery-email.ts). Both
---   executors call it before committing. schemaVersion/templateVersion are stored as
---   JSON NUMBERS (the renderer requires `=== 1` / typeof 'number'); every resolved
---   field must be non-empty and free of residual '{{'/'}}' placeholder delimiters.
+--   public.wtf_marketing_content_snapshots_are_prepared(jsonb, jsonb, text, boolean)
+--   ALREADY EXISTS in production (verified against Production Supabase) and is the
+--   authoritative VERSION 1 contract. This migration DOES NOT create/replace/drop/
+--   alter it — it is CALLED only. The preparation RPC builds the two snapshots and
+--   persists them ONLY when that existing validator returns TRUE (fail closed).
 --
--- Safety posture: FAIL CLOSED. Owner-only (EXECUTE revoked from every client role;
--- invoked by the cron routes through the service-role PostgREST as the function
--- owner). No schema changes. No AI influence. Idempotent: an already-prepared
--- recipient is ineligible; an already-ready run is not 'preparing'.
+-- Safety posture: FAIL CLOSED. The two NEW RPCs are owner-only (EXECUTE revoked
+-- from PUBLIC/anon/authenticated, granted to service_role; invoked by the cron
+-- routes through the service-role PostgREST as the function owner). No schema
+-- changes. No AI influence. Idempotent: an already-prepared recipient is
+-- ineligible; an already-ready run is not 'preparing'.
 -- ============================================================================
 
--- ----------------------------------------------------------------------------
--- Canonical marketing site base URL (no trailing slash). Overridable via GUC.
--- ----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.wtf_marketing_site_base_url()
-RETURNS text
-LANGUAGE sql
-IMMUTABLE
-SET search_path = public, pg_temp
-AS $base$
-  SELECT rtrim(
-    COALESCE(
-      NULLIF(btrim(current_setting('app.marketing_site_url', true)), ''),
-      'https://www.wtf-giveaways.co.uk'
-    ),
-    '/'
-  )
-$base$;
-
-REVOKE ALL ON FUNCTION public.wtf_marketing_site_base_url() FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.wtf_marketing_site_base_url() FROM anon;
-REVOKE ALL ON FUNCTION public.wtf_marketing_site_base_url() FROM authenticated;
--- Executors run as owner (SECURITY DEFINER); this helper is called inside them.
-GRANT EXECUTE ON FUNCTION public.wtf_marketing_site_base_url() TO service_role;
-
--- ----------------------------------------------------------------------------
--- VERSION 1 snapshot validator (authoritative; mirrors Stage 022 content_prepared
--- + the TypeScript renderer). Returns TRUE only for a fully-prepared pair.
--- Deliberately STRICT: NULL inputs => FALSE (fail closed).
--- ----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.wtf_marketing_content_snapshots_are_prepared(
-  p_template_snapshot jsonb,
-  p_context_snapshot  jsonb,
-  p_opportunity_type  text,
-  p_campaign_specific boolean
-)
-RETURNS boolean
-LANGUAGE sql
-IMMUTABLE
-SET search_path = public, pg_temp
-AS $v$
-  SELECT
-    p_template_snapshot IS NOT NULL
-    AND p_context_snapshot IS NOT NULL
-    AND p_opportunity_type IS NOT NULL
-    AND jsonb_typeof(p_template_snapshot) = 'object'
-    AND jsonb_typeof(p_context_snapshot)  = 'object'
-    -- template_snapshot v1
-    AND (p_template_snapshot ->> 'schemaVersion') = '1'
-    AND coalesce(btrim(p_template_snapshot ->> 'templateKey'), '') <> ''
-    AND (p_template_snapshot ->> 'templateVersion') ~ '^[0-9]+$'
-    AND (p_template_snapshot ->> 'templateVersion')::bigint >= 1
-    AND coalesce(btrim(p_template_snapshot ->> 'subject'), '')  <> ''
-    AND coalesce(btrim(p_template_snapshot ->> 'heading'), '')  <> ''
-    AND coalesce(btrim(p_template_snapshot ->> 'bodyText'), '') <> ''
-    AND coalesce(btrim(p_template_snapshot ->> 'ctaLabel'), '') <> ''
-    -- no residual placeholder delimiters anywhere in the resolved template text
-    AND (p_template_snapshot ->> 'subject')  NOT LIKE '%{{%'
-    AND (p_template_snapshot ->> 'subject')  NOT LIKE '%}}%'
-    AND (p_template_snapshot ->> 'heading')  NOT LIKE '%{{%'
-    AND (p_template_snapshot ->> 'heading')  NOT LIKE '%}}%'
-    AND (p_template_snapshot ->> 'bodyText') NOT LIKE '%{{%'
-    AND (p_template_snapshot ->> 'bodyText') NOT LIKE '%}}%'
-    AND coalesce(p_template_snapshot ->> 'previewText', '') NOT LIKE '%{{%'
-    AND coalesce(p_template_snapshot ->> 'previewText', '') NOT LIKE '%}}%'
-    -- context_snapshot v1
-    AND (p_context_snapshot ->> 'schemaVersion') = '1'
-    AND coalesce(btrim(p_context_snapshot ->> 'opportunityType'), '') <> ''
-    AND (p_context_snapshot ->> 'opportunityType') = p_opportunity_type
-    -- campaign-specific opportunities require a valid, resolved campaign block
-    AND (
-      NOT p_campaign_specific
-      OR (
-            jsonb_typeof(p_context_snapshot -> 'campaign') = 'object'
-        AND coalesce(btrim(p_context_snapshot #>> '{campaign,title}'), '') <> ''
-        AND coalesce(btrim(p_context_snapshot #>> '{campaign,url}'), '')   <> ''
-        AND (p_context_snapshot #>> '{campaign,title}') NOT LIKE '%{{%'
-        AND (p_context_snapshot #>> '{campaign,title}') NOT LIKE '%}}%'
-        AND (p_context_snapshot #>> '{campaign,url}') ~ '^https?://'
-      )
-    )
-$v$;
-
-COMMENT ON FUNCTION public.wtf_marketing_content_snapshots_are_prepared(jsonb, jsonb, text, boolean) IS
-  'Stage 037 authoritative VERSION 1 prepared-snapshot validator (owner-only). Returns TRUE only when BOTH snapshots are JSON objects satisfying the canonical schemaVersion=1 contract: non-empty templateKey, integer templateVersion>=1, non-empty subject/heading/bodyText/ctaLabel with NO residual {{/}} delimiters, context opportunityType equal to the linked opportunity, and (for campaign-specific opportunities) a campaign object with non-empty resolved title + http(s) url. STRICT/fail-closed: any NULL input => FALSE. Mirrors the Stage 022 preview content_prepared column and lib/marketing/delivery-email.ts.';
-
-REVOKE ALL ON FUNCTION public.wtf_marketing_content_snapshots_are_prepared(jsonb, jsonb, text, boolean) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.wtf_marketing_content_snapshots_are_prepared(jsonb, jsonb, text, boolean) FROM anon;
-REVOKE ALL ON FUNCTION public.wtf_marketing_content_snapshots_are_prepared(jsonb, jsonb, text, boolean) FROM authenticated;
-GRANT EXECUTE ON FUNCTION public.wtf_marketing_content_snapshots_are_prepared(jsonb, jsonb, text, boolean) TO service_role;
+-- NOTE: public.wtf_marketing_content_snapshots_are_prepared(...) is intentionally
+-- NOT defined here. It already exists in production and is the authoritative
+-- VERSION 1 validator. This migration only CALLS it (see PART A).
 
 -- ============================================================================
 -- PART A — CONTENT PREPARATION EXECUTOR.
@@ -158,7 +73,8 @@ DECLARE
   v_prepared   integer := 0;
   v_skipped    integer := 0;
   v_failed     integer := 0;
-  v_base       text := public.wtf_marketing_site_base_url();
+  -- FIXED canonical production base (no trailing slash). No GUC / no env lookup.
+  v_base       constant text := 'https://www.wtf-giveaways.co.uk';
   r            record;
   v_title      text;
   v_url        text;
@@ -167,6 +83,8 @@ DECLARE
   v_heading    text;
   v_body       text;
   v_cta        text;
+  v_template_key text;
+  v_template_version integer;
   v_template   jsonb;
   v_context    jsonb;
   v_ok         boolean;
@@ -193,9 +111,11 @@ BEGIN
     SELECT
       c.title,
       v_base || '/giveaways/' || c.slug,
-      t.subject, t.preview_text, t.heading, t.body_text, t.cta_label
+      t.subject, t.preview_text, t.heading, t.body_text, t.cta_label,
+      t.template_key, t.version
     INTO
-      v_title, v_url, v_subject, v_preview, v_heading, v_body, v_cta
+      v_title, v_url, v_subject, v_preview, v_heading, v_body, v_cta,
+      v_template_key, v_template_version
     FROM public.marketing_templates t
     LEFT JOIN public.campaigns c ON c.id = r.campaign_id
     WHERE t.id = r.template_id;
@@ -223,8 +143,8 @@ BEGIN
     -- Build the VERSION 1 snapshots. schemaVersion/templateVersion are JSON NUMBERS.
     v_template := jsonb_build_object(
       'schemaVersion', 1,
-      'templateKey', (SELECT template_key FROM public.marketing_templates WHERE id = r.template_id),
-      'templateVersion', (SELECT version FROM public.marketing_templates WHERE id = r.template_id),
+      'templateKey', v_template_key,
+      'templateVersion', v_template_version,
       'subject', v_subject,
       'previewText', v_preview,
       'heading', v_heading,
@@ -237,7 +157,8 @@ BEGIN
       'campaign', jsonb_build_object('title', v_title, 'url', v_url)
     );
 
-    -- Authoritative validation BEFORE committing.
+    -- Authoritative validation BEFORE committing, via the EXISTING production
+    -- validator (NOT defined in this migration). Persist ONLY when it returns TRUE.
     v_ok := public.wtf_marketing_content_snapshots_are_prepared(
       v_template, v_context, r.opportunity_type, r.campaign_specific
     );
@@ -283,7 +204,7 @@ END;
 $prepare$;
 
 COMMENT ON FUNCTION public.prepare_marketing_recipient_content(integer) IS
-  'Stage 037 CONTENT PREPARATION executor (owner-only). Selects preparation-eligible recipients from the Stage 022 preview, resolves {{campaign_title}}/{{campaign_url}} from the frozen opportunity.campaign_id -> campaigns (title + /giveaways/<slug>), builds + validates the VERSION 1 snapshots, and writes ONLY template_snapshot + context_snapshot to still-pristine recipients. Sends nothing; never transitions runs; never changes status/attempts/locks/sent_at. Idempotent + fail-closed. Returns a PII-free stats summary.';
+  'Stage 037 CONTENT PREPARATION executor (owner-only). Selects preparation-eligible recipients from the Stage 022 preview, resolves campaign_title/campaign_url from the frozen opportunity.campaign_id -> campaigns (title + https://www.wtf-giveaways.co.uk/giveaways/<slug>), builds the VERSION 1 snapshots, validates them via the EXISTING production validator public.wtf_marketing_content_snapshots_are_prepared, and writes ONLY template_snapshot + context_snapshot to still-pristine recipients when it returns TRUE. Sends nothing; never transitions runs; never changes status/attempts/locks/sent_at. Idempotent + fail-closed. Returns a PII-free stats summary.';
 
 REVOKE ALL ON FUNCTION public.prepare_marketing_recipient_content(integer) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.prepare_marketing_recipient_content(integer) FROM anon;
@@ -297,7 +218,7 @@ GRANT EXECUTE ON FUNCTION public.prepare_marketing_recipient_content(integer) TO
 --   EVERY recipient in the run is content_prepared. Sets queued_count to the
 --   recipient count. Sends nothing; never claims; never touches recipients.
 -- ============================================================================
-CREATE OR REPLACE FUNCTION public.mark_marketing_runs_ready(
+CREATE OR REPLACE FUNCTION public.queue_prepared_marketing_runs(
   p_limit integer DEFAULT 100
 )
 RETURNS jsonb
@@ -354,11 +275,11 @@ BEGIN
 END;
 $ready$;
 
-COMMENT ON FUNCTION public.mark_marketing_runs_ready(integer) IS
+COMMENT ON FUNCTION public.queue_prepared_marketing_runs(integer) IS
   'Stage 037 RUN READINESS executor (owner-only). Transitions a run preparing -> queued (the delivery-ready state the claim RPC consumes) ONLY when the run has >=1 recipient and every recipient is content_prepared per the Stage 022 gate; sets queued_count to the recipient count. Sends nothing; never claims; never mutates recipients. Idempotent + fail-closed.';
 
-REVOKE ALL ON FUNCTION public.mark_marketing_runs_ready(integer) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.mark_marketing_runs_ready(integer) FROM anon;
-REVOKE ALL ON FUNCTION public.mark_marketing_runs_ready(integer) FROM authenticated;
+REVOKE ALL ON FUNCTION public.queue_prepared_marketing_runs(integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.queue_prepared_marketing_runs(integer) FROM anon;
+REVOKE ALL ON FUNCTION public.queue_prepared_marketing_runs(integer) FROM authenticated;
 -- Invoked by the /api/cron/marketing-readiness route via the service-role client.
-GRANT EXECUTE ON FUNCTION public.mark_marketing_runs_ready(integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.queue_prepared_marketing_runs(integer) TO service_role;

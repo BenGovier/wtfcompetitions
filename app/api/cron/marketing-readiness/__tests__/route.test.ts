@@ -90,15 +90,15 @@ describe('Marketing readiness cron route (GET /api/cron/marketing-readiness)', (
     expect(rpc).toHaveBeenCalledTimes(1)
   })
 
-  it('invokes exactly mark_marketing_runs_ready with p_limit = 100', async () => {
+  it('invokes exactly queue_prepared_marketing_runs with p_limit = 100', async () => {
     await GET(makeRequest({ authorization: 'Bearer top-secret' }))
-    expect(rpc).toHaveBeenCalledWith('mark_marketing_runs_ready', { p_limit: 100 })
+    expect(rpc).toHaveBeenCalledWith('queue_prepared_marketing_runs', { p_limit: 100 })
   })
 
   it('query params cannot override p_limit (fixed at 100)', async () => {
     await GET(makeRequest({ authorization: 'Bearer top-secret' }, '?p_limit=99999&limit=5'))
     expect(rpc).toHaveBeenCalledTimes(1)
-    expect(rpc).toHaveBeenCalledWith('mark_marketing_runs_ready', { p_limit: 100 })
+    expect(rpc).toHaveBeenCalledWith('queue_prepared_marketing_runs', { p_limit: 100 })
   })
 
   it('never invokes the delivery worker', async () => {
@@ -109,7 +109,7 @@ describe('Marketing readiness cron route (GET /api/cron/marketing-readiness)', (
   it('never invokes delivery, preparation, materialisation, or any other RPC', async () => {
     await GET(makeRequest({ authorization: 'Bearer top-secret' }))
     const rpcNames = rpc.mock.calls.map((c) => c[0])
-    expect(rpcNames).toEqual(['mark_marketing_runs_ready'])
+    expect(rpcNames).toEqual(['queue_prepared_marketing_runs'])
     expect(rpcNames).not.toContain('claim_marketing_delivery_batch')
     expect(rpcNames).not.toContain('prepare_marketing_recipient_content')
     expect(rpcNames).not.toContain('materialize_marketing_recipients')
@@ -154,12 +154,21 @@ describe('vercel.json readiness cron configuration', () => {
   it('contains exactly one readiness cron, staggered after preparation', () => {
     const ready = cfg.crons.filter((c) => c.path === '/api/cron/marketing-readiness')
     expect(ready).toHaveLength(1)
-    expect(byPath.get('/api/cron/marketing-readiness')).toBe('6-59/10 * * * *')
+    expect(byPath.get('/api/cron/marketing-readiness')).toBe('4-59/10 * * * *')
+  })
+
+  it('readiness (4-59/10) runs after preparation (2-59/10) within each window', () => {
+    expect(byPath.get('/api/cron/marketing-preparation')).toBe('2-59/10 * * * *')
+    expect(byPath.get('/api/cron/marketing-readiness')).toBe('4-59/10 * * * *')
   })
 
   it('leaves every pre-existing cron entry untouched', () => {
     expect(byPath.get('/api/cron/marketing-delivery')).toBe('*/10 * * * *')
     expect(byPath.get('/api/cron/marketing-discovery')).toBe('*/10 * * * *')
     expect(byPath.get('/api/cron/marketing-materialisation')).toBe('*/10 * * * *')
+    expect(byPath.get('/api/jobs/run')).toBe('* * * * *')
+    expect(byPath.get('/api/jobs/run-draws')).toBe('*/5 * * * *')
+    expect(byPath.get('/api/jobs/refresh-reporting')).toBe('* * * * *')
+    expect(byPath.get('/api/jobs/refresh-marketing-profiles')).toBe('*/5 * * * *')
   })
 })

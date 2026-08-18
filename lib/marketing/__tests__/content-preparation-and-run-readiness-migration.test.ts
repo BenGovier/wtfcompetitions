@@ -16,14 +16,29 @@ const SQL = readFileSync(
 
 // Executable SQL only — `-- ...` line comments stripped, so assertions about what
 // the migration DOES are never satisfied (or tripped) by prose in the header,
-// which legitimately names the neighbouring pipeline RPCs for documentation.
+// which legitimately names the neighbouring pipeline RPCs / the existing validator
+// for documentation.
 const CODE = SQL.replace(/--.*$/gm, '')
 
+const VALIDATOR = 'wtf_marketing_content_snapshots_are_prepared'
+
 describe('Stage 037 content-preparation + run-readiness migration (static)', () => {
-  it('defines exactly the three intended functions', () => {
-    expect(SQL).toContain('CREATE OR REPLACE FUNCTION public.wtf_marketing_content_snapshots_are_prepared')
+  it('defines exactly the two NEW executor functions', () => {
     expect(SQL).toContain('CREATE OR REPLACE FUNCTION public.prepare_marketing_recipient_content')
-    expect(SQL).toContain('CREATE OR REPLACE FUNCTION public.mark_marketing_runs_ready')
+    expect(SQL).toContain('CREATE OR REPLACE FUNCTION public.queue_prepared_marketing_runs')
+  })
+
+  it('DOES NOT define, replace, drop, or alter the EXISTING production validator', () => {
+    // The validator already exists in production and is authoritative. This
+    // migration must only CALL it — never (re)define or modify it. Check the
+    // executable SQL so a documentation mention in comments cannot trip this.
+    expect(CODE).not.toMatch(new RegExp(`CREATE\\s+FUNCTION\\s+public\\.${VALIDATOR}`, 'i'))
+    expect(CODE).not.toMatch(new RegExp(`CREATE\\s+OR\\s+REPLACE\\s+FUNCTION\\s+public\\.${VALIDATOR}`, 'i'))
+    expect(CODE).not.toMatch(new RegExp(`DROP\\s+FUNCTION[\\s\\S]*${VALIDATOR}`, 'i'))
+    expect(CODE).not.toMatch(new RegExp(`ALTER\\s+FUNCTION[\\s\\S]*${VALIDATOR}`, 'i'))
+    // And it must not fiddle with the validator's grants either.
+    expect(CODE).not.toMatch(new RegExp(`GRANT[\\s\\S]*${VALIDATOR}`, 'i'))
+    expect(CODE).not.toMatch(new RegExp(`REVOKE[\\s\\S]*${VALIDATOR}`, 'i'))
   })
 
   it('creates no table, type, or column (no schema change)', () => {
@@ -39,11 +54,21 @@ describe('Stage 037 content-preparation + run-readiness migration (static)', () 
     expect(SQL).toMatch(/preparation_eligible/)
   })
 
-  it('validates BOTH snapshots via the named validator before committing content', () => {
+  it('preparation CALLS the existing validator before committing content', () => {
     // The preparation executor must call the validator and refuse to persist a
     // recipient whose snapshots do not satisfy the schemaVersion=1 contract.
-    const prepBody = SQL.slice(SQL.indexOf('prepare_marketing_recipient_content'))
-    expect(prepBody).toContain('wtf_marketing_content_snapshots_are_prepared')
+    const prepBody = CODE.slice(CODE.indexOf('prepare_marketing_recipient_content'))
+    expect(prepBody).toContain(VALIDATOR)
+    // It gates the persistence on the boolean result (fail closed on NOT TRUE).
+    expect(prepBody).toMatch(/IF\s+NOT\s+v_ok\s+THEN/i)
+  })
+
+  it('readiness relies on the SAME validated preparation gate (content_prepared)', () => {
+    // Readiness never re-implements the contract; it aggregates content_prepared
+    // (which itself embeds the validator's contract) from the shipped gate.
+    const readyBody = CODE.slice(CODE.indexOf('queue_prepared_marketing_runs'))
+    expect(readyBody).toContain('wtf_marketing_recipient_preparation_preview')
+    expect(readyBody).toContain('content_prepared')
   })
 
   it('writes send-state columns to nothing (never sets sent_at / provider_email_id / status=sent)', () => {
@@ -61,33 +86,41 @@ describe('Stage 037 content-preparation + run-readiness migration (static)', () 
     expect(CODE).not.toContain('claim_marketing_delivery_batch')
   })
 
-  it('resolves the campaign URL against the hardcoded canonical production base', () => {
-    expect(SQL).toContain('https://www.wtf-giveaways.co.uk')
-    expect(SQL).toContain('/giveaways/')
+  it('resolves the campaign URL against the FIXED canonical production base', () => {
+    // Exactly https://www.wtf-giveaways.co.uk/giveaways/<slug>, constructed in CODE.
+    expect(CODE).toContain('https://www.wtf-giveaways.co.uk')
+    expect(CODE).toMatch(/'\/giveaways\/'\s*\|\|\s*c\.slug/)
+  })
+
+  it('has NO runtime URL configuration — no GUC / no current_setting / no settings helper', () => {
+    expect(CODE).not.toContain('app.marketing_site_url')
+    expect(CODE).not.toMatch(/current_setting/i)
+    expect(CODE).not.toContain('wtf_marketing_site_base_url')
   })
 
   it('fully resolves both campaign placeholders (no residual mustache tokens persisted)', () => {
-    expect(SQL).toContain('{{campaign_url}}')
-    expect(SQL).toContain('{{campaign_title}}')
+    expect(SQL).toContain('campaign_url')
+    expect(SQL).toContain('campaign_title')
     // The executor must replace, not persist, the tokens.
-    expect(SQL).toMatch(/replace\s*\(/i)
+    expect(CODE).toMatch(/regexp_replace\s*\(/i)
   })
 
   it('only transitions runs preparing -> queued, never backwards or to a send state', () => {
-    const readyBody = SQL.slice(SQL.indexOf('mark_marketing_runs_ready'))
+    const readyBody = CODE.slice(CODE.indexOf('queue_prepared_marketing_runs'))
     expect(readyBody).toContain("'queued'")
     expect(readyBody).toContain("'preparing'")
     expect(readyBody).not.toContain("'processing'")
     expect(readyBody).not.toContain("'completed'")
+    expect(readyBody).not.toContain("'sent'")
   })
 
   it('marks a run ready only when it has no unprepared recipients remaining', () => {
-    const readyBody = SQL.slice(SQL.indexOf('mark_marketing_runs_ready'))
-    // Guard clause referencing empty/{}/unprepared snapshots must be present.
-    expect(readyBody).toMatch(/content_prepared|template_snapshot|NOT\s+EXISTS/i)
+    const readyBody = CODE.slice(CODE.indexOf('queue_prepared_marketing_runs'))
+    // Every recipient prepared: prepared = total.
+    expect(readyBody).toMatch(/prepared\s*=\s*total/i)
   })
 
-  it('restricts EXECUTE to the owner/service role and revokes public/anon/authenticated', () => {
+  it('restricts EXECUTE to the service role and revokes public/anon/authenticated (NEW RPCs only)', () => {
     expect(SQL).toMatch(/REVOKE\s+ALL\s+ON\s+FUNCTION[\s\S]*FROM\s+PUBLIC/i)
     expect(SQL).toMatch(/GRANT\s+EXECUTE\s+ON\s+FUNCTION[\s\S]*TO\s+service_role/i)
     expect(SQL).not.toMatch(/GRANT\s+EXECUTE\s+ON\s+FUNCTION[\s\S]*TO\s+anon/i)
@@ -100,6 +133,10 @@ describe('Stage 037 content-preparation + run-readiness migration (static)', () 
 
   it('accepts a bounded p_limit on both executors', () => {
     expect(SQL).toMatch(/prepare_marketing_recipient_content\s*\(\s*p_limit/i)
-    expect(SQL).toMatch(/mark_marketing_runs_ready\s*\(\s*p_limit/i)
+    expect(SQL).toMatch(/queue_prepared_marketing_runs\s*\(\s*p_limit/i)
+  })
+
+  it('does NOT reference the old readiness name mark_marketing_runs_ready', () => {
+    expect(SQL).not.toContain('mark_marketing_runs_ready')
   })
 })

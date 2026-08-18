@@ -113,7 +113,7 @@ describe('Marketing preparation cron route (GET /api/cron/marketing-preparation)
     const rpcNames = rpc.mock.calls.map((c) => c[0])
     expect(rpcNames).toEqual(['prepare_marketing_recipient_content'])
     expect(rpcNames).not.toContain('claim_marketing_delivery_batch')
-    expect(rpcNames).not.toContain('mark_marketing_runs_ready')
+    expect(rpcNames).not.toContain('queue_prepared_marketing_runs')
     expect(rpcNames).not.toContain('materialize_marketing_recipients')
   })
 
@@ -156,7 +156,7 @@ describe('vercel.json preparation cron configuration', () => {
   it('contains exactly one preparation cron, staggered after materialisation', () => {
     const prep = cfg.crons.filter((c) => c.path === '/api/cron/marketing-preparation')
     expect(prep).toHaveLength(1)
-    expect(byPath.get('/api/cron/marketing-preparation')).toBe('3-59/10 * * * *')
+    expect(byPath.get('/api/cron/marketing-preparation')).toBe('2-59/10 * * * *')
   })
 
   it('leaves every pre-existing cron entry untouched', () => {
