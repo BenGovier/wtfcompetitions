@@ -1,4 +1,9 @@
 import 'server-only'
+import {
+  renderWtfEmailShell,
+  renderWtfEmailText,
+  type WtfEmailContent,
+} from './email-shell'
 
 /**
  * WTF Marketing — Stage 029 SAFE EMAIL RENDERER (isolated infrastructure).
@@ -11,13 +16,14 @@ import 'server-only'
  *
  * Trust posture: FAIL CLOSED. Even though SQL validated these snapshots earlier,
  * this module re-validates every field in TypeScript and rejects anything that
- * looks unprepared, malformed, or unsafe. All customer/campaign/template strings
- * are HTML-escaped before interpolation; `bodyText` is treated as TEXT (never
- * HTML) and newlines are converted to <br> only AFTER escaping. There is no
- * dangerouslySetInnerHTML and no raw-HTML template support anywhere.
+ * looks unprepared, malformed, or unsafe. Presentation is delegated to the
+ * reusable branded shell (./email-shell), which HTML-escapes every dynamic value
+ * again before interpolation and treats `bodyText` as TEXT (newlines become
+ * <br /> only AFTER escaping). There is no dangerouslySetInnerHTML and no
+ * raw-HTML template support anywhere in either module.
  *
  * This module is deliberately UNREFERENCED by production runtime after Stage 029
- * (only the provider adapter and tests import it).
+ * (only the provider adapter, the admin preview renderer, and tests import it).
  */
 
 // ---------------------------------------------------------------------------
@@ -143,29 +149,6 @@ function requiredHttpUrl(value: unknown, field: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// HTML safety
-// ---------------------------------------------------------------------------
-
-/**
- * Escape the five HTML-significant characters. Implemented locally so this
- * infrastructure module stays hermetic (a shared escapeHtml exists in
- * lib/admin/marketing/placeholders.ts but is not imported here on purpose).
- */
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
-
-/** Escape THEN convert newlines to <br> (never the other way around). */
-function escapeHtmlWithBreaks(value: string): string {
-  return escapeHtml(value).replace(/\r\n|\r|\n/g, '<br />')
-}
-
-// ---------------------------------------------------------------------------
 // Snapshot validation
 // ---------------------------------------------------------------------------
 
@@ -226,99 +209,31 @@ function validateContextSnapshot(input: unknown): MarketingContextSnapshotV1 {
 // Rendering
 // ---------------------------------------------------------------------------
 
-const BG = '#0b0b0f'
-const PANEL = '#141419'
-const TEXT = '#f5f5f7'
-const MUTED = '#9a9aa5'
-const ACCENT = '#ff2d87'
-const ACCENT_TEXT = '#ffffff'
-const BORDER = '#26262f'
-
-function buildHtml(
+/**
+ * Map the validated Version-1 snapshots into the reusable branded WTF email
+ * shell content contract. Only DYNAMIC, frozen values flow from the snapshots;
+ * brand chrome (eyebrow, trust strip, legal links, logo, palette) is supplied
+ * by the shell defaults so every marketing email stays visually consistent.
+ * The shell re-escapes every field, so raw validated strings are passed here.
+ */
+function toShellContent(
   template: MarketingTemplateSnapshotV1,
   context: MarketingContextSnapshotV1,
   unsubscribeUrl: string,
-): string {
-  const subject = escapeHtml(template.subject)
-  const heading = escapeHtml(template.heading)
-  const body = escapeHtmlWithBreaks(template.bodyText)
-  const cta = escapeHtml(template.ctaLabel)
-  const campaignTitle = escapeHtml(context.campaign.title)
-  const campaignHref = escapeHtml(context.campaign.url)
-  const unsubHref = escapeHtml(unsubscribeUrl)
-  const preheader = template.previewText ? escapeHtml(template.previewText) : ''
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="color-scheme" content="dark" />
-<title>${subject}</title>
-</head>
-<body style="margin:0;padding:0;background-color:${BG};">
-<span style="display:none !important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden;mso-hide:all;">${preheader}</span>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${BG};padding:24px 0;">
-<tr>
-<td align="center">
-<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:100%;background-color:${PANEL};border:1px solid ${BORDER};border-radius:12px;overflow:hidden;">
-<tr>
-<td style="padding:28px 32px 8px 32px;font-family:Arial,Helvetica,sans-serif;">
-<span style="font-size:18px;font-weight:800;letter-spacing:1px;color:${TEXT};">WTF</span>
-<span style="font-size:18px;font-weight:800;letter-spacing:1px;color:${ACCENT};">GIVEAWAYS</span>
-</td>
-</tr>
-<tr>
-<td style="padding:8px 32px 0 32px;font-family:Arial,Helvetica,sans-serif;">
-<h1 style="margin:0;font-size:26px;line-height:1.25;font-weight:800;color:${TEXT};">${heading}</h1>
-</td>
-</tr>
-<tr>
-<td style="padding:16px 32px 0 32px;font-family:Arial,Helvetica,sans-serif;">
-<p style="margin:0;font-size:16px;line-height:1.6;color:${TEXT};">${body}</p>
-</td>
-</tr>
-<tr>
-<td style="padding:28px 32px 8px 32px;font-family:Arial,Helvetica,sans-serif;">
-<table role="presentation" cellpadding="0" cellspacing="0">
-<tr>
-<td style="border-radius:8px;background-color:${ACCENT};">
-<a href="${campaignHref}" style="display:inline-block;padding:14px 28px;font-size:16px;font-weight:700;color:${ACCENT_TEXT};text-decoration:none;border-radius:8px;">${cta}</a>
-</td>
-</tr>
-</table>
-</td>
-</tr>
-<tr>
-<td style="padding:24px 32px 28px 32px;border-top:1px solid ${BORDER};font-family:Arial,Helvetica,sans-serif;">
-<p style="margin:0 0 8px 0;font-size:12px;line-height:1.6;color:${MUTED};">This email relates to ${campaignTitle}.</p>
-<p style="margin:0;font-size:12px;line-height:1.6;color:${MUTED};">You&#39;re receiving this because you opted in to WTF Giveaways marketing. <a href="${unsubHref}" style="color:${MUTED};text-decoration:underline;">Unsubscribe</a></p>
-</td>
-</tr>
-</table>
-</td>
-</tr>
-</table>
-</body>
-</html>`
-}
-
-function buildText(
-  template: MarketingTemplateSnapshotV1,
-  context: MarketingContextSnapshotV1,
-  unsubscribeUrl: string,
-): string {
-  const lines: string[] = []
-  lines.push(template.heading)
-  lines.push('')
-  lines.push(template.bodyText)
-  lines.push('')
-  lines.push(`${template.ctaLabel}: ${context.campaign.url}`)
-  lines.push('')
-  lines.push('---')
-  lines.push(`This email relates to ${context.campaign.title}.`)
-  lines.push(`Unsubscribe: ${unsubscribeUrl}`)
-  return lines.join('\n')
+): WtfEmailContent {
+  return {
+    subject: template.subject,
+    preheader: template.previewText,
+    heading: template.heading,
+    campaignTitle: context.campaign.title,
+    bodyText: template.bodyText,
+    cta: { label: template.ctaLabel, url: context.campaign.url },
+    // heroImageUrl intentionally omitted: the current snapshot contract carries
+    // no campaign artwork, so the shell renders its premium branded fallback
+    // hero. No DB field is invented; artwork can be supplied later without any
+    // renderer change once the snapshot contract provides it.
+    unsubscribeUrl,
+  }
 }
 
 /**
@@ -333,10 +248,12 @@ export function renderMarketingEmail(input: RenderMarketingEmailInput): Rendered
   const context = validateContextSnapshot(input.contextSnapshot)
   const unsubscribeUrl = requiredHttpUrl(input.unsubscribeUrl, 'unsubscribe')
 
+  const shellContent = toShellContent(template, context, unsubscribeUrl)
+
   return {
     subject: template.subject,
-    html: buildHtml(template, context, unsubscribeUrl),
-    text: buildText(template, context, unsubscribeUrl),
+    html: renderWtfEmailShell(shellContent),
+    text: renderWtfEmailText(shellContent),
     templateKey: template.templateKey,
     templateVersion: template.templateVersion,
     opportunityType: context.opportunityType,
