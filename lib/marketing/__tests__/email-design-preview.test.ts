@@ -215,16 +215,11 @@ describe('Stage 038 — abandoned checkout preview sample', () => {
       templateSnapshot.heading,
       templateSnapshot.bodyText,
       templateSnapshot.ctaLabel,
-      contextSnapshot.campaign.title,
-      contextSnapshot.campaign.url,
+      contextSnapshot.campaign?.title ?? '',
+      contextSnapshot.campaign?.url ?? '',
     ].join('\n')
     expect(copy).not.toContain('{{')
     expect(copy).not.toContain('}}')
-  })
-
-  it('exposes exactly the abandoned-checkout sample for now', () => {
-    expect(MARKETING_PREVIEW_SAMPLES).toHaveLength(1)
-    expect(MARKETING_PREVIEW_SAMPLES[0].key).toBe('abandoned_checkout')
   })
 })
 
@@ -272,5 +267,301 @@ describe('Stage 038 — preview route is admin-only and never sends', () => {
   it('offers both desktop and mobile viewports', () => {
     expect(previewClient).toContain('desktop')
     expect(previewClient).toContain('mobile')
+  })
+})
+
+// ===========================================================================
+// STAGE 039 — all six automations render distinctly & safely
+// ===========================================================================
+
+const CAMPAIGN_SPECIFIC = new Set([
+  'abandoned_checkout',
+  'vip_early_access',
+  'regular_buyer_campaign_alert',
+])
+const NON_CAMPAIGN = new Set([
+  'wtf_credit_waiting',
+  'new_account_no_purchase',
+  'lapsed_14_days',
+])
+const GIVEAWAYS_URL = `${WTF_SITE_URL}/giveaways`
+
+describe('Stage 039 — six samples, one per automation', () => {
+  it('exposes exactly the six automations in a stable order', () => {
+    expect(MARKETING_PREVIEW_SAMPLES).toHaveLength(6)
+    expect(MARKETING_PREVIEW_SAMPLES.map((s) => s.key)).toEqual([
+      'abandoned_checkout',
+      'vip_early_access',
+      'regular_buyer_campaign_alert',
+      'wtf_credit_waiting',
+      'new_account_no_purchase',
+      'lapsed_14_days',
+    ])
+  })
+
+  it('every sample renders through the SAME production renderer (fail-closed proof)', () => {
+    for (const sample of MARKETING_PREVIEW_SAMPLES) {
+      const out = renderMarketingEmail(sample.input)
+      expect(out.html).toContain('<!DOCTYPE html>')
+      expect(out.opportunityType).toBe(sample.opportunityType)
+      // No unresolved placeholder survives into the final HTML or text.
+      expect(out.html).not.toContain('{{')
+      expect(out.text).not.toContain('{{')
+    }
+  })
+
+  it('every sample includes the branded shell, logo, unsubscribe and a CTA', () => {
+    for (const sample of MARKETING_PREVIEW_SAMPLES) {
+      const out = renderMarketingEmail(sample.input)
+      expect(out.html).toContain(WTF_LOGO_URL)
+      expect(out.html.toLowerCase()).toContain('unsubscribe')
+      expect(out.html).toContain(sample.meta.ctaLabel)
+      expect(out.html).toContain(`href="${sample.meta.ctaUrl}"`)
+    }
+  })
+
+  it('each automation reads distinctly (unique subject + heading)', () => {
+    const subjects = new Set(MARKETING_PREVIEW_SAMPLES.map((s) => s.meta.subject))
+    const headings = new Set(MARKETING_PREVIEW_SAMPLES.map((s) => s.meta.heading))
+    expect(subjects.size).toBe(6)
+    expect(headings.size).toBe(6)
+  })
+
+  it('carries NO customer identity in any sample', () => {
+    const serialised = JSON.stringify(MARKETING_PREVIEW_SAMPLES.map((s) => s.input))
+    expect(serialised).not.toMatch(/@/)
+    expect(serialised.toLowerCase()).not.toContain('recipient')
+  })
+})
+
+describe('Stage 039 — campaign-specific vs non-campaign presentation', () => {
+  it('campaign-specific emails show the campaign card and point the CTA at the campaign url', () => {
+    for (const sample of MARKETING_PREVIEW_SAMPLES.filter((s) => CAMPAIGN_SPECIFIC.has(s.opportunityType))) {
+      const out = renderMarketingEmail(sample.input)
+      expect(sample.meta.campaignSpecific).toBe(true)
+      expect(sample.meta.campaignTitle).toBeTruthy()
+      expect(out.html).toContain(sample.meta.campaignTitle as string)
+      expect(sample.input.contextSnapshot.campaign).not.toBeNull()
+      expect(sample.meta.ctaUrl).toBe(sample.input.contextSnapshot.campaign?.url)
+    }
+  })
+
+  it('non-campaign emails omit the campaign card and use the fixed /giveaways CTA', () => {
+    for (const sample of MARKETING_PREVIEW_SAMPLES.filter((s) => NON_CAMPAIGN.has(s.opportunityType))) {
+      const out = renderMarketingEmail(sample.input)
+      expect(sample.meta.campaignSpecific).toBe(false)
+      expect(sample.meta.campaignTitle).toBeNull()
+      // context has no campaign block at all
+      expect(sample.input.contextSnapshot.campaign).toBeUndefined()
+      // CTA resolves to the fixed public listing
+      expect(sample.meta.ctaUrl).toBe(GIVEAWAYS_URL)
+      expect(out.html).toContain(`href="${GIVEAWAYS_URL}"`)
+      // no "This email relates to ..." campaign footer line
+      expect(out.html).not.toContain('This email relates to')
+    }
+  })
+})
+
+describe('Stage 039 — renderer fail-closed branching', () => {
+  it('throws campaign_missing when a campaign-specific type lacks a campaign', () => {
+    expect(() =>
+      renderMarketingEmail({
+        templateSnapshot: {
+          schemaVersion: 1,
+          templateKey: 'abandoned_checkout_v1',
+          templateVersion: 1,
+          subject: 'S',
+          previewText: null,
+          heading: 'H',
+          bodyText: 'B',
+          ctaLabel: 'C',
+        },
+        contextSnapshot: { schemaVersion: 1, opportunityType: 'abandoned_checkout' } as never,
+        unsubscribeUrl: `${WTF_SITE_URL}/api/marketing/unsubscribe?token=x`,
+      }),
+    ).toThrow(/campaign_missing/)
+  })
+
+  it('throws when a non-campaign type is given a stray campaign block', () => {
+    expect(() =>
+      renderMarketingEmail({
+        templateSnapshot: {
+          schemaVersion: 1,
+          templateKey: 'wtf_credit_waiting_v1',
+          templateVersion: 1,
+          subject: 'S',
+          previewText: null,
+          heading: 'H',
+          bodyText: 'B',
+          ctaLabel: 'C',
+        },
+        contextSnapshot: {
+          schemaVersion: 1,
+          opportunityType: 'wtf_credit_waiting',
+          campaign: { title: 'X', url: `${WTF_SITE_URL}/giveaways/x` },
+        } as never,
+        unsubscribeUrl: `${WTF_SITE_URL}/api/marketing/unsubscribe?token=x`,
+      }),
+    ).toThrow(/unexpected_campaign_for_non_campaign_type/)
+  })
+
+  it('FAILS CLOSED on an unknown opportunity type (no homepage fallback)', () => {
+    const attempt = () =>
+      renderMarketingEmail({
+        templateSnapshot: {
+          schemaVersion: 1,
+          templateKey: 'some_future_v1',
+          templateVersion: 1,
+          subject: 'S',
+          previewText: null,
+          heading: 'H',
+          bodyText: 'B',
+          ctaLabel: 'Go',
+        },
+        contextSnapshot: { schemaVersion: 1, opportunityType: 'some_future_type' } as never,
+        unsubscribeUrl: `${WTF_SITE_URL}/api/marketing/unsubscribe?token=x`,
+      })
+    expect(attempt).toThrow(/unsupported_opportunity_type/)
+    // And it definitely does NOT render a homepage-CTA email instead.
+    expect(attempt).not.toThrow(/relates/)
+  })
+
+  it('there is NO homepage ("/") CTA fallback anywhere for any supported type', () => {
+    for (const sample of MARKETING_PREVIEW_SAMPLES) {
+      const out = renderMarketingEmail(sample.input)
+      expect(out.html).not.toContain(`href="${WTF_SITE_URL}/"`)
+    }
+  })
+
+  it('every supported opportunity type resolves a concrete, non-homepage CTA', () => {
+    for (const sample of MARKETING_PREVIEW_SAMPLES) {
+      const out = renderMarketingEmail(sample.input)
+      if (NON_CAMPAIGN.has(sample.opportunityType)) {
+        expect(out.html).toContain(`href="${GIVEAWAYS_URL}"`)
+      } else {
+        expect(out.html).toContain(`href="${sample.input.contextSnapshot.campaign?.url}"`)
+      }
+    }
+  })
+})
+
+// ===========================================================================
+// STAGE 039 — template copy migration: deterministic upsert + mapping safety.
+//
+// The migration is intentionally NOT executed here (SQL execution is out of
+// scope for this stage). Instead each required behaviour is proven by a precise
+// structural assertion on the executable SQL, which is deterministic.
+// ===========================================================================
+describe('Stage 039 — template copy migration (deterministic upsert)', () => {
+  const MIG = readFileSync(
+    join(REPO_ROOT, 'scripts/marketing/024-marketing-template-copy-all-automations.sql'),
+    'utf8',
+  )
+  // Executable SQL with line comments stripped. Safe because no string literal
+  // in this migration contains a "--" sequence (URLs use "//", dashes use "—").
+  const EXEC = MIG.replace(/--[^\n]*/g, '')
+  const EXEC_LC = EXEC.toLowerCase()
+  // Whitespace-collapsed variant so aligned SQL (multiple spaces) still matches
+  // single-space structural substrings.
+  const EXEC_LC_WS = EXEC_LC.replace(/\s+/g, ' ')
+
+  const ALL_SIX_KEYS = [
+    'abandoned_checkout_v1',
+    'vip_early_access_v1',
+    'regular_buyer_campaign_alert_v1',
+    'wtf_credit_waiting_v1',
+    'new_account_no_purchase_v1',
+    'lapsed_14_days_v1',
+  ]
+
+  it('declares the approved copy for all six template keys in executable SQL', () => {
+    for (const key of ALL_SIX_KEYS) expect(EXEC).toContain(key)
+  })
+
+  it('updates the existing abandoned_checkout_v1 to the approved Stage 039 copy', () => {
+    // New approved copy present...
+    expect(EXEC).toContain('You left this one behind 👀')
+    expect(EXEC).toContain("Your entry isn''t finished")
+    expect(EXEC).toContain("didn''t finish your entry")
+    expect(EXEC).toContain('Finish my entry')
+    // ...and the earlier Stage 022 copy is gone.
+    expect(EXEC).not.toContain('You left something behind')
+    expect(EXEC).not.toContain('Still thinking about')
+  })
+
+  it('increments version EXACTLY ONCE, and only when content differs', () => {
+    // Exactly one version bump expression, in the UPDATE's SET clause.
+    const bumps = EXEC.match(/version\s*=\s*t\.version\s*\+\s*1/gi) ?? []
+    expect(bumps).toHaveLength(1)
+    // The UPDATE is guarded by a difference test, so identical rows are skipped
+    // (a second immediate run performs no update and no further increment).
+    expect(EXEC_LC).toContain('is distinct from')
+    // version is NOT part of the difference predicate (it is a result, not a
+    // compared field), so re-running never re-triggers on version alone.
+    const whereBlock = EXEC.slice(EXEC.search(/UPDATE\s+public\.marketing_templates/i))
+    const diffPredicate = whereBlock.slice(whereBlock.toLowerCase().indexOf('where'))
+    expect(diffPredicate.toLowerCase()).not.toContain('version is distinct from')
+  })
+
+  it('inserts missing templates at version 1, guarded by WHERE NOT EXISTS', () => {
+    expect(EXEC_LC).toContain('insert into public.marketing_templates')
+    expect(EXEC_LC).toContain('where not exists')
+    // Insert sources the desired-state temp table and seeds version 1.
+    expect(EXEC).toContain('_stage039_desired')
+  })
+
+  it('compares/writes exactly the nine approved content fields', () => {
+    for (const field of [
+      'name',
+      'subject',
+      'preview_text',
+      'heading',
+      'body_text',
+      'cta_label',
+      'default_url',
+      'discount_code_id',
+      'is_active',
+    ]) {
+      expect(EXEC_LC_WS).toContain(`${field} is distinct from`)
+    }
+  })
+
+  it('FAILS CLOSED if all six automations are not present', () => {
+    expect(EXEC_LC).toContain('raise exception')
+    expect(EXEC).toMatch(/found\s+6\s+marketing automations|expected 6 marketing automations/i)
+  })
+
+  it('FAILS CLOSED (before any write) if an automation is mapped to the WRONG template', () => {
+    // Guard 2: a non-NULL template_id whose key differs from expected aborts.
+    expect(EXEC_LC).toContain('unexpected template')
+    expect(EXEC).toMatch(/a\.template_id\s+IS NOT NULL/i)
+    expect(EXEC).toMatch(/cur\.template_key\s+IS DISTINCT FROM\s+m\.expected_key/i)
+  })
+
+  it('maps NULL automations only, leaving correct existing mappings unchanged', () => {
+    // Mapping UPDATE is guarded by template_id IS NULL: unmapped rows get mapped,
+    // already-correct mappings are never overwritten.
+    expect(EXEC).toMatch(/UPDATE\s+public\.marketing_automations/i)
+    expect(EXEC_LC).toContain('a.template_id is null')
+  })
+
+  it('never enables sending, flips a control flag, or touches definitions', () => {
+    expect(EXEC_LC).not.toContain('sending_enabled')
+    expect(EXEC_LC).not.toContain('discovery_enabled')
+    expect(EXEC).not.toMatch(/UPDATE\s+public\.marketing_control_state/i)
+    expect(EXEC).not.toMatch(/marketing_opportunity_definitions/i)
+    expect(EXEC).not.toMatch(/SET\s+enabled\s*=/i)
+  })
+
+  it('keeps ONLY the six known automations (no new automation rows)', () => {
+    expect(EXEC).not.toMatch(/INSERT\s+INTO\s+public\.marketing_automations/i)
+  })
+
+  it('campaign default_url stays NULL; non-campaign uses the fixed /giveaways URL', () => {
+    // Fixed public listing URL for the three static templates.
+    const giveawaysMatches = EXEC.match(/https:\/\/www\.wtf-giveaways\.co\.uk\/giveaways/g) ?? []
+    expect(giveawaysMatches.length).toBeGreaterThanOrEqual(3)
+    // No homepage-root default_url is ever written.
+    expect(EXEC).not.toMatch(/'https:\/\/www\.wtf-giveaways\.co\.uk\/'/)
   })
 })

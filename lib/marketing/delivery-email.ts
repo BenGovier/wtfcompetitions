@@ -2,6 +2,7 @@ import 'server-only'
 import {
   renderWtfEmailShell,
   renderWtfEmailText,
+  WTF_SITE_URL,
   type WtfEmailContent,
 } from './email-shell'
 
@@ -49,7 +50,12 @@ export interface MarketingCampaignContextV1 {
 export interface MarketingContextSnapshotV1 {
   schemaVersion: 1
   opportunityType: string
-  campaign: MarketingCampaignContextV1
+  /**
+   * Present ONLY for campaign-specific opportunity types. Null for non-campaign
+   * types (WTF Credit, new-account welcome, lapsed), whose context is frozen by
+   * preparation as `{ schemaVersion, opportunityType }` with no campaign block.
+   */
+  campaign: MarketingCampaignContextV1 | null
 }
 
 export interface RenderMarketingEmailInput {
@@ -80,6 +86,113 @@ export class MarketingRenderError extends Error {
     this.name = 'MarketingRenderError'
     this.code = code
   }
+}
+
+// ---------------------------------------------------------------------------
+// Opportunity-type presentation (data-driven; keyed by opportunity type only)
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-opportunity-type presentation config. This is BRAND CHROME keyed on the
+ * opportunity type (which is data, from the frozen snapshot) — never on any
+ * customer string. The conversion copy itself (subject/heading/body/ctaLabel)
+ * always comes from the frozen template snapshot; only the eyebrow kicker and
+ * the trust strip vary here so each of the six emails reads distinctly.
+ */
+interface OpportunityPresentation {
+  eyebrow: string | null
+  trustItems: readonly string[]
+}
+
+/**
+ * The three CAMPAIGN-SPECIFIC opportunity types (authoritative:
+ * marketing_opportunity_definitions.campaign_specific = true in script 009).
+ * These carry a frozen `campaign {title,url}` and the CTA points at that URL.
+ */
+const CAMPAIGN_SPECIFIC_OPPORTUNITY_TYPES: ReadonlySet<string> = new Set([
+  'abandoned_checkout',
+  'vip_early_access',
+  'regular_buyer_campaign_alert',
+])
+
+/**
+ * The three NON-campaign opportunity types (campaign_specific = false). Their
+ * context has no campaign, so the CTA is resolved to a fixed, brand-owned public
+ * destination — the live competitions listing.
+ */
+const NON_CAMPAIGN_CTA_URL: Readonly<Record<string, string>> = {
+  wtf_credit_waiting: `${WTF_SITE_URL}/giveaways`,
+  new_account_no_purchase: `${WTF_SITE_URL}/giveaways`,
+  lapsed_14_days: `${WTF_SITE_URL}/giveaways`,
+}
+
+/**
+ * The complete set of opportunity types this renderer supports in production:
+ * the three campaign-specific plus the three known non-campaign types. There is
+ * NO catch-all fallback — any type outside this set FAILS CLOSED
+ * (`unsupported_opportunity_type`) rather than rendering to a generic homepage.
+ */
+const SUPPORTED_OPPORTUNITY_TYPES: ReadonlySet<string> = new Set<string>([
+  ...CAMPAIGN_SPECIFIC_OPPORTUNITY_TYPES,
+  ...Object.keys(NON_CAMPAIGN_CTA_URL),
+])
+
+const OPPORTUNITY_PRESENTATION: Readonly<Record<string, OpportunityPresentation>> = {
+  abandoned_checkout: {
+    eyebrow: 'STILL LIVE',
+    trustItems: ['Secure checkout', 'Instant confirmation', 'Live competitions'],
+  },
+  vip_early_access: {
+    eyebrow: 'VIP EARLY ACCESS',
+    trustItems: ['VIP window open', 'Enter before public', 'Live competitions'],
+  },
+  regular_buyer_campaign_alert: {
+    eyebrow: 'NEW COMPETITION',
+    trustItems: ['Just went live', 'Secure checkout', 'Instant confirmation'],
+  },
+  wtf_credit_waiting: {
+    eyebrow: 'CREDIT WAITING',
+    trustItems: ['Credit ready to use', 'Spend anytime', 'Live competitions'],
+  },
+  new_account_no_purchase: {
+    eyebrow: 'WELCOME',
+    trustItems: ['Quick to enter', 'Secure checkout', 'Live competitions'],
+  },
+  lapsed_14_days: {
+    eyebrow: 'NEW THIS WEEK',
+    trustItems: ['Fresh competitions', 'Secure checkout', 'Live now'],
+  },
+}
+
+function isSupportedOpportunityType(opportunityType: string): boolean {
+  return SUPPORTED_OPPORTUNITY_TYPES.has(opportunityType)
+}
+
+function isCampaignSpecificType(opportunityType: string): boolean {
+  return CAMPAIGN_SPECIFIC_OPPORTUNITY_TYPES.has(opportunityType)
+}
+
+/**
+ * Resolve the fixed CTA for a KNOWN non-campaign type. Never falls back to the
+ * homepage: an unmapped type throws (fail closed). In practice
+ * validateContextSnapshot has already rejected unsupported types before this is
+ * reached, so this is defence in depth.
+ */
+function resolveNonCampaignCtaUrl(opportunityType: string): string {
+  const url = NON_CAMPAIGN_CTA_URL[opportunityType]
+  if (!url) {
+    throw new MarketingRenderError('unsupported_opportunity_type')
+  }
+  return url
+}
+
+/** Presentation for a supported type; throws for anything else (fail closed). */
+function presentationFor(opportunityType: string): OpportunityPresentation {
+  const presentation = OPPORTUNITY_PRESENTATION[opportunityType]
+  if (!presentation) {
+    throw new MarketingRenderError('unsupported_opportunity_type')
+  }
+  return presentation
 }
 
 // ---------------------------------------------------------------------------
@@ -191,17 +304,38 @@ function validateContextSnapshot(input: unknown): MarketingContextSnapshotV1 {
   }
   const opportunityType = requiredResolvedString(input.opportunityType, 'opportunity_type', 100)
 
-  const campaign = input.campaign
-  if (!isPlainObject(campaign)) {
-    throw new MarketingRenderError('campaign_missing')
+  // FAIL CLOSED on any opportunity type outside the six supported production
+  // types. There is no homepage fallback: an unknown type is never rendered.
+  if (!isSupportedOpportunityType(opportunityType)) {
+    throw new MarketingRenderError('unsupported_opportunity_type')
   }
-  const title = requiredResolvedString(campaign.title, 'campaign_title', 300)
-  const url = requiredHttpUrl(campaign.url, 'campaign')
+
+  // Campaign-specific types MUST carry a valid campaign block (fail closed);
+  // non-campaign types MUST NOT — their context is frozen with no campaign.
+  if (isCampaignSpecificType(opportunityType)) {
+    const campaign = input.campaign
+    if (!isPlainObject(campaign)) {
+      throw new MarketingRenderError('campaign_missing')
+    }
+    const title = requiredResolvedString(campaign.title, 'campaign_title', 300)
+    const url = requiredHttpUrl(campaign.url, 'campaign')
+    return {
+      schemaVersion: 1,
+      opportunityType,
+      campaign: { title, url },
+    }
+  }
+
+  // Non-campaign: reject a stray campaign block so a mismatched snapshot cannot
+  // slip a campaign into a non-campaign email (fail closed).
+  if (input.campaign !== undefined && input.campaign !== null) {
+    throw new MarketingRenderError('unexpected_campaign_for_non_campaign_type')
+  }
 
   return {
     schemaVersion: 1,
     opportunityType,
-    campaign: { title, url },
+    campaign: null,
   }
 }
 
@@ -221,13 +355,25 @@ function toShellContent(
   context: MarketingContextSnapshotV1,
   unsubscribeUrl: string,
 ): WtfEmailContent {
+  const presentation = presentationFor(context.opportunityType)
+
+  // CTA destination is DATA-DRIVEN: campaign-specific emails point at the frozen
+  // campaign URL; non-campaign emails point at a fixed brand-owned destination
+  // resolved from the opportunity type. Never a hard-coded customer string.
+  const ctaUrl = context.campaign
+    ? context.campaign.url
+    : resolveNonCampaignCtaUrl(context.opportunityType)
+
   return {
     subject: template.subject,
     preheader: template.previewText,
+    eyebrow: presentation.eyebrow,
     heading: template.heading,
-    campaignTitle: context.campaign.title,
+    // Campaign card only for campaign-specific emails; null drops the card.
+    campaignTitle: context.campaign ? context.campaign.title : null,
     bodyText: template.bodyText,
-    cta: { label: template.ctaLabel, url: context.campaign.url },
+    cta: { label: template.ctaLabel, url: ctaUrl },
+    trustItems: presentation.trustItems,
     // heroImageUrl intentionally omitted: the current snapshot contract carries
     // no campaign artwork, so the shell renders its premium branded fallback
     // hero. No DB field is invented; artwork can be supplied later without any
