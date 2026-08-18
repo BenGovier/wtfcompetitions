@@ -17,7 +17,7 @@ import { maskEmail, canEnableSending } from '@/lib/admin/marketing/ops-validatio
  * raw snapshots are ever selected or returned.
  */
 
-export { getServiceSupabase }
+export { getServiceSupabase, serializeControl }
 
 /** Active-suppression reason buckets (mirror the DB CHECK). */
 export const SUPPRESSION_REASONS = [
