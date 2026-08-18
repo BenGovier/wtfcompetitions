@@ -617,10 +617,22 @@ describe('Stage 030 — isolation', () => {
     expect(/\.delete\(/.test(src)).toBe(false)
   })
 
-  it('66. no cron/scheduler was added for this route', () => {
-    for (const rel of ['vercel.json']) {
-      if (existsSync(join(REPO_ROOT, rel))) {
-        expect(read(rel)).not.toContain('marketing-delivery')
+  it('66. no in-process scheduler, and the manual POST job route is not cron-scheduled', () => {
+    // Stage 033 intentionally adds a Vercel Cron for the marketing-delivery
+    // WORKER via a dedicated GET route (app/api/cron/marketing-delivery). That
+    // is the ONLY marketing-delivery cron. This guard still enforces that:
+    //   (a) the worker/POST-route source contains NO in-process scheduler, and
+    //   (b) the manual POST job route path itself is never the cron target
+    //       (Vercel Cron issues GET; the POST route stays manual-only).
+    if (existsSync(join(REPO_ROOT, 'vercel.json'))) {
+      const cfg = JSON.parse(read('vercel.json')) as { crons?: Array<{ path?: string }> }
+      const paths = (cfg.crons ?? []).map((c) => c.path)
+      // The Stage 030 manual POST job route must NOT be scheduled.
+      expect(paths).not.toContain('/api/jobs/marketing-delivery')
+      // Any marketing-delivery cron must be the dedicated Stage 033 GET route.
+      const marketingDeliveryCrons = paths.filter((p) => (p ?? '').includes('marketing-delivery'))
+      for (const p of marketingDeliveryCrons) {
+        expect(p).toBe('/api/cron/marketing-delivery')
       }
     }
     const src = read(WORKER_REL) + read(ROUTE_REL)
