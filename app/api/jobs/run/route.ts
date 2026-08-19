@@ -411,6 +411,7 @@ async function processRefreshSnapshots(
       status: campaign.status,
       tickets_sold: ticketsSold,
       next_ticket: nextTicket,
+      hard_cap_total_tickets: campaign.max_tickets_total,
       presentation_type: campaign.presentation_type ?? null,
     }
 
