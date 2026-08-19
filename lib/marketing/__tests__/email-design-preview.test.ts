@@ -15,7 +15,7 @@ import {
   WTF_DEFAULT_TRUST_ITEMS,
   type WtfEmailContent,
 } from '../email-shell'
-import { renderMarketingEmail } from '../delivery-email'
+import { renderMarketingEmail, resolveEmailLayout } from '../delivery-email'
 import {
   ABANDONED_CHECKOUT_PREVIEW,
   MARKETING_PREVIEW_SAMPLES,
@@ -563,5 +563,241 @@ describe('Stage 039 — template copy migration (deterministic upsert)', () => {
     expect(giveawaysMatches.length).toBeGreaterThanOrEqual(3)
     // No homepage-root default_url is ever written.
     expect(EXEC).not.toMatch(/'https:\/\/www\.wtf-giveaways\.co\.uk\/'/)
+  })
+})
+
+// ===========================================================================
+// STAGE 040 — DISTINCT EMAIL LAYOUTS
+//
+// One WTF brand shell, six deterministic body compositions selected in code by
+// opportunity type. The acceptance test: each of the six renders a VISIBLY
+// different body (unique layout marker + unique structural module) while the
+// shared chrome (logo, footer, unsubscribe, width, palette, escaping) is
+// identical. Layout is NEVER stored in the DB and template copy never controls
+// structure.
+// ===========================================================================
+
+/** opportunity type -> (expected layout, a body module unique to that layout). */
+const LAYOUT_EXPECTATIONS: Record<
+  string,
+  { layout: string; sentinel: string }
+> = {
+  abandoned_checkout: { layout: 'return_to_comp', sentinel: 'Entry not completed' },
+  vip_early_access: { layout: 'vip_pass', sentinel: 'Private access' },
+  regular_buyer_campaign_alert: { layout: 'new_drop', sentinel: 'Just landed' },
+  wtf_credit_waiting: { layout: 'wallet_credit', sentinel: 'WTF CREDIT' },
+  new_account_no_purchase: { layout: 'welcome_onboarding', sentinel: 'Pick your comp' },
+  lapsed_14_days: { layout: 'comeback_whatsnew', sentinel: 'Live action' },
+}
+
+describe('Stage 040 — deterministic layout selection (code, not DB/copy)', () => {
+  it('maps each of the six opportunity types to its exact layout variant', () => {
+    expect(resolveEmailLayout('abandoned_checkout')).toBe('return_to_comp')
+    expect(resolveEmailLayout('vip_early_access')).toBe('vip_pass')
+    expect(resolveEmailLayout('regular_buyer_campaign_alert')).toBe('new_drop')
+    expect(resolveEmailLayout('wtf_credit_waiting')).toBe('wallet_credit')
+    expect(resolveEmailLayout('new_account_no_purchase')).toBe('welcome_onboarding')
+    expect(resolveEmailLayout('lapsed_14_days')).toBe('comeback_whatsnew')
+  })
+
+  it('FAILS CLOSED on an unknown opportunity type (no default layout)', () => {
+    expect(() => resolveEmailLayout('some_future_type')).toThrow(/unsupported_opportunity_type/)
+  })
+
+  it('every preview sample renders its expected layout marker + unique module', () => {
+    for (const sample of MARKETING_PREVIEW_SAMPLES) {
+      const expected = LAYOUT_EXPECTATIONS[sample.opportunityType]
+      expect(expected).toBeTruthy()
+      const out = renderMarketingEmail(sample.input)
+      expect(out.html).toContain(`<!-- wtf-layout:${expected.layout} -->`)
+      expect(out.html).toContain(expected.sentinel)
+    }
+  })
+})
+
+describe('Stage 040 — six emails are visibly distinct (acceptance test)', () => {
+  it('the six render six DISTINCT layout markers', () => {
+    const markers = MARKETING_PREVIEW_SAMPLES.map((s) => {
+      const html = renderMarketingEmail(s.input).html
+      const m = html.match(/<!-- wtf-layout:([a-z_]+) -->/)
+      return m?.[1]
+    })
+    expect(markers).toHaveLength(6)
+    expect(new Set(markers).size).toBe(6)
+    expect(markers).toEqual([
+      'return_to_comp',
+      'vip_pass',
+      'new_drop',
+      'wallet_credit',
+      'welcome_onboarding',
+      'comeback_whatsnew',
+    ])
+  })
+
+  it('each email carries a module the OTHER five do not', () => {
+    const rendered = MARKETING_PREVIEW_SAMPLES.map((s) => ({
+      type: s.opportunityType,
+      html: renderMarketingEmail(s.input).html,
+    }))
+    for (const { type, html } of rendered) {
+      const sentinel = LAYOUT_EXPECTATIONS[type].sentinel
+      expect(html).toContain(sentinel)
+      // No OTHER email contains this layout's unique module.
+      for (const other of rendered) {
+        if (other.type === type) continue
+        expect(other.html).not.toContain(sentinel)
+      }
+    }
+  })
+
+  it('the restrained GOLD accent appears ONLY in the VIP pass layout', () => {
+    for (const sample of MARKETING_PREVIEW_SAMPLES) {
+      const html = renderMarketingEmail(sample.input).html.toLowerCase()
+      if (sample.opportunityType === 'vip_early_access') {
+        expect(html).toContain('#e6b422')
+      } else {
+        expect(html).not.toContain('#e6b422')
+      }
+    }
+  })
+})
+
+describe('Stage 040 — campaign vs lifecycle module rules', () => {
+  it('lifecycle layouts never render the campaign card or any campaign module', () => {
+    for (const key of ['wtf_credit_waiting', 'new_account_no_purchase', 'lapsed_14_days']) {
+      const sample = MARKETING_PREVIEW_SAMPLES.find((s) => s.opportunityType === key)!
+      const html = renderMarketingEmail(sample.input).html
+      expect(html).not.toContain('Entry not completed') // return_to_comp ticket
+      expect(html).not.toContain('Just landed') // new_drop launch banner
+      expect(html).not.toContain('New at WTF') // new_drop poster label
+      expect(html).not.toContain('Private access') // vip pass intro
+      expect(html).not.toContain('This email relates to') // campaign footer line
+    }
+  })
+
+  it('campaign layouts retain the frozen campaign title inside their module', () => {
+    for (const key of ['abandoned_checkout', 'vip_early_access', 'regular_buyer_campaign_alert']) {
+      const sample = MARKETING_PREVIEW_SAMPLES.find((s) => s.opportunityType === key)!
+      const html = renderMarketingEmail(sample.input).html
+      expect(html).toContain(sample.meta.campaignTitle as string)
+    }
+  })
+})
+
+describe('Stage 040 — shared chrome & safety are unchanged across all layouts', () => {
+  it('every layout keeps the identical logo, unsubscribe, width and single <img>', () => {
+    for (const sample of MARKETING_PREVIEW_SAMPLES) {
+      const html = renderMarketingEmail(sample.input).html
+      expect(html).toContain(WTF_LOGO_URL)
+      expect(html).toContain(`href="${sample.input.unsubscribeUrl}"`)
+      expect(html).toContain('width="600"')
+      // No layout introduces an external icon/image dependency: logo is the only <img>.
+      const imgCount = (html.match(/<img /g) ?? []).length
+      expect(imgCount).toBe(1)
+    }
+  })
+
+  it('every layout is table-based & email-safe (no flex/grid/script/handlers)', () => {
+    for (const sample of MARKETING_PREVIEW_SAMPLES) {
+      const html = renderMarketingEmail(sample.input).html
+      expect(html).not.toContain('display:flex')
+      expect(html).not.toContain('display:grid')
+      expect(html).not.toMatch(/<script/i)
+      expect(html).not.toMatch(/\son\w+=/i)
+      expect(html).not.toContain('javascript:')
+    }
+  })
+
+  it('escaping is unchanged in a NON-default layout (wallet_credit)', () => {
+    const html = renderWtfEmailShell(
+      baseContent({ layout: 'wallet_credit', heading: '<script>alert(1)</script>' }),
+    )
+    expect(html).toContain('<!-- wtf-layout:wallet_credit -->')
+    expect(html).not.toContain('<script>alert(1)</script>')
+    expect(html).toContain('&lt;script&gt;')
+  })
+})
+
+describe('Stage 041 — each layout renders a materially different signature composition', () => {
+  const htmlFor = (type: string): string => {
+    const sample = MARKETING_PREVIEW_SAMPLES.find((s) => s.opportunityType === type)!
+    return renderMarketingEmail(sample.input).html
+  }
+
+  it('ABANDONED is a competition TICKET (status strip + entry-not-completed receipt)', () => {
+    const html = htmlFor('abandoned_checkout')
+    expect(html).toContain('You left this one behind')
+    expect(html).toContain('Your competition')
+    expect(html).toContain('Entry not completed')
+    expect(html).toContain('border-top:3px solid #ff2d87') // ticket top edge
+    expect(html).toContain('dashed') // receipt tear line
+  })
+
+  it('CREDIT is a giant pink £ hero + wallet card', () => {
+    const html = htmlFor('wtf_credit_waiting')
+    expect(html).toContain('Your WTF wallet')
+    expect(html).toContain('Credit ready to use')
+    expect(html).toContain('font-size:82px') // dominant £ glyph
+    expect(html).toContain('WTF CREDIT')
+    expect(html).toContain('&bull;&bull;&bull;&bull; WTF') // wallet card number row
+  })
+
+  it('VIP is a gold invitation / pass', () => {
+    const html = htmlFor('vip_early_access')
+    expect(html).toContain('Private access')
+    expect(html).toContain("You&#39;re on the list")
+    expect(html.toLowerCase()).toContain('#e6b422') // gold, VIP only
+    expect(html).toContain('letter-spacing:16px') // "V I P" spacing
+    expect(html).toContain('Access status')
+  })
+
+  it('CAMPAIGN ALERT is a pink launch poster + ticker', () => {
+    const html = htmlFor('regular_buyer_campaign_alert')
+    expect(html).toContain('Just landed') // pink banner
+    expect(html).toContain('New at WTF') // poster label
+    expect(html).toContain('wtf-poster') // oversized campaign typography
+    expect(html).toContain('Live now &bull; WTF Giveaways &bull; Live now') // ticker
+  })
+
+  it('WELCOME is a welcome banner + numbered onboarding rows', () => {
+    const html = htmlFor('new_account_no_purchase')
+    expect(html).toContain('Welcome<br />to WTF.')
+    expect(html).toContain('wtf-stepnum') // large step numbers
+    expect(html).toContain('Pick your comp')
+    expect(html).toContain("You&#39;re ready.")
+    // Onboarding does NOT use a campaign card or trust strip.
+    expect(html).not.toContain('Secure checkout')
+  })
+
+  it('LAPSED is an editorial update with alternating full-width sections', () => {
+    const html = htmlFor('lapsed_14_days')
+    expect(html).toContain('The WTF update')
+    expect(html).toContain('Been a minute')
+    expect(html).toContain('Fresh comps') // full-width pink block
+    expect(html).toContain('border-left:6px solid #ff2d87') // side-bar update
+    expect(html).toContain('border-top:4px solid #ff2d87') // top-border update
+    expect(html).toContain('Live action')
+  })
+
+  it('the six silhouettes are distinguished by structurally different signature markup', () => {
+    // A signature substring that must appear in exactly ONE of the six emails.
+    // Each signature is a piece of INLINE composition markup unique to one
+    // layout (avoids the shared <style> block, whose class names appear in all).
+    const signatures: Record<string, string> = {
+      abandoned_checkout: 'border-top:3px solid #ff2d87',
+      wtf_credit_waiting: 'font-size:82px',
+      vip_early_access: 'letter-spacing:16px',
+      regular_buyer_campaign_alert: 'Live now &bull; WTF Giveaways',
+      new_account_no_purchase: 'Welcome<br />to WTF.',
+      lapsed_14_days: 'border-left:6px solid #ff2d87',
+    }
+    const rendered = MARKETING_PREVIEW_SAMPLES.map((s) => ({
+      type: s.opportunityType,
+      html: renderMarketingEmail(s.input).html,
+    }))
+    for (const [type, sig] of Object.entries(signatures)) {
+      const owners = rendered.filter((r) => r.html.includes(sig)).map((r) => r.type)
+      expect(owners).toEqual([type])
+    }
   })
 })
