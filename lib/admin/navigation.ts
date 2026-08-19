@@ -61,9 +61,10 @@ export interface AdminNavItem {
  * Visibility is enforced by `canAccessRoute`, so admin-only items never surface
  * for operations_admin / ops regardless of section.
  *
- * NOTE: Marketing is intentionally NOT in this list. It is a hidden route
- * (see ADMIN_HIDDEN_NAV_ITEMS) — reachable by direct URL for authorised admins
- * but deliberately absent from every navigation surface and from any prefetch.
+ * NOTE: Marketing lives in the OPERATIONS section. Access is still admin-only
+ * (enforced by `canAccessRoute`), so it never surfaces for operations_admin /
+ * ops / read_only — but for Super Admins it is a first-class, visible nav item
+ * rather than a hidden direct-URL-only route.
  */
 export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   // OVERVIEW
@@ -76,6 +77,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { href: '/admin/entries', label: 'Entries', icon: Ticket, section: 'operations' },
   { href: '/admin/customers', label: 'Customers', icon: UserSearch, section: 'operations' },
   { href: '/admin/inbox', label: 'Inbox', icon: Inbox, section: 'operations' },
+  { href: '/admin/marketing', label: 'Marketing', icon: Megaphone, section: 'operations' },
   // FINANCE
   { href: '/admin/wallets', label: 'WTF Credit', icon: Wallet, section: 'finance' },
   { href: '/admin/payouts', label: 'Payouts', icon: Banknote, section: 'finance' },
@@ -88,20 +90,16 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
 /**
  * Hidden admin routes.
  *
- * These pages are reachable by direct URL for authorised admins (server-side
- * guards still enforce access), but are DELIBERATELY excluded from every
- * navigation surface. They are NOT part of `ADMIN_NAV_ITEMS`, so
- * `getVisibleNavGroups` — the single source for both the desktop sidebar and
- * the mobile drawer — never renders a link (and therefore never a prefetch) for
- * them. They participate ONLY in header label / active-route resolution so the
- * shell can still title the page correctly when an admin opens it by URL.
+ * Pages reachable by direct URL for authorised admins but deliberately excluded
+ * from every navigation surface. They participate ONLY in header label /
+ * active-route resolution (never render a link or prefetch).
  *
- * This is metadata only: nothing here renders an anchor, so it is not a hidden
- * or disguised navigation link.
+ * This list is currently empty: Marketing was previously hidden here but has
+ * been restored as a first-class OPERATIONS nav item (see ADMIN_NAV_ITEMS).
+ * The export is retained so `resolveActiveNavItem` can still fold in any future
+ * hidden routes without a signature change.
  */
-export const ADMIN_HIDDEN_NAV_ITEMS: AdminNavItem[] = [
-  { href: '/admin/marketing', label: 'Marketing', icon: Megaphone, section: 'overview' },
-]
+export const ADMIN_HIDDEN_NAV_ITEMS: AdminNavItem[] = []
 
 /**
  * Active-route test for sidebar highlighting.
