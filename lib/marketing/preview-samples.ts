@@ -302,3 +302,117 @@ export const MARKETING_PREVIEW_SAMPLES: readonly MarketingPreviewSample[] = [
   NEW_ACCOUNT_NO_PURCHASE_PREVIEW,
   LAPSED_14_DAYS_PREVIEW,
 ]
+
+// ===========================================================================
+// Stage 043 — VERSION-2 COMMERCIAL PREVIEW SAMPLES (representative, non-live)
+//
+// These feed the SAME production `renderMarketingEmail` with schemaVersion=2
+// context so an operator can SEE the commercial enhancements (real artwork,
+// ticket price, remaining tickets / instant prizes, top instant value and the
+// actual WTF credit) BEFORE anything is sent. They contain NO live customer
+// data — the wallet amount and campaign facts are fixed representative numbers.
+// ===========================================================================
+
+/** Representative V2 campaign (integer pence throughout). */
+const V2_CAMPAIGN_TITLE = 'WIN A £1,480 LV ALMA BB BAG! WORTH £1,500'
+const V2_CAMPAIGN_URL = `${WTF_SITE_URL}/giveaways/lv-alma-bb-bag`
+/** Existing safe repo asset reused as representative artwork (never live data). */
+const V2_CAMPAIGN_IMAGE_URL = `${WTF_SITE_URL}/images/pre-register-product.png`
+
+export const REGULAR_BUYER_CAMPAIGN_ALERT_V2_PREVIEW: MarketingPreviewSample = {
+  key: 'regular_buyer_campaign_alert_v2',
+  label: 'Regular buyer — campaign alert (V2 commercial)',
+  opportunityType: 'regular_buyer_campaign_alert',
+  input: {
+    templateSnapshot: {
+      schemaVersion: 1,
+      templateKey: 'regular_buyer_campaign_alert_v1',
+      templateVersion: 1,
+      subject: 'Now live: LV Alma BB Bag',
+      previewText: 'A new competition has just gone live.',
+      heading: 'A new competition just landed',
+      bodyText:
+        'A brand-new competition has just gone live and we thought you would want to know. Take a '
+        + `look at the full details and enter here: ${V2_CAMPAIGN_URL}.`,
+      ctaLabel: 'See the competition',
+    },
+    contextSnapshot: {
+      schemaVersion: 2,
+      opportunityType: 'regular_buyer_campaign_alert',
+      campaign: {
+        title: V2_CAMPAIGN_TITLE,
+        url: V2_CAMPAIGN_URL,
+        imageUrl: V2_CAMPAIGN_IMAGE_URL,
+        ticketPricePence: 29,
+        ticketsTotal: 40000,
+        ticketsSold: 8404,
+        ticketsRemaining: 31596,
+        endAt: null,
+        instantWinsRemaining: 116,
+        remainingInstantPrizeValuePence: 100000,
+        highestRemainingInstantPrizePence: 25000,
+      },
+      customerValue: null,
+    },
+    unsubscribeUrl: SAMPLE_UNSUBSCRIBE_URL,
+  },
+  meta: {
+    key: 'regular_buyer_campaign_alert_v2',
+    label: 'Regular buyer — campaign alert (V2 commercial)',
+    opportunityType: 'regular_buyer_campaign_alert',
+    campaignSpecific: true,
+    subject: 'Now live: LV Alma BB Bag',
+    previewText: 'A new competition has just gone live.',
+    heading: 'A new competition just landed',
+    campaignTitle: V2_CAMPAIGN_TITLE,
+    ctaLabel: 'See the competition',
+    ctaUrl: V2_CAMPAIGN_URL,
+  },
+}
+
+export const WTF_CREDIT_WAITING_V2_PREVIEW: MarketingPreviewSample = {
+  key: 'wtf_credit_waiting_v2',
+  label: 'WTF credit waiting (V2 — real amount)',
+  opportunityType: 'wtf_credit_waiting',
+  input: {
+    templateSnapshot: {
+      schemaVersion: 1,
+      templateKey: 'wtf_credit_waiting_v1',
+      templateVersion: 1,
+      subject: 'You have WTF credit ready to use',
+      previewText: 'There is credit waiting in your WTF Giveaways account.',
+      heading: 'You have credit waiting',
+      bodyText:
+        'This is a friendly reminder that you have credit available in your WTF Giveaways account. '
+        + 'You can put it towards any of our live competitions whenever you are ready.',
+      ctaLabel: 'Browse live competitions',
+    },
+    contextSnapshot: {
+      schemaVersion: 2,
+      opportunityType: 'wtf_credit_waiting',
+      customerValue: { walletCreditPence: 1850 },
+    },
+    unsubscribeUrl: SAMPLE_UNSUBSCRIBE_URL,
+  },
+  meta: {
+    key: 'wtf_credit_waiting_v2',
+    label: 'WTF credit waiting (V2 — real amount)',
+    opportunityType: 'wtf_credit_waiting',
+    campaignSpecific: false,
+    subject: 'You have WTF credit ready to use',
+    previewText: 'There is credit waiting in your WTF Giveaways account.',
+    heading: 'You have credit waiting',
+    campaignTitle: null,
+    ctaLabel: 'Browse live competitions',
+    ctaUrl: GIVEAWAYS_URL,
+  },
+}
+
+/**
+ * Stage 043 representative V2 samples (commercial extension). Rendered by the
+ * admin preview under a clear "PREVIEW DATA — NOT LIVE CUSTOMER DATA" banner.
+ */
+export const MARKETING_PREVIEW_SAMPLES_V2: readonly MarketingPreviewSample[] = [
+  REGULAR_BUYER_CAMPAIGN_ALERT_V2_PREVIEW,
+  WTF_CREDIT_WAITING_V2_PREVIEW,
+]

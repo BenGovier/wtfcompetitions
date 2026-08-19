@@ -6,6 +6,7 @@ import {
   type WtfEmailContent,
   type WtfEmailLayout,
 } from './email-shell'
+import { formatMarketingPence, formatMarketingCount } from './money'
 
 /**
  * WTF Marketing — Stage 029 SAFE EMAIL RENDERER (isolated infrastructure).
@@ -58,6 +59,64 @@ export interface MarketingContextSnapshotV1 {
    */
   campaign: MarketingCampaignContextV1 | null
 }
+
+// ---------------------------------------------------------------------------
+// Stage 043 — VERSION-2 snapshot contract (commercial extension)
+//
+// V2 is a MINIMAL, ADDITIVE superset of V1. It carries the SAME identity-free
+// shape plus frozen COMMERCIAL FACTS so the SAME renderer can show real ticket
+// price, remaining tickets, remaining instant wins / values and the customer's
+// available WTF credit. Every commercial field is nullable and MUST be null when
+// the underlying value is unavailable or untrustworthy (fail closed — never a
+// zero-implies-known). No PII is added: no name, email, user id, losing history,
+// near misses, gambling behaviour, vouchers or AI decisions.
+// ---------------------------------------------------------------------------
+
+export interface MarketingCampaignContextV2 {
+  title: string
+  url: string
+  /** Frozen campaign artwork URL (http/https) or null when unavailable. */
+  imageUrl: string | null
+  /** Entry price in integer pence, or null. */
+  ticketPricePence: number | null
+  /** Total ticket allocation, or null when the campaign has no fixed cap. */
+  ticketsTotal: number | null
+  /** Tickets sold so far, or null when the counter row is missing (fail closed). */
+  ticketsSold: number | null
+  /** Tickets remaining, or null unless a cap AND counter are both known. */
+  ticketsRemaining: number | null
+  /** Campaign end timestamp (ISO string) or null. Display-only; never parsed for logic. */
+  endAt: string | null
+  /** Count of genuinely remaining instant-win slots, or null. */
+  instantWinsRemaining: number | null
+  /**
+   * Total value (integer pence) of genuinely remaining instant prizes, or null.
+   * MUST be null if ANY genuinely remaining slot has an unknown value.
+   */
+  remainingInstantPrizeValuePence: number | null
+  /**
+   * Highest remaining instant prize (integer pence), or null. MUST be null under
+   * the same trustworthiness rule as the total.
+   */
+  highestRemainingInstantPrizePence: number | null
+}
+
+export interface MarketingCustomerValueV2 {
+  /** Available WTF credit in integer pence (balance - reserved, floored at 0), or null. */
+  walletCreditPence: number | null
+}
+
+export interface MarketingContextSnapshotV2 {
+  schemaVersion: 2
+  opportunityType: string
+  /** Campaign block for campaign-specific types; null for non-campaign types. */
+  campaign: MarketingCampaignContextV2 | null
+  /** Customer commercial value (currently just wallet credit); null when absent. */
+  customerValue: MarketingCustomerValueV2 | null
+}
+
+/** The union of every supported prepared context snapshot version. */
+export type MarketingContextSnapshot = MarketingContextSnapshotV1 | MarketingContextSnapshotV2
 
 export interface RenderMarketingEmailInput {
   templateSnapshot: unknown
@@ -291,6 +350,26 @@ function requiredHttpUrl(value: unknown, field: string): string {
   return parsed.toString()
 }
 
+/** Optional http(s) URL: null/undefined => null; anything malformed FAILS closed. */
+function optionalHttpUrl(value: unknown, field: string): string | null {
+  if (value === null || value === undefined) return null
+  return requiredHttpUrl(value, field)
+}
+
+/**
+ * Optional NON-NEGATIVE INTEGER (pence or count): null/undefined => null. A
+ * present value MUST be a finite, integer, >= 0 number; anything else FAILS
+ * closed. Never coerces a bad value to zero — that is the caller's fail-closed
+ * contract (a missing/untrustworthy value must arrive as null, not 0).
+ */
+function optionalNonNegativeInt(value: unknown, field: string): number | null {
+  if (value === null || value === undefined) return null
+  if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isInteger(value) || value < 0) {
+    throw new MarketingRenderError(`invalid_${field}`)
+  }
+  return value
+}
+
 // ---------------------------------------------------------------------------
 // Snapshot validation
 // ---------------------------------------------------------------------------
@@ -325,13 +404,21 @@ function validateTemplateSnapshot(input: unknown): MarketingTemplateSnapshotV1 {
   }
 }
 
-function validateContextSnapshot(input: unknown): MarketingContextSnapshotV1 {
+function validateContextSnapshot(input: unknown): MarketingContextSnapshot {
   if (!isPlainObject(input)) {
     throw new MarketingRenderError('context_snapshot_not_object')
   }
-  if (input.schemaVersion !== 1) {
-    throw new MarketingRenderError('context_schema_version_invalid')
+  // FAIL CLOSED on any schema version other than the two we support.
+  if (input.schemaVersion === 1) {
+    return validateContextSnapshotV1(input)
   }
+  if (input.schemaVersion === 2) {
+    return validateContextSnapshotV2(input)
+  }
+  throw new MarketingRenderError('context_schema_version_invalid')
+}
+
+function validateContextSnapshotV1(input: Record<string, unknown>): MarketingContextSnapshotV1 {
   const opportunityType = requiredResolvedString(input.opportunityType, 'opportunity_type', 100)
 
   // FAIL CLOSED on any opportunity type outside the six supported production
@@ -369,6 +456,66 @@ function validateContextSnapshot(input: unknown): MarketingContextSnapshotV1 {
   }
 }
 
+/**
+ * Validate a VERSION-2 context snapshot (Stage 043). Reuses EXACTLY the same
+ * opportunity-type + campaign-presence rules as V1 (fail closed on unsupported
+ * types, campaign required for campaign-specific types, forbidden otherwise),
+ * then validates the additive commercial fields. Every commercial field is
+ * optional and nullable; a present value is bounds-checked and a bad value fails
+ * closed (never silently coerced).
+ */
+function validateContextSnapshotV2(input: Record<string, unknown>): MarketingContextSnapshotV2 {
+  const opportunityType = requiredResolvedString(input.opportunityType, 'opportunity_type', 100)
+  if (!isSupportedOpportunityType(opportunityType)) {
+    throw new MarketingRenderError('unsupported_opportunity_type')
+  }
+
+  // customerValue (optional). Only walletCreditPence is recognised; it must be a
+  // non-negative integer or null. A stray/malformed customerValue fails closed.
+  let customerValue: MarketingCustomerValueV2 | null = null
+  if (input.customerValue !== undefined && input.customerValue !== null) {
+    if (!isPlainObject(input.customerValue)) {
+      throw new MarketingRenderError('invalid_customer_value')
+    }
+    customerValue = {
+      walletCreditPence: optionalNonNegativeInt(input.customerValue.walletCreditPence, 'wallet_credit_pence'),
+    }
+  }
+
+  if (isCampaignSpecificType(opportunityType)) {
+    const campaign = input.campaign
+    if (!isPlainObject(campaign)) {
+      throw new MarketingRenderError('campaign_missing')
+    }
+    const validated: MarketingCampaignContextV2 = {
+      title: requiredResolvedString(campaign.title, 'campaign_title', 300),
+      url: requiredHttpUrl(campaign.url, 'campaign'),
+      imageUrl: optionalHttpUrl(campaign.imageUrl, 'campaign_image'),
+      ticketPricePence: optionalNonNegativeInt(campaign.ticketPricePence, 'ticket_price_pence'),
+      ticketsTotal: optionalNonNegativeInt(campaign.ticketsTotal, 'tickets_total'),
+      ticketsSold: optionalNonNegativeInt(campaign.ticketsSold, 'tickets_sold'),
+      ticketsRemaining: optionalNonNegativeInt(campaign.ticketsRemaining, 'tickets_remaining'),
+      endAt: optionalResolvedString(campaign.endAt, 'campaign_end_at', 100),
+      instantWinsRemaining: optionalNonNegativeInt(campaign.instantWinsRemaining, 'instant_wins_remaining'),
+      remainingInstantPrizeValuePence: optionalNonNegativeInt(
+        campaign.remainingInstantPrizeValuePence,
+        'remaining_instant_prize_value_pence',
+      ),
+      highestRemainingInstantPrizePence: optionalNonNegativeInt(
+        campaign.highestRemainingInstantPrizePence,
+        'highest_remaining_instant_prize_pence',
+      ),
+    }
+    return { schemaVersion: 2, opportunityType, campaign: validated, customerValue }
+  }
+
+  // Non-campaign types must NOT carry a campaign block (fail closed).
+  if (input.campaign !== undefined && input.campaign !== null) {
+    throw new MarketingRenderError('unexpected_campaign_for_non_campaign_type')
+  }
+  return { schemaVersion: 2, opportunityType, campaign: null, customerValue }
+}
+
 // ---------------------------------------------------------------------------
 // Rendering
 // ---------------------------------------------------------------------------
@@ -380,9 +527,36 @@ function validateContextSnapshot(input: unknown): MarketingContextSnapshotV1 {
  * by the shell defaults so every marketing email stays visually consistent.
  * The shell re-escapes every field, so raw validated strings are passed here.
  */
+/**
+ * Build the compact commercial-facts strip (Stage 043 V2) from a validated V2
+ * campaign block. Facts are prioritised (price, tickets remaining, instant wins
+ * remaining, top instant, remaining value) and CAPPED AT THREE — we never dump
+ * every available fact. Only trustworthy, present values become facts; nulls are
+ * skipped entirely (a missing value never renders as "0" or an empty fact).
+ */
+function buildCommercialFacts(campaign: MarketingCampaignContextV2): string[] {
+  const facts: string[] = []
+  if (campaign.ticketPricePence !== null) {
+    facts.push(`${formatMarketingPence(campaign.ticketPricePence).toUpperCase()} AN ENTRY`)
+  }
+  if (campaign.ticketsRemaining !== null) {
+    facts.push(`${formatMarketingCount(campaign.ticketsRemaining)} TICKETS REMAIN`)
+  }
+  if (campaign.instantWinsRemaining !== null) {
+    facts.push(`${formatMarketingCount(campaign.instantWinsRemaining)} INSTANT PRIZES REMAIN`)
+  }
+  if (campaign.highestRemainingInstantPrizePence !== null) {
+    facts.push(`TOP INSTANT: ${formatMarketingPence(campaign.highestRemainingInstantPrizePence)}`)
+  }
+  if (campaign.remainingInstantPrizeValuePence !== null) {
+    facts.push(`${formatMarketingPence(campaign.remainingInstantPrizeValuePence)} IN INSTANT PRIZES`)
+  }
+  return facts.slice(0, 3)
+}
+
 function toShellContent(
   template: MarketingTemplateSnapshotV1,
-  context: MarketingContextSnapshotV1,
+  context: MarketingContextSnapshot,
   unsubscribeUrl: string,
 ): WtfEmailContent {
   const presentation = presentationFor(context.opportunityType)
@@ -393,6 +567,25 @@ function toShellContent(
   const ctaUrl = context.campaign
     ? context.campaign.url
     : resolveNonCampaignCtaUrl(context.opportunityType)
+
+  // V2-only commercial enhancements. V1 snapshots carry none of these, so the
+  // shell renders EXACTLY as before (fields left undefined).
+  let campaignImageUrl: string | null = null
+  let commercialFacts: readonly string[] | undefined
+  let walletCreditText: string | null = null
+  if (context.schemaVersion === 2) {
+    if (context.campaign) {
+      campaignImageUrl = context.campaign.imageUrl
+      const facts = buildCommercialFacts(context.campaign)
+      if (facts.length > 0) commercialFacts = facts
+    }
+    // Only the WTF-credit email surfaces the wallet amount, and only when the
+    // frozen available credit is strictly positive (fail closed otherwise).
+    const credit = context.customerValue?.walletCreditPence ?? null
+    if (context.opportunityType === 'wtf_credit_waiting' && credit !== null && credit > 0) {
+      walletCreditText = formatMarketingPence(credit)
+    }
+  }
 
   return {
     subject: template.subject,
@@ -406,10 +599,12 @@ function toShellContent(
     bodyText: template.bodyText,
     cta: { label: template.ctaLabel, url: ctaUrl },
     trustItems: presentation.trustItems,
-    // heroImageUrl intentionally omitted: the current snapshot contract carries
-    // no campaign artwork, so the shell renders its premium branded fallback
-    // hero. No DB field is invented; artwork can be supplied later without any
-    // renderer change once the snapshot contract provides it.
+    // heroImageUrl intentionally omitted: the top-hero contract is unchanged.
+    // V2 campaign artwork flows through the DISTINCT campaignImageUrl field so
+    // existing behaviour (and its tests) are untouched.
+    campaignImageUrl,
+    commercialFacts,
+    walletCreditText,
     unsubscribeUrl,
   }
 }
