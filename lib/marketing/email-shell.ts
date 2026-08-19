@@ -48,7 +48,7 @@ export const WTF_LOGO_URL = `${WTF_SITE_URL}/images/wtf-logo-main.png`
  * brand stays dark/pink dominant everywhere else.
  */
 export const WTF_EMAIL_PALETTE = {
-  bg: '#09090b',
+  bg: '#0b0b0f',
   panel: '#111116',
   card: '#15151b',
   hero: '#17171d',
@@ -517,6 +517,22 @@ function layoutComebackWhatsnew(content: WtfEmailContent): string {
 // --- body composition dispatch ---------------------------------------------
 
 /**
+ * Optional campaign artwork. Rendered ONLY when the snapshot supplies a hero
+ * image URL (forward contract); otherwise omitted so the logo stays the single
+ * <img> in the document. Escaped like any other untrusted value.
+ */
+function optionalHeroImage(content: WtfEmailContent): string {
+  const src = content.heroImageUrl
+  if (!src || src.trim().length === 0) return ''
+  const safe = escapeHtml(src.trim())
+  return `<tr>
+<td style="padding:0;background-color:${P.panel};">
+<img src="${safe}" alt="" width="600" style="display:block;width:100%;max-width:600px;height:auto;border:0;" />
+</td>
+</tr>`
+}
+
+/**
  * Compose the deterministic body for the selected layout. Header, footer and
  * chrome are added by {@link renderWtfEmailShell}. A hidden HTML comment marks
  * the chosen layout for diagnostics/tests (ignored by every email client).
@@ -527,21 +543,22 @@ function bodyComposition(content: WtfEmailContent): string {
     ? content.campaignTitle.trim()
     : null
   const marker = `<!-- wtf-layout:${layout} -->`
+  const hero = optionalHeroImage(content)
 
   switch (layout) {
     case 'wallet_credit':
-      return [marker, layoutWalletCredit(content)].join('\n')
+      return [marker, hero, layoutWalletCredit(content)].join('\n')
     case 'vip_pass':
-      return [marker, layoutVipPass(content, title)].join('\n')
+      return [marker, hero, layoutVipPass(content, title)].join('\n')
     case 'new_drop':
-      return [marker, layoutNewDrop(content, title)].join('\n')
+      return [marker, hero, layoutNewDrop(content, title)].join('\n')
     case 'welcome_onboarding':
-      return [marker, layoutWelcomeOnboarding(content)].join('\n')
+      return [marker, hero, layoutWelcomeOnboarding(content)].join('\n')
     case 'comeback_whatsnew':
-      return [marker, layoutComebackWhatsnew(content)].join('\n')
+      return [marker, hero, layoutComebackWhatsnew(content)].join('\n')
     case 'return_to_comp':
     default:
-      return [marker, layoutReturnToComp(content, title)].join('\n')
+      return [marker, hero, layoutReturnToComp(content, title)].join('\n')
   }
 }
 

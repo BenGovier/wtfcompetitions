@@ -781,12 +781,14 @@ describe('Stage 041 — each layout renders a materially different signature com
 
   it('the six silhouettes are distinguished by structurally different signature markup', () => {
     // A signature substring that must appear in exactly ONE of the six emails.
+    // Each signature is a piece of INLINE composition markup unique to one
+    // layout (avoids the shared <style> block, whose class names appear in all).
     const signatures: Record<string, string> = {
       abandoned_checkout: 'border-top:3px solid #ff2d87',
       wtf_credit_waiting: 'font-size:82px',
       vip_early_access: 'letter-spacing:16px',
-      regular_buyer_campaign_alert: 'wtf-poster',
-      new_account_no_purchase: 'wtf-stepnum',
+      regular_buyer_campaign_alert: 'Live now &bull; WTF Giveaways',
+      new_account_no_purchase: 'Welcome<br />to WTF.',
       lapsed_14_days: 'border-left:6px solid #ff2d87',
     }
     const rendered = MARKETING_PREVIEW_SAMPLES.map((s) => ({
