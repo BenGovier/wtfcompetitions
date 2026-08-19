@@ -582,9 +582,9 @@ const LAYOUT_EXPECTATIONS: Record<
   string,
   { layout: string; sentinel: string }
 > = {
-  abandoned_checkout: { layout: 'return_to_comp', sentinel: 'The competition' },
-  vip_early_access: { layout: 'vip_pass', sentinel: 'WTF VIP' },
-  regular_buyer_campaign_alert: { layout: 'new_drop', sentinel: 'New at WTF' },
+  abandoned_checkout: { layout: 'return_to_comp', sentinel: 'Entry not completed' },
+  vip_early_access: { layout: 'vip_pass', sentinel: 'Private access' },
+  regular_buyer_campaign_alert: { layout: 'new_drop', sentinel: 'Just landed' },
   wtf_credit_waiting: { layout: 'wallet_credit', sentinel: 'WTF CREDIT' },
   new_account_no_purchase: { layout: 'welcome_onboarding', sentinel: 'Pick your comp' },
   lapsed_14_days: { layout: 'comeback_whatsnew', sentinel: 'Live action' },
@@ -667,9 +667,10 @@ describe('Stage 040 — campaign vs lifecycle module rules', () => {
     for (const key of ['wtf_credit_waiting', 'new_account_no_purchase', 'lapsed_14_days']) {
       const sample = MARKETING_PREVIEW_SAMPLES.find((s) => s.opportunityType === key)!
       const html = renderMarketingEmail(sample.input).html
-      expect(html).not.toContain('The competition') // return_to_comp campaign card
-      expect(html).not.toContain('New at WTF') // new_drop feature block
-      expect(html).not.toContain('WTF VIP') // vip pass
+      expect(html).not.toContain('Entry not completed') // return_to_comp ticket
+      expect(html).not.toContain('Just landed') // new_drop launch banner
+      expect(html).not.toContain('New at WTF') // new_drop poster label
+      expect(html).not.toContain('Private access') // vip pass intro
       expect(html).not.toContain('This email relates to') // campaign footer line
     }
   })
@@ -714,5 +715,87 @@ describe('Stage 040 — shared chrome & safety are unchanged across all layouts'
     expect(html).toContain('<!-- wtf-layout:wallet_credit -->')
     expect(html).not.toContain('<script>alert(1)</script>')
     expect(html).toContain('&lt;script&gt;')
+  })
+})
+
+describe('Stage 041 — each layout renders a materially different signature composition', () => {
+  const htmlFor = (type: string): string => {
+    const sample = MARKETING_PREVIEW_SAMPLES.find((s) => s.opportunityType === type)!
+    return renderMarketingEmail(sample.input).html
+  }
+
+  it('ABANDONED is a competition TICKET (status strip + entry-not-completed receipt)', () => {
+    const html = htmlFor('abandoned_checkout')
+    expect(html).toContain('You left this one behind')
+    expect(html).toContain('Your competition')
+    expect(html).toContain('Entry not completed')
+    expect(html).toContain('border-top:3px solid #ff2d87') // ticket top edge
+    expect(html).toContain('dashed') // receipt tear line
+  })
+
+  it('CREDIT is a giant pink £ hero + wallet card', () => {
+    const html = htmlFor('wtf_credit_waiting')
+    expect(html).toContain('Your WTF wallet')
+    expect(html).toContain('Credit ready to use')
+    expect(html).toContain('font-size:82px') // dominant £ glyph
+    expect(html).toContain('WTF CREDIT')
+    expect(html).toContain('&bull;&bull;&bull;&bull; WTF') // wallet card number row
+  })
+
+  it('VIP is a gold invitation / pass', () => {
+    const html = htmlFor('vip_early_access')
+    expect(html).toContain('Private access')
+    expect(html).toContain("You&#39;re on the list")
+    expect(html.toLowerCase()).toContain('#e6b422') // gold, VIP only
+    expect(html).toContain('letter-spacing:16px') // "V I P" spacing
+    expect(html).toContain('Access status')
+  })
+
+  it('CAMPAIGN ALERT is a pink launch poster + ticker', () => {
+    const html = htmlFor('regular_buyer_campaign_alert')
+    expect(html).toContain('Just landed') // pink banner
+    expect(html).toContain('New at WTF') // poster label
+    expect(html).toContain('wtf-poster') // oversized campaign typography
+    expect(html).toContain('Live now &bull; WTF Giveaways &bull; Live now') // ticker
+  })
+
+  it('WELCOME is a welcome banner + numbered onboarding rows', () => {
+    const html = htmlFor('new_account_no_purchase')
+    expect(html).toContain('Welcome<br />to WTF.')
+    expect(html).toContain('wtf-stepnum') // large step numbers
+    expect(html).toContain('Pick your comp')
+    expect(html).toContain("You&#39;re ready.")
+    // Onboarding does NOT use a campaign card or trust strip.
+    expect(html).not.toContain('Secure checkout')
+  })
+
+  it('LAPSED is an editorial update with alternating full-width sections', () => {
+    const html = htmlFor('lapsed_14_days')
+    expect(html).toContain('The WTF update')
+    expect(html).toContain('Been a minute')
+    expect(html).toContain('Fresh comps') // full-width pink block
+    expect(html).toContain('border-left:6px solid #ff2d87') // side-bar update
+    expect(html).toContain('border-top:4px solid #ff2d87') // top-border update
+    expect(html).toContain('Live action')
+  })
+
+  it('the six silhouettes are distinguished by structurally different signature markup', () => {
+    // A signature substring that must appear in exactly ONE of the six emails.
+    const signatures: Record<string, string> = {
+      abandoned_checkout: 'border-top:3px solid #ff2d87',
+      wtf_credit_waiting: 'font-size:82px',
+      vip_early_access: 'letter-spacing:16px',
+      regular_buyer_campaign_alert: 'wtf-poster',
+      new_account_no_purchase: 'wtf-stepnum',
+      lapsed_14_days: 'border-left:6px solid #ff2d87',
+    }
+    const rendered = MARKETING_PREVIEW_SAMPLES.map((s) => ({
+      type: s.opportunityType,
+      html: renderMarketingEmail(s.input).html,
+    }))
+    for (const [type, sig] of Object.entries(signatures)) {
+      const owners = rendered.filter((r) => r.html.includes(sig)).map((r) => r.type)
+      expect(owners).toEqual([type])
+    }
   })
 })

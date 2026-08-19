@@ -1,38 +1,36 @@
 /**
- * WTF Marketing — Stage 038/040 REUSABLE BRANDED EMAIL SHELL.
+ * WTF Marketing — Stage 041 FINAL EMAIL ART DIRECTION.
  *
- * ONE WTF brand system, SIX distinct email compositions. The shell owns the
- * shared, brand-consistent chrome for every WTF Giveaways marketing email:
+ * ONE WTF brand system, SIX genuinely distinct email compositions. Only the
+ * shared chrome is constant across all six:
  *
- *   - the <head>, hidden preheader, logo header, footer, unsubscribe + legal,
- *   - the palette, typography family, 600px email width, and mobile styles.
+ *   - the <head>, hidden preheader, logo header, legal footer + unsubscribe,
+ *   - the palette, typography family, 600px email width, security architecture.
  *
- * The BODY composition is selected deterministically in CODE by {@link
- * WtfEmailLayout} (mapped from opportunityType by the delivery renderer) so each
- * automation looks visibly different WITHOUT any layout HTML living in the DB and
- * WITHOUT template copy controlling structure. The six layouts are:
+ * EVERYTHING between header and footer is a bespoke, deterministic composition
+ * selected in CODE by {@link WtfEmailLayout} (mapped from opportunityType by the
+ * delivery renderer). No layout HTML lives in the DB and template copy never
+ * controls structure. The six silhouettes are deliberately different:
  *
- *   - return_to_comp       (abandoned checkout)  — campaign card recovery
- *   - wallet_credit        (WTF credit waiting)  — dominant credit/wallet panel
- *   - vip_pass             (VIP early access)    — exclusive VIP pass (gold)
- *   - new_drop             (regular buyer alert) — oversized campaign drop
- *   - welcome_onboarding   (new account)         — numbered onboarding steps
- *   - comeback_whatsnew    (lapsed 14 days)      — "what's new" update cards
+ *   - return_to_comp     (abandoned checkout)  — competition TICKET / receipt
+ *   - wallet_credit      (WTF credit waiting)  — giant pink £ hero + wallet card
+ *   - vip_pass           (VIP early access)    — gold VIP invitation / pass
+ *   - new_drop           (regular buyer alert) — pink launch poster + ticker
+ *   - welcome_onboarding (new account)         — welcome banner + numbered steps
+ *   - comeback_whatsnew  (lapsed 14 days)      — editorial alternating updates
  *
- * It renders EMAIL-SAFE HTML: nested tables only (no flex/grid for essential
- * structure), inline styles only, no external CSS/webfont dependency, no
- * JavaScript, a hidden preheader, bulletproof CTAs, and Outlook-safe fallbacks
- * for every rounded/coloured element. The mobile <style> block is progressive
- * enhancement only and never required for the base layout to be correct.
+ * EMAIL-SAFE HTML only: nested tables (no flex/grid for essential structure),
+ * inline styles, no external CSS/webfont, no JavaScript, hidden preheader,
+ * bulletproof CTAs, Outlook-safe fallbacks. The mobile <style> block is
+ * progressive enhancement only.
  *
- * Trust posture: this module is HERMETIC and PURE. It has no imports beyond
- * types, performs no I/O, and treats EVERY dynamic value as untrusted TEXT — all
- * interpolated content is HTML-escaped here, `bodyText` is escaped BEFORE
- * newlines become <br />, and there is no dangerouslySetInnerHTML and no
- * raw-HTML passthrough. Callers (the delivery renderer) validate the structured
- * snapshots first; the shell escapes again regardless (defence in depth). Layout
- * scaffolding strings (badges, step labels, module titles) are FIXED brand
- * chrome defined here — never customer data and never DB copy.
+ * Trust posture: HERMETIC and PURE. No imports beyond types, no I/O. EVERY
+ * dynamic value is treated as untrusted TEXT and HTML-escaped here (bodyText is
+ * escaped BEFORE newlines become <br />). No dangerouslySetInnerHTML, no raw
+ * passthrough. Callers validate snapshots first; the shell escapes again anyway
+ * (defence in depth). Layout scaffolding strings (badges, step labels, module
+ * titles, headlines, tickers) are FIXED brand chrome defined here — never
+ * customer data and never DB copy.
  */
 
 // ---------------------------------------------------------------------------
@@ -46,19 +44,22 @@ export const WTF_LOGO_URL = `${WTF_SITE_URL}/images/wtf-logo-main.png`
 
 /**
  * WTF marketing email palette: near-black canvas, hot-pink action colour, and a
- * restrained gold accent that already appears naturally in the WTF logo (used
- * only by the VIP pass layout — the brand stays dark/pink dominant everywhere).
+ * restrained warm gold (sampled to the WTF logo) used ONLY by the VIP pass — the
+ * brand stays dark/pink dominant everywhere else.
  */
 export const WTF_EMAIL_PALETTE = {
-  bg: '#0b0b0f',
-  panel: '#141419',
+  bg: '#09090b',
+  panel: '#111116',
+  card: '#15151b',
   hero: '#17171d',
-  text: '#f5f5f7',
-  muted: '#9a9aa5',
+  text: '#ffffff',
+  muted: '#a6a6b0',
   accent: '#ff2d87',
   accentText: '#ffffff',
+  onPink: '#0a0a0c',
   gold: '#e6b422',
-  border: '#26262f',
+  goldSoft: '#5a4a1a',
+  border: '#292930',
 } as const
 
 /** Brand-default chrome, overridable per email type via {@link WtfEmailContent}. */
@@ -108,18 +109,17 @@ export interface WtfEmailContent {
   preheader: string | null
   /**
    * The body composition to render. Optional; defaults to `return_to_comp`
-   * (the original campaign-recovery layout) so existing callers are unchanged.
+   * (the campaign-recovery ticket) so existing callers are unchanged.
    */
   layout?: WtfEmailLayout
-  /** Small pink kicker/badge above the hook. Defaults to the brand eyebrow. */
+  /** Small kicker/badge (design-specific). Defaults to the brand eyebrow. */
   eyebrow?: string | null
-  /** The dominant conversion hook (frozen heading snapshot). */
+  /** The frozen heading snapshot — shown as the copy-region lead line. */
   heading: string
   /**
-   * The frozen campaign title. Shown by the campaign layouts (as a card, VIP
-   * pass line, or oversized drop feature). Null or omitted for NON-campaign
-   * layouts (WTF Credit, welcome, comeback): no campaign module is rendered and
-   * the footer uses generic copy.
+   * The frozen campaign title. Shown by the campaign layouts (ticket, VIP pass,
+   * launch poster). Null/omitted for NON-campaign layouts (credit, welcome,
+   * comeback): no campaign module is rendered and the footer uses generic copy.
    */
   campaignTitle?: string | null
   /** Supporting copy. Treated as TEXT; newlines become <br /> AFTER escaping. */
@@ -127,10 +127,8 @@ export interface WtfEmailContent {
   /** One dominant CTA. `url` must already be a validated http(s) URL. */
   cta: WtfEmailCta
   /**
-   * OPTIONAL hero artwork (return_to_comp only). When a future snapshot can
-   * supply campaign artwork safely, pass an http(s) URL here and the shell
-   * renders it as the hero. When null/omitted (current contract), a premium
-   * branded text hero is used instead — no DB field is invented to satisfy this.
+   * OPTIONAL hero artwork. Reserved for a future snapshot contract that can
+   * safely supply campaign artwork; currently unused (no DB field is invented).
    */
   heroImageUrl?: string | null
   /** Compact trust strip. Defaults to the brand trust items. */
@@ -173,9 +171,16 @@ function styleBlock(): string {
 @media only screen and (max-width:620px){
   .wtf-container{width:100% !important;}
   .wtf-pad{padding-left:20px !important;padding-right:20px !important;}
-  .wtf-hook{font-size:30px !important;line-height:1.15 !important;}
-  .wtf-campaign{font-size:24px !important;}
-  .wtf-drop{font-size:28px !important;}
+  .wtf-bannerpad{padding-left:20px !important;padding-right:20px !important;}
+  .wtf-heropad{padding-left:18px !important;padding-right:18px !important;}
+  .wtf-hook{font-size:30px !important;line-height:1.12 !important;}
+  .wtf-campaign{font-size:23px !important;}
+  .wtf-poster{font-size:31px !important;}
+  .wtf-drop{font-size:34px !important;}
+  .wtf-welcome{font-size:38px !important;}
+  .wtf-pound{font-size:68px !important;}
+  .wtf-stepnum{font-size:34px !important;}
+  .wtf-vip{font-size:42px !important;letter-spacing:10px !important;}
   .wtf-cta a{font-size:17px !important;}
 }
 @media (prefers-color-scheme:light){
@@ -184,68 +189,31 @@ function styleBlock(): string {
 </style>`
 }
 
-// --- shared primitives (each returns one or more <tr> rows) ----------------
+// --- shared primitives -----------------------------------------------------
 
 /**
- * The hero row: a pill badge (eyebrow) above the dominant hook. Optionally
- * renders real hero artwork above the hook (return_to_comp future contract).
- * `badgeColor` lets the VIP layout tint its badge gold.
+ * The bulletproof, near-full-width CTA table. The cell carries the colour so the
+ * button still shows if the anchor background is stripped. Rounded corners
+ * degrade to square in Outlook. Rendered uppercase with a trailing arrow (chrome
+ * only — the words are the frozen `cta.label`, never rewritten here).
  */
-function heroRow(content: WtfEmailContent, badgeColor: string): string {
-  const eyebrow = content.eyebrow === undefined ? WTF_DEFAULT_EYEBROW : content.eyebrow
-  const badgeHtml = eyebrow && eyebrow.trim().length > 0
-    ? `<div style="margin:0 0 16px 0;"><span style="display:inline-block;padding:7px 14px;border:1px solid ${badgeColor};border-radius:999px;font-family:${FONT};font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:${badgeColor};">${escapeHtml(eyebrow)}</span></div>`
-    : ''
-  const hook = `<h1 class="wtf-hook" style="margin:0;font-family:${FONT};font-size:36px;line-height:1.1;font-weight:800;color:${P.text};letter-spacing:-0.5px;">${escapeHtml(content.heading)}</h1>`
-
-  if (content.heroImageUrl && content.heroImageUrl.trim().length > 0) {
-    const src = escapeHtml(content.heroImageUrl.trim())
-    return `<tr>
-<td style="padding:0;">
-<img src="${src}" alt="" width="600" style="display:block;width:100%;max-width:600px;height:auto;border:0;" />
-</td>
-</tr>
-<tr>
-<td class="wtf-pad" style="padding:28px 40px 0 40px;background-color:${P.panel};">
-${badgeHtml}${hook}
-</td>
-</tr>`
-  }
-
-  return `<tr>
-<td class="wtf-pad" style="padding:36px 40px 12px 40px;background-color:${P.hero};border-bottom:1px solid ${P.border};">
-${badgeHtml}${hook}
-</td>
-</tr>`
-}
-
-function bodyRow(content: WtfEmailContent): string {
-  const body = escapeHtmlWithBreaks(content.bodyText)
-  return `<tr>
-<td class="wtf-pad" style="padding:20px 40px 0 40px;background-color:${P.panel};font-family:${FONT};">
-<p style="margin:0;font-size:17px;line-height:1.6;color:${P.text};">${body}</p>
-</td>
-</tr>`
-}
-
-/**
- * The bulletproof, near-full-width CTA. The table cell carries the colour so the
- * button still shows if the anchor background is stripped. `borderColor` adds a
- * premium outline (VIP pass). Rounded corners degrade to square in Outlook.
- */
-function ctaRow(content: WtfEmailContent, borderColor?: string): string {
-  const label = escapeHtml(content.cta.label)
-  const href = escapeHtml(content.cta.url)
-  const border = borderColor ? `border:2px solid ${borderColor};` : ''
-  return `<tr>
-<td class="wtf-pad" style="padding:28px 40px 4px 40px;background-color:${P.panel};">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="wtf-cta">
+function ctaTable(label: string, href: string, opts?: { border?: string; big?: boolean }): string {
+  const border = opts?.border ? `border:2px solid ${opts.border};` : ''
+  const pad = opts?.big ? '20px 28px' : '18px 28px'
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="wtf-cta">
 <tr>
 <td align="center" bgcolor="${P.accent}" style="background-color:${P.accent};border-radius:12px;${border}">
-<a href="${href}" target="_blank" rel="noopener noreferrer" style="display:block;padding:18px 28px;font-family:${FONT};font-size:18px;font-weight:800;line-height:1;color:${P.accentText};text-decoration:none;border-radius:12px;letter-spacing:0.2px;">${label}</a>
+<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" style="display:block;padding:${pad};font-family:${FONT};font-size:18px;font-weight:800;line-height:1;color:${P.accentText};text-decoration:none;border-radius:12px;letter-spacing:0.6px;text-transform:uppercase;">${escapeHtml(label)} &rarr;</a>
 </td>
 </tr>
-</table>
+</table>`
+}
+
+/** One CTA wrapped in a padded panel row. */
+function ctaRow(content: WtfEmailContent, opts?: { border?: string; big?: boolean }): string {
+  return `<tr>
+<td class="wtf-pad" style="padding:26px 32px 4px 32px;background-color:${P.panel};">
+${ctaTable(content.cta.label, content.cta.url, opts)}
 </td>
 </tr>`
 }
@@ -253,8 +221,24 @@ function ctaRow(content: WtfEmailContent, borderColor?: string): string {
 /** A small, centred secondary text link (e.g. "See live competitions"). */
 function textLinkRow(label: string, url: string): string {
   return `<tr>
-<td class="wtf-pad" style="padding:14px 40px 0 40px;background-color:${P.panel};font-family:${FONT};text-align:center;">
+<td class="wtf-pad" style="padding:14px 32px 0 32px;background-color:${P.panel};font-family:${FONT};text-align:center;">
 <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" style="font-size:13px;font-weight:700;letter-spacing:0.3px;color:${P.muted};text-decoration:underline;">${escapeHtml(label)}</a>
+</td>
+</tr>`
+}
+
+/**
+ * The copy region: the frozen heading as a bold lead line + the supporting body
+ * text. Present in EVERY layout so the frozen message always shows. Not a
+ * bordered "card" — plain copy on the dark canvas.
+ */
+function copyRegion(content: WtfEmailContent, align: 'left' | 'center' = 'left'): string {
+  const heading = escapeHtml(content.heading)
+  const body = escapeHtmlWithBreaks(content.bodyText)
+  return `<tr>
+<td class="wtf-pad" style="padding:22px 32px 0 32px;background-color:${P.panel};font-family:${FONT};text-align:${align};">
+<div style="font-size:20px;line-height:1.3;font-weight:800;color:${P.text};">${heading}</div>
+<p style="margin:12px 0 0 0;font-size:16px;line-height:1.6;color:${P.muted};">${body}</p>
 </td>
 </tr>`
 }
@@ -266,160 +250,268 @@ function trustRow(content: WtfEmailContent): string {
     .map((item) => escapeHtml(item))
     .join(`<span style="color:${P.accent};padding:0 8px;">&bull;</span>`)
   return `<tr>
-<td class="wtf-pad" style="padding:24px 40px 0 40px;background-color:${P.panel};font-family:${FONT};">
+<td class="wtf-pad" style="padding:24px 32px 0 32px;background-color:${P.panel};font-family:${FONT};">
 <div style="padding-top:18px;border-top:1px solid ${P.border};font-size:12px;font-weight:600;letter-spacing:0.3px;color:${P.muted};text-align:center;">${inner}</div>
 </td>
 </tr>`
 }
 
-// --- layout-specific modules (each returns one <tr> row) -------------------
+// --- Design 1 — return_to_comp (abandoned): competition TICKET -------------
 
-/** return_to_comp: the classic "THE COMPETITION / {title}" recovery card. */
-function campaignCardModule(title: string): string {
-  return `<tr>
-<td class="wtf-pad" style="padding:24px 40px 0 40px;background-color:${P.panel};">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${P.hero};border:1px solid ${P.border};border-radius:14px;">
+function layoutReturnToComp(content: WtfEmailContent, title: string | null): string {
+  const eyebrow = (content.eyebrow === undefined ? WTF_DEFAULT_EYEBROW : content.eyebrow) ?? 'STILL LIVE'
+  const statusStrip = `<tr>
+<td class="wtf-pad" style="padding:30px 32px 0 32px;background-color:${P.panel};font-family:${FONT};">
+<div style="font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:${P.accent};">${escapeHtml(eyebrow)}</div>
+</td>
+</tr>`
+  const hero = `<tr>
+<td class="wtf-pad" style="padding:14px 32px 0 32px;background-color:${P.panel};font-family:${FONT};">
+<h1 class="wtf-hook" style="margin:0;font-size:36px;line-height:1.05;font-weight:900;color:${P.text};letter-spacing:-0.5px;">You left this one behind &#128064;</h1>
+</td>
+</tr>`
+  const ticket = title
+    ? `<tr>
+<td class="wtf-pad" style="padding:24px 32px 0 32px;background-color:${P.panel};">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${P.card};border:1px solid ${P.border};border-top:3px solid ${P.accent};border-radius:10px;">
 <tr>
-<td style="padding:22px 24px;font-family:${FONT};">
-<div style="margin:0 0 8px 0;font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:${P.muted};">The competition</div>
-<div class="wtf-campaign" style="font-size:28px;line-height:1.2;font-weight:800;color:${P.text};letter-spacing:-0.3px;">${escapeHtml(title)}</div>
+<td style="padding:24px;font-family:${FONT};">
+<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:${P.muted};">Your competition</div>
+<div class="wtf-campaign" style="margin-top:10px;font-size:26px;line-height:1.2;font-weight:800;color:${P.text};letter-spacing:-0.3px;">${escapeHtml(title)}</div>
+<div style="margin-top:18px;border-top:1px dashed ${P.border};font-size:0;line-height:0;">&nbsp;</div>
+<div style="margin-top:14px;font-size:12px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:${P.muted};">Entry not completed</div>
 </td>
 </tr>
 </table>
 </td>
 </tr>`
-}
-
-/** wallet_credit: a dominant, pink-bordered WTF CREDIT wallet panel (hero). */
-function walletCardModule(): string {
-  return `<tr>
-<td class="wtf-pad" style="padding:24px 40px 0 40px;background-color:${P.panel};">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${P.hero};border:2px solid ${P.accent};border-radius:16px;">
-<tr>
-<td align="center" style="padding:32px 24px;font-family:${FONT};">
-<div style="font-size:54px;line-height:1;font-weight:800;color:${P.accent};">&pound;</div>
-<div style="margin-top:16px;font-size:26px;line-height:1.1;font-weight:800;letter-spacing:1px;color:${P.text};">WTF CREDIT</div>
-<div style="margin-top:10px;font-size:12px;font-weight:800;letter-spacing:3px;text-transform:uppercase;color:${P.muted};">Ready to use</div>
-</td>
-</tr>
-</table>
-</td>
-</tr>`
-}
-
-/** vip_pass: a centred, gold-accented VIP pass with the campaign title inside. */
-function vipPassModule(title: string | null): string {
-  const titleHtml = title && title.trim().length > 0
-    ? `<div style="margin-top:16px;font-size:20px;line-height:1.25;font-weight:800;color:${P.text};">${escapeHtml(title)}</div>`
     : ''
-  return `<tr>
-<td class="wtf-pad" style="padding:24px 40px 0 40px;background-color:${P.panel};">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${P.hero};border:1px solid ${P.gold};border-radius:16px;">
+  return [statusStrip, hero, ticket, copyRegion(content), ctaRow(content), trustRow(content)].join('\n')
+}
+
+// --- Design 2 — wallet_credit (credit): giant pink £ hero + wallet card -----
+
+function layoutWalletCredit(content: WtfEmailContent): string {
+  const pinkHero = `<tr>
+<td style="padding:0;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="${P.accent}" style="background-color:${P.accent};">
 <tr>
-<td align="center" style="padding:30px 24px;font-family:${FONT};">
-<div style="font-size:13px;font-weight:800;letter-spacing:6px;color:${P.gold};">WTF VIP</div>
-<div style="margin-top:10px;font-size:24px;font-weight:800;letter-spacing:2px;color:${P.text};">EARLY ACCESS</div>
-<div style="width:60px;height:1px;line-height:1px;font-size:0;background-color:${P.gold};margin:18px auto 0 auto;">&nbsp;</div>
+<td class="wtf-heropad" align="center" style="padding:44px 24px;font-family:${FONT};text-align:center;">
+<div style="font-size:12px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:${P.onPink};">Your WTF wallet</div>
+<div class="wtf-pound" style="margin-top:14px;font-size:82px;line-height:1;font-weight:900;color:${P.onPink};">&pound;</div>
+<div style="margin-top:14px;font-size:28px;line-height:1.1;font-weight:900;color:${P.onPink};">Credit ready to use</div>
+<div style="margin-top:10px;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${P.onPink};">Sitting in your WTF account</div>
+</td>
+</tr>
+</table>
+</td>
+</tr>`
+  const walletCard = `<tr>
+<td class="wtf-pad" style="padding:28px 32px 0 32px;background-color:${P.panel};">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${P.card};border:1px solid #34343d;border-left:4px solid ${P.accent};border-radius:16px;">
+<tr>
+<td style="padding:26px 24px;font-family:${FONT};">
+<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:${P.muted};">WTF Giveaways</div>
+<div style="margin-top:28px;font-size:22px;font-weight:900;letter-spacing:1px;color:${P.text};">WTF CREDIT</div>
+<div style="margin-top:6px;font-size:12px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:${P.accent};">Ready to use</div>
+<div style="margin-top:22px;font-size:15px;font-weight:700;letter-spacing:4px;color:${P.muted};">&bull;&bull;&bull;&bull; WTF</div>
+</td>
+</tr>
+</table>
+</td>
+</tr>`
+  return [
+    pinkHero,
+    walletCard,
+    copyRegion(content),
+    ctaRow(content),
+    textLinkRow('See live competitions', content.cta.url),
+    trustRow(content),
+  ].join('\n')
+}
+
+// --- Design 3 — vip_pass (VIP): gold invitation / pass ----------------------
+
+function layoutVipPass(content: WtfEmailContent, title: string | null): string {
+  const intro = `<tr>
+<td class="wtf-pad" align="center" style="padding:34px 32px 0 32px;background-color:${P.panel};font-family:${FONT};text-align:center;">
+<div style="font-size:12px;font-weight:800;letter-spacing:3px;text-transform:uppercase;color:${P.gold};">Private access</div>
+<h1 class="wtf-hook" style="margin:14px 0 0 0;font-size:32px;line-height:1.1;font-weight:800;color:${P.text};letter-spacing:-0.3px;">You&#39;re on the list</h1>
+</td>
+</tr>`
+  const titleHtml = title
+    ? `<div class="wtf-campaign" style="margin-top:4px;font-size:24px;line-height:1.25;font-weight:800;color:${P.text};">${escapeHtml(title)}</div>`
+    : ''
+  const pass = `<tr>
+<td class="wtf-pad" style="padding:26px 32px 0 32px;background-color:${P.panel};">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#0d0d11;border:2px solid ${P.gold};border-radius:12px;">
+<tr>
+<td align="center" style="padding:30px 22px;font-family:${FONT};">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid ${P.goldSoft};border-radius:8px;">
+<tr>
+<td align="center" style="padding:30px 20px;font-family:${FONT};text-align:center;">
+<div style="font-size:12px;font-weight:800;letter-spacing:3px;text-transform:uppercase;color:${P.muted};">WTF Giveaways</div>
+<div class="wtf-vip" style="margin-top:18px;font-size:48px;line-height:1;font-weight:900;letter-spacing:16px;color:${P.gold};">VIP</div>
+<div style="margin-top:14px;font-size:20px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:${P.text};">Early access</div>
+<div style="width:70px;height:1px;font-size:0;line-height:1px;background-color:${P.gold};margin:22px auto;">&nbsp;</div>
 ${titleHtml}
+<div style="margin-top:22px;font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:${P.muted};">Access status</div>
+<div style="margin-top:10px;"><span style="display:inline-block;padding:6px 18px;border-radius:999px;background-color:${P.accent};color:${P.accentText};font-size:12px;font-weight:800;letter-spacing:2px;">OPEN</span></div>
+</td>
+</tr>
+</table>
 </td>
 </tr>
 </table>
 </td>
 </tr>`
+  return [intro, pass, copyRegion(content, 'center'), ctaRow(content, { border: P.gold }), trustRow(content)].join('\n')
 }
 
-/** new_drop: an oversized "NEW AT WTF / {title}" campaign feature block. */
-function newDropModule(title: string): string {
-  return `<tr>
-<td class="wtf-pad" style="padding:24px 40px 0 40px;background-color:${P.panel};">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${P.hero};border:1px solid ${P.border};border-left:4px solid ${P.accent};border-radius:14px;">
+// --- Design 4 — new_drop (regular buyer): launch poster + ticker ------------
+
+function layoutNewDrop(content: WtfEmailContent, title: string | null): string {
+  const banner = `<tr>
+<td style="padding:0;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="${P.accent}" style="background-color:${P.accent};">
 <tr>
-<td style="padding:28px 26px;font-family:${FONT};">
+<td class="wtf-bannerpad" style="padding:28px 32px;font-family:${FONT};">
+<div class="wtf-drop" style="font-size:42px;line-height:1;font-weight:900;letter-spacing:-0.5px;text-transform:uppercase;color:${P.onPink};">Just landed</div>
+</td>
+</tr>
+</table>
+</td>
+</tr>`
+  const poster = title
+    ? `<tr>
+<td class="wtf-pad" style="padding:32px 32px 0 32px;background-color:${P.panel};font-family:${FONT};">
 <div style="font-size:11px;font-weight:800;letter-spacing:3px;text-transform:uppercase;color:${P.accent};">New at WTF</div>
-<div class="wtf-drop" style="margin-top:10px;font-size:34px;line-height:1.08;font-weight:800;letter-spacing:-0.6px;color:${P.text};">${escapeHtml(title)}</div>
+<div class="wtf-poster" style="margin-top:12px;font-size:42px;line-height:1.05;font-weight:900;letter-spacing:-0.8px;color:${P.text};">${escapeHtml(title)}</div>
+</td>
+</tr>`
+    : ''
+  const divider = `<tr>
+<td class="wtf-pad" style="padding:24px 32px 0 32px;background-color:${P.panel};font-family:${FONT};">
+<div style="height:5px;font-size:0;line-height:5px;background-color:${P.accent};border-radius:3px;">&nbsp;</div>
+<div style="margin-top:12px;font-size:12px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:${P.accent};">Live now at WTF</div>
+</td>
+</tr>`
+  const ticker = `<tr>
+<td style="padding:26px 0 0 0;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="${P.accent}" style="background-color:${P.accent};">
+<tr>
+<td align="center" style="padding:12px 16px;font-family:${FONT};font-size:12px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:${P.onPink};text-align:center;">Live now &bull; WTF Giveaways &bull; Live now</td>
+</tr>
+</table>
+</td>
+</tr>`
+  return [banner, poster, divider, copyRegion(content), ctaRow(content, { big: true }), ticker].join('\n')
+}
+
+// --- Design 5 — welcome_onboarding (new account): banner + numbered steps ---
+
+function layoutWelcomeOnboarding(content: WtfEmailContent): string {
+  const banner = `<tr>
+<td style="padding:0;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="${P.accent}" style="background-color:${P.accent};">
+<tr>
+<td class="wtf-bannerpad" style="padding:32px;font-family:${FONT};">
+<div class="wtf-welcome" style="font-size:48px;line-height:1;font-weight:900;letter-spacing:-1px;text-transform:uppercase;color:${P.onPink};">Welcome<br />to WTF.</div>
+<div style="margin-top:14px;font-size:15px;font-weight:700;color:${P.onPink};">Your account&#39;s ready. Here&#39;s how it works.</div>
 </td>
 </tr>
 </table>
 </td>
 </tr>`
-}
-
-/** new_drop: a pink divider + short "LIVE NOW AT WTF GIVEAWAYS" strip. */
-function dropDividerRow(text: string): string {
-  return `<tr>
-<td class="wtf-pad" style="padding:22px 40px 0 40px;background-color:${P.panel};font-family:${FONT};text-align:center;">
-<div style="height:2px;line-height:2px;font-size:0;background-color:${P.accent};margin:0 0 12px 0;">&nbsp;</div>
-<div style="font-size:12px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:${P.accent};">${escapeHtml(text)}</div>
-</td>
-</tr>`
-}
-
-/** welcome_onboarding: a panel of three email-safe numbered steps. */
-function onboardingModule(): string {
-  const steps: Array<[string, string]> = [
-    ['01', "See what's live"],
-    ['02', 'Pick your comp'],
-    ['03', 'Enter & follow the action'],
+  const steps: Array<[string, string, string]> = [
+    ['01', "See what's live", 'Browse the competitions currently open.'],
+    ['02', 'Pick your comp', 'Choose the one that catches your eye.'],
+    ['03', 'Enter', 'Checkout and get your entry confirmation.'],
   ]
-  const stepHtml = (num: string, label: string, first: boolean): string =>
-    `<tr>
-<td style="padding:${first ? '0' : '16px'} 0 0 0;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0"${first ? '' : ` style="border-top:1px solid ${P.border};"`}>
-<tr>
-<td width="52" valign="top" style="padding:${first ? '0' : '16px'} 12px 0 0;">
-<div style="width:40px;height:40px;line-height:40px;text-align:center;border-radius:999px;background-color:${P.accent};color:${P.accentText};font-family:${FONT};font-size:15px;font-weight:800;">${escapeHtml(num)}</div>
-</td>
-<td valign="middle" style="padding:${first ? '0' : '16px'} 0 0 0;font-family:${FONT};">
-<div style="font-size:16px;font-weight:800;letter-spacing:0.5px;text-transform:uppercase;color:${P.text};">${escapeHtml(label)}</div>
-</td>
-</tr>
-</table>
-</td>
-</tr>`
-  const rows = steps.map(([n, l], i) => stepHtml(n, l, i === 0)).join('\n')
-  return `<tr>
-<td class="wtf-pad" style="padding:24px 40px 0 40px;background-color:${P.panel};">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${P.hero};border:1px solid ${P.border};border-radius:14px;">
-<tr>
-<td style="padding:22px 24px;">
+  const stepRow = (num: string, label: string, desc: string, i: number): string => {
+    const first = i === 0
+    const topBorder = first ? '' : `border-top:1px solid ${P.border};`
+    const padTop = first ? '26px' : '22px'
+    return `<tr>
+<td class="wtf-pad" style="padding:0 32px;background-color:${P.panel};">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-${rows}
-</table>
+<tr>
+<td width="72" valign="top" style="padding:${padTop} 0 22px 0;${topBorder}font-family:${FONT};">
+<div class="wtf-stepnum" style="font-size:42px;line-height:1;font-weight:900;color:${P.accent};">${escapeHtml(num)}</div>
+</td>
+<td valign="top" style="padding:${padTop} 0 22px 14px;${topBorder}font-family:${FONT};">
+<div style="font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:${P.muted};">Step ${escapeHtml(String(i + 1))}</div>
+<div style="margin-top:6px;font-size:20px;font-weight:800;letter-spacing:0.3px;color:${P.text};">${escapeHtml(label)}</div>
+<div style="margin-top:6px;font-size:14px;line-height:1.5;color:${P.muted};">${escapeHtml(desc)}</div>
 </td>
 </tr>
 </table>
 </td>
 </tr>`
+  }
+  const stepRows = steps.map(([n, l, d], i) => stepRow(n, l, d, i)).join('\n')
+  const completion = `<tr>
+<td class="wtf-pad" style="padding:28px 32px 0 32px;background-color:${P.panel};font-family:${FONT};">
+<div style="font-size:30px;line-height:1.1;font-weight:900;letter-spacing:-0.5px;color:${P.text};">You&#39;re ready.</div>
+<p style="margin:12px 0 0 0;font-size:15px;line-height:1.6;color:${P.muted};">${escapeHtmlWithBreaks(content.bodyText)}</p>
+</td>
+</tr>`
+  return [banner, stepRows, completion, ctaRow(content)].join('\n')
 }
 
-/** comeback_whatsnew: three visually separated "what's new" update cards. */
-function comebackModule(): string {
-  const cards: Array<[string, string]> = [
-    ['Fresh comps', 'New competitions regularly landing.'],
-    ['Instant wins', 'Plenty of competitions include instant prizes.'],
-    ['Live action', 'Keep an eye on WTF for live draws and updates.'],
-  ]
-  const cardHtml = (title: string, desc: string, first: boolean): string =>
-    `<tr>
-<td style="padding:${first ? '0' : '12px'} 0 0 0;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${P.hero};border:1px solid ${P.border};border-radius:12px;">
+// --- Design 6 — comeback_whatsnew (lapsed): editorial alternating updates ---
+
+function layoutComebackWhatsnew(content: WtfEmailContent): string {
+  const hero = `<tr>
+<td class="wtf-pad" style="padding:34px 32px 0 32px;background-color:${P.panel};font-family:${FONT};">
+<div style="font-size:12px;font-weight:800;letter-spacing:3px;text-transform:uppercase;color:${P.accent};">The WTF update</div>
+<h1 class="wtf-hook" style="margin:14px 0 0 0;font-size:38px;line-height:1.05;font-weight:900;color:${P.text};letter-spacing:-0.5px;">Been a minute... &#128064;</h1>
+<div style="margin-top:12px;font-size:16px;line-height:1.5;color:${P.muted};">Here&#39;s what&#39;s been happening.</div>
+</td>
+</tr>`
+  const update1 = `<tr>
+<td style="padding:24px 0 0 0;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="${P.accent}" style="background-color:${P.accent};">
 <tr>
-<td style="padding:18px 20px;font-family:${FONT};">
-<div style="font-size:13px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:${P.accent};">${escapeHtml(title)}</div>
-<div style="margin-top:6px;font-size:15px;line-height:1.5;color:${P.text};">${escapeHtml(desc)}</div>
+<td class="wtf-bannerpad" style="padding:28px 32px;font-family:${FONT};">
+<div style="font-size:26px;font-weight:900;text-transform:uppercase;letter-spacing:-0.3px;color:${P.onPink};">Fresh comps</div>
+<div style="margin-top:8px;font-size:15px;font-weight:700;color:${P.onPink};">New competitions regularly landing.</div>
 </td>
 </tr>
 </table>
 </td>
 </tr>`
-  const rows = cards.map(([t, d], i) => cardHtml(t, d, i === 0)).join('\n')
-  return `<tr>
-<td class="wtf-pad" style="padding:24px 40px 0 40px;background-color:${P.panel};">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-${rows}
+  const update2 = `<tr>
+<td class="wtf-pad" style="padding:22px 32px 0 32px;background-color:${P.panel};">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${P.card};border-left:6px solid ${P.accent};border-radius:6px;">
+<tr>
+<td style="padding:24px 22px;font-family:${FONT};">
+<div style="font-size:24px;font-weight:900;text-transform:uppercase;color:${P.text};">Instant wins</div>
+<div style="margin-top:8px;font-size:15px;line-height:1.5;color:${P.muted};">Plenty of competitions include instant prizes.</div>
+</td>
+</tr>
 </table>
 </td>
 </tr>`
+  const update3 = `<tr>
+<td class="wtf-pad" style="padding:16px 32px 0 32px;background-color:${P.panel};">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#0c0c10;border-top:4px solid ${P.accent};border-radius:6px;">
+<tr>
+<td style="padding:24px 22px;font-family:${FONT};">
+<div style="font-size:26px;font-weight:900;text-transform:uppercase;letter-spacing:1px;color:${P.muted};">Live action</div>
+<div style="margin-top:8px;font-size:15px;line-height:1.5;color:${P.text};">Keep an eye on WTF for live draws and updates.</div>
+</td>
+</tr>
+</table>
+</td>
+</tr>`
+  const ret = `<tr>
+<td class="wtf-pad" style="padding:28px 32px 0 32px;background-color:${P.panel};font-family:${FONT};">
+<div style="font-size:30px;line-height:1.1;font-weight:900;letter-spacing:-0.5px;color:${P.text};">Come have a look</div>
+<p style="margin:12px 0 0 0;font-size:15px;line-height:1.6;color:${P.muted};">${escapeHtmlWithBreaks(content.bodyText)}</p>
+</td>
+</tr>`
+  return [hero, update1, update2, update3, ret, ctaRow(content)].join('\n')
 }
 
 // --- body composition dispatch ---------------------------------------------
@@ -438,67 +530,18 @@ function bodyComposition(content: WtfEmailContent): string {
 
   switch (layout) {
     case 'wallet_credit':
-      return [
-        marker,
-        heroRow(content, P.accent),
-        walletCardModule(),
-        bodyRow(content),
-        ctaRow(content),
-        textLinkRow('See live competitions', content.cta.url),
-        trustRow(content),
-      ].join('\n')
-
+      return [marker, layoutWalletCredit(content)].join('\n')
     case 'vip_pass':
-      return [
-        marker,
-        heroRow(content, P.gold),
-        vipPassModule(title),
-        bodyRow(content),
-        ctaRow(content, P.gold),
-        trustRow(content),
-      ].join('\n')
-
+      return [marker, layoutVipPass(content, title)].join('\n')
     case 'new_drop':
-      return [
-        marker,
-        heroRow(content, P.accent),
-        title ? newDropModule(title) : '',
-        bodyRow(content),
-        ctaRow(content),
-        dropDividerRow('Live now at WTF Giveaways'),
-        trustRow(content),
-      ].join('\n')
-
+      return [marker, layoutNewDrop(content, title)].join('\n')
     case 'welcome_onboarding':
-      return [
-        marker,
-        heroRow(content, P.accent),
-        onboardingModule(),
-        bodyRow(content),
-        ctaRow(content),
-        trustRow(content),
-      ].join('\n')
-
+      return [marker, layoutWelcomeOnboarding(content)].join('\n')
     case 'comeback_whatsnew':
-      return [
-        marker,
-        heroRow(content, P.accent),
-        comebackModule(),
-        bodyRow(content),
-        ctaRow(content),
-        trustRow(content),
-      ].join('\n')
-
+      return [marker, layoutComebackWhatsnew(content)].join('\n')
     case 'return_to_comp':
     default:
-      return [
-        marker,
-        heroRow(content, P.accent),
-        title ? campaignCardModule(title) : '',
-        bodyRow(content),
-        ctaRow(content),
-        trustRow(content),
-      ].join('\n')
+      return [marker, layoutReturnToComp(content, title)].join('\n')
   }
 }
 
@@ -516,7 +559,7 @@ function footerBlock(content: WtfEmailContent): string {
       ? `<p style="margin:0 0 10px 0;font-size:12px;line-height:1.6;color:${P.muted};">This email relates to ${escapeHtml(content.campaignTitle)}.</p>`
       : ''
   return `<tr>
-<td class="wtf-pad" style="padding:28px 40px 34px 40px;background-color:${P.bg};border-top:1px solid ${P.border};font-family:${FONT};">
+<td class="wtf-pad" style="padding:28px 32px 34px 32px;background-color:${P.bg};border-top:1px solid ${P.border};font-family:${FONT};">
 <div style="margin:0 0 12px 0;font-size:15px;font-weight:800;letter-spacing:0.5px;color:${P.text};">WTF<span style="color:${P.accent};">GIVEAWAYS</span></div>
 ${relatesHtml}
 <p style="margin:0 0 10px 0;font-size:12px;line-height:1.6;color:${P.muted};">You&#39;re receiving this because you opted in to WTF Giveaways marketing emails. You can stop them at any time &mdash; <a href="${unsubHref}" style="color:${P.text};text-decoration:underline;">unsubscribe here</a>.</p>
@@ -558,7 +601,7 @@ ${styleBlock()}
 <td align="center" style="padding:24px 12px;">
 <table role="presentation" class="wtf-container" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;background-color:${P.panel};border:1px solid ${P.border};border-radius:18px;overflow:hidden;">
 <tr>
-<td align="center" style="padding:26px 40px 22px 40px;background-color:${P.bg};border-bottom:1px solid ${P.border};">
+<td align="center" style="padding:30px 40px 26px 40px;background-color:${P.bg};border-bottom:1px solid ${P.border};">
 <img src="${logo}" alt="WTF Giveaways" width="150" style="display:block;width:150px;max-width:60%;height:auto;border:0;" />
 </td>
 </tr>
