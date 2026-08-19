@@ -287,7 +287,7 @@ async function processRefreshSnapshots(
   // Build query from campaigns table
   let query = supabase
     .from('campaigns')
-    .select('id, slug, title, summary, description, status, start_at, end_at, main_prize_title, main_prize_description, hero_image_url, ticket_price_pence, max_tickets_total, max_tickets_per_user')
+    .select('id, slug, title, summary, description, status, start_at, end_at, main_prize_title, main_prize_description, hero_image_url, ticket_price_pence, max_tickets_total, max_tickets_per_user, presentation_type')
 
   if (campaignId) {
     query = query.eq('id', campaignId)
@@ -411,6 +411,7 @@ async function processRefreshSnapshots(
       status: campaign.status,
       tickets_sold: ticketsSold,
       next_ticket: nextTicket,
+      presentation_type: campaign.presentation_type ?? null,
     }
 
     const { error: listError } = await supabase
