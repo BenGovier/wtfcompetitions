@@ -115,6 +115,7 @@ async function refreshSnapshotsNow(campaignId: string) {
     base_ticket_price_pence: c.ticket_price_pence,
     status: c.status,
     tickets_sold: ticketsSold,
+    hard_cap_total_tickets: c.max_tickets_total,
     presentation_type: c.presentation_type ?? null,
     reveal_type: c.reveal_type ?? 'normal',
     is_free_entry: c.is_free_entry ?? false,
