@@ -131,6 +131,26 @@ export interface WtfEmailContent {
    * safely supply campaign artwork; currently unused (no DB field is invented).
    */
   heroImageUrl?: string | null
+  /**
+   * OPTIONAL frozen campaign artwork (Stage 043 V2). Rendered PROMINENTLY inside
+   * the campaign compositions (ticket / VIP pass / launch poster) at 536px wide.
+   * Distinct from {@link heroImageUrl} so the existing top-hero contract is
+   * unchanged. Null/omitted => no artwork block. Escaped like any other value.
+   */
+  campaignImageUrl?: string | null
+  /**
+   * OPTIONAL compact commercial facts (Stage 043 V2), already formatted by the
+   * renderer (e.g. "29P AN ENTRY", "116 INSTANT PRIZES REMAIN"). At most three
+   * are shown; more are ignored. Rendered as a compact strip in the campaign
+   * compositions only. Treated as untrusted TEXT and escaped here.
+   */
+  commercialFacts?: readonly string[]
+  /**
+   * OPTIONAL actual frozen WTF credit amount (Stage 043 V2), pre-formatted by
+   * the renderer (e.g. "£18.50"). When present, the wallet-credit hero shows
+   * this real amount instead of the generic pound symbol. Escaped here.
+   */
+  walletCreditText?: string | null
   /** Compact trust strip. Defaults to the brand trust items. */
   trustItems?: readonly string[]
   /** Footer legal links. Defaults to the brand legal links. */
@@ -256,6 +276,49 @@ function trustRow(content: WtfEmailContent): string {
 </tr>`
 }
 
+/**
+ * Frozen campaign artwork (Stage 043 V2). Rendered ONLY when the snapshot
+ * supplies `campaignImageUrl`; otherwise omitted so nothing changes for V1.
+ * Fixed 536px content width (600px shell minus the 32px side padding). The URL
+ * and alt text are escaped; the alt is the (already-escaped) campaign title.
+ */
+function campaignArtworkRow(content: WtfEmailContent, title: string | null): string {
+  const src = content.campaignImageUrl
+  if (!src || src.trim().length === 0) return ''
+  const safeSrc = escapeHtml(src.trim())
+  const safeAlt = title && title.trim().length > 0 ? escapeHtml(title.trim()) : ''
+  return `<tr>
+<td class="wtf-pad" style="padding:24px 32px 0 32px;background-color:${P.panel};">
+<img src="${safeSrc}" alt="${safeAlt}" width="536" style="display:block;width:100%;height:auto;border:0;border-radius:12px;" />
+</td>
+</tr>`
+}
+
+/**
+ * The compact commercial-facts strip (Stage 043 V2). Shows AT MOST three
+ * already-formatted facts as a single bordered card so it enhances — never
+ * overwhelms — the existing hierarchy. Omitted entirely when no facts are
+ * supplied (i.e. every V1 email and any V2 email without commercial data).
+ */
+function commercialFactsRow(content: WtfEmailContent): string {
+  const facts = (content.commercialFacts ?? [])
+    .filter((f) => typeof f === 'string' && f.trim().length > 0)
+    .slice(0, 3)
+  if (facts.length === 0) return ''
+  const inner = facts
+    .map((f) => `<span style="font-weight:800;color:${P.text};">${escapeHtml(f.trim())}</span>`)
+    .join(`<span style="color:${P.accent};padding:0 10px;">&bull;</span>`)
+  return `<tr>
+<td class="wtf-pad" style="padding:22px 32px 0 32px;background-color:${P.panel};">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${P.card};border:1px solid ${P.border};border-left:4px solid ${P.accent};border-radius:10px;">
+<tr>
+<td style="padding:16px 20px;font-family:${FONT};font-size:13px;line-height:1.5;letter-spacing:0.4px;text-transform:uppercase;color:${P.muted};text-align:center;">${inner}</td>
+</tr>
+</table>
+</td>
+</tr>`
+}
+
 // --- Design 1 — return_to_comp (abandoned): competition TICKET -------------
 
 function layoutReturnToComp(content: WtfEmailContent, title: string | null): string {
@@ -286,20 +349,40 @@ function layoutReturnToComp(content: WtfEmailContent, title: string | null): str
 </td>
 </tr>`
     : ''
-  return [statusStrip, hero, ticket, copyRegion(content), ctaRow(content), trustRow(content)].join('\n')
+  return [
+    statusStrip,
+    hero,
+    ticket,
+    campaignArtworkRow(content, title),
+    commercialFactsRow(content),
+    copyRegion(content),
+    ctaRow(content),
+    trustRow(content),
+  ].join('\n')
 }
 
 // --- Design 2 — wallet_credit (credit): giant pink £ hero + wallet card -----
 
 function layoutWalletCredit(content: WtfEmailContent): string {
+  // Stage 043 V2: when the real frozen credit amount is supplied (> 0), show it
+  // as the hero figure instead of the generic pound symbol. V1 (no amount)
+  // keeps the original generic hero exactly.
+  const hasAmount = !!(content.walletCreditText && content.walletCreditText.trim().length > 0)
+  const amountHtml = hasAmount
+    ? escapeHtml(content.walletCreditText!.trim())
+    : '&pound;'
+  const heroFigure = `<div class="wtf-pound" style="margin-top:14px;font-size:${hasAmount ? 64 : 82}px;line-height:1;font-weight:900;color:${P.onPink};">${amountHtml}</div>`
+  const heroCaption = hasAmount
+    ? `<div style="margin-top:14px;font-size:22px;line-height:1.1;font-weight:900;letter-spacing:2px;text-transform:uppercase;color:${P.onPink};">WTF Credit</div>`
+    : `<div style="margin-top:14px;font-size:28px;line-height:1.1;font-weight:900;color:${P.onPink};">Credit ready to use</div>`
   const pinkHero = `<tr>
 <td style="padding:0;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="${P.accent}" style="background-color:${P.accent};">
 <tr>
 <td class="wtf-heropad" align="center" style="padding:44px 24px;font-family:${FONT};text-align:center;">
 <div style="font-size:12px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:${P.onPink};">Your WTF wallet</div>
-<div class="wtf-pound" style="margin-top:14px;font-size:82px;line-height:1;font-weight:900;color:${P.onPink};">&pound;</div>
-<div style="margin-top:14px;font-size:28px;line-height:1.1;font-weight:900;color:${P.onPink};">Credit ready to use</div>
+${heroFigure}
+${heroCaption}
 <div style="margin-top:10px;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${P.onPink};">Sitting in your WTF account</div>
 </td>
 </tr>
@@ -365,7 +448,15 @@ ${titleHtml}
 </table>
 </td>
 </tr>`
-  return [intro, pass, copyRegion(content, 'center'), ctaRow(content, { border: P.gold }), trustRow(content)].join('\n')
+  return [
+    intro,
+    pass,
+    campaignArtworkRow(content, title),
+    commercialFactsRow(content),
+    copyRegion(content, 'center'),
+    ctaRow(content, { border: P.gold }),
+    trustRow(content),
+  ].join('\n')
 }
 
 // --- Design 4 — new_drop (regular buyer): launch poster + ticker ------------
@@ -405,7 +496,16 @@ function layoutNewDrop(content: WtfEmailContent, title: string | null): string {
 </table>
 </td>
 </tr>`
-  return [banner, poster, divider, copyRegion(content), ctaRow(content, { big: true }), ticker].join('\n')
+  return [
+    banner,
+    poster,
+    campaignArtworkRow(content, title),
+    commercialFactsRow(content),
+    divider,
+    copyRegion(content),
+    ctaRow(content, { big: true }),
+    ticker,
+  ].join('\n')
 }
 
 // --- Design 5 — welcome_onboarding (new account): banner + numbered steps ---
@@ -646,6 +746,19 @@ export function renderWtfEmailText(content: WtfEmailContent): string {
   lines.push('')
   if (hasCampaign) {
     lines.push(campaignTitle)
+    lines.push('')
+  }
+  // Stage 043 V2: the actual wallet credit amount (wallet_credit layout).
+  if (content.walletCreditText && content.walletCreditText.trim().length > 0) {
+    lines.push(`WTF Credit: ${content.walletCreditText.trim()}`)
+    lines.push('')
+  }
+  // Stage 043 V2: up to three commercial facts (campaign layouts).
+  const facts = (content.commercialFacts ?? [])
+    .filter((f) => typeof f === 'string' && f.trim().length > 0)
+    .slice(0, 3)
+  if (facts.length > 0) {
+    lines.push(facts.join(' | '))
     lines.push('')
   }
   lines.push(content.bodyText)
