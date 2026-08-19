@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { getAdminContext } from '@/lib/admin/auth'
 import { DashboardView } from '@/components/admin/reports/DashboardView'
+import { MarketingDashboardCard } from '@/components/admin/marketing/analytics/MarketingDashboardCard'
 import { parseDashboardView } from '@/lib/admin/reporting/growth'
 
 export const dynamic = 'force-dynamic'
@@ -42,6 +43,7 @@ export default async function AdminDashboard({
         </p>
       </div>
       <DashboardView initialView={initialView} />
+      <MarketingDashboardCard />
     </div>
   )
 }
