@@ -416,19 +416,19 @@ describe('Stage 3A migration — live-production safety corrections', () => {
   })
 })
 
-describe('Stage 3A — Marketing remains absent from visible admin navigation', () => {
-  it('is not present in the visible ADMIN_NAV_ITEMS registry', () => {
+describe('Marketing is a restored, visible admin navigation item', () => {
+  it('is present in the visible ADMIN_NAV_ITEMS registry', () => {
     const nav = readFileSync(join(ROOT, 'lib/admin/navigation.ts'), 'utf8')
     const visibleBlock = nav.slice(
       nav.indexOf('ADMIN_NAV_ITEMS'),
       nav.indexOf('ADMIN_HIDDEN_NAV_ITEMS'),
     )
-    expect(visibleBlock).not.toContain("'/admin/marketing'")
+    expect(visibleBlock).toContain("'/admin/marketing'")
   })
 
-  it('remains only in the hidden-route list', () => {
+  it('is no longer carried in the hidden-route list', () => {
     const nav = readFileSync(join(ROOT, 'lib/admin/navigation.ts'), 'utf8')
     const hiddenBlock = nav.slice(nav.indexOf('ADMIN_HIDDEN_NAV_ITEMS'))
-    expect(hiddenBlock).toContain("'/admin/marketing'")
+    expect(hiddenBlock).not.toContain("'/admin/marketing'")
   })
 })

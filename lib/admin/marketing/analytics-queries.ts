@@ -43,7 +43,8 @@ export async function fetchMarketingAnalytics(
   const { data, error } = await supabase.rpc('get_marketing_admin_analytics', { p_days })
 
   if (error) {
-    console.log('[v0] get_marketing_admin_analytics rpc error:', error.message)
+    // Log server-side for diagnostics; never leak the raw DB message to the client.
+    console.error('[marketing-analytics] get_marketing_admin_analytics failed:', error.message)
     return { ok: false, error: 'query_failed', status: 500 }
   }
   if (!data) {
