@@ -4,6 +4,7 @@ import {
   renderWtfEmailText,
   WTF_SITE_URL,
   type WtfEmailContent,
+  type WtfEmailLayout,
 } from './email-shell'
 
 /**
@@ -147,7 +148,7 @@ const OPPORTUNITY_PRESENTATION: Readonly<Record<string, OpportunityPresentation>
     trustItems: ['VIP window open', 'Enter before public', 'Live competitions'],
   },
   regular_buyer_campaign_alert: {
-    eyebrow: 'NEW COMPETITION',
+    eyebrow: 'JUST LANDED',
     trustItems: ['Just went live', 'Secure checkout', 'Instant confirmation'],
   },
   wtf_credit_waiting: {
@@ -155,13 +156,42 @@ const OPPORTUNITY_PRESENTATION: Readonly<Record<string, OpportunityPresentation>
     trustItems: ['Credit ready to use', 'Spend anytime', 'Live competitions'],
   },
   new_account_no_purchase: {
-    eyebrow: 'WELCOME',
+    eyebrow: 'WELCOME TO WTF',
     trustItems: ['Quick to enter', 'Secure checkout', 'Live competitions'],
   },
   lapsed_14_days: {
-    eyebrow: 'NEW THIS WEEK',
+    eyebrow: "WHAT'S NEW?",
     trustItems: ['Fresh competitions', 'Secure checkout', 'Live now'],
   },
+}
+
+/**
+ * DETERMINISTIC body-layout selection, keyed ONLY on the opportunity type. This
+ * is the single source of truth for "which composition does this email use".
+ * No layout HTML lives in the DB and template copy never controls structure.
+ * Any type outside this map FAILS CLOSED (defence in depth; validateContext-
+ * Snapshot already rejects unsupported types upstream).
+ */
+const LAYOUT_BY_OPPORTUNITY: Readonly<Record<string, WtfEmailLayout>> = {
+  abandoned_checkout: 'return_to_comp',
+  vip_early_access: 'vip_pass',
+  regular_buyer_campaign_alert: 'new_drop',
+  wtf_credit_waiting: 'wallet_credit',
+  new_account_no_purchase: 'welcome_onboarding',
+  lapsed_14_days: 'comeback_whatsnew',
+}
+
+/**
+ * Resolve the deterministic email body layout for an opportunity type. Throws
+ * (fail closed) for anything unsupported. Exported for tests that assert the
+ * exact layout variant selected per opportunity type.
+ */
+export function resolveEmailLayout(opportunityType: string): WtfEmailLayout {
+  const layout = LAYOUT_BY_OPPORTUNITY[opportunityType]
+  if (!layout) {
+    throw new MarketingRenderError('unsupported_opportunity_type')
+  }
+  return layout
 }
 
 function isSupportedOpportunityType(opportunityType: string): boolean {
@@ -367,9 +397,11 @@ function toShellContent(
   return {
     subject: template.subject,
     preheader: template.previewText,
+    // Deterministic composition selected in code from the opportunity type.
+    layout: resolveEmailLayout(context.opportunityType),
     eyebrow: presentation.eyebrow,
     heading: template.heading,
-    // Campaign card only for campaign-specific emails; null drops the card.
+    // Campaign module only for campaign-specific emails; null drops it.
     campaignTitle: context.campaign ? context.campaign.title : null,
     bodyText: template.bodyText,
     cta: { label: template.ctaLabel, url: ctaUrl },
