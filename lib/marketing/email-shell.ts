@@ -317,7 +317,7 @@ function vipPassModule(title: string | null): string {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${P.hero};border:1px solid ${P.gold};border-radius:16px;">
 <tr>
 <td align="center" style="padding:30px 24px;font-family:${FONT};">
-<div style="font-size:13px;font-weight:800;letter-spacing:4px;color:${P.gold};">&#9733;&nbsp; WTF VIP &nbsp;&#9733;</div>
+<div style="font-size:13px;font-weight:800;letter-spacing:6px;color:${P.gold};">WTF VIP</div>
 <div style="margin-top:10px;font-size:24px;font-weight:800;letter-spacing:2px;color:${P.text};">EARLY ACCESS</div>
 <div style="width:60px;height:1px;line-height:1px;font-size:0;background-color:${P.gold};margin:18px auto 0 auto;">&nbsp;</div>
 ${titleHtml}
