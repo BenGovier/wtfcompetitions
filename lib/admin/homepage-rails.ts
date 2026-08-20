@@ -29,6 +29,50 @@ export const RAIL_LABELS: Record<HomepageRail, string> = {
   luxury: 'Luxury',
 }
 
+/**
+ * Customer-facing presentation for the PUBLIC homepage. Database rail keys are
+ * NEVER renamed — this is display copy only. `navLabel` = short sticky-nav chip,
+ * `heading` = section title, `tagline` = one punchy supporting line.
+ */
+export interface RailPresentation {
+  navLabel: string
+  heading: string
+  tagline: string
+}
+
+export const RAIL_PRESENTATION: Record<HomepageRail, RailPresentation> = {
+  featured: {
+    navLabel: '🔥 Hot',
+    heading: '🔥 HOT RIGHT NOW',
+    tagline: "The competitions everyone's jumping into.",
+  },
+  balloon_pop: {
+    navLabel: '🎈 Pops',
+    heading: '🎈 POP IT. WIN IT.',
+    tagline: 'Pick your tickets. Hit a balloon. See what drops.',
+  },
+  instant_cash: {
+    navLabel: '⚡ Instant',
+    heading: '⚡ WIN INSTANTLY',
+    tagline: 'No waiting. Your ticket could hit right now.',
+  },
+  games: {
+    navLabel: '🎮 Games',
+    heading: '🎮 PLAY. REVEAL. WIN.',
+    tagline: 'Play the game. Reveal your result. Chase the win.',
+  },
+  cash: {
+    navLabel: '💷 Cash',
+    heading: '💷 CASH DROPS',
+    tagline: 'Real money. Instant chances. Big hits.',
+  },
+  luxury: {
+    navLabel: '💎 Luxury',
+    heading: '💎 THE LUXURY VAULT',
+    tagline: 'Big brands. Premium prizes. Serious wins.',
+  },
+}
+
 /** Manual rails: placement row = membership + order. */
 export const MANUAL_RAILS: readonly HomepageRail[] = ['featured', 'games', 'cash', 'luxury']
 
