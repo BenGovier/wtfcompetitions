@@ -194,11 +194,14 @@ export async function saveCampaignHostAssignments(
     }
   }
 
-  // 1. Delete assignments that are no longer selected.
+  // 1. Delete assignments that are no longer selected. ALWAYS scoped by
+  //    campaign_id, so it can never touch another campaign's rows; the
+  //    host_user_id exclusion only narrows the delete WITHIN this campaign.
+  //    UUIDs are quoted in the in-list per PostgREST parsing rules.
   const keepIds = clean.map((c) => c.host_user_id)
   let del = svc.from('campaign_hosts').delete().eq('campaign_id', campaignId)
   if (keepIds.length > 0) {
-    del = del.not('host_user_id', 'in', `(${keepIds.join(',')})`)
+    del = del.not('host_user_id', 'in', `(${keepIds.map((id) => `"${id}"`).join(',')})`)
   }
   const { error: deleteErr } = await del
   if (deleteErr) {
