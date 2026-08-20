@@ -7,7 +7,7 @@ import { RailScroller } from "@/components/home/RailScroller"
 import { RailIcon } from "@/components/home/rail-icons"
 import { PublicGiveawayCard } from "@/components/public-giveaway-card"
 import { loadHomepageRails } from "@/lib/admin/homepage-merchandising"
-import { HOMEPAGE_RAILS, RAIL_PRESENTATION, type RailIconKey } from "@/lib/admin/homepage-rails"
+import { HOMEPAGE_RAILS, RAIL_PRESENTATION, type RailIconKey, type CardAccent } from "@/lib/admin/homepage-rails"
 import { classifyGiveaway, sortGiveaways, type GiveawayCategory } from "@/lib/giveaway-classification"
 
 // Emergency fallback data - used only if there are no eligible competitions.
@@ -24,9 +24,12 @@ const emergencyFeaturedGiveaway = {
 // full catalogue — a real route, never an invented category URL.
 const FALLBACK_PRESENTATION = {
   icon: "hot" as RailIconKey,
-  navActiveClass: "bg-amber-400/15 text-amber-200 ring-1 ring-amber-300/50 shadow-[0_0_16px_rgba(251,191,36,0.35)]",
+  cardAccent: "gold" as CardAccent,
+  navActiveClass:
+    "bg-gradient-to-b from-amber-400/30 to-amber-500/10 text-amber-100 ring-1 ring-amber-300/70 shadow-[0_0_20px_rgba(251,191,36,0.5),inset_0_1px_0_rgba(255,255,255,0.15)]",
+  navIdleClass: "bg-[#15012e] text-amber-100/75 ring-1 ring-amber-400/25 hover:ring-amber-300/50 hover:text-amber-100",
   accentText: "text-amber-300",
-  sectionGlow: "bg-[radial-gradient(120%_80%_at_0%_0%,rgba(251,191,36,0.12),transparent_60%)]",
+  sectionGlow: "bg-[radial-gradient(130%_90%_at_0%_0%,rgba(251,191,36,0.18),transparent_62%)]",
   viewAllHref: "/giveaways",
 }
 
@@ -36,11 +39,21 @@ interface RailSection {
   heading: string
   tagline: string
   icon: RailIconKey
+  cardAccent: CardAccent
   navActiveClass: string
+  navIdleClass: string
   accentText: string
   sectionGlow: string
   viewAllHref: string
   items: { giveaway: any; category: GiveawayCategory }[]
+}
+
+/** Split a heading into its first word (accented) and the remainder (white),
+ *  matching the approved concept ("MEGA" gold, "JACKPOT DROPS" white). */
+function splitHeading(heading: string): { lead: string; rest: string } {
+  const idx = heading.indexOf(" ")
+  if (idx === -1) return { lead: heading, rest: "" }
+  return { lead: heading.slice(0, idx), rest: heading.slice(idx + 1) }
 }
 
 export default async function HomePage() {
@@ -60,7 +73,9 @@ export default async function HomePage() {
       heading: pres.heading,
       tagline: pres.tagline,
       icon: pres.icon,
+      cardAccent: pres.cardAccent,
       navActiveClass: pres.navActiveClass,
+      navIdleClass: pres.navIdleClass,
       accentText: pres.accentText,
       sectionGlow: pres.sectionGlow,
       viewAllHref: pres.viewAllHref,
@@ -95,6 +110,7 @@ export default async function HomePage() {
     label: s.navLabel,
     icon: s.icon,
     activeClass: s.navActiveClass,
+    idleClass: s.navIdleClass,
   }))
 
   return (
@@ -134,37 +150,41 @@ export default async function HomePage() {
                   className={`pointer-events-none absolute -inset-x-4 -top-4 -z-10 h-40 ${section.sectionGlow}`}
                 />
 
-                {/* Compact section header: illuminated icon tile + heading +
-                    View all on one row, supporting line beneath, thin divider.
-                    ~72–84px tall. */}
+                {/* Casino "room" header: illuminated jackpot emblem tile +
+                    accent-led title + View all, supporting line, accent seam. */}
                 <header className="mb-4">
                   <div className="flex items-center justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-2.5">
-                      {/* Small glass "room" tile behind the accent icon — a
-                          premium casino-lobby touch, CSS-only. */}
+                    <div className="flex min-w-0 items-center gap-3">
+                      {/* Premium emblem: dark faceted tile, accent ring + glow +
+                          inner highlight — reads as a small jackpot badge. */}
                       <span
                         aria-hidden="true"
-                        className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/[0.06] ring-1 ring-inset ring-white/10 ${section.accentText}`}
+                        className={`relative inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#12002c] ring-1 ring-inset ring-current shadow-[0_0_18px_-4px_currentColor,inset_0_1px_0_rgba(255,255,255,0.15)] ${section.accentText}`}
                       >
-                        <RailIcon name={section.icon} className="h-[18px] w-[18px]" />
+                        <RailIcon name={section.icon} className="h-5 w-5" />
                       </span>
-                      <h2 className="truncate text-lg font-extrabold uppercase tracking-tight text-white md:text-2xl">
-                        {section.heading}
-                      </h2>
+                      {(() => {
+                        const { lead, rest } = splitHeading(section.heading)
+                        return (
+                          <h2 className="truncate text-xl font-black uppercase tracking-tight md:text-3xl">
+                            <span className={section.accentText}>{lead}</span>
+                            {rest ? <span className="text-white"> {rest}</span> : null}
+                          </h2>
+                        )
+                      })()}
                     </div>
                     <Link
                       href={section.viewAllHref}
                       prefetch={false}
-                      className="group/viewall inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-white/[0.04] px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-white/60 ring-1 ring-inset ring-white/10 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0014]"
+                      className={`group/viewall inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-white/[0.04] px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-white/70 ring-1 ring-inset ring-white/15 transition-colors hover:bg-white/[0.1] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0014]`}
                     >
                       View all
                       <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover/viewall:translate-x-0.5 motion-reduce:transform-none" aria-hidden="true" />
                     </Link>
                   </div>
-                  <p className="mt-1.5 text-pretty text-xs text-white/55 md:text-sm">{section.tagline}</p>
-                  {/* Divider tinted with the section accent for a subtle
-                      illuminated seam under each room title. */}
-                  <div className={`mt-2.5 h-px w-full bg-gradient-to-r from-current via-white/10 to-transparent opacity-40 ${section.accentText}`} />
+                  <p className="mt-1.5 text-pretty text-xs text-white/60 md:text-sm">{section.tagline}</p>
+                  {/* Accent-tinted illuminated seam under each room title. */}
+                  <div className={`mt-2.5 h-px w-full bg-gradient-to-r from-current via-white/10 to-transparent ${section.accentText}`} />
                 </header>
 
                 {/* Cards are SERVER-rendered here and passed into the client
@@ -183,6 +203,7 @@ export default async function HomePage() {
                         giveaway={item.giveaway}
                         category={item.category}
                         compact
+                        accent={section.cardAccent}
                         imagePriority={sectionIndex === 0 && itemIndex === 0}
                       />
                     </div>

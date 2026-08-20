@@ -1,9 +1,68 @@
 import Link from "next/link"
 import Image from "next/image"
-import { Zap, Gift, ArrowRight } from "lucide-react"
+import { Zap, Gift, ArrowRight, Clock } from "lucide-react"
 import { TikTokIcon } from "@/components/icons/tiktok-icon"
 import { deadlineLabel } from "@/lib/countdown"
 import type { GiveawayCategory } from "@/lib/giveaway-classification"
+import type { CardAccent } from "@/lib/admin/homepage-rails"
+
+/**
+ * Per-ROOM accent theme for the compact homepage card ONLY. Full Tailwind class
+ * literals (so Tailwind v4's source scan keeps them) for the illuminated frame,
+ * gaming CTA, price tile, progress track and countdown ring. A single coherent
+ * WTF action system — same premium button treatment, accent colour per room.
+ * The default catalogue card never uses these.
+ */
+const ACCENTS: Record<
+  CardAccent,
+  { frame: string; cta: string; priceTile: string; progressFill: string; progressText: string; countdownRing: string }
+> = {
+  gold: {
+    frame:
+      "border-amber-400/30 shadow-[0_0_0_1px_rgba(251,191,36,0.10),0_10px_34px_-16px_rgba(251,191,36,0.65)] hover:border-amber-300/60 hover:shadow-[0_0_0_1px_rgba(251,191,36,0.25),0_14px_40px_-14px_rgba(251,191,36,0.85)]",
+    cta: "bg-gradient-to-b from-amber-300 to-amber-500 text-black shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]",
+    priceTile: "text-amber-200 ring-amber-400/35",
+    progressFill: "bg-gradient-to-r from-amber-400 to-amber-200 shadow-[0_0_10px_rgba(251,191,36,0.6)]",
+    progressText: "text-amber-300",
+    countdownRing: "ring-amber-400/50",
+  },
+  magenta: {
+    frame:
+      "border-fuchsia-400/30 shadow-[0_0_0_1px_rgba(217,70,239,0.10),0_10px_34px_-16px_rgba(217,70,239,0.65)] hover:border-fuchsia-300/60 hover:shadow-[0_0_0_1px_rgba(217,70,239,0.25),0_14px_40px_-14px_rgba(217,70,239,0.85)]",
+    cta: "bg-gradient-to-b from-fuchsia-400 to-fuchsia-600 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]",
+    priceTile: "text-fuchsia-200 ring-fuchsia-400/35",
+    progressFill: "bg-gradient-to-r from-fuchsia-400 to-pink-300 shadow-[0_0_10px_rgba(217,70,239,0.6)]",
+    progressText: "text-fuchsia-300",
+    countdownRing: "ring-fuchsia-400/50",
+  },
+  cyan: {
+    frame:
+      "border-cyan-400/30 shadow-[0_0_0_1px_rgba(34,211,238,0.10),0_10px_34px_-16px_rgba(34,211,238,0.65)] hover:border-cyan-300/60 hover:shadow-[0_0_0_1px_rgba(34,211,238,0.25),0_14px_40px_-14px_rgba(34,211,238,0.85)]",
+    cta: "bg-gradient-to-b from-cyan-300 to-sky-500 text-black shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]",
+    priceTile: "text-cyan-100 ring-cyan-400/35",
+    progressFill: "bg-gradient-to-r from-cyan-400 to-sky-300 shadow-[0_0_10px_rgba(34,211,238,0.6)]",
+    progressText: "text-cyan-300",
+    countdownRing: "ring-cyan-400/50",
+  },
+  violet: {
+    frame:
+      "border-violet-400/30 shadow-[0_0_0_1px_rgba(139,92,246,0.10),0_10px_34px_-16px_rgba(139,92,246,0.65)] hover:border-violet-300/60 hover:shadow-[0_0_0_1px_rgba(139,92,246,0.25),0_14px_40px_-14px_rgba(139,92,246,0.85)]",
+    cta: "bg-gradient-to-b from-violet-400 to-violet-600 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]",
+    priceTile: "text-violet-200 ring-violet-400/35",
+    progressFill: "bg-gradient-to-r from-violet-400 to-fuchsia-300 shadow-[0_0_10px_rgba(139,92,246,0.6)]",
+    progressText: "text-violet-300",
+    countdownRing: "ring-violet-400/50",
+  },
+  emerald: {
+    frame:
+      "border-emerald-400/30 shadow-[0_0_0_1px_rgba(16,185,129,0.10),0_10px_34px_-16px_rgba(16,185,129,0.65)] hover:border-emerald-300/60 hover:shadow-[0_0_0_1px_rgba(16,185,129,0.25),0_14px_40px_-14px_rgba(16,185,129,0.85)]",
+    cta: "bg-gradient-to-b from-emerald-300 to-emerald-500 text-black shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]",
+    priceTile: "text-emerald-200 ring-emerald-400/35",
+    progressFill: "bg-gradient-to-r from-emerald-400 to-teal-300 shadow-[0_0_10px_rgba(16,185,129,0.6)]",
+    progressText: "text-emerald-300",
+    countdownRing: "ring-emerald-400/50",
+  },
+}
 
 // Customer-friendly price: below £1 -> "49p", £1+ -> "£1.50". Price only.
 function priceText(pence: number): string {
@@ -92,6 +151,7 @@ export function PublicGiveawayCard({
   category,
   imagePriority = false,
   compact = false,
+  accent = "gold",
 }: {
   giveaway: any
   category: GiveawayCategory
@@ -103,8 +163,12 @@ export function PublicGiveawayCard({
   // [price][ENTER NOW ->] action row, with the badge/heat signal as image
   // overlays. Defaults false so the /giveaways catalogue keeps its exact layout.
   compact?: boolean
+  // Per-ROOM accent identity — ONLY affects the compact homepage shell (frame,
+  // CTA, price tile, progress, countdown ring). Ignored by the default card.
+  accent?: CardAccent
 }) {
   const variant = VARIANTS[category]
+  const theme = ACCENTS[accent] ?? ACCENTS.gold
 
   const endsAtRaw = giveaway.ends_at
   const endMs = endsAtRaw ? new Date(endsAtRaw).getTime() : Number.NaN
@@ -132,15 +196,21 @@ export function PublicGiveawayCard({
   return (
     <Link
       href={`/giveaways/${giveaway.slug}`}
-      className={`group relative flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#1c0b30] transition-all duration-300 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0014] ${variant.hoverBorder} ${variant.hoverShadow} ${deadline ? "pt-4" : ""}`}
+      className={
+        compact
+          ? // COMPACT casino shell: near-black body, tighter radius, restrained
+            // illuminated accent frame + inner top highlight (no giant shadow).
+            `group relative flex h-full flex-col overflow-hidden rounded-xl border bg-[#0d0120] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0014] ${theme.frame}`
+          : // DEFAULT catalogue shell — unchanged.
+            `group relative flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#1c0b30] transition-all duration-300 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0014] ${variant.hoverBorder} ${variant.hoverShadow} ${deadline ? "pt-4" : ""}`
+      }
     >
-      {/* Closing-date pill — straddles the top edge of the artwork. Positioned
-          against the (relative) card root, NOT the clipped artwork wrapper, so
-          it can sit half above / half over the image while staying inside the
-          card. The pt-4 reservation above is applied only when a deadline
-          exists, so cards without a countdown keep their original image
-          position (no empty strip). */}
-      {deadline && (
+      {/* Closing-date pill — straddles the top edge of the artwork. DEFAULT
+          layout only; the compact card renders the countdown as a top-right
+          artwork overlay instead (see below). Positioned against the (relative)
+          card root, NOT the clipped artwork wrapper, so it can sit half above /
+          half over the image while staying inside the card. */}
+      {!compact && deadline && (
         <span
           className={
             "absolute left-1/2 top-4 z-20 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-full px-3 py-1 text-xs font-bold shadow-lg shadow-black/40 " +
@@ -168,16 +238,31 @@ export function PublicGiveawayCard({
         {/* Bottom fade so the price badge stays legible */}
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/85 via-black/40 to-transparent" />
 
-        {/* Compact homepage overlays: category badge (top-left) + optional
-            real-data heat signal (top-right). Keeps these OUT of the content
-            flow so the price/CTA rise higher. */}
+        {/* Compact homepage overlays sit OVER the artwork like the casino
+            concept: TOP-LEFT competition type badge, TOP-RIGHT countdown badge
+            (dark translucent + per-room accent ring), and — only when present —
+            a real-data heat chip bottom-left over the fade. Keeps the content
+            area clean so price/CTA rise high. */}
         {compact && (
           <>
             <div className="absolute left-2 top-2 z-10">
               <CategoryBadge category={category} overlay />
             </div>
-            {heat && (
+            {deadline && (
               <div className="absolute right-2 top-2 z-10">
+                <span
+                  className={
+                    "inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-extrabold uppercase tracking-wide shadow-sm backdrop-blur-sm ring-1 ring-inset " +
+                    (deadline.ended ? "bg-red-600/90 text-white ring-red-300/40" : `bg-black/70 text-white ${theme.countdownRing}`)
+                  }
+                >
+                  <Clock className="h-3 w-3 shrink-0" aria-hidden="true" />
+                  {deadline.label}
+                </span>
+              </div>
+            )}
+            {heat && (
+              <div className="absolute bottom-2 left-2 z-10">
                 <span className={`inline-flex items-center rounded-md px-2 py-1 text-[10px] font-extrabold uppercase tracking-wide shadow-sm ${heat.className}`}>
                   {heat.label}
                 </span>
@@ -197,27 +282,32 @@ export function PublicGiveawayCard({
             {giveaway.title}
           </h3>
 
+          {/* Sharper, crisper progress: thin dark inset track + illuminated
+              per-room accent fill. Sold calculation unchanged. */}
           {percentSold !== null && (
             <div className="mt-2">
-              <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-amber-400">{percentSold}% sold</div>
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-amber-400 to-fuchsia-500"
-                  style={{ width: `${percentSold}%` }}
-                />
+              <div className={`mb-1 text-[11px] font-bold uppercase tracking-wide ${theme.progressText}`}>
+                {percentSold}% sold
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-black/40 ring-1 ring-inset ring-white/10">
+                <div className={`h-full rounded-full ${theme.progressFill}`} style={{ width: `${percentSold}%` }} />
               </div>
             </div>
           )}
 
-          {/* Action row — price sits beside a prominent, thumb-friendly CTA. */}
+          {/* Sportsbook-style action strip: compact dark price tile beside a
+              dominant, wide gaming CTA (per-room accent gradient + inner
+              highlight). Whole card is the link; this is a styled non-button. */}
           <div className="mt-3 flex items-stretch gap-2">
             {base != null && (
-              <span className="inline-flex min-h-[44px] shrink-0 items-center rounded-xl bg-white/5 px-3 text-sm font-black tabular-nums leading-none text-amber-300 ring-1 ring-inset ring-white/15">
+              <span
+                className={`inline-flex min-h-[44px] shrink-0 items-center rounded-xl bg-black/40 px-3 text-sm font-black tabular-nums leading-none ring-1 ring-inset ${theme.priceTile}`}
+              >
                 {priceText(base)}
               </span>
             )}
             <span
-              className={`flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-xl px-4 text-sm font-bold transition-all group-hover:shadow-lg ${variant.ctaClass}`}
+              className={`flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-xl px-4 text-sm font-extrabold uppercase tracking-wide transition-all group-hover:brightness-110 ${theme.cta}`}
             >
               {variant.ctaShort}
               <ArrowRight className="h-4 w-4 shrink-0 transition-transform group-hover:translate-x-0.5 motion-reduce:transform-none" aria-hidden="true" />

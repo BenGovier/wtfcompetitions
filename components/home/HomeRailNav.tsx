@@ -8,8 +8,11 @@ export interface HomeNavItem {
   key: string
   label: string
   icon: RailIconKey
-  /** Full Tailwind class string for the illuminated ACTIVE chip (per rail). */
+  /** Full Tailwind class string for the illuminated ACTIVE room tab (per rail). */
   activeClass: string
+  /** Full Tailwind class string for the idle room tab — dark surface + faint
+   *  accent outline so it still reads as a lit casino tab, not a grey pill. */
+  idleClass: string
 }
 
 /**
@@ -123,13 +126,11 @@ export function HomeRailNav({ items }: { items: HomeNavItem[] }) {
               aria-current={isActive ? "true" : undefined}
               onClick={() => go(it.key)}
               className={
-                "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0e0020] " +
-                (isActive
-                  ? it.activeClass
-                  : "bg-white/[0.04] text-white/55 ring-1 ring-inset ring-white/10 hover:bg-white/[0.08] hover:text-white/80")
+                "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3.5 py-2 text-xs font-extrabold uppercase tracking-wide transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0e0020] " +
+                (isActive ? it.activeClass : it.idleClass)
               }
             >
-              <RailIcon name={it.icon} className="h-3.5 w-3.5 shrink-0" />
+              <RailIcon name={it.icon} className="h-4 w-4 shrink-0" />
               {it.label}
             </button>
           )
