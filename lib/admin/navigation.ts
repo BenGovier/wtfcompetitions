@@ -17,6 +17,7 @@
  */
 import {
   LayoutDashboard,
+  LayoutTemplate,
   Radio,
   Megaphone,
   Trophy,
@@ -55,7 +56,7 @@ export interface AdminNavItem {
 }
 
 /**
- * The 13 VISIBLE admin navigation items.
+ * The 14 VISIBLE admin navigation items.
  *
  * Order and grouping are authoritative; every item has exactly one icon.
  * Visibility is enforced by `canAccessRoute`, so admin-only items never surface
@@ -72,6 +73,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { href: '/admin/live-feed', label: 'Live Feed', icon: Radio, section: 'overview' },
   // OPERATIONS
   { href: '/admin/campaigns', label: 'Campaigns', icon: Trophy, section: 'operations' },
+  { href: '/admin/homepage', label: 'Homepage', icon: LayoutTemplate, section: 'operations' },
   { href: '/admin/instant-wins', label: 'Instant Wins', icon: Zap, section: 'operations' },
   { href: '/admin/discount-codes', label: 'Discount Codes', icon: Tag, section: 'operations' },
   { href: '/admin/entries', label: 'Entries', icon: Ticket, section: 'operations' },
