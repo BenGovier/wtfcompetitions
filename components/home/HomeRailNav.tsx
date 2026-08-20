@@ -1,18 +1,24 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { RailIcon } from "@/components/home/rail-icons"
+import type { RailIconKey } from "@/lib/admin/homepage-rails"
 
 export interface HomeNavItem {
   key: string
   label: string
+  icon: RailIconKey
+  /** Full Tailwind class string for the illuminated ACTIVE chip (per rail). */
+  activeClass: string
 }
 
 /**
- * Sticky, horizontally-scrollable category navigation with scroll-spy.
+ * Sticky, horizontally-scrollable casino-lobby category navigation with
+ * scroll-spy.
  *
  * PERFORMANCE CONTRACT (see homepage spec):
  *  - NO scroll event listeners, NO rAF loop, NO layout thrash on scroll.
- *  - Exactly ONE IntersectionObserver watching the six section containers.
+ *  - Exactly ONE IntersectionObserver watching the section containers.
  *  - State is a single active-key string; it changes only when the dominant
  *    section actually changes, so React re-renders are rare (not per-frame).
  *  - Tapping a chip does a native smooth `scrollIntoView`; CSS `scroll-mt-*` on
@@ -55,9 +61,9 @@ export function HomeRailNav({ items }: { items: HomeNavItem[] }) {
         }
       },
       {
-        // Header (64px) + sticky nav (~52px) ≈ 116px inset at the top; the
+        // Header (64px) + compact nav (~54px) ≈ 120px inset at the top; the
         // -70% bottom inset leaves a thin activation band in the upper viewport.
-        rootMargin: "-116px 0px -70% 0px",
+        rootMargin: "-120px 0px -70% 0px",
         threshold: 0,
       },
     )
@@ -96,11 +102,13 @@ export function HomeRailNav({ items }: { items: HomeNavItem[] }) {
   return (
     <nav
       aria-label="Competition categories"
-      className="sticky top-16 z-40 -mx-4 mb-8 border-y border-white/10 bg-[#0a0014]/85 px-4 py-2.5 backdrop-blur supports-[backdrop-filter]:bg-[#0a0014]/70 md:top-16"
+      // Dark purple glass lobby bar: subtle border, inner top highlight, tight
+      // vertical rhythm (~54px total). Full-bleed to the screen edge on mobile.
+      className="sticky top-16 z-40 -mx-4 mb-6 border-y border-white/10 bg-[#0e0020]/80 px-4 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur supports-[backdrop-filter]:bg-[#0e0020]/65 md:mb-8"
     >
       <div
         ref={navRef}
-        className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="flex gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {items.map((it) => {
           const isActive = it.key === active
@@ -114,12 +122,13 @@ export function HomeRailNav({ items }: { items: HomeNavItem[] }) {
               aria-current={isActive ? "true" : undefined}
               onClick={() => go(it.key)}
               className={
-                "shrink-0 whitespace-nowrap rounded-full px-4 py-2 text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0014] " +
+                "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0e0020] " +
                 (isActive
-                  ? "bg-gradient-to-r from-[#FFD700] to-[#FFA500] text-black shadow-md"
-                  : "bg-white/5 text-white/70 hover:bg-white/10 hover:text-white")
+                  ? it.activeClass
+                  : "bg-white/[0.04] text-white/55 ring-1 ring-inset ring-white/10 hover:bg-white/[0.08] hover:text-white/80")
               }
             >
+              <RailIcon name={it.icon} className="h-3.5 w-3.5 shrink-0" />
               {it.label}
             </button>
           )
