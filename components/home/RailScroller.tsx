@@ -13,7 +13,19 @@ import { ChevronLeft, ChevronRight } from "lucide-react"
  * `element.scrollBy({ behavior: "smooth" })`, and everything else is native CSS
  * scroll-snap.
  */
-export function RailScroller({ children, label }: { children: ReactNode; label: string }) {
+export function RailScroller({
+  children,
+  label,
+  topGutter = false,
+}: {
+  children: ReactNode
+  label: string
+  /**
+   * Reserves vertical room inside the horizontal scrollport for a controlled
+   * "breakout" foreground layer. Scroll behaviour is otherwise unchanged.
+   */
+  topGutter?: boolean
+}) {
   const ref = useRef<HTMLDivElement | null>(null)
 
   const nudge = (dir: 1 | -1) => {
@@ -35,22 +47,36 @@ export function RailScroller({ children, label }: { children: ReactNode; label: 
       */}
       <div
         ref={ref}
-        className="-mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain scroll-smooth px-4 py-2 [scrollbar-width:none] md:gap-5 [&::-webkit-scrollbar]:hidden"
+        className={`-mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain scroll-smooth px-4 [scrollbar-width:none] md:gap-5 [&::-webkit-scrollbar]:hidden ${
+          topGutter ? "pb-2 pt-[76px]" : "py-2"
+        }`}
       >
         {children}
       </div>
 
       {/* Subtle edge fades hint at more content. Pure CSS, pointer-events-none,
           desktop only so they never sit under a thumb on mobile. */}
-      <div className="pointer-events-none absolute inset-y-2 left-0 hidden w-10 bg-gradient-to-r from-black/25 to-transparent md:block" aria-hidden="true" />
-      <div className="pointer-events-none absolute inset-y-2 right-0 hidden w-10 bg-gradient-to-l from-black/25 to-transparent md:block" aria-hidden="true" />
+      <div
+        className={`pointer-events-none absolute bottom-2 left-0 hidden w-10 bg-gradient-to-r from-black/25 to-transparent md:block ${
+          topGutter ? "top-[76px]" : "top-2"
+        }`}
+        aria-hidden="true"
+      />
+      <div
+        className={`pointer-events-none absolute bottom-2 right-0 hidden w-10 bg-gradient-to-l from-black/25 to-transparent md:block ${
+          topGutter ? "top-[76px]" : "top-2"
+        }`}
+        aria-hidden="true"
+      />
 
       {/* Desktop-only arrows — native smooth scrollBy, no state machine. */}
       <button
         type="button"
         onClick={() => nudge(-1)}
         aria-label={`Scroll ${label} left`}
-        className="absolute left-1 top-1/2 z-10 hidden h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-black/60 text-white shadow-lg backdrop-blur transition-colors hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 md:inline-flex"
+        className={`absolute left-1 z-10 hidden h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-black/60 text-white shadow-lg backdrop-blur transition-colors hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 md:inline-flex ${
+          topGutter ? "top-[calc(50%+34px)]" : "top-1/2"
+        }`}
       >
         <ChevronLeft className="h-5 w-5" aria-hidden="true" />
       </button>
@@ -58,7 +84,9 @@ export function RailScroller({ children, label }: { children: ReactNode; label: 
         type="button"
         onClick={() => nudge(1)}
         aria-label={`Scroll ${label} right`}
-        className="absolute right-1 top-1/2 z-10 hidden h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-black/60 text-white shadow-lg backdrop-blur transition-colors hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 md:inline-flex"
+        className={`absolute right-1 z-10 hidden h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-black/60 text-white shadow-lg backdrop-blur transition-colors hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 md:inline-flex ${
+          topGutter ? "top-[calc(50%+34px)]" : "top-1/2"
+        }`}
       >
         <ChevronRight className="h-5 w-5" aria-hidden="true" />
       </button>
