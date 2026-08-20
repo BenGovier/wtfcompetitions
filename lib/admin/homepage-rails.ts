@@ -33,6 +33,15 @@ export const RAIL_LABELS: Record<HomepageRail, string> = {
 export type RailIconKey = 'hot' | 'balloon' | 'instant' | 'games' | 'cash' | 'luxury'
 
 /**
+ * Per-room card accent identity. Purely visual — drives the compact homepage
+ * card's illuminated frame, CTA gradient, price tile and progress tint. The
+ * concrete Tailwind class strings live in `public-giveaway-card` (full literals
+ * so Tailwind v4's source scan keeps them). Keys, not classes, cross the
+ * server/client boundary.
+ */
+export type CardAccent = 'gold' | 'magenta' | 'cyan' | 'violet' | 'emerald'
+
+/**
  * Customer-facing presentation for the PUBLIC homepage. Database rail keys are
  * NEVER renamed — this is display copy + presentation only.
  *
@@ -50,7 +59,13 @@ export interface RailPresentation {
   heading: string
   tagline: string
   icon: RailIconKey
+  /** Per-room card accent identity (drives the compact card visual shell). */
+  cardAccent: CardAccent
+  /** Illuminated ACTIVE room-tab classes (dark surface + strong accent glow). */
   navActiveClass: string
+  /** Idle room-tab classes — dark surface with a faint accent outline (still
+   *  reads as a lit casino tab, not a flat grey pill). */
+  navIdleClass: string
   accentText: string
   sectionGlow: string
   viewAllHref: string
@@ -58,33 +73,42 @@ export interface RailPresentation {
 
 export const RAIL_PRESENTATION: Record<HomepageRail, RailPresentation> = {
   featured: {
-    navLabel: 'HOT',
-    heading: 'HOT RIGHT NOW',
-    tagline: 'Big prizes. Big momentum. Get in.',
+    navLabel: 'JACKPOTS',
+    heading: 'MEGA JACKPOT DROPS',
+    tagline: 'Big prizes. Big momentum. Get in now.',
     icon: 'hot',
-    navActiveClass: 'bg-amber-400/15 text-amber-200 ring-1 ring-amber-300/50 shadow-[0_0_16px_rgba(251,191,36,0.35)]',
+    cardAccent: 'gold',
+    navActiveClass:
+      'bg-gradient-to-b from-amber-400/30 to-amber-500/10 text-amber-100 ring-1 ring-amber-300/70 shadow-[0_0_20px_rgba(251,191,36,0.5),inset_0_1px_0_rgba(255,255,255,0.15)]',
+    navIdleClass: 'bg-[#15012e] text-amber-100/75 ring-1 ring-amber-400/25 hover:ring-amber-300/50 hover:text-amber-100',
     accentText: 'text-amber-300',
-    sectionGlow: 'bg-[radial-gradient(120%_80%_at_0%_0%,rgba(251,191,36,0.12),transparent_60%)]',
+    sectionGlow: 'bg-[radial-gradient(130%_90%_at_0%_0%,rgba(251,191,36,0.18),transparent_62%)]',
     viewAllHref: '/giveaways',
   },
   balloon_pop: {
-    navLabel: 'POPS',
-    heading: 'POP TILL YOU DROP',
-    tagline: 'Pick your numbers. Hit the balloon.',
+    navLabel: 'TIKTOK POPS',
+    heading: 'TIKTOK POPS',
+    tagline: 'Pick your numbers. Pop for the prize.',
     icon: 'balloon',
-    navActiveClass: 'bg-fuchsia-500/15 text-fuchsia-200 ring-1 ring-fuchsia-400/50 shadow-[0_0_16px_rgba(217,70,239,0.35)]',
+    cardAccent: 'magenta',
+    navActiveClass:
+      'bg-gradient-to-b from-fuchsia-500/30 to-fuchsia-600/10 text-fuchsia-50 ring-1 ring-fuchsia-400/70 shadow-[0_0_20px_rgba(217,70,239,0.5),inset_0_1px_0_rgba(255,255,255,0.15)]',
+    navIdleClass: 'bg-[#15012e] text-fuchsia-100/75 ring-1 ring-fuchsia-400/25 hover:ring-fuchsia-300/50 hover:text-fuchsia-50',
     accentText: 'text-fuchsia-300',
-    sectionGlow: 'bg-[radial-gradient(120%_80%_at_0%_0%,rgba(217,70,239,0.12),transparent_60%)]',
+    sectionGlow: 'bg-[radial-gradient(130%_90%_at_0%_0%,rgba(217,70,239,0.18),transparent_62%)]',
     viewAllHref: '/giveaways?category=live',
   },
   instant_cash: {
-    navLabel: 'INSTANT',
-    heading: 'INSTANT WIN ZONE',
-    tagline: 'Your ticket could hit immediately.',
-    icon: 'instant',
-    navActiveClass: 'bg-cyan-400/15 text-cyan-100 ring-1 ring-cyan-300/50 shadow-[0_0_16px_rgba(34,211,238,0.35)]',
+    navLabel: 'LUXURY PRIZES',
+    heading: 'LUXURY PRIZES',
+    tagline: 'Premium wins. Big brands. Serious prizes.',
+    icon: 'luxury',
+    cardAccent: 'cyan',
+    navActiveClass:
+      'bg-gradient-to-b from-cyan-400/30 to-sky-500/10 text-cyan-50 ring-1 ring-cyan-300/70 shadow-[0_0_20px_rgba(34,211,238,0.5),inset_0_1px_0_rgba(255,255,255,0.15)]',
+    navIdleClass: 'bg-[#15012e] text-cyan-100/75 ring-1 ring-cyan-400/25 hover:ring-cyan-300/50 hover:text-cyan-50',
     accentText: 'text-cyan-300',
-    sectionGlow: 'bg-[radial-gradient(120%_80%_at_0%_0%,rgba(34,211,238,0.12),transparent_60%)]',
+    sectionGlow: 'bg-[radial-gradient(130%_90%_at_0%_0%,rgba(34,211,238,0.18),transparent_62%)]',
     viewAllHref: '/giveaways?category=instant',
   },
   games: {
@@ -92,9 +116,12 @@ export const RAIL_PRESENTATION: Record<HomepageRail, RailPresentation> = {
     heading: 'THE GAMES FLOOR',
     tagline: "Play. Reveal. See what you've hit.",
     icon: 'games',
-    navActiveClass: 'bg-violet-500/15 text-violet-200 ring-1 ring-violet-400/50 shadow-[0_0_16px_rgba(139,92,246,0.35)]',
+    cardAccent: 'violet',
+    navActiveClass:
+      'bg-gradient-to-b from-violet-500/30 to-violet-600/10 text-violet-50 ring-1 ring-violet-400/70 shadow-[0_0_20px_rgba(139,92,246,0.5),inset_0_1px_0_rgba(255,255,255,0.15)]',
+    navIdleClass: 'bg-[#15012e] text-violet-100/75 ring-1 ring-violet-400/25 hover:ring-violet-300/50 hover:text-violet-50',
     accentText: 'text-violet-300',
-    sectionGlow: 'bg-[radial-gradient(120%_80%_at_0%_0%,rgba(139,92,246,0.12),transparent_60%)]',
+    sectionGlow: 'bg-[radial-gradient(130%_90%_at_0%_0%,rgba(139,92,246,0.18),transparent_62%)]',
     viewAllHref: '/giveaways',
   },
   cash: {
@@ -102,9 +129,12 @@ export const RAIL_PRESENTATION: Record<HomepageRail, RailPresentation> = {
     heading: 'CASH VAULT',
     tagline: 'Cash prizes ready to drop.',
     icon: 'cash',
-    navActiveClass: 'bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/50 shadow-[0_0_16px_rgba(16,185,129,0.35)]',
+    cardAccent: 'emerald',
+    navActiveClass:
+      'bg-gradient-to-b from-emerald-500/30 to-emerald-600/10 text-emerald-50 ring-1 ring-emerald-400/70 shadow-[0_0_20px_rgba(16,185,129,0.5),inset_0_1px_0_rgba(255,255,255,0.15)]',
+    navIdleClass: 'bg-[#15012e] text-emerald-100/75 ring-1 ring-emerald-400/25 hover:ring-emerald-300/50 hover:text-emerald-50',
     accentText: 'text-emerald-300',
-    sectionGlow: 'bg-[radial-gradient(120%_80%_at_0%_0%,rgba(16,185,129,0.12),transparent_60%)]',
+    sectionGlow: 'bg-[radial-gradient(130%_90%_at_0%_0%,rgba(16,185,129,0.18),transparent_62%)]',
     viewAllHref: '/giveaways',
   },
   luxury: {
@@ -112,9 +142,12 @@ export const RAIL_PRESENTATION: Record<HomepageRail, RailPresentation> = {
     heading: 'LUXE JACKPOTS',
     tagline: 'Designer. Premium. Seriously worth winning.',
     icon: 'luxury',
-    navActiveClass: 'bg-yellow-200/15 text-yellow-100 ring-1 ring-yellow-200/50 shadow-[0_0_16px_rgba(253,224,71,0.30)]',
-    accentText: 'text-yellow-100',
-    sectionGlow: 'bg-[radial-gradient(120%_80%_at_0%_0%,rgba(253,224,71,0.10),transparent_60%)]',
+    cardAccent: 'cyan',
+    navActiveClass:
+      'bg-gradient-to-b from-cyan-400/30 to-sky-500/10 text-cyan-50 ring-1 ring-cyan-300/70 shadow-[0_0_20px_rgba(34,211,238,0.5),inset_0_1px_0_rgba(255,255,255,0.15)]',
+    navIdleClass: 'bg-[#15012e] text-cyan-100/75 ring-1 ring-cyan-400/25 hover:ring-cyan-300/50 hover:text-cyan-50',
+    accentText: 'text-cyan-100',
+    sectionGlow: 'bg-[radial-gradient(130%_90%_at_0%_0%,rgba(34,211,238,0.16),transparent_62%)]',
     viewAllHref: '/giveaways',
   },
 }

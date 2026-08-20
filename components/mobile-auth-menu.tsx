@@ -22,7 +22,16 @@ const NAV_LINKS = [
   { href: "/contact", label: "Contact", icon: Mail },
 ]
 
-export function MobileAuthMenu({ isSignedIn = false }: { isSignedIn?: boolean }) {
+export function MobileAuthMenu({
+  isSignedIn = false,
+  variant = "default",
+}: {
+  isSignedIn?: boolean
+  // "casino" swaps ONLY the trigger button skin to a dark, gold/purple
+  // illuminated square (homepage gaming shell). Menu behaviour, links, sign-out
+  // and the drawer are identical in both variants.
+  variant?: "default" | "casino"
+}) {
   const [signingOut, setSigningOut] = useState(false)
 
   async function handleSignOut() {
@@ -32,15 +41,15 @@ export function MobileAuthMenu({ isSignedIn = false }: { isSignedIn?: boolean })
     window.location.href = "/auth/login"
   }
 
+  const triggerClass =
+    variant === "casino"
+      ? "sm:hidden h-11 w-11 rounded-xl border border-amber-400/40 bg-[#12002c] text-white shadow-[0_0_16px_-4px_rgba(251,191,36,0.5),inset_0_1px_0_rgba(255,255,255,0.12)] hover:bg-[#1b0440] hover:border-amber-300/60"
+      : "sm:hidden h-11 w-11 rounded-lg border-2 border-purple-300/50 bg-white text-purple-700 shadow-md hover:bg-purple-50 hover:text-purple-800"
+
   return (
     <Sheet>
       <SheetTrigger asChild>
-        <Button
-          variant="outline"
-          size="icon"
-          className="sm:hidden h-11 w-11 rounded-lg border-2 border-purple-300/50 bg-white text-purple-700 shadow-md hover:bg-purple-50 hover:text-purple-800"
-          aria-label="Open menu"
-        >
+        <Button variant="outline" size="icon" className={triggerClass} aria-label="Open menu">
           <Menu className="h-6 w-6" />
         </Button>
       </SheetTrigger>

@@ -8,8 +8,11 @@ export interface HomeNavItem {
   key: string
   label: string
   icon: RailIconKey
-  /** Full Tailwind class string for the illuminated ACTIVE chip (per rail). */
+  /** Full Tailwind class string for the illuminated ACTIVE room tab (per rail). */
   activeClass: string
+  /** Full Tailwind class string for the idle room tab — dark surface + faint
+   *  accent outline so it still reads as a lit casino tab, not a grey pill. */
+  idleClass: string
 }
 
 /**
@@ -102,13 +105,15 @@ export function HomeRailNav({ items }: { items: HomeNavItem[] }) {
   return (
     <nav
       aria-label="Competition categories"
-      // Dark purple glass lobby bar: subtle border, inner top highlight, tight
-      // vertical rhythm (~54px total). Full-bleed to the screen edge on mobile.
-      className="sticky top-16 z-40 -mx-4 mb-6 border-y border-white/10 bg-[#0e0020]/80 px-4 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur supports-[backdrop-filter]:bg-[#0e0020]/65 md:mb-8"
+      // Near-black casino room selector bar. Full-bleed to the screen edge; a
+      // faint gold lower seam ties it to the header. ~62px tall on mobile with
+      // ~48px illuminated room tabs. Behaviour (scroll-spy, smooth scroll) is
+      // unchanged.
+      className="sticky top-16 z-40 -mx-4 mb-6 border-b border-white/10 bg-[#09000f]/95 px-4 py-2.5 shadow-[inset_0_-1px_0_rgba(251,191,36,0.12)] backdrop-blur supports-[backdrop-filter]:bg-[#09000f]/85 md:mb-8"
     >
       <div
         ref={navRef}
-        className="flex gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="flex gap-2.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {items.map((it) => {
           const isActive = it.key === active
@@ -122,13 +127,11 @@ export function HomeRailNav({ items }: { items: HomeNavItem[] }) {
               aria-current={isActive ? "true" : undefined}
               onClick={() => go(it.key)}
               className={
-                "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0e0020] " +
-                (isActive
-                  ? it.activeClass
-                  : "bg-white/[0.04] text-white/55 ring-1 ring-inset ring-white/10 hover:bg-white/[0.08] hover:text-white/80")
+                "inline-flex h-12 shrink-0 items-center gap-2 whitespace-nowrap rounded-[14px] px-4 text-[13px] font-extrabold uppercase tracking-wide transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[#09000f] " +
+                (isActive ? it.activeClass : it.idleClass)
               }
             >
-              <RailIcon name={it.icon} className="h-3.5 w-3.5 shrink-0" />
+              <RailIcon name={it.icon} className="h-[18px] w-[18px] shrink-0" />
               {it.label}
             </button>
           )
