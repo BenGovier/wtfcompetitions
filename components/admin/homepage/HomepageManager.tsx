@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { ArrowUp, ArrowDown, Plus, X, Check, Loader2, AlertCircle } from 'lucide-react'
+import { ArrowUp, ArrowDown, Plus, X, Check, Loader2, AlertCircle, EyeOff, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -28,11 +28,15 @@ import {
 
 type RailMeta = { label: string; description: string; manual: boolean }
 
+type HiddenAwareItem = MerchandisingItem & {
+  is_hidden?: boolean
+}
+
 // Display order + copy for the six rails (matches the brief exactly).
 const RAIL_META: Record<HomepageRail, RailMeta> = {
   featured: { label: 'Featured', description: 'Choose which competitions appear in Featured.', manual: true },
-  balloon_pop: { label: 'Balloon Pops', description: 'Membership is automatic. Reorder Balloon Pop competitions.', manual: false },
-  instant_cash: { label: 'Instant Wins', description: 'Membership is automatic. Reorder Instant Win competitions.', manual: false },
+  balloon_pop: { label: 'Balloon Pops', description: 'Membership is automatic. Reorder competitions or hide them from this carousel.', manual: false },
+  instant_cash: { label: 'Instant Wins', description: 'Membership is automatic. Reorder competitions or hide them from this carousel.', manual: false },
   games: { label: 'Games', description: 'Choose which competitions appear in Games.', manual: true },
   cash: { label: 'Cash', description: 'Choose which competitions appear in Cash.', manual: true },
   luxury: { label: 'Luxury', description: 'Choose which competitions appear in Luxury.', manual: true },
@@ -62,9 +66,16 @@ export function HomepageManager({
   eligible,
 }: {
   initialRails: Record<HomepageRail, MerchandisingItem[]>
-  eligible: MerchandisingItem[]
+  eligible: HiddenAwareItem[]
 }) {
   const [rails, setRails] = useState<Record<HomepageRail, MerchandisingItem[]>>(initialRails)
+  const [eligibleItems, setEligibleItems] = useState<HiddenAwareItem[]>(eligible)
+  const [visibilityBusy, setVisibilityBusy] = useState<string | null>(null)
+  const [visibilityErrors, setVisibilityErrors] = useState<Record<HomepageRail, string | null>>(() => {
+    const out = {} as Record<HomepageRail, string | null>
+    for (const rail of HOMEPAGE_RAILS) out[rail] = null
+    return out
+  })
   // Last-saved id order per rail — used to compute the dirty state.
   const [savedIds, setSavedIds] = useState<Record<HomepageRail, string[]>>(() => {
     const out = {} as Record<HomepageRail, string[]>
@@ -136,6 +147,58 @@ export function HomepageManager({
     }
   }
 
+
+  // Hide/Restore is immediate and only valid for the two automatic rails.
+  // The API returns the authoritative visible rail + eligible metadata after
+  // the DB mutation, so Restore never guesses where the campaign belongs.
+  const setHidden = async (rail: HomepageRail, item: HiddenAwareItem, hidden: boolean) => {
+    if (isManualRail(rail)) return
+
+    const busyKey = `${rail}:${item.id}`
+    setVisibilityBusy(busyKey)
+    setVisibilityErrors((prev) => ({ ...prev, [rail]: null }))
+
+    try {
+      const res = await fetch('/api/admin/homepage', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rail, campaignId: item.id, hidden }),
+      })
+      const json = await res.json().catch(() => ({}))
+
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error ?? `${hidden ? 'Hide' : 'Restore'} failed (${res.status})`)
+      }
+
+      if (!Array.isArray(json?.rails?.[rail]) || !Array.isArray(json?.eligible)) {
+        throw new Error('Visibility saved but admin refresh data was missing')
+      }
+
+      const persistedRail = json.rails[rail] as MerchandisingItem[]
+      setRails((prev) => ({ ...prev, [rail]: persistedRail }))
+      setSavedIds((prev) => ({ ...prev, [rail]: idsOf(persistedRail) }))
+      setEligibleItems(json.eligible as HiddenAwareItem[])
+      setStatus((prev) => ({ ...prev, [rail]: 'saved' }))
+    } catch (e: any) {
+      setVisibilityErrors((prev) => ({
+        ...prev,
+        [rail]: e?.message ?? `${hidden ? 'Hide' : 'Restore'} failed`,
+      }))
+    } finally {
+      setVisibilityBusy((current) => (current === busyKey ? null : current))
+    }
+  }
+
+  const hiddenForRail = (rail: HomepageRail): HiddenAwareItem[] => {
+    if (rail === 'balloon_pop') {
+      return eligibleItems.filter((i) => i.category === 'live_balloon' && i.is_hidden === true)
+    }
+    if (rail === 'instant_cash') {
+      return eligibleItems.filter((i) => i.category === 'instant_cash' && i.is_hidden === true)
+    }
+    return []
+  }
+
   return (
     <Tabs defaultValue="featured" className="w-full">
       <TabsList className="flex h-auto flex-wrap justify-start gap-1">
@@ -155,14 +218,18 @@ export function HomepageManager({
             rail={rail}
             meta={RAIL_META[rail]}
             items={rails[rail]}
-            eligible={eligible}
+            hiddenItems={hiddenForRail(rail)}
+            eligible={eligibleItems}
             status={status[rail]}
             error={errors[rail]}
+            visibilityError={visibilityErrors[rail]}
+            visibilityBusy={visibilityBusy}
             dirty={idsOf(rails[rail]).join(',') !== savedIds[rail].join(',')}
             onMove={move}
             onRemove={removeItem}
             onAdd={addItem}
             onSave={save}
+            onSetHidden={setHidden}
           />
         </TabsContent>
       ))}
@@ -174,26 +241,34 @@ function RailPanel({
   rail,
   meta,
   items,
+  hiddenItems,
   eligible,
   status,
   error,
+  visibilityError,
+  visibilityBusy,
   dirty,
   onMove,
   onRemove,
   onAdd,
   onSave,
+  onSetHidden,
 }: {
   rail: HomepageRail
   meta: RailMeta
   items: MerchandisingItem[]
-  eligible: MerchandisingItem[]
+  hiddenItems: HiddenAwareItem[]
+  eligible: HiddenAwareItem[]
   status: SaveStatus
   error: string | null
+  visibilityError: string | null
+  visibilityBusy: string | null
   dirty: boolean
   onMove: (rail: HomepageRail, index: number, delta: number) => void
   onRemove: (rail: HomepageRail, id: string) => void
   onAdd: (rail: HomepageRail, item: MerchandisingItem) => void
   onSave: (rail: HomepageRail) => void
+  onSetHidden: (rail: HomepageRail, item: HiddenAwareItem, hidden: boolean) => void
 }) {
   const manual = isManualRail(rail)
 
@@ -227,11 +302,26 @@ function RailPanel({
           />
         )}
 
+        {!manual && dirty && (
+          <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+            Save your order changes before hiding or restoring a competition.
+          </p>
+        )}
+
+        {visibilityError && (
+          <p className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            <AlertCircle className="size-4 shrink-0" />
+            {visibilityError}
+          </p>
+        )}
+
         {items.length === 0 ? (
           <p className="rounded-md border border-dashed py-10 text-center text-sm text-muted-foreground">
             {manual
               ? 'No competitions in this rail yet. Use “Add Competition” to place one.'
-              : 'No eligible competitions currently match this rail.'}
+              : hiddenItems.length > 0
+                ? 'Every eligible competition is currently hidden from this carousel.'
+                : 'No eligible competitions currently match this rail.'}
           </p>
         ) : (
           <ul className="space-y-2">
@@ -288,7 +378,7 @@ function RailPanel({
                   >
                     <ArrowDown className="size-4" />
                   </Button>
-                  {manual && (
+                  {manual ? (
                     <Button
                       variant="ghost"
                       size="icon"
@@ -298,11 +388,78 @@ function RailPanel({
                     >
                       <X className="size-4" />
                     </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="ml-1 gap-1.5 bg-transparent"
+                      disabled={dirty || Boolean(visibilityBusy)}
+                      onClick={() => onSetHidden(rail, item, true)}
+                    >
+                      {visibilityBusy === `${rail}:${item.id}` ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <EyeOff className="size-3.5" />
+                      )}
+                      Hide
+                    </Button>
                   )}
                 </div>
               </li>
             ))}
           </ul>
+        )}
+
+        {!manual && (
+          <div className="mt-6 border-t pt-5">
+            <div className="mb-3 flex items-center gap-2">
+              <EyeOff className="size-4 text-muted-foreground" />
+              <h3 className="text-sm font-semibold">Hidden from this carousel</h3>
+              <Badge variant="secondary" className="px-1.5">
+                {hiddenItems.length}
+              </Badge>
+            </div>
+
+            {hiddenItems.length === 0 ? (
+              <p className="rounded-md border border-dashed px-3 py-5 text-center text-sm text-muted-foreground">
+                Nothing hidden.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {hiddenItems.map((item) => (
+                  <li
+                    key={item.id}
+                    className="flex items-center gap-3 rounded-lg border border-dashed bg-muted/20 p-2 pr-3"
+                  >
+                    <Thumbnail item={item} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">{item.title || 'Untitled competition'}</p>
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                        {item.slug && <span className="truncate">/{item.slug}</span>}
+                        <Badge variant="outline" className="font-normal">
+                          {CATEGORY_LABELS[item.category] ?? item.category}
+                        </Badge>
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5 bg-transparent"
+                      disabled={dirty || Boolean(visibilityBusy)}
+                      onClick={() => onSetHidden(rail, item, false)}
+                    >
+                      {visibilityBusy === `${rail}:${item.id}` ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <RotateCcw className="size-3.5" />
+                      )}
+                      Restore
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         )}
       </CardContent>
     </Card>
@@ -369,7 +526,7 @@ function AddCompetition({
   existingIds,
   onAdd,
 }: {
-  eligible: MerchandisingItem[]
+  eligible: HiddenAwareItem[]
   existingIds: string[]
   onAdd: (item: MerchandisingItem) => void
 }) {
