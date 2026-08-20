@@ -63,6 +63,16 @@ export interface HomepageMerchandisingData {
   eligible: MerchandisingItem[]
 }
 
+/** One competition inside an ordered rail, plus whether it has a placement row. */
+export interface RailEntry {
+  payload: any
+  positioned: boolean
+}
+
+/** The six rails as ordered FULL snapshot payloads — the shared shape the admin
+ *  screen and the public homepage both build from (so ordering cannot drift). */
+export type RailPayloads = Record<HomepageRail, RailEntry[]>
+
 type PlacementRow = { campaign_id: string; rail: string; position: number }
 
 /** Percentage sold from snapshot fields only (mirrors the public sort). */
@@ -116,25 +126,11 @@ function toItem(payload: any, positioned: boolean): MerchandisingItem {
 }
 
 /**
- * Load everything the admin merchandising screen needs in TWO parallel queries.
- * Pure read: no writes, no deletes, no snapshot regeneration.
+ * Eligibility filter — identical rules to the public homepage (app/page.tsx):
+ * live raffles only, excluding ended/sold_out/closed and past `ends_at`.
  */
-export async function loadHomepageMerchandising(): Promise<HomepageMerchandisingData> {
-  const supabase = await createClient()
-
-  const [snapshotRes, placementRes] = await Promise.all([
-    supabase
-      .from('giveaway_snapshots')
-      .select('payload')
-      .eq('kind', 'list')
-      .eq('payload->>status', 'live'),
-    supabase.from('campaign_homepage_placements').select('campaign_id, rail, position'),
-  ])
-
-  const now = Date.now()
-
-  // Eligibility — identical rules to the public homepage (app/page.tsx).
-  const eligiblePayloads = (snapshotRes.data ?? [])
+export function filterEligiblePayloads(rawRows: any[] | null | undefined, now: number): any[] {
+  return (rawRows ?? [])
     .map((x: any) => x.payload)
     .filter((g: any) => {
       if (!g || g.status === 'ended' || g.status === 'sold_out' || g.status === 'closed') return false
@@ -145,34 +141,48 @@ export async function loadHomepageMerchandising(): Promise<HomepageMerchandising
       }
       return true
     })
+}
 
+/**
+ * THE SINGLE source of rail membership + ordering, shared by the admin screen
+ * and the public homepage so the two surfaces can never drift. Pure function
+ * (no I/O). Returns ordered FULL payloads per rail:
+ *
+ *   - Manual rails (featured, games, cash, luxury): membership = placement rows
+ *     for still-eligible campaigns, ordered `position ASC, campaign_id ASC`.
+ *   - Derived rails (balloon_pop, instant_cash): membership from the shared
+ *     `classifyGiveaway` classifier ONLY; a placement row is ordering-only and
+ *     can never create membership. Order = [positioned (position ASC, id ASC),
+ *     then unpositioned (ends_at ASC NULLS LAST → % sold DESC → id ASC)].
+ */
+export function buildHomepageRailPayloads(
+  eligiblePayloads: any[],
+  placementRows: PlacementRow[],
+): RailPayloads {
   const eligibleById = new Map<string, any>()
   for (const p of eligiblePayloads) {
     if (p?.id != null) eligibleById.set(String(p.id), p)
   }
 
-  // Group placement rows by rail → Map<campaign_id, position>.
   const placementsByRail = new Map<HomepageRail, Map<string, number>>()
   for (const rail of HOMEPAGE_RAILS) placementsByRail.set(rail, new Map())
-  for (const row of (placementRes.data ?? []) as PlacementRow[]) {
+  for (const row of placementRows) {
     if (!isValidRail(row.rail)) continue
     placementsByRail.get(row.rail)!.set(String(row.campaign_id), Number(row.position ?? 0))
   }
 
-  const rails = {} as Record<HomepageRail, MerchandisingItem[]>
+  const rails = {} as RailPayloads
 
   for (const rail of HOMEPAGE_RAILS) {
     const posMap = placementsByRail.get(rail)!
 
     if (isManualRail(rail)) {
-      // Membership = placement rows (still-eligible only). position ASC, id ASC.
       const placed = [...posMap.entries()]
         .map(([campaignId, position]) => ({ campaignId, position }))
         .filter((r) => eligibleById.has(r.campaignId))
         .sort((a, b) => a.position - b.position || (a.campaignId < b.campaignId ? -1 : a.campaignId > b.campaignId ? 1 : 0))
-      rails[rail] = placed.map((r) => toItem(eligibleById.get(r.campaignId), true))
+      rails[rail] = placed.map((r) => ({ payload: eligibleById.get(r.campaignId), positioned: true }))
     } else {
-      // Derived: membership from the shared classifier; placement = order only.
       const category = DERIVED_RAIL_CATEGORY[rail as 'balloon_pop' | 'instant_cash']
       const members = eligiblePayloads.filter((p: any) => classifyGiveaway(p) === category)
 
@@ -189,10 +199,56 @@ export async function loadHomepageMerchandising(): Promise<HomepageMerchandising
         .sort(fallbackCompare)
 
       rails[rail] = [
-        ...positioned.map((p: any) => toItem(p, true)),
-        ...unpositioned.map((p: any) => toItem(p, false)),
+        ...positioned.map((p: any) => ({ payload: p, positioned: true })),
+        ...unpositioned.map((p: any) => ({ payload: p, positioned: false })),
       ]
     }
+  }
+
+  return rails
+}
+
+/** Run the two shared queries and return eligible payloads + placement rows. */
+async function fetchRailInputs(): Promise<{ eligiblePayloads: any[]; placementRows: PlacementRow[] }> {
+  const supabase = await createClient()
+
+  const [snapshotRes, placementRes] = await Promise.all([
+    supabase
+      .from('giveaway_snapshots')
+      .select('payload')
+      .eq('kind', 'list')
+      .eq('payload->>status', 'live'),
+    supabase.from('campaign_homepage_placements').select('campaign_id, rail, position'),
+  ])
+
+  const eligiblePayloads = filterEligiblePayloads(snapshotRes.data, Date.now())
+  const placementRows = (placementRes.data ?? []) as PlacementRow[]
+  return { eligiblePayloads, placementRows }
+}
+
+/**
+ * PUBLIC homepage data path: exactly TWO Supabase queries, then in-memory
+ * grouping/ordering via the shared {@link buildHomepageRailPayloads}. Returns
+ * ordered FULL payloads so `PublicGiveawayCard` can render price / countdown /
+ * progress without any per-card fetch.
+ */
+export async function loadHomepageRails(): Promise<{ rails: RailPayloads; eligiblePayloads: any[] }> {
+  const { eligiblePayloads, placementRows } = await fetchRailInputs()
+  return { rails: buildHomepageRailPayloads(eligiblePayloads, placementRows), eligiblePayloads }
+}
+
+/**
+ * ADMIN merchandising data path — same two queries and the SAME shared builder,
+ * then mapped to the thin {@link MerchandisingItem} shape the admin UI uses.
+ * Pure read: no writes, no deletes, no snapshot regeneration.
+ */
+export async function loadHomepageMerchandising(): Promise<HomepageMerchandisingData> {
+  const { eligiblePayloads, placementRows } = await fetchRailInputs()
+  const railPayloads = buildHomepageRailPayloads(eligiblePayloads, placementRows)
+
+  const rails = {} as Record<HomepageRail, MerchandisingItem[]>
+  for (const rail of HOMEPAGE_RAILS) {
+    rails[rail] = railPayloads[rail].map((e) => toItem(e.payload, e.positioned))
   }
 
   // Add-picker source: every eligible competition, alphabetical by title.
