@@ -4,7 +4,12 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import type { AdminRole } from "@/lib/admin/permissions"
-import { getVisibleNavGroups, isNavItemActive } from "@/lib/admin/navigation"
+import {
+  getVisibleNavGroups,
+  isNavItemActive,
+  HOST_NAV_ITEMS,
+  isHostNavItemActive,
+} from "@/lib/admin/navigation"
 
 /**
  * Reusable admin navigation list. Shared by the fixed desktop sidebar and the
@@ -22,6 +27,59 @@ export function AdminNavLinks({
   onNavigate?: () => void
 }) {
   const pathname = usePathname()
+
+  // Hosts (ops) get a dedicated, streamlined nav — never the full staff
+  // sidebar. Authorization is still enforced server-side; this only changes
+  // which allowed links are surfaced.
+  if (role === "ops") {
+    return (
+      <nav className="flex flex-col gap-1 px-3 py-4" aria-label="Host">
+        <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+          Host
+        </p>
+        <ul className="space-y-0.5">
+          {HOST_NAV_ITEMS.map((item) => {
+            const isActive = isHostNavItemActive(pathname, item.href)
+            const Icon = item.icon
+            return (
+              <li key={item.href}>
+                <Link
+                  href={item.href}
+                  onClick={onNavigate}
+                  aria-current={isActive ? "page" : undefined}
+                  className={cn(
+                    "group relative flex h-11 items-center gap-3 rounded-lg px-3 text-sm transition-colors",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
+                    isActive
+                      ? "bg-primary/10 font-semibold text-primary"
+                      : "font-medium text-foreground/70 hover:bg-accent hover:text-foreground",
+                  )}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary transition-opacity",
+                      isActive ? "opacity-100" : "opacity-0",
+                    )}
+                  />
+                  <Icon
+                    aria-hidden="true"
+                    strokeWidth={2}
+                    className={cn(
+                      "h-[18px] w-[18px] shrink-0",
+                      isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground",
+                    )}
+                  />
+                  <span className="truncate">{item.label}</span>
+                </Link>
+              </li>
+            )
+          })}
+        </ul>
+      </nav>
+    )
+  }
+
   const groups = getVisibleNavGroups(role)
 
   return (

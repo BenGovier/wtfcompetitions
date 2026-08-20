@@ -32,8 +32,15 @@ export const ROLE_LABELS: Record<AdminRole, string> = {
 /** The internal role value used when saving a Host. */
 export const HOST_ROLE: AdminRole = 'ops'
 
-/** Routes a Host (ops) is allowed to reach. Admins can reach everything. */
-export const HOST_ALLOWED_ROUTES = ['/admin/live-feed']
+/**
+ * Routes a Host (ops) is allowed to reach. Admins can reach everything.
+ *
+ * Matching is exact-or-descendant (see canAccessRoute), so '/admin/host' also
+ * covers '/admin/host/comps'. Note this deliberately does NOT grant
+ * '/admin/hosts' (Team Access, plural) — that stays admin-only because
+ * '/admin/hosts' neither equals '/admin/host' nor starts with '/admin/host/'.
+ */
+export const HOST_ALLOWED_ROUTES = ['/admin/host', '/admin/live-feed']
 
 /**
  * Routes an Operations Admin is allowed to reach.
