@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Gift } from "lucide-react"
+import { Gift, Phone } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
   Select,
@@ -192,6 +192,16 @@ export function HostLiveFeed({ initial }: { initial: HostLiveFeedPayload }) {
                       )}
                     </div>
                     <p className="mt-0.5 truncate text-sm font-medium text-foreground">{item.winnerName}</p>
+                    {item.mobile && (
+                      <a
+                        href={`tel:${item.mobile.replace(/\s+/g, "")}`}
+                        className="mt-0.5 inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+                        aria-label={`Call ${item.winnerName} on ${item.mobile}`}
+                      >
+                        <Phone aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate tabular-nums">{item.mobile}</span>
+                      </a>
+                    )}
                     <p className="truncate text-xs text-muted-foreground">{item.campaignTitle}</p>
                   </div>
                   <time
