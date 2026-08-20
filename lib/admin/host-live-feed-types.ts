@@ -48,3 +48,27 @@ export interface HostLiveFeedPayload {
   /** When this payload was generated (ISO). */
   generatedAt: string
 }
+
+/**
+ * Compact live-performance summary shown ABOVE the winner feed while a host
+ * runs a TikTok live. All money is external cash (external_pence) in integer
+ * pence — site/wallet credit is NEVER included. Scoped server-side to the
+ * authenticated host's assigned campaigns; when `campaignId` is null the figures
+ * aggregate across ONLY those assigned campaigns (each counted once).
+ *
+ * Refreshed on its own ~30s cadence (NOT the 10s winner poll), because these
+ * come from the ~1-minute reporting rollup and a true daily award count, so
+ * polling them every 10s would add load without adding freshness.
+ */
+export interface HostLiveSummary {
+  /** The selection this summary is for: a specific assigned id, or null = all. */
+  campaignId: string | null
+  /** External cash ticket sales TODAY (pence, Europe/London day). */
+  revenueTodayPence: number
+  /** True COUNT of instant prizes won TODAY (Europe/London day) — not feed rows. */
+  instantsToday: number
+  /** Lifetime external cash ticket revenue for the selection (pence). */
+  compTotalPence: number
+  /** When this summary was generated (ISO). */
+  generatedAt: string
+}

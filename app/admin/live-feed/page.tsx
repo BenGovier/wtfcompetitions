@@ -2,6 +2,7 @@ import { requireAdmin } from "@/lib/admin/auth"
 import { LiveCampaignPicker } from "@/components/admin/live-feed/LiveCampaignPicker"
 import { HostLiveFeed } from "@/components/admin/live-feed/HostLiveFeed"
 import { getHostLiveFeed } from "@/lib/admin/host-live-feed"
+import { getHostLiveSummary } from "@/lib/admin/host-live-summary"
 import { HostDataError } from "@/components/admin/host/HostDataError"
 
 // Always render fresh: the host stream is polled and the picker reflects live
@@ -16,7 +17,9 @@ export default async function LiveFeedPage() {
   // picker, no "Open Live Control", no board. Scoped server-side to the host's
   // assigned campaigns.
   if (role === "ops") {
-    const result = await getHostLiveFeed()
+    // Feed + summary fetched in parallel so the metrics strip renders seeded
+    // (no loading flash) for the initial "All my comps" view.
+    const [result, summaryResult] = await Promise.all([getHostLiveFeed(), getHostLiveSummary()])
 
     return (
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-5">
@@ -28,7 +31,10 @@ export default async function LiveFeedPage() {
         </header>
 
         {result.ok ? (
-          <HostLiveFeed initial={result.data} />
+          <HostLiveFeed
+            initial={result.data}
+            initialSummary={summaryResult.ok ? summaryResult.data : null}
+          />
         ) : (
           <HostDataError
             reason={result.error}

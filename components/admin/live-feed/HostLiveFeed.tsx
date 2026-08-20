@@ -10,7 +10,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import type { HostFeedCampaignOption, HostFeedItem, HostLiveFeedPayload } from "@/lib/admin/host-live-feed-types"
+import type {
+  HostFeedCampaignOption,
+  HostFeedItem,
+  HostLiveFeedPayload,
+  HostLiveSummary,
+} from "@/lib/admin/host-live-feed-types"
+import { HostLiveSummaryStrip } from "./HostLiveSummaryStrip"
 
 const POLL_MS = 10000
 const ALL = "all"
@@ -27,7 +33,13 @@ function relativeTime(iso: string): string {
   return `${Math.floor(h / 24)}d ago`
 }
 
-export function HostLiveFeed({ initial }: { initial: HostLiveFeedPayload }) {
+export function HostLiveFeed({
+  initial,
+  initialSummary = null,
+}: {
+  initial: HostLiveFeedPayload
+  initialSummary?: HostLiveSummary | null
+}) {
   const [campaigns, setCampaigns] = useState<HostFeedCampaignOption[]>(initial.campaigns)
   const [items, setItems] = useState<HostFeedItem[]>(initial.items)
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>(ALL)
@@ -136,21 +148,27 @@ export function HostLiveFeed({ initial }: { initial: HostLiveFeedPayload }) {
         </div>
       </div>
 
-      {/* Campaign filter (only the host's assigned comps) */}
+      {/* Campaign filter (only the host's assigned comps) + compact metrics.
+          The metrics strip sits directly under the selector and above the feed
+          so winner activity stays high on the screen. */}
       {hasCampaigns && (
-        <Select value={selectedCampaignId} onValueChange={setSelectedCampaignId}>
-          <SelectTrigger className="w-full sm:max-w-xs" aria-label="Filter by competition">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All my comps</SelectItem>
-            {campaigns.map((c) => (
-              <SelectItem key={c.id} value={c.id}>
-                {c.title}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex flex-col gap-3">
+          <Select value={selectedCampaignId} onValueChange={setSelectedCampaignId}>
+            <SelectTrigger className="w-full sm:max-w-xs" aria-label="Filter by competition">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All my comps</SelectItem>
+              {campaigns.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.title}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <HostLiveSummaryStrip selectedCampaignId={selectedCampaignId} initial={initialSummary} />
+        </div>
       )}
 
       {/* Feed */}
