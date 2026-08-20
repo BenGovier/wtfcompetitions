@@ -264,7 +264,7 @@ export default async function HomePage() {
                               }}
                             >
                               <Image
-                                src="/images/homepage/liz-lv-alma-bb-breakout.webp"
+                                src="/images/liz-lv-alma-bb-breakout.webp"
                                 alt=""
                                 width={640}
                                 height={960}
