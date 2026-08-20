@@ -110,6 +110,7 @@ export const HOST_NAV_ITEMS: HostNavItem[] = [
   { href: '/admin/host', label: 'Home', icon: Home },
   { href: '/admin/live-feed', label: 'Live Feed', icon: Radio },
   { href: '/admin/host/comps', label: 'My Comps', icon: Trophy },
+  { href: '/admin/host/earnings', label: 'Earnings', icon: Banknote },
 ]
 
 /** Active-route test for the host nav (exact or descendant path). */

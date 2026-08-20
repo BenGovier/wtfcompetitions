@@ -15,20 +15,25 @@ import 'server-only'
  *   count N:
  *     1. campaign_hosts .............. this host's rows only (ids + commission)
  *     2. campaigns ................... bounded PK lookup (title/status/cap)
- *     3. reporting_sales_daily ....... THIS host's ids, this UK month, EXCLUDING
- *                                      today (completed previous days only)
- *     4. reporting_sales_minute ...... THIS host's ids, TODAY (UK) only
- *     5. giveaway_ticket_counters .... THIS host's ids (one tiny int each)
- *     6. reporting_meta .............. one keyed row (freshness)
- *   Queries 2–6 run in parallel. No per-campaign loop, no raw checkout/entry
+ *     3. reporting_sales_daily ....... THIS host's ids, this WHOLE UK month
+ *                                      (previous days + today, one row/day)
+ *     4. giveaway_ticket_counters .... THIS host's ids (one tiny int each)
+ *     5. reporting_meta .............. one keyed row (freshness)
+ *   Queries 2–5 run in parallel. No per-campaign loop, no raw checkout/entry
  *   scan, no unbounded lifetime reporting history, no Auth Admin lookups.
  *
- * HYBRID FRESHNESS MODEL (why daily + minute)
- *   Current-month external cash = completed previous days (daily rollup) + today
- *   so far (minute rollup). Daily rows are coarse and stable; today is taken
- *   from the finest-grained source so a host watching a Live sees today's cash
- *   at the granularity it is recorded. The two windows are DISJOINT on the UK
- *   day boundary so today is never counted twice.
+ * FRESHNESS MODEL (daily-only — why NOT minute)
+ *   Current-month external cash is read entirely from reporting_sales_daily,
+ *   including TODAY. This is safe for a live host screen because the refresh
+ *   cron runs every minute (vercel.json: "* * * * *") and
+ *   refresh_sales_reporting FULLY REBUILDS today's daily rows from the minute
+ *   rollup on every run — so today's daily figure is at most ~1 minute stale,
+ *   exactly as fresh as the minute rollup (both are written in the same refresh
+ *   transaction; the minute table is never newer than daily). Reading daily
+ *   instead of every minute row since midnight avoids an ever-growing full-day
+ *   transfer as the day progresses, with no loss of freshness. Today's own
+ *   figure is derived from the single today-dated daily row, so month and today
+ *   come from ONE source and today can never be double-counted.
  *
  * MONEY MODEL (unchanged)
  *   Commission is based ONLY on external cash (external_pence). Wallet/site
@@ -41,6 +46,7 @@ import { getServiceSupabase } from '@/lib/admin/live-board'
 import type {
   HostCampaignSummary,
   HostDashboardPayload,
+  HostPastMonth,
 } from '@/lib/admin/host-dashboard-types'
 
 export type GetHostDashboardResult =
@@ -90,48 +96,10 @@ function ukMonthStartDate(now: Date): string {
   return `${year}-${month}-01`
 }
 
-/** Today's UK calendar date, as 'YYYY-MM-DD' (exclusive upper bound for daily). */
+/** Today's UK calendar date, as 'YYYY-MM-DD' (to pick out today's daily row). */
 function ukTodayDate(now: Date): string {
   const { year, month, day } = ukDateParts(now)
   return `${year}-${month}-${day}`
-}
-
-/** Offset (ms) of a timezone at a given UTC instant: (localWallClockAsUTC - utc). */
-function tzOffsetMs(utcMs: number, timeZone: string): number {
-  const dtf = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    hourCycle: 'h23',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  })
-  const map: Record<string, string> = {}
-  for (const p of dtf.formatToParts(new Date(utcMs))) map[p.type] = p.value
-  const asUTC = Date.UTC(
-    Number(map.year),
-    Number(map.month) - 1,
-    Number(map.day),
-    Number(map.hour),
-    Number(map.minute),
-    Number(map.second),
-  )
-  return asUTC - utcMs
-}
-
-/**
- * UTC instant (ISO) of the START of today's UK calendar day. Used as the
- * inclusive lower bound for reporting_sales_minute.bucket_start (a timestamptz
- * stored as the UTC instant of the local minute). UK midnight is never inside a
- * DST transition (transitions occur at 01:00/02:00), so it is unambiguous.
- */
-function ukTodayStartUtcISO(now: Date): string {
-  const { year, month, day } = ukDateParts(now)
-  const guessUtc = Date.UTC(Number(year), Number(month) - 1, Number(day), 0, 0, 0)
-  const offset = tzOffsetMs(guessUtc, 'Europe/London')
-  return new Date(guessUtc - offset).toISOString()
 }
 
 /**
@@ -194,36 +162,29 @@ export async function getHostDashboard(): Promise<GetHostDashboardResult> {
   const campaignIds = [...commissionByCampaign.keys()]
   const monthStart = ukMonthStartDate(now)
   const todayDate = ukTodayDate(now)
-  const todayStartUtc = ukTodayStartUtcISO(now)
 
-  // 3–6) All host-scoped and bounded by campaignIds — run in parallel.
+  // 3–5) All host-scoped and bounded by campaignIds — run in parallel.
   //   - campaigns: authoritative title/status/cap (also surfaces zero-sales
   //     campaigns that would be absent from the reporting rollups).
-  //   - reporting_sales_daily: completed PREVIOUS days this UK month
-  //     (bucket_date >= monthStart AND < today). Uses (campaign_id, bucket_date).
-  //   - reporting_sales_minute: TODAY so far (bucket_start >= UK midnight).
-  //     Bounded by assigned campaigns × providers × today's minutes.
+  //   - reporting_sales_daily: the WHOLE current UK month INCLUDING today
+  //     (bucket_date >= monthStart). One row per day×provider — bounded and
+  //     constant through the day. Today's daily row is rebuilt every minute by
+  //     the refresh cron, so it is ~1 minute fresh (see FRESHNESS MODEL above).
+  //     Uses the (campaign_id, bucket_date) index.
   //   - giveaway_ticket_counters: one tiny row per campaign for ticket progress.
   //   - reporting_meta: single keyed row for freshness.
   const [
     { data: campaignRows, error: campaignErr },
     { data: dailyRows, error: dailyErr },
-    { data: minuteRows, error: minuteErr },
     { data: counterRows, error: counterErr },
     { data: metaRow, error: metaErr },
   ] = await Promise.all([
     svc.from('campaigns').select('id, title, status, max_tickets_total').in('id', campaignIds),
     svc
       .from('reporting_sales_daily')
-      .select('campaign_id, external_pence')
+      .select('campaign_id, external_pence, bucket_date')
       .in('campaign_id', campaignIds)
-      .gte('bucket_date', monthStart)
-      .lt('bucket_date', todayDate),
-    svc
-      .from('reporting_sales_minute')
-      .select('campaign_id, external_pence')
-      .in('campaign_id', campaignIds)
-      .gte('bucket_start', todayStartUtc),
+      .gte('bucket_date', monthStart),
     svc.from('giveaway_ticket_counters').select('giveaway_id, next_ticket').in('giveaway_id', campaignIds),
     svc.from('reporting_meta').select('value').eq('key', 'last_refresh').maybeSingle(),
   ])
@@ -236,10 +197,6 @@ export async function getHostDashboard(): Promise<GetHostDashboardResult> {
     console.log('[v0] host-dashboard daily error:', dailyErr.message)
     return { ok: false, error: 'query_failed' }
   }
-  if (minuteErr) {
-    console.log('[v0] host-dashboard minute error:', minuteErr.message)
-    return { ok: false, error: 'query_failed' }
-  }
   if (counterErr) {
     console.log('[v0] host-dashboard counter error:', counterErr.message)
     return { ok: false, error: 'query_failed' }
@@ -250,22 +207,20 @@ export async function getHostDashboard(): Promise<GetHostDashboardResult> {
     console.log('[v0] host-dashboard meta (non-fatal) error:', metaErr.message)
   }
 
-  // Previous completed days this month (external cash) per campaign.
-  const prevMonthByCampaign = new Map<string, number>()
+  // Split the single daily result into month-so-far and today per campaign.
+  // Both come from ONE source (reporting_sales_daily), so today (the row dated
+  // todayDate) is a strict subset of the month total — it can never be
+  // double-counted. Today's row is rebuilt every minute by the refresh cron.
+  const monthByCampaign = new Map<string, number>()
+  const todayByCampaign = new Map<string, number>()
   for (const row of dailyRows ?? []) {
     const id = row.campaign_id as string
     if (!id) continue
     const ext = Math.max(0, Number(row.external_pence ?? 0) || 0)
-    prevMonthByCampaign.set(id, (prevMonthByCampaign.get(id) ?? 0) + ext)
-  }
-
-  // Today so far (external cash) per campaign, from minute rows.
-  const todayByCampaign = new Map<string, number>()
-  for (const row of minuteRows ?? []) {
-    const id = row.campaign_id as string
-    if (!id) continue
-    const ext = Math.max(0, Number(row.external_pence ?? 0) || 0)
-    todayByCampaign.set(id, (todayByCampaign.get(id) ?? 0) + ext)
+    monthByCampaign.set(id, (monthByCampaign.get(id) ?? 0) + ext)
+    if (String(row.bucket_date) === todayDate) {
+      todayByCampaign.set(id, (todayByCampaign.get(id) ?? 0) + ext)
+    }
   }
 
   // Tickets sold per campaign from the counter (next_ticket - 1, floored at 0).
@@ -290,8 +245,8 @@ export async function getHostDashboard(): Promise<GetHostDashboardResult> {
     const commissionPct = commissionByCampaign.get(campaignId) ?? 0
 
     const externalPenceToday = Math.max(0, todayByCampaign.get(campaignId) ?? 0)
-    // Current month so far = completed previous days + today (disjoint windows).
-    const externalPenceMonth = Math.max(0, prevMonthByCampaign.get(campaignId) ?? 0) + externalPenceToday
+    // Current month so far, read directly from the daily rollup (includes today).
+    const externalPenceMonth = Math.max(0, monthByCampaign.get(campaignId) ?? 0)
     const earnings = earningsPence(externalPenceMonth, commissionPct)
 
     const status = String(meta.status ?? 'unknown')
@@ -348,4 +303,138 @@ export async function getHostDashboard(): Promise<GetHostDashboardResult> {
       meta: { lastRefreshAt, generatedAt },
     },
   }
+}
+
+export type GetHostPastEarningsResult =
+  | { ok: true; data: HostPastMonth[] }
+  | { ok: false; error: 'unauthorized' | 'service_unavailable' | 'query_failed' }
+
+/** How many previous UK months of history to surface (bounded, not eager). */
+const PAST_MONTHS_WINDOW = 6
+
+/** 'YYYY-MM-01' for the month that is `back` months before the given UK month. */
+function ukMonthStartMonthsAgo(now: Date, back: number): string {
+  const { year, month } = ukDateParts(now)
+  // First-of-month arithmetic only (no time/DST edge); UTC is safe here.
+  const d = new Date(Date.UTC(Number(year), Number(month) - 1 - back, 1))
+  const y = d.getUTCFullYear()
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0')
+  return `${y}-${m}-01`
+}
+
+/** Human month label from a 'YYYY-MM' key, e.g. "July 2026". */
+function monthLabelFromKey(monthKey: string): string {
+  const [y, m] = monthKey.split('-').map(Number)
+  if (!y || !m) return monthKey
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'UTC',
+    month: 'long',
+    year: 'numeric',
+  }).format(new Date(Date.UTC(y, m - 1, 1)))
+}
+
+/**
+ * Previous UK months of ESTIMATED host earnings for the AUTHENTICATED host.
+ *
+ * SECURITY: identical model to getHostDashboard — identity from the session,
+ * never a client-supplied id; only the host's own campaigns are read.
+ *
+ * PERFORMANCE: a SINGLE bounded reporting_sales_daily read for the host's
+ * campaigns over the last PAST_MONTHS_WINDOW months, EXCLUDING the current month
+ * (that lives on the live dashboard). No per-campaign query, no per-month query,
+ * no raw checkout/entry scan, no Auth Admin lookups.
+ *
+ * COMMISSION HISTORY CAVEAT: earnings are computed per-campaign using that
+ * campaign's CURRENT commission_pct (campaign_hosts stores only the current
+ * value; there is no commission-history/audit table). Because a WTF campaign is
+ * a single event with one host arrangement from creation to completion, this is
+ * accurate in practice — but if an admin later edits a campaign's rate, this
+ * recomputes past months at the new rate. Values are therefore labelled
+ * ESTIMATED. A payout ledger (see recommendation) would make history immutable.
+ */
+export async function getHostPastEarnings(): Promise<GetHostPastEarningsResult> {
+  const ctx = await getAdminContext()
+  if (!ctx || (ctx.role !== 'ops' && ctx.role !== 'admin')) {
+    return { ok: false, error: 'unauthorized' }
+  }
+  const hostUserId = ctx.user.id
+
+  let svc
+  try {
+    svc = getServiceSupabase()
+  } catch {
+    return { ok: false, error: 'service_unavailable' }
+  }
+
+  const { data: assignmentRows, error: assignErr } = await svc
+    .from('campaign_hosts')
+    .select('campaign_id, commission_pct')
+    .eq('host_user_id', hostUserId)
+
+  if (assignErr) {
+    console.log('[v0] host-past-earnings assignments error:', assignErr.message)
+    return { ok: false, error: 'query_failed' }
+  }
+
+  const commissionByCampaign = new Map<string, number>()
+  for (const row of assignmentRows ?? []) {
+    const id = row.campaign_id as string
+    const pct = Number(row.commission_pct)
+    if (id && Number.isFinite(pct)) commissionByCampaign.set(id, pct)
+  }
+  if (commissionByCampaign.size === 0) return { ok: true, data: [] }
+
+  const campaignIds = [...commissionByCampaign.keys()]
+  const now = new Date()
+  const currentMonthStart = ukMonthStartDate(now)
+  const windowStart = ukMonthStartMonthsAgo(now, PAST_MONTHS_WINDOW)
+
+  // Single bounded read: host's campaigns, previous months only (< this month).
+  const { data: dailyRows, error: dailyErr } = await svc
+    .from('reporting_sales_daily')
+    .select('campaign_id, external_pence, bucket_date')
+    .in('campaign_id', campaignIds)
+    .gte('bucket_date', windowStart)
+    .lt('bucket_date', currentMonthStart)
+
+  if (dailyErr) {
+    console.log('[v0] host-past-earnings daily error:', dailyErr.message)
+    return { ok: false, error: 'query_failed' }
+  }
+
+  // Group external cash per (month, campaign) so per-campaign rates apply.
+  const perMonthPerCampaign = new Map<string, Map<string, number>>()
+  for (const row of dailyRows ?? []) {
+    const campaignId = row.campaign_id as string
+    const bucketDate = String(row.bucket_date ?? '')
+    if (!campaignId || bucketDate.length < 7) continue
+    const monthKey = bucketDate.slice(0, 7) // 'YYYY-MM'
+    const ext = Math.max(0, Number(row.external_pence ?? 0) || 0)
+    if (ext === 0) continue
+    let byCampaign = perMonthPerCampaign.get(monthKey)
+    if (!byCampaign) {
+      byCampaign = new Map<string, number>()
+      perMonthPerCampaign.set(monthKey, byCampaign)
+    }
+    byCampaign.set(campaignId, (byCampaign.get(campaignId) ?? 0) + ext)
+  }
+
+  const months: HostPastMonth[] = []
+  for (const [monthKey, byCampaign] of perMonthPerCampaign) {
+    let hostedCashPence = 0
+    let estimatedEarningsPence = 0
+    for (const [campaignId, ext] of byCampaign) {
+      const pct = commissionByCampaign.get(campaignId) ?? 0
+      hostedCashPence += ext
+      estimatedEarningsPence += earningsPence(ext, pct)
+    }
+    if (hostedCashPence > 0) {
+      months.push({ monthKey, label: monthLabelFromKey(monthKey), hostedCashPence, estimatedEarningsPence })
+    }
+  }
+
+  // Most recent month first.
+  months.sort((a, b) => (a.monthKey < b.monthKey ? 1 : a.monthKey > b.monthKey ? -1 : 0))
+
+  return { ok: true, data: months }
 }

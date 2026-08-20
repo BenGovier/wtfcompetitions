@@ -37,6 +37,26 @@ export interface HostCampaignSummary {
   maxTicketsTotal: number | null
 }
 
+/**
+ * One previous UK calendar month of estimated host earnings (Earnings screen).
+ *
+ * Derived from reporting_sales_daily for the host's own campaigns; earnings are
+ * computed per-campaign (each × that campaign's commission rate) then summed,
+ * so a host with different rates on different comps is costed correctly. This is
+ * ESTIMATED (there is no payout ledger) and uses each campaign's CURRENT
+ * commission rate — see the note in getHostPastEarnings.
+ */
+export interface HostPastMonth {
+  /** 'YYYY-MM' (UK month). */
+  monthKey: string
+  /** Human label, e.g. "July 2026". */
+  label: string
+  /** External cash across the host's campaigns that month (pence). */
+  hostedCashPence: number
+  /** This host's estimated commission that month (pence). */
+  estimatedEarningsPence: number
+}
+
 /** The complete host dashboard payload returned to the browser. */
 export interface HostDashboardPayload {
   /** Friendly first-name/label for the greeting (never another host's data). */
