@@ -102,9 +102,10 @@ export function HomeRailNav({ items }: { items: HomeNavItem[] }) {
   return (
     <nav
       aria-label="Competition categories"
-      // Dark purple glass lobby bar: subtle border, inner top highlight, tight
-      // vertical rhythm (~54px total). Full-bleed to the screen edge on mobile.
-      className="sticky top-16 z-40 -mx-4 mb-6 border-y border-white/10 bg-[#0e0020]/80 px-4 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur supports-[backdrop-filter]:bg-[#0e0020]/65 md:mb-8"
+      // Dark purple glass lobby bar: subtle border, inner top + bottom
+      // highlights for a glossy illuminated edge, tight vertical rhythm
+      // (~54px total). Full-bleed to the screen edge on mobile.
+      className="sticky top-16 z-40 -mx-4 mb-6 border-y border-white/10 bg-[#0e0020]/80 px-4 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(251,191,36,0.12)] backdrop-blur supports-[backdrop-filter]:bg-[#0e0020]/60 md:mb-8"
     >
       <div
         ref={navRef}

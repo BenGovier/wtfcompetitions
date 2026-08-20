@@ -59,8 +59,8 @@ export interface RailPresentation {
 export const RAIL_PRESENTATION: Record<HomepageRail, RailPresentation> = {
   featured: {
     navLabel: 'HOT',
-    heading: 'HOT RIGHT NOW',
-    tagline: 'Big prizes. Big momentum. Get in.',
+    heading: 'MEGA JACKPOT DROPS',
+    tagline: 'Big prizes. Big momentum. Get in now.',
     icon: 'hot',
     navActiveClass: 'bg-amber-400/15 text-amber-200 ring-1 ring-amber-300/50 shadow-[0_0_16px_rgba(251,191,36,0.35)]',
     accentText: 'text-amber-300',
@@ -68,9 +68,9 @@ export const RAIL_PRESENTATION: Record<HomepageRail, RailPresentation> = {
     viewAllHref: '/giveaways',
   },
   balloon_pop: {
-    navLabel: 'POPS',
-    heading: 'POP TILL YOU DROP',
-    tagline: 'Pick your numbers. Hit the balloon.',
+    navLabel: 'TIKTOK POPS',
+    heading: 'TIKTOK POPS',
+    tagline: 'Pick your numbers. Pop for the prize.',
     icon: 'balloon',
     navActiveClass: 'bg-fuchsia-500/15 text-fuchsia-200 ring-1 ring-fuchsia-400/50 shadow-[0_0_16px_rgba(217,70,239,0.35)]',
     accentText: 'text-fuchsia-300',
@@ -78,10 +78,10 @@ export const RAIL_PRESENTATION: Record<HomepageRail, RailPresentation> = {
     viewAllHref: '/giveaways?category=live',
   },
   instant_cash: {
-    navLabel: 'INSTANT',
-    heading: 'INSTANT WIN ZONE',
-    tagline: 'Your ticket could hit immediately.',
-    icon: 'instant',
+    navLabel: 'LUXURY PRIZES',
+    heading: 'LUXURY PRIZES',
+    tagline: 'Premium wins. Big brands. Serious prizes.',
+    icon: 'luxury',
     navActiveClass: 'bg-cyan-400/15 text-cyan-100 ring-1 ring-cyan-300/50 shadow-[0_0_16px_rgba(34,211,238,0.35)]',
     accentText: 'text-cyan-300',
     sectionGlow: 'bg-[radial-gradient(120%_80%_at_0%_0%,rgba(34,211,238,0.12),transparent_60%)]',
