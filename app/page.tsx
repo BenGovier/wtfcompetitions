@@ -152,48 +152,66 @@ export default async function HomePage() {
                   className={`pointer-events-none absolute -inset-x-4 -top-4 -z-10 h-40 ${section.sectionGlow}`}
                 />
 
-                {/* Casino "room" header: hexagonal illuminated emblem + display
-                    title + accent View all, supporting line, accent light seam. */}
-                <header className="mb-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-3">
-                      {/* Hexagonal jackpot emblem: accent-tinted frame hexagon
-                          with a dark faceted face + concentrated edge glow. The
-                          accent colour flows from `accentText` via currentColor. */}
+                {/* Premium casino-room header. PRESENTATION ONLY:
+                    same heading/copy/link data, stronger layered lighting. */}
+                <header className="mb-5">
+                  <div className="flex items-center justify-between gap-2.5">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      {/* Layered illuminated hex emblem:
+                          outer bloom -> halo -> crisp hex -> dark face -> icon. */}
                       <span
                         aria-hidden="true"
-                        className={`relative inline-flex h-14 w-14 shrink-0 items-center justify-center ${section.accentText}`}
+                        className={`relative inline-flex h-[50px] w-[50px] shrink-0 items-center justify-center ${section.accentText} sm:h-14 sm:w-14`}
                       >
-                        <span
-                          className="absolute inset-0 bg-current opacity-90 [clip-path:polygon(50%_0%,100%_25%,100%_75%,50%_100%,0%_75%,0%_25%)] [filter:drop-shadow(0_0_6px_currentColor)]"
-                        />
-                        <span className="absolute inset-[2px] bg-[#0b0018] [clip-path:polygon(50%_0%,100%_25%,100%_75%,50%_100%,0%_75%,0%_25%)]" />
-                        <span className="absolute inset-[2px] [clip-path:polygon(50%_0%,100%_25%,100%_75%,50%_100%,0%_75%,0%_25%)] bg-[linear-gradient(180deg,rgba(255,255,255,0.14),transparent_45%)]" />
-                        <RailIcon name={section.icon} className="relative h-6 w-6" />
+                        <span className="absolute -inset-[7px] bg-current opacity-[0.16] blur-[9px] [clip-path:polygon(50%_0%,100%_25%,100%_75%,50%_100%,0%_75%,0%_25%)]" />
+                        <span className="absolute -inset-[3px] bg-current opacity-[0.20] blur-[4px] [clip-path:polygon(50%_0%,100%_25%,100%_75%,50%_100%,0%_75%,0%_25%)]" />
+                        <span className="absolute inset-0 bg-current [clip-path:polygon(50%_0%,100%_25%,100%_75%,50%_100%,0%_75%,0%_25%)]" />
+                        <span className="absolute inset-[2px] bg-[#08000f] [clip-path:polygon(50%_0%,100%_25%,100%_75%,50%_100%,0%_75%,0%_25%)]" />
+                        <span className="absolute inset-[3px] bg-[linear-gradient(155deg,rgba(255,255,255,0.14)_0%,transparent_42%,rgba(0,0,0,0.22)_100%)] [clip-path:polygon(50%_0%,100%_25%,100%_75%,50%_100%,0%_75%,0%_25%)]" />
+                        <span className="absolute left-[18%] right-[18%] top-[1px] h-px bg-white/80 blur-[0.5px]" />
+                        <RailIcon name={section.icon} className="relative h-[23px] w-[23px] drop-shadow-[0_0_5px_currentColor] sm:h-6 sm:w-6" />
                       </span>
+
                       {(() => {
                         const { lead, rest } = splitHeading(section.heading)
                         return (
-                          <h2 className="text-pretty text-2xl font-black uppercase leading-[0.98] tracking-tight md:text-4xl">
+                          <h2 className="min-w-0 whitespace-nowrap text-[20px] font-black uppercase leading-none tracking-[-0.035em] sm:text-[24px] md:text-4xl">
                             <span className={section.accentText}>{lead}</span>
                             {rest ? <span className="text-white"> {rest}</span> : null}
                           </h2>
                         )
                       })()}
                     </div>
+
                     <Link
                       href={section.viewAllHref}
                       prefetch={false}
-                      className={`group/viewall mt-1 inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-black/40 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide ring-1 ring-current transition-all hover:bg-black/60 hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[#08000f] ${section.accentText}`}
+                      className={`group/viewall relative inline-flex h-[42px] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[15px] border border-current bg-[#070009]/90 px-3 text-[10px] font-black uppercase tracking-[0.045em] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-[filter,box-shadow] hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[#08000f] sm:px-4 sm:text-[11px] ${section.accentText}`}
                     >
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute -inset-[4px] -z-10 rounded-[18px] bg-current opacity-[0.10] blur-[7px]"
+                      />
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute left-[18%] right-[18%] top-[-1px] h-px bg-white/65 blur-[0.5px]"
+                      />
                       View all
                       <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover/viewall:translate-x-0.5 motion-reduce:transform-none" aria-hidden="true" />
                     </Link>
                   </div>
-                  <p className="mt-2 text-pretty text-[13px] text-white/60 md:text-sm">{section.tagline}</p>
-                  {/* Light seam: mostly dark with a concentrated accent flare at
-                      the left, echoing a casino-room transition. */}
-                  <div className={`mt-3 h-px w-full bg-gradient-to-r from-current via-current/15 to-transparent ${section.accentText}`} />
+
+                  <p className="mt-2 text-pretty text-[13px] font-medium leading-snug text-white/58 sm:text-sm">
+                    {section.tagline}
+                  </p>
+
+                  {/* Casino light seam: mostly dark with one white-hot accent node. */}
+                  <div className={`relative mt-3 h-px w-full ${section.accentText}`}>
+                    <span className="absolute inset-0 bg-current opacity-25" />
+                    <span className="absolute left-[6%] top-1/2 h-[3px] w-[38%] -translate-y-1/2 bg-current opacity-38 blur-[2px]" />
+                    <span className="absolute left-[22%] top-1/2 h-[2px] w-[86px] -translate-y-1/2 bg-current opacity-95 blur-[0.4px]" />
+                    <span className="absolute left-[31%] top-1/2 h-[7px] w-[18px] -translate-y-1/2 rounded-full bg-white opacity-65 blur-[4px]" />
+                  </div>
                 </header>
 
                 {/* Cards are SERVER-rendered here and passed into the client
