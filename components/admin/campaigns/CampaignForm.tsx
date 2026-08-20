@@ -24,6 +24,26 @@ import type { Campaign } from "@/lib/types/campaign"
 import type { InstantWinPrizeRow, InstantWinFulfilmentType } from "@/lib/types/instantWins"
 import { Trash2, Save, Upload, Plus } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import {
+  listAssignableHosts,
+  getCampaignHostAssignments,
+  saveCampaignHostAssignments,
+  type AssignableHost,
+  type HostAssignment,
+} from "@/app/admin/campaigns/host-actions"
+
+/** A host row in the form. commission_pct is kept as a raw string while editing
+ *  (mirrors the amount-input pattern) and parsed to a number only on save. */
+interface HostRow {
+  host_user_id: string
+  commission_pct: string
+}
+
+/** Trim trailing zeros for display (7.5 → "7.5", 8 → "8", 15.5 → "15.5"). */
+function formatPct(n: number): string {
+  if (!Number.isFinite(n)) return ""
+  return String(Number(n.toFixed(2)))
+}
 
 interface CampaignFormProps {
   campaign: Campaign
@@ -94,6 +114,13 @@ export function CampaignForm({ campaign, isNew, justDuplicated = false }: Campai
   // action/route, NOT the ordinary details Save.
   const [qtyInputs, setQtyInputs] = useState<Record<string, string>>({})
   const [qtySaving, setQtySaving] = useState<Record<string, boolean>>({})
+
+  // Host assignments (Phase 2 — attribution only). Options are loaded once;
+  // saved assignments are loaded when editing an existing campaign.
+  const [hostOptions, setHostOptions] = useState<AssignableHost[]>([])
+  const [hostRows, setHostRows] = useState<HostRow[]>([])
+  const [hostsLoading, setHostsLoading] = useState(false)
+  const [hostsError, setHostsError] = useState<string | null>(null)
 
   const campaignId = formData.id || campaign.id
 
@@ -171,6 +198,97 @@ export function CampaignForm({ campaign, isNew, justDuplicated = false }: Campai
     if (campaignId) fetchInstantWins()
   }, [campaignId, fetchInstantWins])
 
+  // Load the assignable host list once (create + edit both need it).
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await listAssignableHosts()
+        if (cancelled) return
+        if (res.ok) setHostOptions(res.hosts ?? [])
+        else setHostsError(res.error ?? "Failed to load hosts")
+      } catch (err: any) {
+        if (!cancelled) setHostsError(err?.message ?? "Failed to load hosts")
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // On edit, populate the saved assignments for this campaign.
+  useEffect(() => {
+    if (isNew || !campaignId) return
+    let cancelled = false
+    setHostsLoading(true)
+    ;(async () => {
+      try {
+        const res = await getCampaignHostAssignments(campaignId)
+        if (cancelled) return
+        if (res.ok) {
+          setHostRows(
+            (res.assignments ?? []).map((a) => ({
+              host_user_id: a.host_user_id,
+              commission_pct: formatPct(a.commission_pct),
+            })),
+          )
+        } else {
+          setHostsError(res.error ?? "Failed to load host assignments")
+        }
+      } catch (err: any) {
+        if (!cancelled) setHostsError(err?.message ?? "Failed to load host assignments")
+      } finally {
+        if (!cancelled) setHostsLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isNew, campaignId])
+
+  // --- Host row handlers ---
+  function addHostRow() {
+    setHostsError(null)
+    setHostRows((prev) => [...prev, { host_user_id: "", commission_pct: "" }])
+  }
+  function removeHostRow(index: number) {
+    setHostsError(null)
+    setHostRows((prev) => prev.filter((_, i) => i !== index))
+  }
+  function setHostRowUser(index: number, userId: string) {
+    setHostsError(null)
+    setHostRows((prev) => prev.map((r, i) => (i === index ? { ...r, host_user_id: userId } : r)))
+  }
+  function setHostRowPct(index: number, pct: string) {
+    setHostsError(null)
+    setHostRows((prev) => prev.map((r, i) => (i === index ? { ...r, commission_pct: pct } : r)))
+  }
+
+  /** Validate host rows and build the numeric payload for persistence. */
+  function buildHostPayload():
+    | { ok: true; payload: HostAssignment[] }
+    | { ok: false; error: string } {
+    const seen = new Set<string>()
+    const payload: HostAssignment[] = []
+    for (const r of hostRows) {
+      if (!r.host_user_id) {
+        return { ok: false, error: "Select a host for every host row, or remove empty rows." }
+      }
+      if (seen.has(r.host_user_id)) {
+        return { ok: false, error: "The same host cannot be assigned twice." }
+      }
+      seen.add(r.host_user_id)
+
+      const raw = r.commission_pct.trim()
+      const pct = Number(raw)
+      if (raw === "" || !Number.isFinite(pct) || pct < 0 || pct > 100) {
+        return { ok: false, error: "Commission for each host must be a number between 0 and 100." }
+      }
+      payload.push({ host_user_id: r.host_user_id, commission_pct: pct })
+    }
+    return { ok: true, payload }
+  }
+
   async function handleUpload() {
     if (!selectedFile) return
     setIsUploading(true)
@@ -246,9 +364,19 @@ export function CampaignForm({ campaign, isNew, justDuplicated = false }: Campai
       }
     }
 
+    // Validate host assignments up front so we never save the campaign and
+    // then discover the host rows are invalid.
+    const hostCheck = buildHostPayload()
+    if (!hostCheck.ok) {
+      setHostsError(hostCheck.error)
+      setSaveError(hostCheck.error)
+      return
+    }
+
     setIsSaving(true)
     setSaveError(null)
     setIwError(null)
+    setHostsError(null)
 
     let instantWinsSaved = false
 
@@ -345,6 +473,17 @@ export function CampaignForm({ campaign, isNew, justDuplicated = false }: Campai
         } else {
           setSaveError(baseError)
         }
+        return
+      }
+
+      // 3. Persist host assignments now that we have a valid campaign id.
+      //    A failure here must NOT be reported as a full success.
+      const savedCampaignId = json.id || formData.id || campaignId
+      const hostRes = await saveCampaignHostAssignments(savedCampaignId, hostCheck.payload)
+      if (!hostRes.ok) {
+        const hostErr = hostRes.error || 'Unknown error'
+        setHostsError(hostErr)
+        setSaveError(`Campaign was saved, but host assignments failed to save: ${hostErr}`)
         return
       }
 
@@ -633,6 +772,16 @@ export function CampaignForm({ campaign, isNew, justDuplicated = false }: Campai
       setIwUploadingId(null)
     }
   }
+
+  // Derived host values for the render (kept out of state to stay in sync).
+  const selectedHostIds = new Set(hostRows.map((r) => r.host_user_id).filter(Boolean))
+  const totalHostCommission = hostRows.reduce((sum, r) => sum + (Number(r.commission_pct) || 0), 0)
+  // Disable "Add host" when there is nothing to add: no hosts exist, an unfilled
+  // row is already open, or every enabled host is already assigned.
+  const addHostDisabled =
+    hostOptions.length === 0 ||
+    hostRows.some((r) => !r.host_user_id) ||
+    selectedHostIds.size >= hostOptions.length
 
   return (
     <div className="space-y-6">
@@ -1344,6 +1493,110 @@ export function CampaignForm({ campaign, isNew, justDuplicated = false }: Campai
                   No instant wins yet. Add one or use Quick Add.
                 </p>
               )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Hosts</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Assign one or more hosts and their commission percentage of external cash collected
+            (excludes site/WTF credit). Optional — a campaign can have no hosts.
+          </p>
+
+          {hostsError && <p className="text-sm text-destructive">{hostsError}</p>}
+
+          {hostsLoading ? (
+            <p className="text-sm text-muted-foreground">Loading hosts…</p>
+          ) : hostOptions.length === 0 ? (
+            <p className="text-sm italic text-muted-foreground">
+              No enabled hosts available. Add hosts under Team Access first.
+            </p>
+          ) : (
+            <>
+              {hostRows.length > 0 && (
+                <div className="space-y-3">
+                  {hostRows.map((row, index) => {
+                    const available = hostOptions.filter(
+                      (o) => o.user_id === row.host_user_id || !selectedHostIds.has(o.user_id),
+                    )
+                    return (
+                      <div
+                        key={index}
+                        className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-end"
+                      >
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <Label className="text-xs">Host</Label>
+                          <Select
+                            value={row.host_user_id}
+                            onValueChange={(v) => setHostRowUser(index, v)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select host" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {available.map((o) => (
+                                <SelectItem key={o.user_id} value={o.user_id}>
+                                  {o.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="w-full space-y-1 sm:w-32">
+                          <Label className="text-xs">Commission %</Label>
+                          <Input
+                            type="number"
+                            inputMode="decimal"
+                            min={0}
+                            max={100}
+                            step="0.01"
+                            value={row.commission_pct}
+                            onChange={(e) => setHostRowPct(index, e.target.value)}
+                            placeholder="0.00"
+                          />
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="self-end"
+                          onClick={() => removeHostRow(index)}
+                          title="Remove host"
+                          aria-label="Remove host"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={addHostRow}
+                  disabled={addHostDisabled}
+                >
+                  <Plus className="mr-1 h-4 w-4" />
+                  Add host
+                </Button>
+                {hostRows.length > 0 && (
+                  <span className="text-sm text-muted-foreground">
+                    Total host commission:{" "}
+                    <span className="font-medium text-foreground">
+                      {formatPct(totalHostCommission)}%
+                    </span>
+                  </span>
+                )}
+              </div>
             </>
           )}
         </CardContent>
