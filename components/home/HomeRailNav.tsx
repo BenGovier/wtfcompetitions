@@ -8,177 +8,202 @@ export interface HomeNavItem {
   key: string
   label: string
   icon: RailIconKey
-  /** Kept for caller compatibility. Visual styling is intentionally owned here. */
+  /** Kept for caller compatibility. Visual styling is owned by this component. */
   activeClass: string
-  /** Kept for caller compatibility. Visual styling is intentionally owned here. */
+  /** Kept for caller compatibility. Visual styling is owned by this component. */
   idleClass: string
 }
 
 interface RoomStyle {
   width: string
-  activeTile: string
-  idleTile: string
-  activeEmblem: string
-  idleEmblem: string
+  activeBorder: string
+  idleBorder: string
+  activeSurface: string
+  idleSurface: string
   activeLabel: string
   idleLabel: string
-  activeBeam: string
-  idleBeam: string
-  activeTopShine: string
-  idleTopShine: string
-  outerGlow: string
-  edgeHotspot: string
+  activeEmblem: string
+  idleEmblem: string
+
+  /** Large, soft colour bloom behind the whole tile. */
+  bloom: string
+  /** Bright top flare - intentionally hotter / whiter than the base accent. */
+  topFlare: string
+  /** Bright bottom flare / reflected light. */
+  bottomFlare: string
+  /** Soft light reflected beneath the active tile. */
+  reflection: string
+  /** Fine internal metallic highlight. */
+  innerHighlight: string
 }
 
 const ROOM_STYLES: Record<string, RoomStyle> = {
   featured: {
     width: "w-[150px]",
-    activeTile:
-      "border-[#F7C844] bg-[linear-gradient(145deg,#251700_0%,#120A00_46%,#070008_100%)] shadow-[inset_0_0_0_1px_rgba(255,224,125,0.20),inset_0_1px_0_rgba(255,249,218,0.30),0_0_6px_rgba(255,193,7,0.35),0_0_22px_rgba(255,160,0,0.22)]",
-    idleTile:
-      "border-[#6E4C08] bg-[linear-gradient(145deg,#150C00_0%,#090500_48%,#070008_100%)] shadow-[inset_0_1px_0_rgba(255,222,135,0.06)]",
+    activeBorder: "border-[#FFD24D]",
+    idleBorder: "border-[#76520E]",
+    activeSurface:
+      "bg-[linear-gradient(145deg,#271900_0%,#120A00_48%,#070008_100%)]",
+    idleSurface:
+      "bg-[linear-gradient(145deg,#150D01_0%,#0B0600_50%,#070008_100%)]",
+    activeLabel: "text-[#FFF0B2]",
+    idleLabel: "text-[#C9A45A]",
     activeEmblem:
-      "border-[#EAB52C] bg-[radial-gradient(circle_at_35%_28%,#604000_0%,#241500_52%,#090500_100%)] text-[#FFD761] shadow-[inset_0_1px_0_rgba(255,242,190,0.18),0_0_12px_rgba(255,183,0,0.22)]",
+      "border-[#EFC13A] bg-[radial-gradient(circle_at_35%_28%,#694700_0%,#281800_55%,#0B0600_100%)] text-[#FFE06A] shadow-[inset_0_1px_0_rgba(255,250,218,0.30),0_0_10px_rgba(255,188,0,0.26)]",
     idleEmblem:
-      "border-[#6E4C08] bg-[#100900] text-[#A87918]",
-    activeLabel: "text-[#FFE8A0]",
-    idleLabel: "text-[#C9A65A]",
-    activeBeam:
-      "bg-[linear-gradient(90deg,transparent_0%,#8A5B00_12%,#FFD24B_50%,#8A5B00_88%,transparent_100%)] opacity-100",
-    idleBeam:
-      "bg-[linear-gradient(90deg,transparent_0%,#3D2A05_18%,#775410_50%,#3D2A05_82%,transparent_100%)] opacity-60",
-    activeTopShine:
-      "bg-[linear-gradient(90deg,transparent_0%,rgba(255,219,105,0.12)_20%,rgba(255,238,180,0.34)_50%,rgba(255,219,105,0.12)_80%,transparent_100%)]",
-    idleTopShine:
-      "bg-[linear-gradient(90deg,transparent_0%,rgba(255,204,68,0.05)_50%,transparent_100%)]",
-    outerGlow:
-      "bg-[radial-gradient(ellipse_at_50%_100%,rgba(255,190,20,0.32)_0%,rgba(255,170,0,0.10)_42%,transparent_72%)]",
-    edgeHotspot:
-      "bg-[linear-gradient(90deg,transparent_0%,rgba(255,185,0,0.20)_24%,#FFE36A_50%,rgba(255,185,0,0.20)_76%,transparent_100%)]",
+      "border-[#76520E] bg-[#110A00] text-[#A77A20]",
+    bloom:
+      "bg-[radial-gradient(ellipse_at_center,rgba(255,212,72,0.72)_0%,rgba(255,175,0,0.34)_34%,rgba(255,122,0,0.12)_58%,transparent_76%)]",
+    topFlare:
+      "bg-[linear-gradient(90deg,transparent_0%,rgba(255,181,0,0.08)_20%,#FFE36B_43%,#FFF7D6_50%,#FFE36B_57%,rgba(255,181,0,0.08)_80%,transparent_100%)]",
+    bottomFlare:
+      "bg-[linear-gradient(90deg,transparent_0%,rgba(255,157,0,0.10)_18%,#FFCB32_41%,#FFF2A6_50%,#FFCB32_59%,rgba(255,157,0,0.10)_82%,transparent_100%)]",
+    reflection:
+      "bg-[radial-gradient(ellipse_at_center,rgba(255,191,0,0.42)_0%,rgba(255,158,0,0.18)_36%,transparent_70%)]",
+    innerHighlight:
+      "bg-[linear-gradient(90deg,transparent_0%,rgba(255,234,168,0.10)_18%,rgba(255,250,222,0.28)_50%,rgba(255,234,168,0.10)_82%,transparent_100%)]",
   },
 
   balloon_pop: {
     width: "w-[166px]",
-    activeTile:
-      "border-[#F044B9] bg-[linear-gradient(145deg,#260018_0%,#12000B_46%,#070008_100%)] shadow-[inset_0_1px_0_rgba(255,192,233,0.14),inset_0_0_0_1px_rgba(240,68,185,0.08),0_0_6px_rgba(240,68,185,0.32),0_0_22px_rgba(240,68,185,0.20)]",
-    idleTile:
-      "border-[#642050] bg-[linear-gradient(145deg,#15000E_0%,#0B0007_48%,#070008_100%)] shadow-[inset_0_1px_0_rgba(255,164,220,0.05)]",
+    activeBorder: "border-[#FF4FC4]",
+    idleBorder: "border-[#6C2256]",
+    activeSurface:
+      "bg-[linear-gradient(145deg,#2A001C_0%,#14000D_48%,#070008_100%)]",
+    idleSurface:
+      "bg-[linear-gradient(145deg,#17000F_0%,#0C0008_50%,#070008_100%)]",
+    activeLabel: "text-[#FFC1E9]",
+    idleLabel: "text-[#C980B0]",
     activeEmblem:
-      "border-[#E43AAE] bg-[radial-gradient(circle_at_35%_28%,#5C0D45_0%,#260018_52%,#0B0007_100%)] text-[#FF6ECE] shadow-[inset_0_1px_0_rgba(255,206,237,0.16),0_0_12px_rgba(240,68,185,0.20)]",
+      "border-[#F149BA] bg-[radial-gradient(circle_at_35%_28%,#64104B_0%,#29001C_55%,#0C0008_100%)] text-[#FF79D3] shadow-[inset_0_1px_0_rgba(255,221,242,0.24),0_0_10px_rgba(255,61,187,0.24)]",
     idleEmblem:
-      "border-[#642050] bg-[#100009] text-[#A64986]",
-    activeLabel: "text-[#FFB4E4]",
-    idleLabel: "text-[#C780AF]",
-    activeBeam:
-      "bg-[linear-gradient(90deg,transparent_0%,#7E155D_12%,#FF54C6_50%,#7E155D_88%,transparent_100%)] opacity-100",
-    idleBeam:
-      "bg-[linear-gradient(90deg,transparent_0%,#35102B_18%,#6B2353_50%,#35102B_82%,transparent_100%)] opacity-60",
-    activeTopShine:
-      "bg-[linear-gradient(90deg,transparent_0%,rgba(255,93,200,0.10)_20%,rgba(255,166,224,0.28)_50%,rgba(255,93,200,0.10)_80%,transparent_100%)]",
-    idleTopShine:
-      "bg-[linear-gradient(90deg,transparent_0%,rgba(240,68,185,0.05)_50%,transparent_100%)]",
-    outerGlow:
-      "bg-[radial-gradient(ellipse_at_50%_100%,rgba(255,46,185,0.30)_0%,rgba(255,46,185,0.10)_42%,transparent_72%)]",
-    edgeHotspot:
-      "bg-[linear-gradient(90deg,transparent_0%,rgba(255,50,190,0.18)_24%,#FF73D4_50%,rgba(255,50,190,0.18)_76%,transparent_100%)]",
+      "border-[#6C2256] bg-[#110009] text-[#A84C88]",
+    bloom:
+      "bg-[radial-gradient(ellipse_at_center,rgba(255,88,205,0.68)_0%,rgba(255,33,177,0.30)_34%,rgba(180,0,116,0.11)_58%,transparent_76%)]",
+    topFlare:
+      "bg-[linear-gradient(90deg,transparent_0%,rgba(255,46,187,0.08)_20%,#FF75D5_43%,#FFE2F5_50%,#FF75D5_57%,rgba(255,46,187,0.08)_80%,transparent_100%)]",
+    bottomFlare:
+      "bg-[linear-gradient(90deg,transparent_0%,rgba(255,31,175,0.10)_18%,#FF4EC5_41%,#FFC7E9_50%,#FF4EC5_59%,rgba(255,31,175,0.10)_82%,transparent_100%)]",
+    reflection:
+      "bg-[radial-gradient(ellipse_at_center,rgba(255,48,186,0.38)_0%,rgba(210,0,137,0.16)_36%,transparent_70%)]",
+    innerHighlight:
+      "bg-[linear-gradient(90deg,transparent_0%,rgba(255,174,226,0.08)_18%,rgba(255,226,246,0.24)_50%,rgba(255,174,226,0.08)_82%,transparent_100%)]",
   },
 
   instant_cash: {
     width: "w-[190px]",
-    activeTile:
-      "border-[#20CFF3] bg-[linear-gradient(145deg,#001A22_0%,#000D12_46%,#070008_100%)] shadow-[inset_0_1px_0_rgba(190,244,255,0.14),inset_0_0_0_1px_rgba(32,207,243,0.08),0_0_6px_rgba(32,207,243,0.30),0_0_22px_rgba(32,207,243,0.19)]",
-    idleTile:
-      "border-[#14506A] bg-[linear-gradient(145deg,#001016_0%,#00080B_48%,#070008_100%)] shadow-[inset_0_1px_0_rgba(138,231,251,0.05)]",
+    activeBorder: "border-[#33DBFF]",
+    idleBorder: "border-[#15566E]",
+    activeSurface:
+      "bg-[linear-gradient(145deg,#001D26_0%,#000E14_48%,#070008_100%)]",
+    idleSurface:
+      "bg-[linear-gradient(145deg,#001118_0%,#00090D_50%,#070008_100%)]",
+    activeLabel: "text-[#B9F5FF]",
+    idleLabel: "text-[#7CB4C0]",
     activeEmblem:
-      "border-[#1BBEDC] bg-[radial-gradient(circle_at_35%_28%,#063F4E_0%,#001A22_52%,#00090D_100%)] text-[#62E6FF] shadow-[inset_0_1px_0_rgba(202,249,255,0.16),0_0_12px_rgba(32,207,243,0.18)]",
+      "border-[#2BCBE9] bg-[radial-gradient(circle_at_35%_28%,#074755_0%,#001C25_55%,#00090D_100%)] text-[#6EEBFF] shadow-[inset_0_1px_0_rgba(217,251,255,0.24),0_0_10px_rgba(32,207,243,0.22)]",
     idleEmblem:
-      "border-[#14506A] bg-[#000B0F] text-[#3B91A8]",
-    activeLabel: "text-[#A8F2FF]",
-    idleLabel: "text-[#78AEBB]",
-    activeBeam:
-      "bg-[linear-gradient(90deg,transparent_0%,#0A6680_12%,#42DEFF_50%,#0A6680_88%,transparent_100%)] opacity-100",
-    idleBeam:
-      "bg-[linear-gradient(90deg,transparent_0%,#0B2D38_18%,#14566A_50%,#0B2D38_82%,transparent_100%)] opacity-60",
-    activeTopShine:
-      "bg-[linear-gradient(90deg,transparent_0%,rgba(70,220,255,0.10)_20%,rgba(170,244,255,0.26)_50%,rgba(70,220,255,0.10)_80%,transparent_100%)]",
-    idleTopShine:
-      "bg-[linear-gradient(90deg,transparent_0%,rgba(32,207,243,0.05)_50%,transparent_100%)]",
-    outerGlow:
-      "bg-[radial-gradient(ellipse_at_50%_100%,rgba(25,215,255,0.30)_0%,rgba(25,215,255,0.10)_42%,transparent_72%)]",
-    edgeHotspot:
-      "bg-[linear-gradient(90deg,transparent_0%,rgba(25,215,255,0.18)_24%,#7DEBFF_50%,rgba(25,215,255,0.18)_76%,transparent_100%)]",
+      "border-[#15566E] bg-[#000C11] text-[#4196AA]",
+    bloom:
+      "bg-[radial-gradient(ellipse_at_center,rgba(73,228,255,0.64)_0%,rgba(0,196,238,0.28)_34%,rgba(0,124,164,0.10)_58%,transparent_76%)]",
+    topFlare:
+      "bg-[linear-gradient(90deg,transparent_0%,rgba(32,207,243,0.08)_20%,#6EEBFF_43%,#E6FCFF_50%,#6EEBFF_57%,rgba(32,207,243,0.08)_80%,transparent_100%)]",
+    bottomFlare:
+      "bg-[linear-gradient(90deg,transparent_0%,rgba(20,195,232,0.10)_18%,#38DFFF_41%,#C6F8FF_50%,#38DFFF_59%,rgba(20,195,232,0.10)_82%,transparent_100%)]",
+    reflection:
+      "bg-[radial-gradient(ellipse_at_center,rgba(24,211,250,0.34)_0%,rgba(0,151,196,0.14)_36%,transparent_70%)]",
+    innerHighlight:
+      "bg-[linear-gradient(90deg,transparent_0%,rgba(151,238,255,0.08)_18%,rgba(222,251,255,0.22)_50%,rgba(151,238,255,0.08)_82%,transparent_100%)]",
   },
 
   games: {
     width: "w-[150px]",
-    activeTile:
-      "border-violet-400/80 bg-[linear-gradient(145deg,#160525_0%,#0B0313_48%,#070008_100%)] shadow-[inset_0_1px_0_rgba(225,210,255,0.12),0_0_6px_rgba(139,92,246,0.28),0_0_20px_rgba(139,92,246,0.17)]",
-    idleTile: "border-violet-800/70 bg-[#0B0311]",
-    activeEmblem: "border-violet-500/80 bg-violet-950/70 text-violet-200",
-    idleEmblem: "border-violet-900 bg-[#0B0311] text-violet-400/60",
+    activeBorder: "border-violet-400",
+    idleBorder: "border-violet-900",
+    activeSurface:
+      "bg-[linear-gradient(145deg,#19062C_0%,#0D0316_48%,#070008_100%)]",
+    idleSurface: "bg-[#0C0312]",
     activeLabel: "text-violet-100",
     idleLabel: "text-violet-300/60",
-    activeBeam: "bg-gradient-to-r from-transparent via-violet-400 to-transparent opacity-90",
-    idleBeam: "bg-gradient-to-r from-transparent via-violet-900 to-transparent opacity-50",
-    activeTopShine: "bg-gradient-to-r from-transparent via-violet-200/20 to-transparent",
-    idleTopShine: "bg-gradient-to-r from-transparent via-violet-500/5 to-transparent",
-    outerGlow:
-      "bg-[radial-gradient(ellipse_at_50%_100%,rgba(139,92,246,0.26)_0%,rgba(139,92,246,0.08)_42%,transparent_72%)]",
-    edgeHotspot:
-      "bg-[linear-gradient(90deg,transparent_0%,rgba(139,92,246,0.16)_24%,#C4B5FD_50%,rgba(139,92,246,0.16)_76%,transparent_100%)]",
+    activeEmblem:
+      "border-violet-400 bg-violet-950/80 text-violet-200",
+    idleEmblem:
+      "border-violet-900 bg-[#0C0312] text-violet-400/60",
+    bloom:
+      "bg-[radial-gradient(ellipse_at_center,rgba(167,139,250,0.56)_0%,rgba(124,58,237,0.22)_36%,transparent_74%)]",
+    topFlare:
+      "bg-[linear-gradient(90deg,transparent_0%,#A78BFA_43%,#EDE9FE_50%,#A78BFA_57%,transparent_100%)]",
+    bottomFlare:
+      "bg-[linear-gradient(90deg,transparent_0%,#8B5CF6_43%,#DDD6FE_50%,#8B5CF6_57%,transparent_100%)]",
+    reflection:
+      "bg-[radial-gradient(ellipse_at_center,rgba(139,92,246,0.30)_0%,transparent_70%)]",
+    innerHighlight:
+      "bg-[linear-gradient(90deg,transparent_0%,rgba(221,214,254,0.20)_50%,transparent_100%)]",
   },
 
   cash: {
     width: "w-[145px]",
-    activeTile:
-      "border-emerald-400/80 bg-[linear-gradient(145deg,#042015_0%,#03110B_48%,#070008_100%)] shadow-[inset_0_1px_0_rgba(195,255,225,0.12),0_0_6px_rgba(16,185,129,0.28),0_0_20px_rgba(16,185,129,0.17)]",
-    idleTile: "border-emerald-900/80 bg-[#03100A]",
-    activeEmblem: "border-emerald-500/80 bg-emerald-950/70 text-emerald-200",
-    idleEmblem: "border-emerald-900 bg-[#03100A] text-emerald-400/60",
+    activeBorder: "border-emerald-400",
+    idleBorder: "border-emerald-900",
+    activeSurface:
+      "bg-[linear-gradient(145deg,#042216_0%,#03110B_48%,#070008_100%)]",
+    idleSurface: "bg-[#03100A]",
     activeLabel: "text-emerald-100",
     idleLabel: "text-emerald-300/60",
-    activeBeam: "bg-gradient-to-r from-transparent via-emerald-400 to-transparent opacity-90",
-    idleBeam: "bg-gradient-to-r from-transparent via-emerald-900 to-transparent opacity-50",
-    activeTopShine: "bg-gradient-to-r from-transparent via-emerald-200/20 to-transparent",
-    idleTopShine: "bg-gradient-to-r from-transparent via-emerald-500/5 to-transparent",
-    outerGlow:
-      "bg-[radial-gradient(ellipse_at_50%_100%,rgba(16,185,129,0.25)_0%,rgba(16,185,129,0.08)_42%,transparent_72%)]",
-    edgeHotspot:
-      "bg-[linear-gradient(90deg,transparent_0%,rgba(16,185,129,0.16)_24%,#6EE7B7_50%,rgba(16,185,129,0.16)_76%,transparent_100%)]",
+    activeEmblem:
+      "border-emerald-400 bg-emerald-950/80 text-emerald-200",
+    idleEmblem:
+      "border-emerald-900 bg-[#03100A] text-emerald-400/60",
+    bloom:
+      "bg-[radial-gradient(ellipse_at_center,rgba(52,211,153,0.50)_0%,rgba(16,185,129,0.20)_36%,transparent_74%)]",
+    topFlare:
+      "bg-[linear-gradient(90deg,transparent_0%,#6EE7B7_43%,#D1FAE5_50%,#6EE7B7_57%,transparent_100%)]",
+    bottomFlare:
+      "bg-[linear-gradient(90deg,transparent_0%,#34D399_43%,#A7F3D0_50%,#34D399_57%,transparent_100%)]",
+    reflection:
+      "bg-[radial-gradient(ellipse_at_center,rgba(16,185,129,0.28)_0%,transparent_70%)]",
+    innerHighlight:
+      "bg-[linear-gradient(90deg,transparent_0%,rgba(209,250,229,0.18)_50%,transparent_100%)]",
   },
 
   luxury: {
     width: "w-[170px]",
-    activeTile:
-      "border-[#20CFF3] bg-[linear-gradient(145deg,#001A22_0%,#000D12_46%,#070008_100%)] shadow-[inset_0_1px_0_rgba(190,244,255,0.14),0_0_6px_rgba(32,207,243,0.30),0_0_22px_rgba(32,207,243,0.19)]",
-    idleTile:
-      "border-[#14506A] bg-[linear-gradient(145deg,#001016_0%,#00080B_48%,#070008_100%)]",
-    activeEmblem: "border-[#1BBEDC] bg-[#001A22] text-[#62E6FF]",
-    idleEmblem: "border-[#14506A] bg-[#000B0F] text-[#3B91A8]",
-    activeLabel: "text-[#A8F2FF]",
-    idleLabel: "text-[#78AEBB]",
-    activeBeam:
-      "bg-[linear-gradient(90deg,transparent_0%,#0A6680_12%,#42DEFF_50%,#0A6680_88%,transparent_100%)] opacity-100",
-    idleBeam:
-      "bg-[linear-gradient(90deg,transparent_0%,#0B2D38_18%,#14566A_50%,#0B2D38_82%,transparent_100%)] opacity-60",
-    activeTopShine:
-      "bg-[linear-gradient(90deg,transparent_0%,rgba(70,220,255,0.10)_20%,rgba(170,244,255,0.26)_50%,rgba(70,220,255,0.10)_80%,transparent_100%)]",
-    idleTopShine:
-      "bg-[linear-gradient(90deg,transparent_0%,rgba(32,207,243,0.05)_50%,transparent_100%)]",
-    outerGlow:
-      "bg-[radial-gradient(ellipse_at_50%_100%,rgba(25,215,255,0.30)_0%,rgba(25,215,255,0.10)_42%,transparent_72%)]",
-    edgeHotspot:
-      "bg-[linear-gradient(90deg,transparent_0%,rgba(25,215,255,0.18)_24%,#7DEBFF_50%,rgba(25,215,255,0.18)_76%,transparent_100%)]",
+    activeBorder: "border-[#33DBFF]",
+    idleBorder: "border-[#15566E]",
+    activeSurface:
+      "bg-[linear-gradient(145deg,#001D26_0%,#000E14_48%,#070008_100%)]",
+    idleSurface:
+      "bg-[linear-gradient(145deg,#001118_0%,#00090D_50%,#070008_100%)]",
+    activeLabel: "text-[#B9F5FF]",
+    idleLabel: "text-[#7CB4C0]",
+    activeEmblem:
+      "border-[#2BCBE9] bg-[#001C25] text-[#6EEBFF]",
+    idleEmblem:
+      "border-[#15566E] bg-[#000C11] text-[#4196AA]",
+    bloom:
+      "bg-[radial-gradient(ellipse_at_center,rgba(73,228,255,0.64)_0%,rgba(0,196,238,0.28)_34%,rgba(0,124,164,0.10)_58%,transparent_76%)]",
+    topFlare:
+      "bg-[linear-gradient(90deg,transparent_0%,rgba(32,207,243,0.08)_20%,#6EEBFF_43%,#E6FCFF_50%,#6EEBFF_57%,rgba(32,207,243,0.08)_80%,transparent_100%)]",
+    bottomFlare:
+      "bg-[linear-gradient(90deg,transparent_0%,rgba(20,195,232,0.10)_18%,#38DFFF_41%,#C6F8FF_50%,#38DFFF_59%,rgba(20,195,232,0.10)_82%,transparent_100%)]",
+    reflection:
+      "bg-[radial-gradient(ellipse_at_center,rgba(24,211,250,0.34)_0%,rgba(0,151,196,0.14)_36%,transparent_70%)]",
+    innerHighlight:
+      "bg-[linear-gradient(90deg,transparent_0%,rgba(151,238,255,0.08)_18%,rgba(222,251,255,0.22)_50%,rgba(151,238,255,0.08)_82%,transparent_100%)]",
   },
 }
 
 function JackpotGlyph({ className = "" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      className={className}
+      aria-hidden="true"
+    >
       <path
         d="M4 8.2 7.2 11 12 5.4l4.8 5.6L20 8.2l-1.35 8.15H5.35L4 8.2Z"
         fill="currentColor"
-        opacity=".96"
       />
       <path
         d="M6.1 18.3h11.8"
@@ -195,7 +220,12 @@ function JackpotGlyph({ className = "" }: { className?: string }) {
 
 function BalloonGlyph({ className = "" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      className={className}
+      aria-hidden="true"
+    >
       <path
         d="M12 3.1c-3.45 0-6.05 2.78-6.05 6.35 0 3.43 2.38 6.28 5.23 6.95l-.78 1.65h3.2l-.78-1.65c2.85-.67 5.23-3.52 5.23-6.95C18.05 5.88 15.45 3.1 12 3.1Z"
         stroke="currentColor"
@@ -219,7 +249,12 @@ function BalloonGlyph({ className = "" }: { className?: string }) {
 
 function DiamondGlyph({ className = "" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      className={className}
+      aria-hidden="true"
+    >
       <path
         d="m4.2 8.2 3.15-4h9.3l3.15 4L12 20.1 4.2 8.2Z"
         stroke="currentColor"
@@ -244,30 +279,34 @@ function RoomGlyph({
   fallback: RailIconKey
 }) {
   if (railKey === "featured") {
-    return <JackpotGlyph className="h-[21px] w-[21px]" />
+    return <JackpotGlyph className="h-[22px] w-[22px]" />
   }
 
   if (railKey === "balloon_pop") {
-    return <BalloonGlyph className="h-[21px] w-[21px]" />
+    return <BalloonGlyph className="h-[22px] w-[22px]" />
   }
 
   if (railKey === "instant_cash" || railKey === "luxury") {
-    return <DiamondGlyph className="h-[21px] w-[21px]" />
+    return <DiamondGlyph className="h-[22px] w-[22px]" />
   }
 
   return <RailIcon name={fallback} className="h-[20px] w-[20px]" />
 }
 
 /**
- * Sticky, horizontally-scrollable casino-lobby category navigation with the
- * EXISTING scroll-spy behaviour preserved.
+ * Sticky, horizontally-scrollable casino-lobby category navigation.
  *
- * PERFORMANCE:
- * - zero scroll event listeners
+ * FUNCTIONAL BEHAVIOUR IS UNCHANGED:
+ * - no scroll listeners
  * - exactly one IntersectionObserver
- * - one active-key state string
+ * - active state is one string
  * - native horizontal scrolling
  * - native smooth scroll to section
+ *
+ * VISUAL ARCHITECTURE:
+ * Each room is now WRAPPER -> BLOOM/FLARES/REFLECTION -> BUTTON.
+ * The bloom is not hidden behind the button background and is given enough
+ * vertical padding inside the scrollport to avoid being clipped.
  */
 export function HomeRailNav({ items }: { items: HomeNavItem[] }) {
   const [active, setActive] = useState(items[0]?.key ?? "")
@@ -310,6 +349,7 @@ export function HomeRailNav({ items }: { items: HomeNavItem[] }) {
     )
 
     sections.forEach((section) => observer.observe(section))
+
     return () => observer.disconnect()
   }, [items])
 
@@ -339,6 +379,7 @@ export function HomeRailNav({ items }: { items: HomeNavItem[] }) {
 
   const go = (key: string) => {
     const el = document.getElementById(`home-rail-${key}`)
+
     if (!el) return
 
     setActive(key)
@@ -354,119 +395,161 @@ export function HomeRailNav({ items }: { items: HomeNavItem[] }) {
   return (
     <nav
       aria-label="Competition categories"
-      className="sticky top-16 z-40 -mx-4 mb-6 border-y border-white/[0.06] bg-[#050008]/[0.98] shadow-[0_10px_30px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.03),inset_0_-1px_0_rgba(255,196,37,0.08)] backdrop-blur-md md:mb-8"
+      className="sticky top-16 z-40 -mx-4 mb-6 border-y border-white/[0.06] bg-[#040006]/[0.985] shadow-[0_12px_34px_rgba(0,0,0,0.32),inset_0_1px_0_rgba(255,255,255,0.025),inset_0_-1px_0_rgba(255,196,37,0.06)] backdrop-blur-md md:mb-8"
     >
       <div
         ref={navRef}
-        className="flex h-[84px] items-center gap-[10px] overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="flex h-[94px] items-center gap-[10px] overflow-x-auto px-5 py-[14px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {items.map((item) => {
           const isActive = item.key === active
           const room = ROOM_STYLES[item.key] ?? ROOM_STYLES.featured
 
           return (
-            <button
+            <div
               key={item.key}
-              ref={(element) => {
-                chipRefs.current[item.key] = element
-              }}
-              type="button"
-              aria-current={isActive ? "true" : undefined}
-              onClick={() => go(item.key)}
               className={[
-                // IMPORTANT: no overflow-hidden here.
-                // The external bloom is intentionally allowed to escape the tile.
-                "group relative isolate h-[60px] shrink-0 rounded-[12px] border",
-                "transition-[border-color,background-color,box-shadow,color] duration-150",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60",
-                "focus-visible:ring-offset-2 focus-visible:ring-offset-[#050008]",
+                "relative h-[66px] shrink-0",
                 room.width,
-                isActive ? room.activeTile : room.idleTile,
               ].join(" ")}
             >
-              {/* Soft bloom OUTSIDE the crisp edge.
-                  This creates depth without turning the whole tile into blur. */}
+              {/* 1) SOFT EXTERNAL BLOOM
+                  Sibling of the button, never trapped behind its surface. */}
               <span
                 aria-hidden="true"
                 className={[
-                  "pointer-events-none absolute -inset-[5px] -z-10 rounded-[17px] blur-[9px]",
+                  "pointer-events-none absolute -inset-x-[6px] -inset-y-[5px] rounded-[18px] blur-[12px]",
                   "transition-opacity duration-150",
-                  room.outerGlow,
-                  isActive ? "opacity-100" : "opacity-25",
+                  room.bloom,
+                  isActive ? "opacity-75" : "opacity-[0.14]",
                 ].join(" ")}
               />
 
-              {/* Concentrated light hotspot on the lower edge.
-                  This is deliberately brighter than the surrounding rim. */}
+              {/* 2) REFLECTED LIGHT UNDER THE TILE
+                  Adds the 'light hitting the floor' effect from the reference. */}
               <span
                 aria-hidden="true"
                 className={[
-                  "pointer-events-none absolute -bottom-px left-[14%] right-[14%] h-[2px] blur-[1px]",
-                  room.edgeHotspot,
+                  "pointer-events-none absolute -bottom-[8px] left-[13%] right-[13%] h-[14px] blur-[8px]",
+                  room.reflection,
+                  isActive ? "opacity-80" : "opacity-10",
+                ].join(" ")}
+              />
+
+              {/* 3) WHITE-HOT TOP FLARE
+                  A small bright section of tubing, not a uniform neon outline. */}
+              <span
+                aria-hidden="true"
+                className={[
+                  "pointer-events-none absolute left-[13%] right-[13%] top-[2px] z-20 h-[2px] rounded-full blur-[0.6px]",
+                  room.topFlare,
                   isActive ? "opacity-100" : "opacity-20",
                 ].join(" ")}
               />
 
-              {/* Additional tiny corner sparks make the light feel electrical,
-                  but remain fully static and CSS-only. */}
+              {/* Small bright focus point along the top edge. */}
               <span
                 aria-hidden="true"
                 className={[
-                  "pointer-events-none absolute -left-[2px] top-[17px] h-[18px] w-[3px] rounded-full blur-[2px]",
-                  room.edgeHotspot,
-                  isActive ? "opacity-65" : "opacity-0",
-                ].join(" ")}
-              />
-              <span
-                aria-hidden="true"
-                className={[
-                  "pointer-events-none absolute -right-[2px] top-[8px] h-[13px] w-[3px] rounded-full blur-[2px]",
-                  room.edgeHotspot,
-                  isActive ? "opacity-50" : "opacity-0",
+                  "pointer-events-none absolute left-[48%] top-[1px] z-20 h-[5px] w-[18px] -translate-x-1/2 rounded-full blur-[3px]",
+                  room.topFlare,
+                  isActive ? "opacity-90" : "opacity-0",
                 ].join(" ")}
               />
 
-              {/* Metallic top highlight — static. */}
+              {/* 4) WHITE-HOT LOWER FLARE */}
               <span
                 aria-hidden="true"
                 className={[
-                  "pointer-events-none absolute left-3 right-3 top-0 h-px",
-                  isActive ? room.activeTopShine : room.idleTopShine,
+                  "pointer-events-none absolute bottom-[4px] left-[10%] right-[10%] z-20 h-[2px] rounded-full blur-[0.7px]",
+                  room.bottomFlare,
+                  isActive ? "opacity-100" : "opacity-18",
                 ].join(" ")}
               />
 
-              {/* Crisp internal lower beam keeps the tile sharp beneath the bloom. */}
+              {/* Bottom glow node makes the highlight look irregular/electrical. */}
               <span
                 aria-hidden="true"
                 className={[
-                  "pointer-events-none absolute bottom-0 left-[10%] right-[10%] h-px",
-                  isActive ? room.activeBeam : room.idleBeam,
+                  "pointer-events-none absolute bottom-[1px] left-[48%] z-20 h-[7px] w-[28px] -translate-x-1/2 rounded-full blur-[5px]",
+                  room.bottomFlare,
+                  isActive ? "opacity-80" : "opacity-0",
                 ].join(" ")}
               />
 
-              <span className="relative z-10 flex h-full items-center gap-[11px] px-[13px]">
+              {/* BUTTON: crisp glass tile remains above all bloom layers. */}
+              <button
+                ref={(element) => {
+                  chipRefs.current[item.key] = element
+                }}
+                type="button"
+                aria-current={isActive ? "true" : undefined}
+                onClick={() => go(item.key)}
+                className={[
+                  "absolute inset-x-0 top-[3px] z-10 h-[60px] overflow-hidden rounded-[12px] border",
+                  "transition-[border-color,background-color,box-shadow,color] duration-150",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60",
+                  "focus-visible:ring-offset-2 focus-visible:ring-offset-[#040006]",
+                  isActive ? room.activeBorder : room.idleBorder,
+                  isActive ? room.activeSurface : room.idleSurface,
+                  isActive
+                    ? "shadow-[inset_0_0_0_1px_rgba(255,255,255,0.055),inset_0_1px_0_rgba(255,255,255,0.16),0_0_3px_rgba(255,255,255,0.07)]"
+                    : "shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]",
+                ].join(" ")}
+              >
+                {/* Very fine internal metallic highlight. */}
                 <span
                   aria-hidden="true"
                   className={[
-                    "inline-flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-[10px] border",
-                    "transition-[border-color,background-color,box-shadow,color] duration-150",
-                    isActive ? room.activeEmblem : room.idleEmblem,
+                    "pointer-events-none absolute left-[8%] right-[8%] top-0 h-px",
+                    room.innerHighlight,
+                    isActive ? "opacity-100" : "opacity-25",
                   ].join(" ")}
-                >
-                  <RoomGlyph railKey={item.key} fallback={item.icon} />
-                </span>
+                />
 
+                {/* Tiny illuminated left/right edge segments - deliberately not
+                    full-height so the rim feels like lit tubing. */}
                 <span
+                  aria-hidden="true"
                   className={[
-                    "truncate text-left text-[13px] font-black uppercase leading-none tracking-[0.035em]",
-                    "transition-colors duration-150",
-                    isActive ? room.activeLabel : room.idleLabel,
+                    "pointer-events-none absolute -left-px top-[14px] h-[22px] w-[2px] rounded-full",
+                    room.topFlare,
+                    isActive ? "opacity-80" : "opacity-15",
                   ].join(" ")}
-                >
-                  {item.label}
+                />
+                <span
+                  aria-hidden="true"
+                  className={[
+                    "pointer-events-none absolute -right-px bottom-[10px] h-[16px] w-[2px] rounded-full",
+                    room.bottomFlare,
+                    isActive ? "opacity-65" : "opacity-10",
+                  ].join(" ")}
+                />
+
+                <span className="relative z-10 flex h-full items-center gap-[11px] px-[13px]">
+                  <span
+                    aria-hidden="true"
+                    className={[
+                      "inline-flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-[10px] border",
+                      "transition-[border-color,background-color,box-shadow,color] duration-150",
+                      isActive ? room.activeEmblem : room.idleEmblem,
+                    ].join(" ")}
+                  >
+                    <RoomGlyph railKey={item.key} fallback={item.icon} />
+                  </span>
+
+                  <span
+                    className={[
+                      "truncate text-left text-[13px] font-black uppercase leading-none tracking-[0.035em]",
+                      "transition-colors duration-150",
+                      isActive ? room.activeLabel : room.idleLabel,
+                    ].join(" ")}
+                  >
+                    {item.label}
+                  </span>
                 </span>
-              </span>
-            </button>
+              </button>
+            </div>
           )
         })}
       </div>
