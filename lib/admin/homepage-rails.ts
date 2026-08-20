@@ -29,47 +29,93 @@ export const RAIL_LABELS: Record<HomepageRail, string> = {
   luxury: 'Luxury',
 }
 
+/** Icon identity per rail — maps to a bespoke inline SVG in `components/home/rail-icons`. */
+export type RailIconKey = 'hot' | 'balloon' | 'instant' | 'games' | 'cash' | 'luxury'
+
 /**
  * Customer-facing presentation for the PUBLIC homepage. Database rail keys are
- * NEVER renamed — this is display copy only. `navLabel` = short sticky-nav chip,
- * `heading` = section title, `tagline` = one punchy supporting line.
+ * NEVER renamed — this is display copy + presentation only.
+ *
+ * NO emoji: each rail has a purpose-designed SVG icon (`icon`) and a restrained
+ * casino accent expressed as FULL Tailwind class strings (so Tailwind v4's
+ * source scan detects them — never build these by concatenation):
+ *   - `navActiveClass` — illuminated ACTIVE nav chip (dark glass + accent glow)
+ *   - `accentText`      — heading icon + thin divider tint
+ *   - `sectionGlow`     — very faint radial atmosphere behind the section header
+ * `viewAllHref` points ONLY at real catalogue routes (`/giveaways` +
+ * its supported `?category=` filters); never an invented category URL.
  */
 export interface RailPresentation {
   navLabel: string
   heading: string
   tagline: string
+  icon: RailIconKey
+  navActiveClass: string
+  accentText: string
+  sectionGlow: string
+  viewAllHref: string
 }
 
 export const RAIL_PRESENTATION: Record<HomepageRail, RailPresentation> = {
   featured: {
-    navLabel: '🔥 Hot',
-    heading: '🔥 HOT RIGHT NOW',
-    tagline: "The competitions everyone's jumping into.",
+    navLabel: 'HOT',
+    heading: 'HOT RIGHT NOW',
+    tagline: 'Big prizes. Big momentum. Get in.',
+    icon: 'hot',
+    navActiveClass: 'bg-amber-400/15 text-amber-200 ring-1 ring-amber-300/50 shadow-[0_0_16px_rgba(251,191,36,0.35)]',
+    accentText: 'text-amber-300',
+    sectionGlow: 'bg-[radial-gradient(120%_80%_at_0%_0%,rgba(251,191,36,0.12),transparent_60%)]',
+    viewAllHref: '/giveaways',
   },
   balloon_pop: {
-    navLabel: '🎈 Pops',
-    heading: '🎈 POP IT. WIN IT.',
-    tagline: 'Pick your tickets. Hit a balloon. See what drops.',
+    navLabel: 'POPS',
+    heading: 'POP TILL YOU DROP',
+    tagline: 'Pick your numbers. Hit the balloon.',
+    icon: 'balloon',
+    navActiveClass: 'bg-fuchsia-500/15 text-fuchsia-200 ring-1 ring-fuchsia-400/50 shadow-[0_0_16px_rgba(217,70,239,0.35)]',
+    accentText: 'text-fuchsia-300',
+    sectionGlow: 'bg-[radial-gradient(120%_80%_at_0%_0%,rgba(217,70,239,0.12),transparent_60%)]',
+    viewAllHref: '/giveaways?category=live',
   },
   instant_cash: {
-    navLabel: '⚡ Instant',
-    heading: '⚡ WIN INSTANTLY',
-    tagline: 'No waiting. Your ticket could hit right now.',
+    navLabel: 'INSTANT',
+    heading: 'INSTANT WIN ZONE',
+    tagline: 'Your ticket could hit immediately.',
+    icon: 'instant',
+    navActiveClass: 'bg-cyan-400/15 text-cyan-100 ring-1 ring-cyan-300/50 shadow-[0_0_16px_rgba(34,211,238,0.35)]',
+    accentText: 'text-cyan-300',
+    sectionGlow: 'bg-[radial-gradient(120%_80%_at_0%_0%,rgba(34,211,238,0.12),transparent_60%)]',
+    viewAllHref: '/giveaways?category=instant',
   },
   games: {
-    navLabel: '🎮 Games',
-    heading: '🎮 PLAY. REVEAL. WIN.',
-    tagline: 'Play the game. Reveal your result. Chase the win.',
+    navLabel: 'GAMES',
+    heading: 'THE GAMES FLOOR',
+    tagline: "Play. Reveal. See what you've hit.",
+    icon: 'games',
+    navActiveClass: 'bg-violet-500/15 text-violet-200 ring-1 ring-violet-400/50 shadow-[0_0_16px_rgba(139,92,246,0.35)]',
+    accentText: 'text-violet-300',
+    sectionGlow: 'bg-[radial-gradient(120%_80%_at_0%_0%,rgba(139,92,246,0.12),transparent_60%)]',
+    viewAllHref: '/giveaways',
   },
   cash: {
-    navLabel: '💷 Cash',
-    heading: '💷 CASH DROPS',
-    tagline: 'Real money. Instant chances. Big hits.',
+    navLabel: 'CASH',
+    heading: 'CASH VAULT',
+    tagline: 'Cash prizes ready to drop.',
+    icon: 'cash',
+    navActiveClass: 'bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/50 shadow-[0_0_16px_rgba(16,185,129,0.35)]',
+    accentText: 'text-emerald-300',
+    sectionGlow: 'bg-[radial-gradient(120%_80%_at_0%_0%,rgba(16,185,129,0.12),transparent_60%)]',
+    viewAllHref: '/giveaways',
   },
   luxury: {
-    navLabel: '💎 Luxury',
-    heading: '💎 THE LUXURY VAULT',
-    tagline: 'Big brands. Premium prizes. Serious wins.',
+    navLabel: 'LUXURY',
+    heading: 'LUXE JACKPOTS',
+    tagline: 'Designer. Premium. Seriously worth winning.',
+    icon: 'luxury',
+    navActiveClass: 'bg-yellow-200/15 text-yellow-100 ring-1 ring-yellow-200/50 shadow-[0_0_16px_rgba(253,224,71,0.30)]',
+    accentText: 'text-yellow-100',
+    sectionGlow: 'bg-[radial-gradient(120%_80%_at_0%_0%,rgba(253,224,71,0.10),transparent_60%)]',
+    viewAllHref: '/giveaways',
   },
 }
 
