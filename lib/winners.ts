@@ -13,6 +13,21 @@ import type { WinnerSnapshot } from "@/lib/types"
 export const WINNERS_KIND = "instant" as const
 export const WINNERS_CUTOFF = "2026-03-20T00:00:00+00:00"
 
+/**
+ * Approved balloon/manual-winner campaign slugs whose instant wins are eligible
+ * for the public winners feed even though they are recorded with
+ * `fulfilment_type = 'manual'` and carry a real (non-"balloon") prize title and
+ * a sub-£20 value — the exact shape a cash/title-only rule silently drops.
+ *
+ * Exact casing preserved (slug matching is case-sensitive). This is the winners
+ * feed's OWN list; it is deliberately independent of the homepage
+ * `BALLOON_CAMPAIGN_SLUGS` classifier (different slugs, different surface).
+ *
+ * Matched ONLY inside the not-credit branch of the eligibility filter, so a
+ * `wallet_credit` win from one of these campaigns still stays excluded.
+ */
+export const MANUAL_WINNER_CAMPAIGN_SLUGS = ["rosslizzy2", "nappytuk", "sallijwedding"] as const
+
 // Bounded page sizes. The initial request loads the featured winners plus one
 // grid page; each "Load more" click loads one further bounded grid page.
 export const FEATURED_COUNT = 4
@@ -44,6 +59,12 @@ export const GRID_PAGE_SIZE = 24
  * Balloon-format instant wins are recorded with `fulfilment_type = 'manual'`
  * (not 'cash'), so they are matched by the prize-title "balloon"/"ballon"
  * predicate — this recovers the balloon winners that a cash-only filter dropped.
+ * Manual balloon wins whose real prize title does NOT contain "balloon" (e.g.
+ * `rosslizzy2`, `nappytuk`, `sallijwedding`) are additionally recovered by the
+ * `campaign_slug` allow-list (`MANUAL_WINNER_CAMPAIGN_SLUGS`). That predicate
+ * sits INSIDE the not-credit branch, so a wallet_credit win from those same
+ * campaigns remains excluded. `campaign_slug` already exists on the view (it is
+ * in `PUBLIC_WINNER_COLUMNS`), so this adds no join and no extra query.
  *
  * NULL-safety: each credit exclusion is written as
  * `or(<col>.is.null,<col>.not.ilike.*credit*)` so that a NULL title / value-text
@@ -56,6 +77,10 @@ export const GRID_PAGE_SIZE = 24
  * hasMore and the cursor all derive from the eligible set.
  */
 export function winnersEligibilityOrFilter(): string {
+  // Approved manual-winner slugs as a PostgREST in-list, e.g.
+  // `campaign_slug.in.(rosslizzy2,nappytuk,sallijwedding)`. Slugs are simple
+  // identifiers (no spaces/commas/parens) so they need no quoting.
+  const approvedSlugs = `campaign_slug.in.(${MANUAL_WINNER_CAMPAIGN_SLUGS.join(",")})`
   return (
     "kind.eq.main," +
     "and(" +
@@ -63,7 +88,7 @@ export function winnersEligibilityOrFilter(): string {
     "or(fulfilment_type.is.null,fulfilment_type.neq.wallet_credit)," +
     "or(prize_title.is.null,prize_title.not.ilike.*credit*)," +
     "or(prize_value_text.is.null,prize_value_text.not.ilike.*credit*)," +
-    "or(fulfilment_type.eq.cash,prize_title.ilike.*balloon*,prize_title.ilike.*ballon*)" +
+    `or(fulfilment_type.eq.cash,prize_title.ilike.*balloon*,prize_title.ilike.*ballon*,${approvedSlugs})` +
     ")"
   )
 }
@@ -86,7 +111,10 @@ export function isWinnerEligible(w: WinnerSnapshot): boolean {
   if (isCredit) return false
 
   const isBalloon = title.includes("balloon") || title.includes("ballon")
-  return w.fulfilmentType === "cash" || isBalloon
+  const isApprovedSlug =
+    typeof w.giveawaySlug === "string" &&
+    (MANUAL_WINNER_CAMPAIGN_SLUGS as readonly string[]).includes(w.giveawaySlug)
+  return w.fulfilmentType === "cash" || isBalloon || isApprovedSlug
 }
 
 /**
