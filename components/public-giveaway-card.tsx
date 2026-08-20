@@ -19,28 +19,28 @@ const ACCENTS: Record<
 > = {
   gold: {
     frame:
-      "border-amber-400/30 shadow-[0_0_0_1px_rgba(251,191,36,0.10),0_10px_34px_-16px_rgba(251,191,36,0.65)] hover:border-amber-300/60 hover:shadow-[0_0_0_1px_rgba(251,191,36,0.25),0_14px_40px_-14px_rgba(251,191,36,0.85)]",
-    cta: "bg-[linear-gradient(180deg,#FFD84A_0%,#FFAA00_100%)] text-black shadow-[inset_0_1px_0_rgba(255,255,255,0.55),0_0_18px_-6px_rgba(255,170,0,0.9)]",
-    priceTile: "text-amber-200 ring-amber-400/35",
-    progressFill: "bg-gradient-to-r from-amber-400 to-amber-200 shadow-[0_0_10px_rgba(251,191,36,0.6)]",
+      "border-[#DFA90A] shadow-[inset_0_0_0_1px_rgba(255,239,177,0.07),inset_0_1px_0_rgba(255,255,255,0.09),0_0_3px_rgba(255,247,211,0.48),0_0_10px_rgba(255,194,29,0.32),0_0_28px_-9px_rgba(255,153,0,0.62)] hover:border-[#FFD75F] hover:shadow-[inset_0_0_0_1px_rgba(255,239,177,0.10),0_0_4px_rgba(255,249,220,0.58),0_0_13px_rgba(255,194,29,0.40),0_0_32px_-8px_rgba(255,153,0,0.72)]",
+    cta: "border border-[#FFE06A]/85 bg-[linear-gradient(180deg,#FFE36A_0%,#FFC52E_44%,#FFA400_100%)] text-black shadow-[inset_0_1px_0_rgba(255,255,255,0.72),inset_0_-1px_0_rgba(137,70,0,0.20),0_0_4px_rgba(255,245,199,0.55),0_0_13px_rgba(255,174,0,0.46)]",
+    priceTile: "text-[#FFE89B] ring-[#DDAA19]/75 shadow-[inset_0_1px_0_rgba(255,244,196,0.09),0_0_3px_rgba(255,225,121,0.28),0_0_12px_rgba(255,165,0,0.16)]",
+    progressFill: "bg-[linear-gradient(90deg,#FFB900_0%,#FFD94C_72%,#FFF0A6_100%)] shadow-[0_0_4px_rgba(255,238,159,0.55),0_0_10px_rgba(255,183,0,0.42)]",
     progressText: "text-amber-300",
-    countdownRing: "ring-amber-400/50",
+    countdownRing: "ring-[#E4B11F]/80 shadow-[0_0_3px_rgba(255,242,187,0.24),0_0_10px_rgba(255,177,0,0.18)]",
   },
   magenta: {
     frame:
-      "border-fuchsia-400/30 shadow-[0_0_0_1px_rgba(217,70,239,0.10),0_10px_34px_-16px_rgba(217,70,239,0.65)] hover:border-fuchsia-300/60 hover:shadow-[0_0_0_1px_rgba(217,70,239,0.25),0_14px_40px_-14px_rgba(217,70,239,0.85)]",
-    cta: "bg-gradient-to-b from-fuchsia-400 to-fuchsia-600 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]",
-    priceTile: "text-fuchsia-200 ring-fuchsia-400/35",
-    progressFill: "bg-gradient-to-r from-fuchsia-400 to-pink-300 shadow-[0_0_10px_rgba(217,70,239,0.6)]",
+      "border-[#D92A9E] shadow-[inset_0_0_0_1px_rgba(255,215,240,0.05),inset_0_1px_0_rgba(255,255,255,0.07),0_0_3px_rgba(255,222,243,0.34),0_0_10px_rgba(255,64,188,0.28),0_0_28px_-9px_rgba(227,16,155,0.54)] hover:border-[#FF6BCE] hover:shadow-[0_0_4px_rgba(255,228,246,0.44),0_0_13px_rgba(255,70,192,0.36),0_0_32px_-8px_rgba(227,16,155,0.64)]",
+    cta: "border border-[#FF78D6]/75 bg-[linear-gradient(180deg,#FF73D4_0%,#EC3CB5_48%,#C31387_100%)] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_0_4px_rgba(255,218,242,0.34),0_0_13px_rgba(255,54,180,0.36)]",
+    priceTile: "text-[#FFBCE7] ring-[#D831A2]/70 shadow-[0_0_10px_rgba(230,35,160,0.14)]",
+    progressFill: "bg-[linear-gradient(90deg,#E735A9_0%,#FF58C5_65%,#FFB2E1_100%)] shadow-[0_0_4px_rgba(255,207,238,0.38),0_0_10px_rgba(236,54,179,0.38)]",
     progressText: "text-fuchsia-300",
     countdownRing: "ring-fuchsia-400/50",
   },
   cyan: {
     frame:
-      "border-cyan-400/30 shadow-[0_0_0_1px_rgba(34,211,238,0.10),0_10px_34px_-16px_rgba(34,211,238,0.65)] hover:border-cyan-300/60 hover:shadow-[0_0_0_1px_rgba(34,211,238,0.25),0_14px_40px_-14px_rgba(34,211,238,0.85)]",
-    cta: "bg-gradient-to-b from-cyan-300 to-sky-500 text-black shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]",
-    priceTile: "text-cyan-100 ring-cyan-400/35",
-    progressFill: "bg-gradient-to-r from-cyan-400 to-sky-300 shadow-[0_0_10px_rgba(34,211,238,0.6)]",
+      "border-[#179EC1] shadow-[inset_0_0_0_1px_rgba(210,249,255,0.05),inset_0_1px_0_rgba(255,255,255,0.07),0_0_3px_rgba(221,250,255,0.34),0_0_10px_rgba(38,211,245,0.27),0_0_28px_-9px_rgba(0,151,201,0.52)] hover:border-[#63E8FF] hover:shadow-[0_0_4px_rgba(231,252,255,0.44),0_0_13px_rgba(55,219,250,0.35),0_0_32px_-8px_rgba(0,151,201,0.62)]",
+    cta: "border border-[#83ECFF]/75 bg-[linear-gradient(180deg,#82EEFF_0%,#35D8F7_48%,#079CC9_100%)] text-black shadow-[inset_0_1px_0_rgba(255,255,255,0.52),0_0_4px_rgba(222,251,255,0.34),0_0_13px_rgba(33,205,240,0.34)]",
+    priceTile: "text-[#B8F4FF] ring-[#20BDD9]/70 shadow-[0_0_10px_rgba(30,198,230,0.13)]",
+    progressFill: "bg-[linear-gradient(90deg,#13BFE7_0%,#40DFFF_65%,#B5F5FF_100%)] shadow-[0_0_4px_rgba(213,250,255,0.34),0_0_10px_rgba(39,206,239,0.36)]",
     progressText: "text-cyan-300",
     countdownRing: "ring-cyan-400/50",
   },
@@ -200,7 +200,7 @@ export function PublicGiveawayCard({
         compact
           ? // COMPACT casino shell: near-black body, premium radius, restrained
             // illuminated accent frame + inner top highlight (no giant shadow).
-            `group relative flex h-full flex-col overflow-hidden rounded-[22px] border bg-[#0a0012] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#08000f] ${theme.frame}`
+            `group relative flex h-full flex-col overflow-hidden rounded-[22px] border bg-[linear-gradient(180deg,#09000F_0%,#0B0013_52%,#07000C_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.065)] transition-[border-color,box-shadow,filter] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#08000f] ${theme.frame}`
           : // DEFAULT catalogue shell — unchanged.
             `group relative flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#1c0b30] transition-all duration-300 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0014] ${variant.hoverBorder} ${variant.hoverShadow} ${deadline ? "pt-4" : ""}`
       }
@@ -285,11 +285,11 @@ export function PublicGiveawayCard({
           {/* Sharper, crisper progress: thin dark inset track + illuminated
               per-room accent fill. Sold calculation unchanged. */}
           {percentSold !== null && (
-            <div className="mt-2.5">
+            <div className="mt-2.5 rounded-xl bg-black/10">
               <div className={`mb-1.5 text-xs font-black uppercase tracking-wide ${theme.progressText}`}>
                 {percentSold}% sold
               </div>
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-black/50 ring-1 ring-inset ring-white/10">
+              <div className="h-[7px] w-full overflow-hidden rounded-full bg-black/70 shadow-[inset_0_1px_2px_rgba(0,0,0,0.55)] ring-1 ring-inset ring-white/10">
                 <div className={`h-full rounded-full ${theme.progressFill}`} style={{ width: `${percentSold}%` }} />
               </div>
             </div>
