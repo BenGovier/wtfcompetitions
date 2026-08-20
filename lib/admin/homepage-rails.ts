@@ -19,6 +19,16 @@ export const HOMEPAGE_RAILS = [
 
 export type HomepageRail = (typeof HOMEPAGE_RAILS)[number]
 
+/** Customer-facing labels for each rail (used by admin + public homepage). */
+export const RAIL_LABELS: Record<HomepageRail, string> = {
+  featured: 'Featured',
+  balloon_pop: 'Balloon Pops',
+  instant_cash: 'Instant Wins',
+  games: 'Games',
+  cash: 'Cash',
+  luxury: 'Luxury',
+}
+
 /** Manual rails: placement row = membership + order. */
 export const MANUAL_RAILS: readonly HomepageRail[] = ['featured', 'games', 'cash', 'luxury']
 

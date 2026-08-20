@@ -1,17 +1,12 @@
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
-import { createClient } from "@/lib/supabase/server"
 import { LiveNowTakeover } from "@/components/live/LiveNowTakeover"
-import { GiveawaySection } from "@/components/giveaway-section"
-import { groupGiveawaysByCategory } from "@/lib/giveaway-classification"
+import { HomeRails, type RailView } from "@/components/home/HomeRails"
+import { loadHomepageRails } from "@/lib/admin/homepage-merchandising"
+import { HOMEPAGE_RAILS, RAIL_LABELS } from "@/lib/admin/homepage-rails"
+import { classifyGiveaway, sortGiveaways } from "@/lib/giveaway-classification"
 
-// Homepage card counts — keep the page focused. The section "View all" links
-// provide access to the remainder on /giveaways.
-const MAX_LIVE_CARDS = 4
-const MAX_INSTANT_CARDS = 6
-const MAX_OTHER_CARDS = 3
-
-// Emergency fallback data - used only if the snapshot query returns nothing.
+// Emergency fallback data - used only if there are no eligible competitions.
 const emergencyFeaturedGiveaway = {
   title: "Super Holiday",
   subtitle: "Enter now for your chance to win our live Super Holiday giveaway.",
@@ -21,40 +16,39 @@ const emergencyFeaturedGiveaway = {
 }
 
 export default async function HomePage() {
-  // Fetch giveaway snapshots from Supabase — ONE bounded query for the whole page.
-  const supabase = await createClient()
+  // Exactly TWO Supabase queries (list snapshots + placements), then in-memory
+  // grouping/ordering via the shared builder. No query-per-category, no N+1,
+  // no client-side Supabase.
+  const { rails, eligiblePayloads } = await loadHomepageRails()
 
-  const { data } = await supabase
-    .from("giveaway_snapshots")
-    .select("payload")
-    .eq("kind", "list")
-    .eq("payload->>status", "live")
-    .order("generated_at", { ascending: false })
-    .limit(20)
+  // Build only NON-EMPTY rails, in canonical rail order. Each payload's badge
+  // category comes from the shared classifier so the card matches the product.
+  const railViews: RailView[] = HOMEPAGE_RAILS.map((rail) => ({
+    key: rail,
+    label: RAIL_LABELS[rail],
+    items: rails[rail].map((e) => ({
+      giveaway: e.payload,
+      category: classifyGiveaway(e.payload),
+    })),
+  })).filter((v) => v.items.length > 0)
 
-  const now = Date.now()
-  const giveaways = (data ?? [])
-    .map((x: any) => x.payload)
-    .filter((g: any) => {
-      // Exclude ended/sold_out/closed statuses
-      if (!g || g.status === "ended" || g.status === "sold_out" || g.status === "closed") return false
-      // Only include live raffles
-      if (g.status !== "live") return false
-      // Exclude if ends_at is in the past
-      if (g.ends_at) {
-        const endsAt = new Date(g.ends_at).getTime()
-        if (Number.isFinite(endsAt) && endsAt <= now) return false
-      }
-      return true
+  // Fail-safe: if merchandising produced no rails but there ARE eligible live
+  // competitions (e.g. everything classifies as "other" with no manual
+  // placement yet), show a single safety rail built from the already-fetched
+  // eligible payloads — no extra query. Only when nothing is eligible at all do
+  // we fall back to the static emergency card below.
+  if (railViews.length === 0 && eligiblePayloads.length > 0) {
+    railViews.push({
+      key: "all",
+      label: "Live Giveaways",
+      items: sortGiveaways(eligiblePayloads).map((p) => ({
+        giveaway: p,
+        category: classifyGiveaway(p),
+      })),
     })
+  }
 
-  // Classify + sort once, server-side, from the already-fetched array.
-  const grouped = groupGiveawaysByCategory(giveaways)
-  const liveGiveaways = grouped.live_balloon.slice(0, MAX_LIVE_CARDS)
-  const instantGiveaways = grouped.instant_cash.slice(0, MAX_INSTANT_CARDS)
-  const otherGiveaways = grouped.other.slice(0, MAX_OTHER_CARDS)
-
-  const hasAny = liveGiveaways.length + instantGiveaways.length + otherGiveaways.length > 0
+  const hasAny = railViews.length > 0
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#1a002b] via-[#2d0050] to-[#0a0014]">
@@ -66,39 +60,9 @@ export default async function HomePage() {
         <h1 className="sr-only">Win with WTF Giveaways</h1>
 
         {hasAny ? (
-          <>
-            <GiveawaySection
-              id="live-balloon-heading"
-              title="TikTok Live Balloon Pops"
-              supportingCopy="Enter now, then watch the balloons pop live with your host."
-              giveaways={liveGiveaways}
-              category="live_balloon"
-              viewAllHref="/giveaways?category=live"
-              viewAllLabel="View all Live"
-            />
-
-            <GiveawaySection
-              id="instant-cash-heading"
-              title="Instant Cash Wins"
-              supportingCopy="Play any time and reveal instant cash prizes automatically."
-              giveaways={instantGiveaways}
-              category="instant_cash"
-              viewAllHref="/giveaways?category=instant"
-              viewAllLabel="View all Instant Cash"
-            />
-
-            <GiveawaySection
-              id="more-giveaways-heading"
-              title="More Giveaways"
-              supportingCopy="More ways to play and win."
-              giveaways={otherGiveaways}
-              category="other"
-              viewAllHref="/giveaways"
-              viewAllLabel="View all"
-            />
-          </>
+          <HomeRails rails={railViews} />
         ) : (
-          // Emergency fallback - single static card when no live giveaways exist.
+          // Emergency fallback - single static card when nothing is eligible.
           <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-sm md:p-8">
             <div className="flex flex-col items-center gap-4 text-center">
               <span className="inline-flex items-center rounded-full bg-green-500/20 px-3 py-1 text-sm font-medium text-green-400">
