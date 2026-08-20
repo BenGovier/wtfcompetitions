@@ -4,6 +4,7 @@ import React, { useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { AdminSidebarNav, AdminNavLinks } from "./AdminSidebarNav"
+import { HostBottomNav } from "./host/HostBottomNav"
 import { Button } from "@/components/ui/button"
 import {
   Sheet,
@@ -13,6 +14,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet"
 import { createClient } from "@/lib/supabase/client"
+import { cn } from "@/lib/utils"
 import { LogOut, Menu } from "lucide-react"
 import type { User } from "@supabase/supabase-js"
 import type { AdminRole } from "@/lib/admin/permissions"
@@ -34,6 +36,10 @@ export function AdminShell({
   // Compact header context derived from the active nav route (longest-prefix
   // match, safe "Admin" fallback). Presentation only — no business logic.
   const sectionLabel = resolveSectionLabel(pathname)
+
+  // Hosts get a fixed mobile bottom nav; reserve space so content never hides
+  // behind it. Staff roles are completely unaffected.
+  const isHost = role === "ops"
 
   const handleLogout = async () => {
     const supabase = createClient()
@@ -142,11 +148,19 @@ export function AdminShell({
         </header>
 
         <main className="flex-1 overflow-auto bg-muted/30">
-          <div className="mx-auto w-full min-w-0 max-w-[1440px] px-4 py-5 md:px-6 md:py-7 xl:px-8">
+          <div
+            className={cn(
+              "mx-auto w-full min-w-0 max-w-[1440px] px-4 py-5 md:px-6 md:py-7 xl:px-8",
+              // Clear the fixed host bottom nav on mobile (h-16 + safe area).
+              isHost && "pb-24 md:pb-7",
+            )}
+          >
             {children}
           </div>
         </main>
       </div>
+
+      {isHost && <HostBottomNav />}
     </div>
   )
 }

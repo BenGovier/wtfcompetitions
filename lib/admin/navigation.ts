@@ -31,6 +31,7 @@ import {
   ScrollText,
   Users,
   UserSearch,
+  Home,
   type LucideIcon,
 } from 'lucide-react'
 import { canAccessRoute, type AdminRole } from '@/lib/admin/permissions'
@@ -88,6 +89,33 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { href: '/admin/audit-logs', label: 'Audit Logs', icon: ScrollText, section: 'system' },
   { href: '/admin/hosts', label: 'Team Access', icon: Users, section: 'system' },
 ]
+
+/**
+ * Host (ops) navigation — a deliberately tiny, streamlined set for the
+ * mobile-first Host area. This is SEPARATE from the staff registry above so the
+ * host experience stays focused (Home / Live Feed / My Comps) and the full
+ * staff sidebar is never rendered for a Host.
+ *
+ * Every href here is inside HOST_ALLOWED_ROUTES, so server guards
+ * (requireAdmin / canAccessRoute) authorise them for ops. Visibility is never
+ * the security boundary — the pages and APIs enforce role server-side.
+ */
+export interface HostNavItem {
+  href: string
+  label: string
+  icon: LucideIcon
+}
+
+export const HOST_NAV_ITEMS: HostNavItem[] = [
+  { href: '/admin/host', label: 'Home', icon: Home },
+  { href: '/admin/live-feed', label: 'Live Feed', icon: Radio },
+  { href: '/admin/host/comps', label: 'My Comps', icon: Trophy },
+]
+
+/** Active-route test for the host nav (exact or descendant path). */
+export function isHostNavItemActive(pathname: string, href: string): boolean {
+  return pathname === href || pathname.startsWith(`${href}/`)
+}
 
 /**
  * Hidden admin routes.
