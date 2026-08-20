@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
+import Image from "next/image"
 import { ChevronRight } from "lucide-react"
 import { LiveNowTakeover } from "@/components/live/LiveNowTakeover"
 import { HomeRailNav, type HomeNavItem } from "@/components/home/HomeRailNav"
@@ -216,25 +217,79 @@ export default async function HomePage() {
 
                 {/* Cards are SERVER-rendered here and passed into the client
                     RailScroller as children — giveaway payloads stay server-side. */}
-                <RailScroller label={section.heading}>
-                  {section.items.map((item, itemIndex) => (
-                    <div
-                      key={`${section.key}:${item.giveaway.slug ?? item.giveaway.id}`}
-                      className="w-[85%] shrink-0 snap-start sm:w-[60%] md:w-[46%] lg:w-[31%] xl:w-[23%]"
-                    >
-                      {/* Exactly ONE prioritised image on the whole homepage:
-                          the first card of the FIRST rendered non-empty rail
-                          (the LCP element). Every other card stays lazy. The
-                          conversion-led compact layout is homepage-only. */}
-                      <PublicGiveawayCard
-                        giveaway={item.giveaway}
-                        category={item.category}
-                        compact
-                        accent={section.cardAccent}
-                        imagePriority={sectionIndex === 0 && itemIndex === 0}
-                      />
-                    </div>
-                  ))}
+                <RailScroller
+                  label={section.heading}
+                  topGutter={
+                    section.key === "featured" &&
+                    section.items.some((item) => item.giveaway.slug === "lvbag")
+                  }
+                >
+                  {section.items.map((item, itemIndex) => {
+                    // Stage-3 pilot: a PRESENTATIONAL foreground breakout for
+                    // Liz's LV Alma BB competition in Featured only.
+                    //
+                    // This does not alter rail membership, card data, click
+                    // behaviour, /giveaways, or any other competition.
+                    const isLizLvBreakout =
+                      section.key === "featured" && item.giveaway.slug === "lvbag"
+
+                    return (
+                      <div
+                        key={`${section.key}:${item.giveaway.slug ?? item.giveaway.id}`}
+                        className="relative w-[85%] shrink-0 snap-start sm:w-[60%] md:w-[46%] lg:w-[31%] xl:w-[23%]"
+                      >
+                        {isLizLvBreakout && (
+                          <>
+                            {/* Cheap CSS atmosphere behind the transparent cutout. */}
+                            <span
+                              aria-hidden="true"
+                              className="pointer-events-none absolute -right-[8%] -top-[58px] z-[4] h-[290px] w-[230px] rounded-full bg-fuchsia-500/15 blur-[34px]"
+                            />
+
+                            {/* Transparent foreground layer.
+                                - Lives OUTSIDE PublicGiveawayCard so the shared
+                                  card component remains untouched.
+                                - pointer-events-none means the existing card link
+                                  remains the interactive target.
+                                - Bottom mask gently merges Liz into the artwork
+                                  instead of ending on a hard PNG crop. */}
+                            <div
+                              aria-hidden="true"
+                              className="pointer-events-none absolute -right-[7%] -top-[68px] z-[5] w-[70%] max-w-[280px] select-none"
+                              style={{
+                                WebkitMaskImage:
+                                  "linear-gradient(to bottom, #000 0%, #000 82%, transparent 100%)",
+                                maskImage:
+                                  "linear-gradient(to bottom, #000 0%, #000 82%, transparent 100%)",
+                              }}
+                            >
+                              <Image
+                                src="/images/homepage/liz-lv-alma-bb-breakout.webp"
+                                alt=""
+                                width={640}
+                                height={960}
+                                loading={sectionIndex === 0 ? "eager" : "lazy"}
+                                sizes="(max-width: 640px) 250px, 280px"
+                                className="h-auto w-full [filter:drop-shadow(0_0_4px_rgba(255,237,186,0.38))_drop-shadow(0_0_13px_rgba(255,45,183,0.34))_drop-shadow(0_16px_18px_rgba(0,0,0,0.34))]"
+                              />
+                            </div>
+                          </>
+                        )}
+
+                        {/* Exactly ONE prioritised competition artwork image on
+                            the whole homepage remains unchanged. The breakout
+                            image uses eager/lazy loading only — no priority
+                            preload is added. */}
+                        <PublicGiveawayCard
+                          giveaway={item.giveaway}
+                          category={item.category}
+                          compact
+                          accent={section.cardAccent}
+                          imagePriority={sectionIndex === 0 && itemIndex === 0}
+                        />
+                      </div>
+                    )
+                  })}
                 </RailScroller>
               </section>
             ))}
