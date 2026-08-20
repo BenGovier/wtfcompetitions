@@ -1,17 +1,25 @@
 "use client"
 
 import Link from "next/link"
-import { ArrowRight } from "lucide-react"
+import { ArrowRight, Flame } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { formatPence, formatCount } from "@/lib/admin/reporting/format"
 import type { HostCampaignSummary } from "@/lib/admin/host-dashboard-types"
+import type { SinceOpened } from "./useSinceOpened"
 
 /**
  * Compact, mobile-first card for a single host campaign. Shows only what a host
- * needs at a glance: title, % sold, ticket cap, this-month cash and their own
- * estimated earnings. Never renders other hosts' rates or company figures.
+ * needs at a glance: title, % sold, ticket cap, this-month cash, today's cash
+ * and their own estimated earnings. Never renders other hosts' rates or company
+ * figures. `sinceOpened` is passed only for active comps (live-session delta).
  */
-export function HostCampaignCard({ campaign }: { campaign: HostCampaignSummary }) {
+export function HostCampaignCard({
+  campaign,
+  sinceOpened,
+}: {
+  campaign: HostCampaignSummary
+  sinceOpened?: SinceOpened
+}) {
   const pct = campaign.pctSold != null ? Math.max(0, Math.min(100, campaign.pctSold)) : null
 
   return (
@@ -35,8 +43,8 @@ export function HostCampaignCard({ campaign }: { campaign: HostCampaignSummary }
           <div className="flex items-baseline justify-between text-sm">
             <span className="font-semibold text-foreground">{pct.toFixed(0)}% sold</span>
             {campaign.maxTicketsTotal != null && (
-              <span className="text-xs text-muted-foreground">
-                of {formatCount(campaign.maxTicketsTotal)} tickets
+              <span className="text-xs tabular-nums text-muted-foreground">
+                {formatCount(campaign.ticketsSold)} / {formatCount(campaign.maxTicketsTotal)}
               </span>
             )}
           </div>
@@ -55,12 +63,15 @@ export function HostCampaignCard({ campaign }: { campaign: HostCampaignSummary }
         <p className="text-xs text-muted-foreground">Ticket progress unavailable</p>
       )}
 
-      {/* Money: this-month cash + this host's earnings. */}
+      {/* Money: this-month cash (with today) + this host's earnings. */}
       <div className="flex items-end justify-between gap-3">
         <div>
           <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Cash sales</p>
           <p className="text-lg font-semibold tabular-nums text-foreground">
             {formatPence(campaign.externalPenceMonth)}
+          </p>
+          <p className="text-[11px] tabular-nums text-muted-foreground">
+            {formatPence(campaign.externalPenceToday)} today
           </p>
         </div>
         <div className="text-right">
@@ -70,6 +81,20 @@ export function HostCampaignCard({ campaign }: { campaign: HostCampaignSummary }
           </p>
         </div>
       </div>
+
+      {/* Live-session delta — only for active comps with real movement. */}
+      {sinceOpened?.hasProgress && (
+        <div className="flex items-center gap-1.5 rounded-lg bg-primary/5 px-3 py-2 text-sm font-medium text-primary">
+          <Flame aria-hidden="true" className="h-4 w-4 shrink-0" />
+          <span className="tabular-nums">
+            <span className="sr-only">Since you opened: </span>
+            {sinceOpened.cashPence > 0 && <>+{formatPence(sinceOpened.cashPence)}</>}
+            {sinceOpened.cashPence > 0 && sinceOpened.tickets > 0 && <span aria-hidden="true"> · </span>}
+            {sinceOpened.tickets > 0 && <>+{formatCount(sinceOpened.tickets)} tickets</>}
+            <span className="font-normal text-muted-foreground"> since you opened</span>
+          </span>
+        </div>
+      )}
 
       <span className="inline-flex items-center gap-1 text-sm font-medium text-primary">
         View comp

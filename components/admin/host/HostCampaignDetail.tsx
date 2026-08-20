@@ -64,8 +64,9 @@ export function HostCampaignDetail({
       )}
 
       {/* Money */}
-      <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Stat label={`Hosted cash sales (${monthLabel.toLowerCase()})`} value={formatPence(campaign.externalPenceMonth)} />
+        <Stat label="Cash sales today" value={formatPence(campaign.externalPenceToday)} />
         <Stat label="Your commission" value={`${campaign.commissionPct}%`} />
         <Stat label="Estimated earnings" value={formatPence(campaign.earningsPenceMonth)} accent />
       </section>

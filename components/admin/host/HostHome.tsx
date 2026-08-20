@@ -6,6 +6,7 @@ import { formatPence } from "@/lib/admin/reporting/format"
 import type { HostDashboardPayload } from "@/lib/admin/host-dashboard-types"
 import { HostCampaignCard } from "./HostCampaignCard"
 import { useHostDashboard } from "./useHostDashboard"
+import { useSinceOpened } from "./useSinceOpened"
 import { RefreshMeta } from "./RefreshMeta"
 
 /**
@@ -18,6 +19,9 @@ import { RefreshMeta } from "./RefreshMeta"
 export function HostHome({ initialData }: { initialData: HostDashboardPayload }) {
   const { data, isRefreshing, hasError, refresh } = useHostDashboard(initialData)
 
+  // Live-session deltas across ALL campaigns (baseline stays stable across
+  // refreshes); we only render them on active comp cards below.
+  const sinceOpened = useSinceOpened(data.campaigns)
   const active = data.campaigns.filter((c) => c.isActive)
 
   return (
@@ -89,7 +93,7 @@ export function HostHome({ initialData }: { initialData: HostDashboardPayload })
         {active.length > 0 ? (
           <div className="flex flex-col gap-3">
             {active.map((c) => (
-              <HostCampaignCard key={c.campaignId} campaign={c} />
+              <HostCampaignCard key={c.campaignId} campaign={c} sinceOpened={sinceOpened.get(c.campaignId)} />
             ))}
           </div>
         ) : (

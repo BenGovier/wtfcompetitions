@@ -14,10 +14,11 @@ async function fetchHostDashboard(url: string): Promise<HostDashboardPayload> {
  *
  * - Seeds SWR with the server-rendered `initialData` (instant first paint, no
  *   client fetch waterfall).
- * - Revalidates every ~45s while the tab is focused so figures stay useful
- *   without behaving like the winner feed.
+ * - Revalidates every ~30s while the tab is focused so a host watching a Live
+ *   sees sales/tickets tick up, without behaving like the 10s winner feed.
  * - `keepPreviousData` keeps the last good values on screen during a refresh
- *   (no skeletons/blank flashes on every poll).
+ *   (no skeletons/blank flashes on every poll). SWR dedupes so a manual refresh
+ *   cannot overlap an interval poll.
  */
 export function useHostDashboard(initialData: HostDashboardPayload) {
   const { data, error, isLoading, isValidating, mutate } = useSWR<HostDashboardPayload>(
@@ -25,7 +26,7 @@ export function useHostDashboard(initialData: HostDashboardPayload) {
     fetchHostDashboard,
     {
       fallbackData: initialData,
-      refreshInterval: 45_000,
+      refreshInterval: 30_000,
       revalidateOnFocus: true,
       keepPreviousData: true,
       dedupingInterval: 10_000,

@@ -17,10 +17,20 @@ export interface HostCampaignSummary {
   isEnded: boolean // ended
   /** THIS host's own commission rate, e.g. 7.5 (never another host's). */
   commissionPct: number
-  /** External cash collected THIS MONTH (pence). Excludes wallet/site credit. */
+  /**
+   * External cash collected THIS MONTH so far (pence), UK calendar month.
+   * Hybrid: completed previous days (reporting_sales_daily) + today
+   * (reporting_sales_minute). Excludes wallet/site credit. No double-count.
+   */
   externalPenceMonth: number
+  /** External cash collected TODAY so far (pence), UK calendar day. */
+  externalPenceToday: number
   /** externalPenceMonth * commissionPct / 100, rounded to whole pence. */
   earningsPenceMonth: number
+  /** Tickets sold (lifetime, from the ticket counter: next_ticket - 1). */
+  ticketsSold: number
+  /** Tickets remaining against the cap, or null when uncapped/unknown. */
+  ticketsRemaining: number | null
   /** Lifetime percentage of tickets sold (0–100), or null when uncapped/unknown. */
   pctSold: number | null
   /** Ticket cap (denominator for progress), or null when uncapped. */
