@@ -114,7 +114,9 @@ export default async function HomePage() {
   }))
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#1a002b] via-[#2d0050] to-[#0a0014]">
+    // Near-black casino base. Room sections layer their own faint accent glows;
+    // the competition artwork stays the dominant visual on this dark ground.
+    <div className="min-h-screen bg-[#08000f]">
       {/* LIVE NOW site takeover — renders only when a takeover is enabled. Tight
           top padding keeps conversion content high on first load. */}
       <div className="container px-4 pt-4 md:pt-10">
@@ -150,23 +152,29 @@ export default async function HomePage() {
                   className={`pointer-events-none absolute -inset-x-4 -top-4 -z-10 h-40 ${section.sectionGlow}`}
                 />
 
-                {/* Casino "room" header: illuminated jackpot emblem tile +
-                    accent-led title + View all, supporting line, accent seam. */}
+                {/* Casino "room" header: hexagonal illuminated emblem + display
+                    title + accent View all, supporting line, accent light seam. */}
                 <header className="mb-4">
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-start justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-3">
-                      {/* Premium emblem: dark faceted tile, accent ring + glow +
-                          inner highlight — reads as a small jackpot badge. */}
+                      {/* Hexagonal jackpot emblem: accent-tinted frame hexagon
+                          with a dark faceted face + concentrated edge glow. The
+                          accent colour flows from `accentText` via currentColor. */}
                       <span
                         aria-hidden="true"
-                        className={`relative inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#12002c] ring-1 ring-inset ring-current shadow-[0_0_18px_-4px_currentColor,inset_0_1px_0_rgba(255,255,255,0.15)] ${section.accentText}`}
+                        className={`relative inline-flex h-14 w-14 shrink-0 items-center justify-center ${section.accentText}`}
                       >
-                        <RailIcon name={section.icon} className="h-5 w-5" />
+                        <span
+                          className="absolute inset-0 bg-current opacity-90 [clip-path:polygon(50%_0%,100%_25%,100%_75%,50%_100%,0%_75%,0%_25%)] [filter:drop-shadow(0_0_6px_currentColor)]"
+                        />
+                        <span className="absolute inset-[2px] bg-[#0b0018] [clip-path:polygon(50%_0%,100%_25%,100%_75%,50%_100%,0%_75%,0%_25%)]" />
+                        <span className="absolute inset-[2px] [clip-path:polygon(50%_0%,100%_25%,100%_75%,50%_100%,0%_75%,0%_25%)] bg-[linear-gradient(180deg,rgba(255,255,255,0.14),transparent_45%)]" />
+                        <RailIcon name={section.icon} className="relative h-6 w-6" />
                       </span>
                       {(() => {
                         const { lead, rest } = splitHeading(section.heading)
                         return (
-                          <h2 className="truncate text-xl font-black uppercase tracking-tight md:text-3xl">
+                          <h2 className="text-pretty text-2xl font-black uppercase leading-[0.98] tracking-tight md:text-4xl">
                             <span className={section.accentText}>{lead}</span>
                             {rest ? <span className="text-white"> {rest}</span> : null}
                           </h2>
@@ -176,15 +184,16 @@ export default async function HomePage() {
                     <Link
                       href={section.viewAllHref}
                       prefetch={false}
-                      className={`group/viewall inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-white/[0.04] px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-white/70 ring-1 ring-inset ring-white/15 transition-colors hover:bg-white/[0.1] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0014]`}
+                      className={`group/viewall mt-1 inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-black/40 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide ring-1 ring-current transition-all hover:bg-black/60 hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[#08000f] ${section.accentText}`}
                     >
                       View all
                       <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover/viewall:translate-x-0.5 motion-reduce:transform-none" aria-hidden="true" />
                     </Link>
                   </div>
-                  <p className="mt-1.5 text-pretty text-xs text-white/60 md:text-sm">{section.tagline}</p>
-                  {/* Accent-tinted illuminated seam under each room title. */}
-                  <div className={`mt-2.5 h-px w-full bg-gradient-to-r from-current via-white/10 to-transparent ${section.accentText}`} />
+                  <p className="mt-2 text-pretty text-[13px] text-white/60 md:text-sm">{section.tagline}</p>
+                  {/* Light seam: mostly dark with a concentrated accent flare at
+                      the left, echoing a casino-room transition. */}
+                  <div className={`mt-3 h-px w-full bg-gradient-to-r from-current via-current/15 to-transparent ${section.accentText}`} />
                 </header>
 
                 {/* Cards are SERVER-rendered here and passed into the client

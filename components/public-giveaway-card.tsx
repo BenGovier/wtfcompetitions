@@ -20,7 +20,7 @@ const ACCENTS: Record<
   gold: {
     frame:
       "border-amber-400/30 shadow-[0_0_0_1px_rgba(251,191,36,0.10),0_10px_34px_-16px_rgba(251,191,36,0.65)] hover:border-amber-300/60 hover:shadow-[0_0_0_1px_rgba(251,191,36,0.25),0_14px_40px_-14px_rgba(251,191,36,0.85)]",
-    cta: "bg-gradient-to-b from-amber-300 to-amber-500 text-black shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]",
+    cta: "bg-[linear-gradient(180deg,#FFD84A_0%,#FFAA00_100%)] text-black shadow-[inset_0_1px_0_rgba(255,255,255,0.55),0_0_18px_-6px_rgba(255,170,0,0.9)]",
     priceTile: "text-amber-200 ring-amber-400/35",
     progressFill: "bg-gradient-to-r from-amber-400 to-amber-200 shadow-[0_0_10px_rgba(251,191,36,0.6)]",
     progressText: "text-amber-300",
@@ -198,9 +198,9 @@ export function PublicGiveawayCard({
       href={`/giveaways/${giveaway.slug}`}
       className={
         compact
-          ? // COMPACT casino shell: near-black body, tighter radius, restrained
+          ? // COMPACT casino shell: near-black body, premium radius, restrained
             // illuminated accent frame + inner top highlight (no giant shadow).
-            `group relative flex h-full flex-col overflow-hidden rounded-xl border bg-[#0d0120] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0014] ${theme.frame}`
+            `group relative flex h-full flex-col overflow-hidden rounded-[22px] border bg-[#0a0012] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#08000f] ${theme.frame}`
           : // DEFAULT catalogue shell — unchanged.
             `group relative flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#1c0b30] transition-all duration-300 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0014] ${variant.hoverBorder} ${variant.hoverShadow} ${deadline ? "pt-4" : ""}`
       }
@@ -277,37 +277,37 @@ export function PublicGiveawayCard({
            [price][ENTER NOW ->] action row -> secondary line. The whole card is
            the link, so the action row is a styled non-button (no duplicate CTA,
            no duplicate price). */
-        <div className="flex flex-1 flex-col p-3">
-          <h3 className="text-pretty text-sm font-bold leading-tight text-white line-clamp-2 transition-colors group-hover:text-amber-400 md:text-base">
+        <div className="flex flex-1 flex-col p-3.5">
+          <h3 className="text-pretty text-[17px] font-bold leading-tight text-white line-clamp-2 transition-colors group-hover:text-amber-400 md:text-lg">
             {giveaway.title}
           </h3>
 
           {/* Sharper, crisper progress: thin dark inset track + illuminated
               per-room accent fill. Sold calculation unchanged. */}
           {percentSold !== null && (
-            <div className="mt-2">
-              <div className={`mb-1 text-[11px] font-bold uppercase tracking-wide ${theme.progressText}`}>
+            <div className="mt-2.5">
+              <div className={`mb-1.5 text-xs font-black uppercase tracking-wide ${theme.progressText}`}>
                 {percentSold}% sold
               </div>
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-black/40 ring-1 ring-inset ring-white/10">
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-black/50 ring-1 ring-inset ring-white/10">
                 <div className={`h-full rounded-full ${theme.progressFill}`} style={{ width: `${percentSold}%` }} />
               </div>
             </div>
           )}
 
-          {/* Sportsbook-style action strip: compact dark price tile beside a
+          {/* Sportsbook-style action strip: tall dark price tile beside a
               dominant, wide gaming CTA (per-room accent gradient + inner
               highlight). Whole card is the link; this is a styled non-button. */}
-          <div className="mt-3 flex items-stretch gap-2">
+          <div className="mt-3.5 flex items-stretch gap-2.5">
             {base != null && (
               <span
-                className={`inline-flex min-h-[44px] shrink-0 items-center rounded-xl bg-black/40 px-3 text-sm font-black tabular-nums leading-none ring-1 ring-inset ${theme.priceTile}`}
+                className={`inline-flex min-h-[56px] shrink-0 items-center rounded-2xl bg-black/50 px-4 text-lg font-black tabular-nums leading-none ring-1 ring-inset ${theme.priceTile}`}
               >
                 {priceText(base)}
               </span>
             )}
             <span
-              className={`flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-xl px-4 text-sm font-extrabold uppercase tracking-wide transition-all group-hover:brightness-110 ${theme.cta}`}
+              className={`flex min-h-[56px] flex-1 items-center justify-center gap-2 rounded-2xl px-4 text-[15px] font-black uppercase tracking-wide transition-all group-hover:brightness-110 ${theme.cta}`}
             >
               {variant.ctaShort}
               <ArrowRight className="h-4 w-4 shrink-0 transition-transform group-hover:translate-x-0.5 motion-reduce:transform-none" aria-hidden="true" />
@@ -315,7 +315,7 @@ export function PublicGiveawayCard({
           </div>
 
           {/* Secondary detail, below the action — never above the CTA. */}
-          <p className="mt-2 text-[11px] leading-snug text-white/45 line-clamp-1">{variant.supportingLine}</p>
+          <p className="mt-2.5 text-[11px] leading-snug text-white/45 line-clamp-1">{variant.supportingLine}</p>
         </div>
       ) : (
         /* DEFAULT catalogue layout — unchanged (used by /giveaways + sections). */
