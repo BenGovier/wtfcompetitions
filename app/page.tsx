@@ -86,7 +86,7 @@ export default async function HomePage() {
           <HomeRailNav items={navItems} />
 
           <div className="space-y-12 md:space-y-16">
-            {sections.map((section) => (
+            {sections.map((section, sectionIndex) => (
               <section
                 key={section.key}
                 id={`home-rail-${section.key}`}
@@ -107,12 +107,19 @@ export default async function HomePage() {
                 {/* Cards are SERVER-rendered here and passed into the client
                     RailScroller as children — giveaway payloads stay server-side. */}
                 <RailScroller label={section.heading}>
-                  {section.items.map((item) => (
+                  {section.items.map((item, itemIndex) => (
                     <div
                       key={`${section.key}:${item.giveaway.slug ?? item.giveaway.id}`}
                       className="w-[85%] shrink-0 snap-start sm:w-[60%] md:w-[46%] lg:w-[31%] xl:w-[23%]"
                     >
-                      <PublicGiveawayCard giveaway={item.giveaway} category={item.category} />
+                      {/* Exactly ONE prioritised image on the whole homepage:
+                          the first card of the FIRST rendered non-empty rail
+                          (the LCP element). Every other card stays lazy. */}
+                      <PublicGiveawayCard
+                        giveaway={item.giveaway}
+                        category={item.category}
+                        imagePriority={sectionIndex === 0 && itemIndex === 0}
+                      />
                     </div>
                   ))}
                 </RailScroller>

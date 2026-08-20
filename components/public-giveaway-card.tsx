@@ -82,9 +82,14 @@ function CategoryBadge({ category }: { category: GiveawayCategory }) {
 export function PublicGiveawayCard({
   giveaway,
   category,
+  imagePriority = false,
 }: {
   giveaway: any
   category: GiveawayCategory
+  // When true, the artwork loads at high priority (used ONLY for the single
+  // LCP image: the first card of the first homepage rail). Defaults false so
+  // every other usage keeps Next/Image's default lazy behaviour unchanged.
+  imagePriority?: boolean
 }) {
   const variant = VARIANTS[category]
 
@@ -129,6 +134,7 @@ export function PublicGiveawayCard({
             fill
             className="object-cover transition-transform duration-300 group-hover:scale-105 motion-reduce:transform-none motion-reduce:transition-none"
             sizes="(max-width: 359px) 100vw, (max-width: 768px) 50vw, (max-width: 1023px) 50vw, 33vw"
+            priority={imagePriority}
           />
         ) : (
           <div className="h-full w-full bg-gradient-to-br from-[#2a0040] to-[#1a0b2e]" />
