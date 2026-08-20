@@ -26,14 +26,16 @@ import 'server-only'
  *     4. instant_win_awards ..... latest FEED_LIMIT awards for those prizes
  *     5. entries ................ checkout_intent_id -> user_id (bulk)
  *     6. profiles_public_snapshot display names (bulk)
- *     7. profiles_private ....... real names ONLY (bulk; no mobile)
+ *     7. profiles_private ....... real name + mobile (bulk; same one query)
  *
  * PRIVACY
  *   Returns a readable winner name (real name preferred, else public display
- *   name), prize, competition and time. It does NOT return mobile numbers,
- *   checkout ids, entry/ticket ids, payment data or earnings. The winner name
- *   still originates from admin/ops-only sources and must never reach a public
- *   surface.
+ *   name), the winner's MOBILE number (hosts call winners during lives), prize,
+ *   competition and time. It does NOT return checkout ids, entry/ticket ids,
+ *   payment data or earnings. Name and mobile originate from admin/ops-only
+ *   sources and must never reach a public/customer surface — this payload is
+ *   only served through the secured, host-scoped winner-feed endpoint. Mobile
+ *   is read via the EXISTING bulk profiles_private lookup (no extra query).
  * -------------------------------------------------------------------------- */
 
 import { getAdminContext } from '@/lib/admin/auth'
@@ -176,22 +178,24 @@ export async function getHostLiveFeed(opts?: {
 
   const displayNameByUser = new Map<string, string | null>()
   const realNameByUser = new Map<string, string | null>()
+  const mobileByUser = new Map<string, string | null>()
   if (userIds.length > 0) {
     const [{ data: publicProfiles }, { data: privateProfiles, error: privateErr }] = await Promise.all([
       svc.from('profiles_public_snapshot').select('user_id, display_name').in('user_id', userIds),
-      // real_name ONLY — mobile is deliberately not fetched for the host feed.
-      svc.from('profiles_private').select('user_id, real_name').in('user_id', userIds),
+      // Same single bulk lookup — real_name + mobile (host needs to call winners).
+      svc.from('profiles_private').select('user_id, real_name, mobile').in('user_id', userIds),
     ])
     for (const p of publicProfiles ?? []) {
       displayNameByUser.set(p.user_id as string, (p.display_name ?? null) as string | null)
     }
     // Fail-soft: a private-profile error must not break the feed; we just fall
-    // back to the public display name for those winners.
+    // back to the public display name and omit mobile for those winners.
     if (privateErr) {
       console.log('[v0] host-live-feed profiles_private (non-fatal) error:', privateErr.message)
     } else {
       for (const p of privateProfiles ?? []) {
         realNameByUser.set(p.user_id as string, (p.real_name ?? null) as string | null)
+        mobileByUser.set(p.user_id as string, (p.mobile ?? null) as string | null)
       }
     }
   }
@@ -201,12 +205,16 @@ export async function getHostLiveFeed(opts?: {
     const userId = award.checkout_intent_id ? userIdByIntent.get(award.checkout_intent_id) : null
     const realName = userId ? realNameByUser.get(userId) ?? null : null
     const displayName = userId ? displayNameByUser.get(userId) ?? null : null
+    const rawMobile = userId ? mobileByUser.get(userId) ?? null : null
+    // Normalise empty/whitespace to null so the UI omits the row (never blank/undefined).
+    const mobile = typeof rawMobile === 'string' && rawMobile.trim() ? rawMobile.trim() : null
     const info = prizeInfo.get(award.prize_id as string)
     const campaignId = info?.campaignId ?? ''
     return {
       id: `${award.awarded_at}-${award.prize_id}-${i}`,
       createdAt: award.awarded_at as string,
       winnerName: realName || displayName || 'Player',
+      mobile,
       prizeTitle: info?.title ?? 'Instant win',
       campaignId,
       campaignTitle: titleById.get(campaignId) ?? 'Competition',
