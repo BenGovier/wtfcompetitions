@@ -5,9 +5,12 @@
  * (lib/admin/host-live-feed.ts), the API route and the client stream component
  * all share one payload shape.
  *
- * PRIVACY: the feed intentionally carries NO mobile number or other private
- * profile data — only a readable winner name, the prize, the competition and
- * the time. Nothing here may ever be exposed to a public surface.
+ * PRIVACY: this Host/Admin-only feed carries the winner's name and mobile
+ * number (hosts need to call winners during TikTok lives), the prize, the
+ * competition and the time — and nothing else private (no checkout/entry/ticket
+ * ids, payment data or earnings). Because it includes a mobile number, NOTHING
+ * here may ever be exposed to a public or customer-facing surface; it is only
+ * served through the secured, host-scoped winner-feed endpoint.
  */
 
 /** One of the authenticated host's assigned campaigns (for the filter menu). */
@@ -24,6 +27,11 @@ export interface HostFeedItem {
   createdAt: string
   /** Readable winner name (real name if available, else public display name). */
   winnerName: string
+  /**
+   * Winner's mobile number, or null when none is on file. PRIVATE — for the
+   * host to call the winner during a live. Never rendered on public surfaces.
+   */
+  mobile: string | null
   /** Prize title, e.g. "£250 Cash". */
   prizeTitle: string
   /** Which assigned competition this win belongs to. */
