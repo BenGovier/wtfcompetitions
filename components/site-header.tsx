@@ -30,7 +30,8 @@ function isStaleRefreshTokenError(err: unknown): boolean {
   return /refresh token not found/i.test(message) || /invalid refresh token: already used/i.test(message)
 }
 
-export async function SiteHeader() {
+export async function SiteHeader({ variant = "default" }: { variant?: "default" | "casino" }) {
+  const isCasino = variant === "casino"
   const supabase = await createClient()
 
   // Keep the SINGLE existing getUser() call. We now capture its result so a
@@ -87,7 +88,16 @@ export async function SiteHeader() {
   }
 
   return (
-    <header className="sticky top-0 z-50 border-b bg-background/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <header
+      className={
+        isCasino
+          ? // Dark integrated gaming shell — near-black purple, faint gold lower
+            // seam so header + promo read as one casino surface. Behaviour and
+            // layout identical to default; only the skin changes.
+            "sticky top-0 z-50 border-b border-amber-400/15 bg-[#0a0016]/95 shadow-[0_1px_0_rgba(251,191,36,0.12)] backdrop-blur supports-[backdrop-filter]:bg-[#0a0016]/80"
+          : "sticky top-0 z-50 border-b bg-background/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/60"
+      }
+    >
       <div className="container flex h-16 items-center justify-between">
         <Link href="/" prefetch={false} className="flex items-center transition-opacity hover:opacity-80">
           <Image
@@ -101,13 +111,25 @@ export async function SiteHeader() {
         </Link>
 
         <nav className="hidden items-center gap-6 md:flex">
-          <Link href="/giveaways" prefetch={false} className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+          <Link
+            href="/giveaways"
+            prefetch={false}
+            className={`text-sm font-medium transition-colors ${isCasino ? "text-white/70 hover:text-white" : "text-muted-foreground hover:text-foreground"}`}
+          >
             Giveaways
           </Link>
-          <Link href="/winners" prefetch={false} className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+          <Link
+            href="/winners"
+            prefetch={false}
+            className={`text-sm font-medium transition-colors ${isCasino ? "text-white/70 hover:text-white" : "text-muted-foreground hover:text-foreground"}`}
+          >
             Winners
           </Link>
-          <Link href="/contact" prefetch={false} className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+          <Link
+            href="/contact"
+            prefetch={false}
+            className={`text-sm font-medium transition-colors ${isCasino ? "text-white/70 hover:text-white" : "text-muted-foreground hover:text-foreground"}`}
+          >
             Contact
           </Link>
         </nav>
@@ -122,7 +144,7 @@ export async function SiteHeader() {
               href="/me"
               prefetch={false}
               aria-label={`Available WTF Credit ${formatGBP(walletAvailablePence)}. View account.`}
-              className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-yellow-400/50 bg-[#2E1065] px-3 py-1.5 text-sm font-semibold text-yellow-100 shadow-[0_0_14px_rgba(247,166,0,0.18)] transition-colors hover:border-yellow-300/70 hover:bg-[#3B0F73] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-yellow-400/50 bg-[#2E1065] px-3 py-1.5 text-sm font-semibold text-yellow-100 shadow-[0_0_14px_rgba(247,166,0,0.18)] transition-colors hover:border-yellow-300/70 hover:bg-[#3B0F73] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/70 focus-visible:ring-offset-2 ${isCasino ? "focus-visible:ring-offset-[#0a0016]" : "focus-visible:ring-offset-background"}`}
             >
               <Wallet className="h-4 w-4 shrink-0 text-yellow-400" aria-hidden="true" />
               <span className="tabular-nums">{formatGBP(walletAvailablePence)}</span>
@@ -132,12 +154,17 @@ export async function SiteHeader() {
           {/* Mobile-only: burger menu for both signed-in and signed-out users.
               The signed-in state opens a polished account menu with a Sign out
               action; signed-out keeps Create account / Log in. */}
-          <MobileAuthMenu isSignedIn={!!user} />
+          <MobileAuthMenu isSignedIn={!!user} variant={variant} />
 
           {/* Desktop buttons */}
           {user ? (
             <>
-              <Button variant="ghost" size="sm" asChild className="hidden sm:inline-flex hover:bg-accent">
+              <Button
+                variant="ghost"
+                size="sm"
+                asChild
+                className={`hidden sm:inline-flex ${isCasino ? "text-white/80 hover:bg-white/10 hover:text-white" : "hover:bg-accent"}`}
+              >
                 <Link href="/me" prefetch={false}>My Account</Link>
               </Button>
               <Button size="sm" asChild className="hidden sm:inline-flex bg-primary text-primary-foreground shadow-sm hover:bg-[#5B21B6]">

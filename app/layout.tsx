@@ -77,12 +77,16 @@ export default async function RootLayout({
   // wrap them. These elements remain untouched on all customer-facing routes.
   const isAdminRoute = pathname.startsWith("/admin")
   const isBarePage = pathname.startsWith("/pre-register") || isAdminRoute
+  // Homepage-only dark casino header skin. Presentation flag only — same header
+  // component, same auth/wallet/menu behaviour; every other route keeps the
+  // default header untouched.
+  const isHome = pathname === "/"
 
   return (
     <html lang="en">
       <body className={`font-sans antialiased`}>
         {!isBarePage && <AnnouncementBar />}
-        {!isBarePage && <SiteHeader />}
+        {!isBarePage && <SiteHeader variant={isHome ? "casino" : "default"} />}
         <main className={isBarePage ? "" : "min-h-[calc(100vh-4rem)]"}>{children}</main>
         {!isBarePage && <SiteFooter />}
         {!isBarePage && <MobileNav />}
