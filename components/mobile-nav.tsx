@@ -20,6 +20,7 @@ const rightItems = [
 
 export function MobileNav() {
   const pathname = usePathname()
+  const isCasinoHome = pathname === "/"
 
   // On individual giveaway detail pages (/giveaways/[slug]) the mobile sticky
   // purchase bar becomes the primary bottom action, so the normal bottom nav is
@@ -43,18 +44,24 @@ export function MobileNav() {
           {/* Elevated center button */}
           <div
             className={cn(
-              "flex h-16 w-16 items-center justify-center rounded-full shadow-lg transition-all duration-200",
-              "bg-gradient-to-b from-[#FFD46A] to-[#F7A600]",
-              "border-4 border-purple-950",
-              "hover:scale-105 hover:shadow-[0_0_20px_rgba(247,166,0,0.5)]",
-              isActive && "shadow-[0_0_25px_rgba(247,166,0,0.6)] scale-105"
+              "flex h-16 w-16 items-center justify-center rounded-full transition-all duration-200",
+              isCasinoHome
+                ? "border-[3px] border-[#6C278A] bg-[linear-gradient(180deg,#FFE36B_0%,#FFC32F_46%,#FFA100_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_0_4px_rgba(255,247,211,0.60),0_0_13px_rgba(255,186,14,0.52),0_0_28px_-6px_rgba(171,57,255,0.72)]"
+                : "border-4 border-purple-950 bg-gradient-to-b from-[#FFD46A] to-[#F7A600] shadow-lg",
+              isCasinoHome
+                ? "hover:brightness-105"
+                : "hover:scale-105 hover:shadow-[0_0_20px_rgba(247,166,0,0.5)]",
+              isActive &&
+                (isCasinoHome
+                  ? "shadow-[inset_0_1px_0_rgba(255,255,255,0.74),0_0_5px_rgba(255,249,220,0.68),0_0_16px_rgba(255,186,14,0.58),0_0_32px_-5px_rgba(171,57,255,0.80)]"
+                  : "shadow-[0_0_25px_rgba(247,166,0,0.6)] scale-105")
             )}
           >
             <Icon className="h-7 w-7 text-purple-950" aria-hidden="true" />
           </div>
           <span className={cn(
             "mt-1 text-[10px] font-bold uppercase tracking-wide",
-            isActive ? "text-amber-400" : "text-white/90"
+            isActive ? "text-amber-400" : isCasinoHome ? "text-white/78" : "text-white/90"
           )}>
             {item.label}
           </span>
@@ -69,12 +76,12 @@ export function MobileNav() {
         prefetch={false}
         className={cn(
           "flex flex-col items-center justify-center gap-1 min-w-[60px] py-1 transition-colors",
-          isActive ? "text-amber-400" : "text-white/80 hover:text-white"
+          isActive ? "text-amber-400" : isCasinoHome ? "text-white/72 hover:text-white" : "text-white/80 hover:text-white"
         )}
       >
         <div className={cn(
           "flex items-center justify-center rounded-lg p-2 transition-all",
-          isActive && "bg-white/15"
+          isActive && (isCasinoHome ? "bg-[#2A0A38]/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_10px_rgba(123,36,181,0.15)]" : "bg-white/15")
         )}>
           <Icon className="h-6 w-6" strokeWidth={isActive ? 2.5 : 2} aria-hidden="true" />
         </div>
@@ -105,16 +112,29 @@ export function MobileNav() {
           >
             <path
               d="M0 20 L160 20 Q175 20 180 35 Q200 70 220 35 Q225 20 240 20 L400 20 L400 80 L0 80 Z"
-              className="fill-purple-950"
+              className={isCasinoHome ? "fill-[#07000d]" : "fill-purple-950"}
             />
             {/* Subtle top border/glow line */}
             <path
               d="M0 20 L160 20 Q175 20 180 35 Q200 70 220 35 Q225 20 240 20 L400 20"
-              className="stroke-purple-700/50"
+              className={isCasinoHome ? "stroke-[#6E2589]/80" : "stroke-purple-700/50"}
               strokeWidth="1"
               fill="none"
             />
           </svg>
+
+          {isCasinoHome && (
+            <>
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute left-0 right-0 top-[19px] h-px bg-[linear-gradient(90deg,transparent_0%,#6D218C_22%,#A52ED0_50%,#6D218C_78%,transparent_100%)] opacity-70"
+              />
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute left-[41%] right-[41%] top-[17px] h-[5px] rounded-full bg-[#BF47E7]/25 blur-[5px]"
+              />
+            </>
+          )}
 
           {/* Nav content */}
           <div className="relative z-10 flex items-center justify-between px-2 pb-2 pt-6">
