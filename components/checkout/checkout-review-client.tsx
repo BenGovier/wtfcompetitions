@@ -48,6 +48,22 @@ export interface ReviewOption {
 }
 
 /**
+ * Read-only aggregate instant-win facts for the upsell copy ONLY. Derived
+ * server-side from the existing detail snapshot. Carries no ticket numbers,
+ * slot positions, winning positions, award identities or prize configuration.
+ */
+export interface InstantWinSummary {
+  /** Total instant prizes still available (sum of positive remaining counts). */
+  remainingCount: number
+  /**
+   * A pre-formatted, unambiguous hero CASH label (e.g. "£1,000 CASH") when a
+   * clearly-cash instant of £250+ remains; otherwise null. Site credit / wallet
+   * prizes are never eligible.
+   */
+  heroCashLabel: string | null
+}
+
+/**
  * Format an integer pence amount as GBP with two decimal places (e.g. 2000 ->
  * "£20.00"). Clamps malformed/negative values to £0.00 so nothing negative or
  * raw ever renders.
@@ -109,6 +125,212 @@ function friendlyError(code: unknown): string {
   return GENERIC_ERROR
 }
 
+type InstantHookState = 'hero_cash' | 'generic' | 'none'
+
+/**
+ * CSS-ONLY neon perimeter + glow for the Exclusive Chance Boost card. No JS
+ * loop, no canvas, no library, no image. The travelling light animates a single
+ * registered custom property (--ecb-angle) that drives a masked conic-gradient
+ * border ring; a separate opacity pulse provides the glow. Reduced-motion users
+ * keep the static neon border/glow with no movement. Nothing here animates a
+ * layout property, so there is no CLS and no re-render cost.
+ */
+const ECB_STYLES = `
+@property --ecb-angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
+.ecb-card { position: relative; isolation: isolate; }
+.ecb-card::before {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; padding: 2px;
+  background: conic-gradient(from var(--ecb-angle),
+    rgba(255,47,179,0) 0deg, #ff2fb3 40deg, #ff4fd8 85deg, #8b5cf6 140deg,
+    rgba(139,92,246,0) 190deg, #facc15 250deg, #ff2fb3 315deg, rgba(255,47,179,0) 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: ecb-rotate 3.5s linear infinite;
+  pointer-events: none; z-index: 1;
+}
+.ecb-card::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: -1;
+  box-shadow: 0 0 16px rgba(255,47,179,0.34), 0 0 30px rgba(139,92,246,0.26), 0 0 54px rgba(255,47,179,0.14);
+  animation: ecb-pulse 2.4s ease-in-out infinite alternate;
+}
+.ecb-inner { position: relative; z-index: 2; }
+@keyframes ecb-rotate { to { --ecb-angle: 360deg; } }
+@keyframes ecb-pulse { from { opacity: 0.6; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .ecb-card::before { animation: none; }
+  .ecb-card::after { animation: none; opacity: 0.85; }
+}
+`
+
+/**
+ * Presentational-only "Exclusive Chance Boost" upsell card. Contains no data
+ * fetching, no pricing logic and no checkout state — it renders values passed
+ * in and calls onUnlock (which the parent wires to the existing selectOption()).
+ */
+function ExclusiveChanceBoost({
+  currentQty,
+  targetQty,
+  incrementalLabel,
+  savingsPence,
+  instantState,
+  remainingCount,
+  heroCashLabel,
+  disabled,
+  onUnlock,
+}: {
+  currentQty: number
+  targetQty: number
+  /** Pre-formatted "£X" when a precise nudge is safe to show; else null. */
+  incrementalLabel: string | null
+  savingsPence: number
+  instantState: InstantHookState
+  remainingCount: number
+  heroCashLabel: string | null
+  disabled: boolean
+  onUnlock: () => void
+}) {
+  const currentUnit = currentQty === 1 ? 'CHANCE' : 'CHANCES'
+  const targetUnit = targetQty === 1 ? 'CHANCE' : 'CHANCES'
+  const targetUnitLower = targetUnit.toLowerCase()
+  const instantsRemain = instantState === 'hero_cash' || instantState === 'generic'
+
+  return (
+    <>
+      <style dangerouslySetInnerHTML={{ __html: ECB_STYLES }} />
+      <div className="ecb-card rounded-2xl bg-[#0b0416] p-4 sm:p-5">
+        {/* Radial illumination behind the chance upgrade (fades to transparent
+            before the corners, so no clipping is needed). */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 rounded-2xl"
+          style={{
+            background:
+              'radial-gradient(circle at 50% 34%, rgba(255,47,179,0.18), rgba(139,92,246,0.06) 45%, transparent 66%)',
+          }}
+        />
+
+        <div className="ecb-inner flex flex-col items-center text-center">
+          {/* Gold exclusivity pill */}
+          <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-black shadow-[0_0_16px_rgba(247,166,0,0.5)]">
+            ★ Selected for you ★
+          </span>
+
+          {/* Headline */}
+          <h2 className="mt-3 text-xl font-extrabold uppercase tracking-tight text-white sm:text-2xl">
+            Exclusive Chance Boost
+          </h2>
+          <p className="mt-1 text-xs text-purple-200/90 sm:text-sm">
+            You&apos;ve unlocked a special upgrade before checkout
+          </p>
+
+          {/* Campaign / instant-win hook */}
+          {instantState === 'hero_cash' && heroCashLabel && (
+            <p className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-pink-400/40 bg-pink-500/15 px-3 py-1 text-xs font-bold text-pink-100 sm:text-sm">
+              {`🔥 ${heroCashLabel} INSTANT STILL LIVE`}
+            </p>
+          )}
+          {instantState === 'generic' && (
+            <div className="mt-3">
+              <p className="inline-flex items-center gap-1.5 rounded-full border border-pink-400/40 bg-pink-500/15 px-3 py-1 text-xs font-bold text-pink-100 sm:text-sm">
+                ⚡ INSTANT WINS STILL LIVE
+              </p>
+              {remainingCount > 0 && (
+                <p className="mt-1 text-xs text-purple-200/90">
+                  {remainingCount} instant {remainingCount === 1 ? 'prize' : 'prizes'} still available
+                </p>
+              )}
+            </div>
+          )}
+          {instantState === 'none' && (
+            <div className="mt-3">
+              <p className="inline-flex items-center gap-1.5 rounded-full border border-yellow-400/40 bg-yellow-500/15 px-3 py-1 text-xs font-bold text-yellow-100 sm:text-sm">
+                🏆 MORE CHANCES AT THE FINAL PRIZE
+              </p>
+              <p className="mt-1 text-xs text-purple-200/90">
+                Every extra ticket gives you another entry into the final draw.
+              </p>
+            </div>
+          )}
+
+          {/* Quantity comparison — the visual focal point */}
+          <div className="mt-4 flex w-full items-stretch justify-center gap-3">
+            <div className="flex min-w-[80px] flex-col items-center justify-center rounded-xl border border-purple-500/30 bg-white/5 px-3 py-2.5">
+              <span className="text-2xl font-extrabold leading-none tabular-nums text-purple-100 sm:text-3xl">
+                {currentQty}
+              </span>
+              <span className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-purple-300">
+                {currentUnit}
+              </span>
+            </div>
+            <div className="flex items-center">
+              <span
+                aria-hidden="true"
+                className="text-2xl font-black text-pink-300 drop-shadow-[0_0_10px_rgba(255,47,179,0.7)] sm:text-3xl"
+              >
+                →
+              </span>
+            </div>
+            <div className="flex min-w-[80px] flex-col items-center justify-center rounded-xl border border-pink-400/60 bg-gradient-to-br from-pink-500/25 to-purple-500/15 px-3 py-2.5 shadow-[0_0_20px_rgba(255,47,179,0.35)]">
+              <span className="text-3xl font-black leading-none tabular-nums text-white drop-shadow-[0_0_12px_rgba(255,47,179,0.7)] sm:text-4xl">
+                {targetQty}
+              </span>
+              <span className="mt-1 text-[10px] font-bold uppercase tracking-wider text-pink-200">
+                {targetUnit}
+              </span>
+            </div>
+          </div>
+
+          {/* Price nudge */}
+          <p className="mt-3 text-sm text-purple-100">
+            {incrementalLabel ? (
+              <>
+                Only <span className="text-base font-extrabold text-white">{incrementalLabel}</span> more
+              </>
+            ) : (
+              <>
+                Upgrade to {targetQty} {targetUnitLower}
+              </>
+            )}
+            {savingsPence > 0 && (
+              <span className="ml-1 text-emerald-300">· save {formatGBP(savingsPence)}</span>
+            )}
+          </p>
+
+          {/* Gold upgrade CTA — deliberately distinct from the Pay button */}
+          <button
+            type="button"
+            onClick={onUnlock}
+            disabled={disabled}
+            className="mt-4 w-full rounded-xl bg-gradient-to-b from-[#FFE49A] via-[#FBC53D] to-[#F7A600] px-4 py-3.5 text-base font-extrabold uppercase tracking-wide text-[#3a2600] shadow-[0_0_26px_rgba(247,166,0,0.55)] ring-1 ring-[#FFE9A8]/70 transition-transform duration-200 hover:-translate-y-px hover:shadow-[0_0_34px_rgba(247,166,0,0.75)] active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {`♛ Unlock my ${targetQty} ${targetUnitLower}`}
+          </button>
+
+          {/* Benefit row */}
+          <div className="mt-3 flex w-full flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[11px] text-purple-200/90">
+            {instantsRemain && (
+              <span className="inline-flex items-center gap-1">
+                <span className="text-yellow-300" aria-hidden="true">
+                  ⚡
+                </span>{' '}
+                Instant win chance
+              </span>
+            )}
+            <span className="inline-flex items-center gap-1">
+              <span className="text-yellow-300" aria-hidden="true">
+                🏆
+              </span>{' '}
+              Every ticket enters the final draw
+            </span>
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
 interface CheckoutReviewClientProps {
   campaignId: string
   slug: string | null
@@ -120,6 +342,7 @@ interface CheckoutReviewClientProps {
   options: ReviewOption[]
   initialKey: string
   availableWalletPence: number
+  instantWins: InstantWinSummary | null
 }
 
 export function CheckoutReviewClient({
@@ -133,6 +356,7 @@ export function CheckoutReviewClient({
   options,
   initialKey,
   availableWalletPence,
+  instantWins,
 }: CheckoutReviewClientProps) {
   // The toggle is OFF by default on every page load and is NOT persisted.
   const [useCredit, setUseCredit] = useState(false)
@@ -159,6 +383,9 @@ export function CheckoutReviewClient({
   // Selected ticket option. Defaults to the option the customer arrived with.
   const [selectedKey, setSelectedKey] = useState(initialKey)
   const [showAllOptions, setShowAllOptions] = useState(false)
+  // Local, non-persisted: once the customer accepts the boost we do not offer it
+  // again for this Review visit (one upsell per visit). Nothing is stored.
+  const [upsellAccepted, setUpsellAccepted] = useState(false)
 
   // ---- Discount code -------------------------------------------------------
   // All apply / remove / invalidation / idempotency-key logic lives in the pure
@@ -210,13 +437,28 @@ export function CheckoutReviewClient({
   const previewExternalPence = effectiveTotalPence - previewCreditPence
   const fullyFunded = useCredit && previewExternalPence <= 0 && effectiveTotalPence > 0
 
-  // Recommend the smallest configured option that offers MORE chances at a
-  // higher total (so "just £X more" is always a real, positive difference).
+  // Recommend a larger EXISTING option for the "Exclusive Chance Boost". Only
+  // options that offer MORE chances at a higher total qualify (so the price
+  // nudge is always a real, positive difference). A preferred round tier is
+  // chosen when it exists; otherwise the nearest sensible larger option. Never
+  // invents a quantity, bundle or price.
   const recommended = useMemo(() => {
     const larger = options
       .filter((o) => o.qty > selected.qty && o.totalPence > selected.totalPence)
       .sort((a, b) => a.qty - b.qty || a.totalPence - b.totalPence)
-    return larger[0] ?? null
+    if (larger.length === 0) return null
+
+    let preferredQty: number | null = null
+    if (selected.qty < 10) preferredQty = 10
+    else if (selected.qty < 20) preferredQty = 20
+    else if (selected.qty < 40) preferredQty = 50
+
+    if (preferredQty != null) {
+      const preferred = larger.find((o) => o.qty === preferredQty)
+      if (preferred) return preferred
+    }
+    // Nearest sensible larger option (smallest qualifying upgrade).
+    return larger[0]
   }, [options, selected])
 
   // Other valid options the customer could switch to (excludes the current one).
@@ -227,6 +469,21 @@ export function CheckoutReviewClient({
 
   const backHref = slug ? `/giveaways/${slug}` : '/giveaways'
   const perUnitPence = hasBundle && qty > 0 ? Math.round(displayTotalPence / qty) : ticketPricePence
+
+  // ---- Exclusive Chance Boost (upsell) — all display-only, all local --------
+  const boostVisible = recommended != null && !upsellAccepted
+  const boostDeltaPence = recommended ? Math.max(recommended.totalPence - displayTotalPence, 0) : 0
+  // Only show a precise "£X more" when neither a discount nor WTF Credit is in
+  // play — either would make the simple base-total delta misleading.
+  const boostPriceSafe = discountPence <= 0 && !useCredit
+  const boostIncrementalLabel = boostPriceSafe && boostDeltaPence > 0 ? formatGBP(boostDeltaPence) : null
+  const instantRemaining = instantWins?.remainingCount ?? 0
+  const instantHeroLabel = instantWins?.heroCashLabel ?? null
+  const instantState: InstantHookState = instantHeroLabel
+    ? 'hero_cash'
+    : instantRemaining > 0
+      ? 'generic'
+      : 'none'
 
   /** Preserve campaignId, selected qty and bundlePricePence in the review URL. */
   function buildReviewUrl(): string {
@@ -339,6 +596,19 @@ export function CheckoutReviewClient({
     if (submitting || nameFormOpen) return
     setError(null)
     setSelectedKey(key)
+  }
+
+  /**
+   * Accept the Exclusive Chance Boost. Uses ONLY the existing selectOption()
+   * mechanism (which changes `selected`, and therefore the quantity display,
+   * order total, discount/wallet previews and the Pay button, all naturally).
+   * No API call, no URL change, no checkout mutation. We then hide the offer so
+   * it is not shown again this visit.
+   */
+  function acceptBoost() {
+    if (!recommended || submitting || nameFormOpen) return
+    selectOption(recommended.key)
+    setUpsellAccepted(true)
   }
 
   function onDiscountInputChange(value: string) {
@@ -984,6 +1254,25 @@ export function CheckoutReviewClient({
               </span>
             </div>
 
+            {/* EXCLUSIVE CHANCE BOOST — the single upsell, positioned directly
+                below Order total and above Ways to save. Read-only + local: it
+                only calls the existing selectOption() via onUnlock. */}
+            {boostVisible && recommended && (
+              <div className="mt-4">
+                <ExclusiveChanceBoost
+                  currentQty={qty}
+                  targetQty={recommended.qty}
+                  incrementalLabel={boostIncrementalLabel}
+                  savingsPence={recommended.savingsPence}
+                  instantState={instantState}
+                  remainingCount={instantRemaining}
+                  heroCashLabel={instantHeroLabel}
+                  disabled={submitting || nameFormOpen}
+                  onUnlock={acceptBoost}
+                />
+              </div>
+            )}
+
             {selectedKey !== initialKey && (
               <button
                 type="button"
@@ -1111,34 +1400,6 @@ export function CheckoutReviewClient({
               </div>
             </div>
           </div>
-
-          {/* Smart upsell */}
-          {recommended && (
-            <div className="rounded-2xl border border-pink-500/30 bg-gradient-to-br from-pink-500/10 to-purple-500/10 p-4">
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-pink-300" aria-hidden="true" />
-                <p className="text-sm font-bold text-pink-100">Boost your chances</p>
-              </div>
-              <p className="mt-1 text-sm text-purple-100">
-                Upgrade to <span className="font-bold text-white">{recommended.qty} chances</span> for just{' '}
-                <span className="font-bold text-white">
-                  {formatGBP(recommended.totalPence - displayTotalPence)}
-                </span>{' '}
-                more
-                {recommended.savingsPence > 0 && (
-                  <span className="text-emerald-300"> · save {formatGBP(recommended.savingsPence)}</span>
-                )}
-              </p>
-              <Button
-                type="button"
-                onClick={() => selectOption(recommended.key)}
-                disabled={submitting}
-                className="mt-3 w-full rounded-xl bg-pink-500 py-2.5 text-sm font-bold text-white transition-transform hover:scale-[1.01] hover:bg-pink-400 disabled:opacity-60"
-              >
-                Upgrade to {recommended.qty} chances
-              </Button>
-            </div>
-          )}
 
           {/* Other ticket options — a small text link, not another large card */}
           {otherOptions.length > 0 && (
