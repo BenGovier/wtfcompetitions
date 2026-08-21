@@ -1,39 +1,41 @@
 'use client'
 
 import { createClient } from '@/lib/supabase/client'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import Link from 'next/link'
-import Image from 'next/image'
-import { ArrowLeft, ArrowRight, Check, Eye, EyeOff, Lock } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, Eye, EyeOff } from 'lucide-react'
 import { validateCustomerName } from '@/lib/acquired/customer-name'
 import { MARKETING_CONSENT_LABEL } from '@/lib/marketing/consent'
 
 const TOTAL_STEPS = 4
 
 /**
- * CSS-only wizard step transition: a slight fade + ~22px horizontal slide.
- * Direction is driven by the data-dir attribute the container sets before each
- * step change. No animation library, no layout-property animation (transform +
- * opacity only), so there is no CLS. Reduced-motion users get an instant swap.
+ * CSS-only wizard step transition: a slight fade + ~16px horizontal slide of the
+ * step CONTENT only (never the card/page), driven by the data-dir attribute the
+ * container sets before each step change. transform + opacity only, so there is
+ * no CLS. A small pop is used for the password-success tick. Reduced-motion
+ * users get an instant swap.
  */
 const WIZARD_STYLES = `
-@keyframes wtf-step-fwd { from { opacity: 0; transform: translateX(22px); } to { opacity: 1; transform: translateX(0); } }
-@keyframes wtf-step-back { from { opacity: 0; transform: translateX(-22px); } to { opacity: 1; transform: translateX(0); } }
-.wtf-step { animation: wtf-step-fwd 260ms cubic-bezier(0.22, 1, 0.36, 1); }
+@keyframes wtf-step-fwd { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes wtf-step-back { from { opacity: 0; transform: translateX(-16px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes wtf-pop { from { opacity: 0; transform: scale(0.82); } to { opacity: 1; transform: scale(1); } }
+.wtf-step { animation: wtf-step-fwd 220ms cubic-bezier(0.22, 1, 0.36, 1); }
 .wtf-step[data-dir="back"] { animation-name: wtf-step-back; }
+.wtf-pop { animation: wtf-pop 180ms ease-out; }
 @media (prefers-reduced-motion: reduce) {
-  .wtf-step { animation: none; }
+  .wtf-step, .wtf-pop { animation: none; }
 }
 `
 
 // Shared field styling — premium dark-purple surface, thin low-contrast border,
-// large touch target (h-12), 16px text to avoid iOS zoom, magenta focus glow.
+// comfortable 52px touch target, 16px text to avoid iOS zoom, controlled magenta
+// focus border + glow.
 const FIELD_BASE =
-  'h-12 rounded-xl border-purple-400/20 bg-[#0c0518] text-base text-white placeholder:text-purple-300/30 transition-colors focus-visible:border-fuchsia-400/70 focus-visible:ring-2 focus-visible:ring-fuchsia-500/25 focus-visible:ring-offset-0'
+  'h-[52px] rounded-xl border-purple-400/20 bg-[#0c0518] text-base text-white placeholder:text-purple-300/30 transition-[border-color,box-shadow] duration-150 focus-visible:border-fuchsia-400/70 focus-visible:ring-2 focus-visible:ring-fuchsia-500/25 focus-visible:ring-offset-0'
 
 function fieldClass(hasError: boolean) {
   return hasError
@@ -70,6 +72,8 @@ export default function SignUpPage() {
   const [step, setStep] = useState(1)
   const [direction, setDirection] = useState<'fwd' | 'back'>('fwd')
   const [showPassword, setShowPassword] = useState(false)
+  // Drives the progressive password helper (hidden until focused/typed).
+  const [passwordFocused, setPasswordFocused] = useState(false)
   // UI-only field errors used to gate step advancement. The final submit still
   // runs the untouched handleSignUp, so these never change what is submitted.
   const [emailError, setEmailError] = useState<string | null>(null)
@@ -267,27 +271,24 @@ export default function SignUpPage() {
 
   if (confirmMessage) {
     return (
-      <div className="relative flex min-h-svh w-full items-start justify-center overflow-x-hidden bg-[#080312] px-6 pt-10 pb-10 md:items-center md:p-10">
+      <div className="relative flex min-h-svh w-full items-start justify-center overflow-x-hidden bg-[#080312] px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-14 md:items-center md:p-10">
         <WizardBackdrop />
         <div className="relative z-10 w-full max-w-[520px]">
-          <div className="flex flex-col items-center">
-            <BrandLogo />
-            <div className="mt-6 w-full rounded-2xl border border-purple-500/25 bg-[#130a22]/90 p-7 text-center shadow-[0_0_40px_-12px_rgba(168,82,255,0.35)]">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-fuchsia-500/15 text-fuchsia-300 shadow-[0_0_26px_rgba(217,70,239,0.4)]">
-                <Check className="h-7 w-7" aria-hidden="true" />
-              </div>
-              <h1 className="mt-4 text-2xl font-extrabold text-white">Check your email</h1>
-              <p className="mt-2 text-sm leading-relaxed text-purple-200/80">
-                We sent a confirmation link to <strong className="text-white">{email}</strong>. Click the link
-                in the email to activate your account.
-              </p>
-              <Link
-                href="/auth/login"
-                className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-xl border border-purple-400/30 bg-white/5 text-sm font-semibold text-white transition-colors hover:bg-white/10"
-              >
-                Back to sign in
-              </Link>
+          <div className="rounded-2xl border border-purple-500/25 bg-[#130a22]/90 p-6 text-center shadow-[0_0_40px_-12px_rgba(168,82,255,0.35)] sm:p-7">
+            <div className="wtf-pop mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-fuchsia-500/15 text-fuchsia-300 shadow-[0_0_26px_rgba(217,70,239,0.4)]">
+              <Check className="h-7 w-7" aria-hidden="true" />
             </div>
+            <h1 className="mt-4 text-2xl font-extrabold text-white">Check your email</h1>
+            <p className="mt-2 text-sm leading-relaxed text-purple-200/80">
+              We sent a confirmation link to <strong className="text-white">{email}</strong>. Click the link
+              in the email to activate your account.
+            </p>
+            <Link
+              href="/auth/login"
+              className="mt-6 inline-flex h-[52px] w-full items-center justify-center rounded-xl border border-purple-400/30 bg-white/5 text-sm font-semibold text-white transition-colors hover:bg-white/10"
+            >
+              Back to sign in
+            </Link>
           </div>
         </div>
       </div>
@@ -295,37 +296,33 @@ export default function SignUpPage() {
   }
 
   return (
-    <div className="relative flex min-h-svh w-full items-start justify-center overflow-x-hidden bg-[#080312] px-4 pt-8 pb-10 md:items-center md:py-12">
+    <div className="relative flex min-h-svh w-full items-start justify-center overflow-x-hidden bg-[#080312] px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-8 md:items-center md:py-12">
       <style dangerouslySetInnerHTML={{ __html: WIZARD_STYLES }} />
       <WizardBackdrop />
 
       <div className="relative z-10 w-full max-w-[520px]">
-        <div className="flex flex-col items-center">
-          <BrandLogo />
-          <h1 className="mt-5 text-balance text-center text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
+        {/* Tight hero — the site header already carries the WTF logo, so no
+            second logo here. Keep vertical footprint minimal. */}
+        <div className="text-center">
+          <h1 className="text-balance text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
             Create your account
           </h1>
-          <p className="mt-1 text-center text-sm text-purple-200/70">
-            Enter cash giveaways, reveal instant wins, track your tickets.
-          </p>
+          <p className="mt-1 text-sm text-purple-200/70">Join WTF in under a minute.</p>
         </div>
 
-        <div className="mt-6 rounded-2xl border border-purple-500/25 bg-[#130a22]/90 p-5 shadow-[0_0_44px_-14px_rgba(168,82,255,0.4)] backdrop-blur-sm sm:p-7">
+        <div className="mt-5 rounded-2xl border border-purple-500/20 bg-[#130a22]/90 p-4 shadow-[0_0_36px_-16px_rgba(168,82,255,0.45)] backdrop-blur-sm sm:p-6">
           <StepProgress step={step} />
 
           <form onSubmit={handleSignUp} noValidate>
             {/* Keyed on step so the entrance animation replays each transition.
                 Only the active step is mounted; values persist in React state,
-                so going Back always restores what was entered. */}
-            <div key={step} ref={stepRef} data-dir={direction} className="wtf-step mt-6">
+                so going Back always restores what was entered. The card sizes
+                to the active step (no forced fixed height). */}
+            <div key={step} ref={stepRef} data-dir={direction} className="wtf-step mt-5">
               {step === 1 && (
-                <div className="min-h-[248px]">
-                  <StepHeader
-                    index={1}
-                    title="What's your name?"
-                    subtitle="Let's start with the basics."
-                  />
-                  <div className="mt-5 flex flex-col gap-4">
+                <div>
+                  <StepHeader title="What's your name?" />
+                  <div className="mt-5 flex flex-col gap-5">
                     <div className="grid gap-2">
                       <Label htmlFor="first-name" className={LABEL_CLASS}>
                         First name
@@ -373,13 +370,12 @@ export default function SignUpPage() {
               )}
 
               {step === 2 && (
-                <div className="min-h-[248px]">
+                <div>
                   <StepHeader
-                    index={2}
                     title="How can we reach you?"
-                    subtitle="We use these details for your account and important prize updates."
+                    subtitle="For your account and prize updates."
                   />
-                  <div className="mt-5 flex flex-col gap-4">
+                  <div className="mt-5 flex flex-col gap-5">
                     <div className="grid gap-2">
                       <Label htmlFor="email" className={LABEL_CLASS}>
                         Email address
@@ -429,32 +425,9 @@ export default function SignUpPage() {
               )}
 
               {step === 3 && (
-                <div className="min-h-[248px]">
-                  <StepHeader
-                    index={3}
-                    title="Make it yours"
-                    subtitle="Choose how you'll appear if you win, and set a password."
-                  />
-                  <div className="mt-5 flex flex-col gap-4">
-                    <div className="grid gap-2">
-                      <Label htmlFor="display-name" className={LABEL_CLASS}>
-                        Winner display name{' '}
-                        <span className="font-normal text-purple-300/60">(optional)</span>
-                      </Label>
-                      <Input
-                        id="display-name"
-                        type="text"
-                        placeholder="Your public winner name"
-                        autoComplete="nickname"
-                        className={fieldClass(false)}
-                        value={displayName}
-                        onChange={(e) => setDisplayName(e.target.value)}
-                        onKeyDown={handleFieldKeyDown}
-                      />
-                      <p className="text-xs text-purple-300/60">
-                        Shown publicly if you win. Leave blank to auto-generate from your name.
-                      </p>
-                    </div>
+                <div>
+                  <StepHeader title="Set your password" subtitle="Almost there." />
+                  <div className="mt-5 flex flex-col gap-5">
                     <div className="grid gap-2">
                       <Label htmlFor="password" className={LABEL_CLASS}>
                         Password
@@ -469,6 +442,7 @@ export default function SignUpPage() {
                           aria-invalid={Boolean(passwordError)}
                           className={`${fieldClass(Boolean(passwordError))} pr-11`}
                           value={password}
+                          onFocus={() => setPasswordFocused(true)}
                           onChange={(e) => {
                             setPassword(e.target.value)
                             if (passwordError) setPasswordError(null)
@@ -488,36 +462,47 @@ export default function SignUpPage() {
                           )}
                         </button>
                       </div>
-                      {passwordError ? (
-                        <p className={ERROR_CLASS}>{passwordError}</p>
-                      ) : (
-                        <p className="text-xs text-purple-300/60">At least 6 characters.</p>
-                      )}
+                      {/* Progressive password helper: nothing until the field is
+                          engaged, a gentle requirement while short, and a compact
+                          success tick once the (unchanged) 6-char rule is met. */}
+                      <PasswordHint
+                        error={passwordError}
+                        show={passwordFocused || password.length > 0}
+                        valid={password.length >= 6}
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor="display-name" className={LABEL_CLASS}>
+                          Winner display name
+                        </Label>
+                        <OptionalBadge />
+                      </div>
+                      <Input
+                        id="display-name"
+                        type="text"
+                        placeholder="Your public winner name"
+                        autoComplete="nickname"
+                        className={fieldClass(false)}
+                        value={displayName}
+                        onChange={(e) => setDisplayName(e.target.value)}
+                        onKeyDown={handleFieldKeyDown}
+                      />
+                      <p className="text-xs text-purple-300/55">Shown if you win.</p>
                     </div>
                   </div>
                 </div>
               )}
 
               {step === 4 && (
-                <div className="min-h-[248px]">
-                  <StepHeader
-                    index={4}
-                    title="You're almost in!"
-                    subtitle="One quick check and you're ready to start winning."
-                  />
+                <div>
+                  <StepHeader title="You're almost in!" subtitle="Just confirm and you're ready." />
 
-                  {/* Compact account summary — reassuring, not a data-entry step. */}
-                  <dl className="mt-5 grid gap-2 rounded-xl border border-purple-400/15 bg-[#0c0518] p-4 text-sm">
-                    <SummaryRow label="Name" value={`${firstName} ${lastName}`.trim() || '—'} />
-                    <SummaryRow label="Email" value={email || '—'} />
-                    <SummaryRow label="Mobile" value={mobile || '—'} />
-                  </dl>
-
-                  {/* Required legal acceptance (implicit today — no gate added). */}
-                  <p className="mt-4 text-xs leading-relaxed text-purple-200/70">
+                  {/* Concise legal acceptance (implicit today — no new gate). */}
+                  <p className="mt-5 text-sm leading-relaxed text-purple-200/75">
                     By creating an account you agree to our{' '}
                     <Link href="/terms" className="text-fuchsia-300 underline underline-offset-2 hover:text-fuchsia-200">
-                      Terms
+                      Terms &amp; Conditions
                     </Link>{' '}
                     and{' '}
                     <Link href="/privacy" className="text-fuchsia-300 underline underline-offset-2 hover:text-fuchsia-200">
@@ -526,13 +511,15 @@ export default function SignUpPage() {
                     .
                   </p>
 
-                  {/* Marketing consent — deliberately small, secondary preference. */}
-                  <div className="mt-3 flex items-start gap-2.5 rounded-lg border border-purple-400/10 bg-white/[0.02] px-3 py-2.5">
+                  {/* Marketing consent — small, secondary, no heavy container.
+                      The accessible label text is the canonical consent wording
+                      (tied to the stored consent version) and is unchanged. */}
+                  <div className="mt-5 flex items-start gap-2.5">
                     <Checkbox
                       id="marketing-opt-in"
                       checked={marketingOptIn}
                       onCheckedChange={(v) => setMarketingOptIn(v === true)}
-                      className="mt-0.5"
+                      className="mt-0.5 h-[18px] w-[18px]"
                     />
                     <Label
                       htmlFor="marketing-opt-in"
@@ -551,14 +538,14 @@ export default function SignUpPage() {
               )}
             </div>
 
-            {/* Navigation row */}
-            <div className="mt-6 flex items-center gap-3">
+            {/* Navigation row — Continue is the clear primary; Back is quiet. */}
+            <div className="mt-7 flex items-center gap-3">
               {step > 1 && (
                 <button
                   type="button"
                   onClick={goBack}
                   disabled={isLoading}
-                  className="flex h-12 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-purple-400/20 px-4 text-sm font-semibold text-purple-200 transition-colors hover:bg-white/5 disabled:opacity-50"
+                  className="flex h-[52px] shrink-0 items-center justify-center gap-1.5 rounded-xl px-4 text-sm font-semibold text-purple-300 transition-colors hover:bg-white/5 hover:text-white disabled:opacity-50"
                 >
                   <ArrowLeft className="h-4 w-4" aria-hidden="true" />
                   Back
@@ -577,7 +564,7 @@ export default function SignUpPage() {
                   key="wizard-continue"
                   type="button"
                   onClick={goNext}
-                  className="group flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-fuchsia-600 via-purple-600 to-fuchsia-600 text-base font-bold tracking-wide text-white shadow-[0_0_22px_rgba(217,70,239,0.4)] ring-1 ring-fuchsia-300/40 transition-[transform,box-shadow] duration-150 hover:shadow-[0_0_30px_rgba(217,70,239,0.6)] active:scale-[0.985]"
+                  className="group flex h-[52px] flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-fuchsia-600 via-purple-600 to-fuchsia-600 text-base font-bold tracking-wide text-white shadow-[0_0_22px_rgba(217,70,239,0.4)] ring-1 ring-fuchsia-300/40 transition-[transform,box-shadow] duration-150 hover:shadow-[0_0_30px_rgba(217,70,239,0.6)] active:scale-[0.985]"
                 >
                   Continue
                   <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
@@ -587,7 +574,7 @@ export default function SignUpPage() {
                   key="wizard-submit"
                   type="submit"
                   disabled={isLoading}
-                  className="group flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-fuchsia-600 via-purple-600 to-fuchsia-600 text-base font-bold tracking-wide text-white shadow-[0_0_24px_rgba(217,70,239,0.45)] ring-1 ring-fuchsia-300/40 transition-[transform,box-shadow] duration-150 hover:shadow-[0_0_34px_rgba(217,70,239,0.65)] active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="group flex h-[52px] flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-fuchsia-600 via-purple-600 to-fuchsia-600 text-base font-bold tracking-wide text-white shadow-[0_0_24px_rgba(217,70,239,0.45)] ring-1 ring-fuchsia-300/40 transition-[transform,box-shadow] duration-150 hover:shadow-[0_0_34px_rgba(217,70,239,0.65)] active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isLoading ? 'Creating account…' : 'Create my account'}
                   {!isLoading && (
@@ -597,15 +584,9 @@ export default function SignUpPage() {
               )}
             </div>
           </form>
-
-          {/* Single, subtle reassurance line. */}
-          <p className="mt-4 flex items-center justify-center gap-1.5 text-xs text-purple-300/60">
-            <Lock className="h-3.5 w-3.5" aria-hidden="true" />
-            Safe &amp; secure — your details are protected
-          </p>
         </div>
 
-        <p className="mt-5 text-center text-sm text-purple-200/70">
+        <p className="mt-4 text-center text-sm text-purple-200/70">
           Already have an account?{' '}
           <Link href="/auth/login" className="font-semibold text-fuchsia-300 underline-offset-4 hover:underline">
             Log in
@@ -627,69 +608,72 @@ function WizardBackdrop() {
   )
 }
 
-function BrandLogo() {
-  return (
-    <Image
-      src="/images/wtf-logo-main.png"
-      alt="WTF Giveaways"
-      width={160}
-      height={57}
-      priority
-      className="h-auto w-[150px] [filter:drop-shadow(0_0_8px_rgba(168,82,255,0.35))]"
-    />
-  )
-}
-
-function StepHeader({ index, title, subtitle }: { index: number; title: string; subtitle: string }) {
+function StepHeader({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
     <div>
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-fuchsia-300/80">
-        {index} of {TOTAL_STEPS}
-      </p>
-      <h2 className="mt-1.5 text-balance text-xl font-extrabold text-white sm:text-2xl">{title}</h2>
-      <p className="mt-1 text-sm leading-relaxed text-purple-200/70">{subtitle}</p>
+      <h2 className="text-balance text-xl font-extrabold text-white sm:text-2xl">{title}</h2>
+      {subtitle && <p className="mt-1.5 text-sm leading-relaxed text-purple-200/65">{subtitle}</p>}
     </div>
   )
 }
 
-/** Minimal segmented progress: gold = done, magenta glow = current, muted = upcoming. */
+/**
+ * Compact progress: a small "Step X of 4" label and a thin gold→magenta bar
+ * whose width animates smoothly. Occupies minimal vertical height.
+ */
 function StepProgress({ step }: { step: number }) {
+  const pct = (step / TOTAL_STEPS) * 100
   return (
-    <div className="flex items-center gap-1.5" role="progressbar" aria-valuemin={1} aria-valuemax={TOTAL_STEPS} aria-valuenow={step} aria-label={`Step ${step} of ${TOTAL_STEPS}`}>
-      {Array.from({ length: TOTAL_STEPS }).map((_, i) => {
-        const n = i + 1
-        const done = n < step
-        const current = n === step
-        return (
-          <div key={n} className="flex flex-1 items-center gap-1.5">
-            <span
-              className={
-                done
-                  ? 'h-2.5 w-2.5 shrink-0 rounded-full bg-[#F6B91A] shadow-[0_0_8px_rgba(246,185,26,0.6)]'
-                  : current
-                    ? 'h-2.5 w-2.5 shrink-0 rounded-full bg-fuchsia-400 shadow-[0_0_10px_rgba(217,70,239,0.8)]'
-                    : 'h-2.5 w-2.5 shrink-0 rounded-full bg-purple-400/25'
-              }
-            />
-            {n < TOTAL_STEPS && (
-              <span
-                className={`h-px flex-1 rounded-full transition-colors ${
-                  done ? 'bg-[#F6B91A]/60' : 'bg-purple-400/15'
-                }`}
-              />
-            )}
-          </div>
-        )
-      })}
+    <div>
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold uppercase tracking-[0.16em] text-fuchsia-300/80">
+          Step {step} of {TOTAL_STEPS}
+        </span>
+      </div>
+      <div
+        className="mt-2 h-1 w-full overflow-hidden rounded-full bg-purple-400/15"
+        role="progressbar"
+        aria-valuemin={1}
+        aria-valuemax={TOTAL_STEPS}
+        aria-valuenow={step}
+        aria-label={`Step ${step} of ${TOTAL_STEPS}`}
+      >
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-[#F6B91A] to-fuchsia-500 shadow-[0_0_10px_rgba(217,70,239,0.5)] transition-[width] duration-300 ease-out"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
     </div>
   )
 }
 
-function SummaryRow({ label, value }: { label: string; value: string }) {
+/** Small, low-contrast "Optional" badge so optional fields feel lighter. */
+function OptionalBadge() {
   return (
-    <div className="flex items-center justify-between gap-4">
-      <dt className="text-purple-300/60">{label}</dt>
-      <dd className="truncate text-right font-medium text-white">{value}</dd>
+    <span className="rounded-full border border-purple-400/20 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-purple-300/55">
+      Optional
+    </span>
+  )
+}
+
+/**
+ * Progressive password helper. Reserves a single line of height to avoid layout
+ * shift; shows nothing until the field is engaged, a gentle hint while short,
+ * and a compact success state once the unchanged 6-character rule is satisfied.
+ */
+function PasswordHint({ error, show, valid }: { error: string | null; show: boolean; valid: boolean }) {
+  if (error) return <p className={ERROR_CLASS}>{error}</p>
+  return (
+    <div className="min-h-[18px]">
+      {show &&
+        (valid ? (
+          <p className="wtf-pop flex items-center gap-1 text-xs font-medium text-emerald-400">
+            <Check className="h-3.5 w-3.5" aria-hidden="true" />
+            Password looks good
+          </p>
+        ) : (
+          <p className="text-xs text-purple-300/55">At least 6 characters.</p>
+        ))}
     </div>
   )
 }
