@@ -25,6 +25,8 @@ import {
   ArrowLeft,
   Check,
   ChevronDown,
+  Crown,
+  Flame,
   Lock,
   Sparkles,
   Ticket,
@@ -214,8 +216,9 @@ function ExclusiveChanceBoost({
 
         <div className="ecb-inner flex flex-col items-center text-center">
           {/* Gold exclusivity pill */}
-          <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-black shadow-[0_0_16px_rgba(247,166,0,0.5)]">
-            ★ Selected for you ★
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-black shadow-[0_0_16px_rgba(247,166,0,0.5)]">
+            <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+            Selected for you
           </span>
 
           {/* Headline */}
@@ -229,13 +232,15 @@ function ExclusiveChanceBoost({
           {/* Campaign / instant-win hook */}
           {instantState === 'hero_cash' && heroCashLabel && (
             <p className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-pink-400/40 bg-pink-500/15 px-3 py-1 text-xs font-bold text-pink-100 sm:text-sm">
-              {`🔥 ${heroCashLabel} INSTANT STILL LIVE`}
+              <Flame className="h-3.5 w-3.5 text-pink-300" aria-hidden="true" />
+              {`${heroCashLabel} INSTANT STILL LIVE`}
             </p>
           )}
           {instantState === 'generic' && (
             <div className="mt-3">
               <p className="inline-flex items-center gap-1.5 rounded-full border border-pink-400/40 bg-pink-500/15 px-3 py-1 text-xs font-bold text-pink-100 sm:text-sm">
-                ⚡ INSTANT WINS STILL LIVE
+                <Zap className="h-3.5 w-3.5 text-pink-300" aria-hidden="true" />
+                INSTANT WINS STILL LIVE
               </p>
               {remainingCount > 0 && (
                 <p className="mt-1 text-xs text-purple-200/90">
@@ -247,7 +252,8 @@ function ExclusiveChanceBoost({
           {instantState === 'none' && (
             <div className="mt-3">
               <p className="inline-flex items-center gap-1.5 rounded-full border border-yellow-400/40 bg-yellow-500/15 px-3 py-1 text-xs font-bold text-yellow-100 sm:text-sm">
-                🏆 MORE CHANCES AT THE FINAL PRIZE
+                <Trophy className="h-3.5 w-3.5 text-yellow-300" aria-hidden="true" />
+                MORE CHANCES AT THE FINAL PRIZE
               </p>
               <p className="mt-1 text-xs text-purple-200/90">
                 Every extra ticket gives you another entry into the final draw.
@@ -304,25 +310,22 @@ function ExclusiveChanceBoost({
             type="button"
             onClick={onUnlock}
             disabled={disabled}
-            className="mt-4 w-full rounded-xl bg-gradient-to-b from-[#FFE49A] via-[#FBC53D] to-[#F7A600] px-4 py-3.5 text-base font-extrabold uppercase tracking-wide text-[#3a2600] shadow-[0_0_26px_rgba(247,166,0,0.55)] ring-1 ring-[#FFE9A8]/70 transition-transform duration-200 hover:-translate-y-px hover:shadow-[0_0_34px_rgba(247,166,0,0.75)] active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60"
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-[#FFE49A] via-[#FBC53D] to-[#F7A600] px-4 py-3.5 text-base font-extrabold uppercase tracking-wide text-[#3a2600] shadow-[0_0_26px_rgba(247,166,0,0.55)] ring-1 ring-[#FFE9A8]/70 transition-transform duration-200 hover:-translate-y-px hover:shadow-[0_0_34px_rgba(247,166,0,0.75)] active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {`♛ Unlock my ${targetQty} ${targetUnitLower}`}
+            <Crown className="h-4 w-4" aria-hidden="true" />
+            {`Unlock my ${targetQty} ${targetUnitLower}`}
           </button>
 
           {/* Benefit row */}
           <div className="mt-3 flex w-full flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[11px] text-purple-200/90">
             {instantsRemain && (
               <span className="inline-flex items-center gap-1">
-                <span className="text-yellow-300" aria-hidden="true">
-                  ⚡
-                </span>{' '}
+                <Zap className="h-3 w-3 text-yellow-300" aria-hidden="true" />
                 Instant win chance
               </span>
             )}
             <span className="inline-flex items-center gap-1">
-              <span className="text-yellow-300" aria-hidden="true">
-                🏆
-              </span>{' '}
+              <Trophy className="h-3 w-3 text-yellow-300" aria-hidden="true" />
               Every ticket enters the final draw
             </span>
           </div>
@@ -464,8 +467,8 @@ function MobileBoostSheet({
         <div className="ecb-inner flex flex-col items-center px-5 pt-5 text-center">
           {success ? (
             <div className="flex min-h-[220px] flex-col items-center justify-center gap-2 py-8">
-              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/20 text-3xl text-emerald-300 shadow-[0_0_28px_rgba(16,185,129,0.5)]">
-                ✓
+              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-300 shadow-[0_0_28px_rgba(16,185,129,0.5)]">
+                <Check className="h-7 w-7" aria-hidden="true" />
               </span>
               <p className="mt-1 text-lg font-extrabold uppercase tracking-wide text-white">Boost unlocked</p>
               <p className="text-sm text-purple-100">
@@ -478,8 +481,9 @@ function MobileBoostSheet({
           ) : (
             <>
               {/* Gold exclusivity pill */}
-              <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-black shadow-[0_0_16px_rgba(247,166,0,0.5)]">
-                ★ Selected for you ★
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-black shadow-[0_0_16px_rgba(247,166,0,0.5)]">
+                <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                Selected for you
               </span>
 
               <h2 className="mt-2.5 text-xl font-extrabold uppercase tracking-tight text-white">
@@ -492,19 +496,22 @@ function MobileBoostSheet({
               {/* Instant-win hook (same safe logic as the desktop card) */}
               {instantState === 'hero_cash' && heroCashLabel && (
                 <p className="mt-2.5 inline-flex items-center gap-1.5 rounded-full border border-pink-400/40 bg-pink-500/15 px-3 py-1 text-xs font-bold text-pink-100">
-                  {`🔥 ${heroCashLabel} INSTANT STILL LIVE`}
+                  <Flame className="h-3.5 w-3.5 text-pink-300" aria-hidden="true" />
+                  {`${heroCashLabel} INSTANT STILL LIVE`}
                 </p>
               )}
               {instantState === 'generic' && (
                 <p className="mt-2.5 inline-flex items-center gap-1.5 rounded-full border border-pink-400/40 bg-pink-500/15 px-3 py-1 text-xs font-bold text-pink-100">
+                  <Zap className="h-3.5 w-3.5 text-pink-300" aria-hidden="true" />
                   {remainingCount > 0
-                    ? `⚡ INSTANT WINS STILL LIVE · ${remainingCount} left`
-                    : '⚡ INSTANT WINS STILL LIVE'}
+                    ? `INSTANT WINS STILL LIVE · ${remainingCount} left`
+                    : 'INSTANT WINS STILL LIVE'}
                 </p>
               )}
               {instantState === 'none' && (
                 <p className="mt-2.5 inline-flex items-center gap-1.5 rounded-full border border-yellow-400/40 bg-yellow-500/15 px-3 py-1 text-xs font-bold text-yellow-100">
-                  🏆 MORE CHANCES AT THE FINAL PRIZE
+                  <Trophy className="h-3.5 w-3.5 text-yellow-300" aria-hidden="true" />
+                  MORE CHANCES AT THE FINAL PRIZE
                 </p>
               )}
 
@@ -557,9 +564,10 @@ function MobileBoostSheet({
                 type="button"
                 onClick={onUnlock}
                 disabled={disabled}
-                className="mt-4 w-full rounded-xl bg-gradient-to-b from-[#FFE49A] via-[#FBC53D] to-[#F7A600] px-4 py-3.5 text-base font-extrabold uppercase tracking-wide text-[#3a2600] shadow-[0_0_26px_rgba(247,166,0,0.55)] ring-1 ring-[#FFE9A8]/70 transition-transform duration-200 hover:-translate-y-px active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60"
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-[#FFE49A] via-[#FBC53D] to-[#F7A600] px-4 py-3.5 text-base font-extrabold uppercase tracking-wide text-[#3a2600] shadow-[0_0_26px_rgba(247,166,0,0.55)] ring-1 ring-[#FFE9A8]/70 transition-transform duration-200 hover:-translate-y-px active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {`♛ Unlock my ${targetQty} ${targetUnitLower}`}
+                <Crown className="h-4 w-4" aria-hidden="true" />
+                {`Unlock my ${targetQty} ${targetUnitLower}`}
               </button>
 
               {/* Respectful decline */}
@@ -576,16 +584,12 @@ function MobileBoostSheet({
               <div className="mt-3 flex w-full flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-purple-200/90">
                 {instantsRemain && (
                   <span className="inline-flex items-center gap-1">
-                    <span className="text-yellow-300" aria-hidden="true">
-                      ⚡
-                    </span>{' '}
+                    <Zap className="h-3 w-3 text-yellow-300" aria-hidden="true" />
                     Instant win chance
                   </span>
                 )}
                 <span className="inline-flex items-center gap-1">
-                  <span className="text-yellow-300" aria-hidden="true">
-                    🏆
-                  </span>{' '}
+                  <Trophy className="h-3 w-3 text-yellow-300" aria-hidden="true" />
                   Every ticket enters the final draw
                 </span>
               </div>
@@ -662,6 +666,15 @@ export function CheckoutReviewClient({
   const [sheetVisible, setSheetVisible] = useState(false)
   const [sheetDecided, setSheetDecided] = useState(false)
   const [sheetSuccess, setSheetSuccess] = useState(false)
+  // The offer is FROZEN when the sheet opens (the "from" qty + the target
+  // option), so accepting — which changes `selected` and re-derives
+  // `recommended` to the next tier — never mutates the offer the customer is
+  // currently looking at. This is what the sheet renders.
+  const [sheetOffer, setSheetOffer] = useState<{
+    fromQty: number
+    option: ReviewOption
+    incrementalLabel: string | null
+  } | null>(null)
 
   // ---- Discount code -------------------------------------------------------
   // All apply / remove / invalidation / idempotency-key logic lives in the pure
@@ -895,6 +908,11 @@ export function CheckoutReviewClient({
     if (typeof window === 'undefined') return
     if (!window.matchMedia('(max-width: 1023px)').matches) return
     const openTimer = window.setTimeout(() => {
+      // Freeze the offer at open time (from-qty + target option + the price
+      // nudge) so later recomputation of `recommended`/`selected` never shifts
+      // what the sheet shows. The sheet auto-opens before any discount/credit
+      // entry, so the captured label is accurate for this offer.
+      setSheetOffer({ fromQty: qty, option: recommended, incrementalLabel: boostIncrementalLabel })
       setSheetMounted(true)
       // Commit the off-screen transform for two frames so the slide-up plays.
       requestAnimationFrame(() => requestAnimationFrame(() => setSheetVisible(true)))
@@ -914,12 +932,12 @@ export function CheckoutReviewClient({
 
   /**
    * Accept from the sheet: identical to acceptBoost() (existing selectOption()
-   * only), then show a brief success state and auto-close. No request, no new
-   * quantity mechanism.
+   * only) but against the FROZEN offer, then show a brief success state and
+   * auto-close. No request, no new quantity mechanism.
    */
   function acceptBoostFromSheet() {
-    if (!recommended || submitting || nameFormOpen) return
-    selectOption(recommended.key)
+    if (!sheetOffer || submitting || nameFormOpen) return
+    selectOption(sheetOffer.option.key)
     setUpsellAccepted(true)
     setSheetSuccess(true)
     window.setTimeout(() => {
@@ -1817,14 +1835,14 @@ export function CheckoutReviewClient({
           inline card, driven entirely by the existing selectOption(). Sits
           above the sticky Pay bar (z-[60] > z-40) so the customer makes one
           clear decision. */}
-      {sheetMounted && recommended && (
+      {sheetMounted && sheetOffer && (
         <MobileBoostSheet
           visible={sheetVisible}
           success={sheetSuccess}
-          currentQty={qty}
-          targetQty={recommended.qty}
-          incrementalLabel={boostIncrementalLabel}
-          savingsPence={recommended.savingsPence}
+          currentQty={sheetOffer.fromQty}
+          targetQty={sheetOffer.option.qty}
+          incrementalLabel={sheetOffer.incrementalLabel}
+          savingsPence={sheetOffer.option.savingsPence}
           instantState={instantState}
           remainingCount={instantRemaining}
           heroCashLabel={instantHeroLabel}

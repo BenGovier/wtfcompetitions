@@ -30,7 +30,7 @@ export function MobileNav() {
   // On the checkout Review page the checkout-specific sticky Pay CTA owns the
   // bottom of the viewport, so the global nav is suppressed to keep checkout
   // focused and remove unnecessary exit points. Only this exact route changes.
-  const isCheckoutReview = pathname === "/checkout/review" || pathname === "/dev-qa-boost"
+  const isCheckoutReview = pathname === "/checkout/review"
   if (isGiveawayDetail || isCheckoutReview) return null
 
   const renderNavItem = (item: typeof leftItems[0], isCenter = false) => {
