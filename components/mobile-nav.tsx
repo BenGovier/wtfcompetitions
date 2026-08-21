@@ -31,7 +31,13 @@ export function MobileNav() {
   // bottom of the viewport, so the global nav is suppressed to keep checkout
   // focused and remove unnecessary exit points. Only this exact route changes.
   const isCheckoutReview = pathname === "/checkout/review"
-  if (isGiveawayDetail || isCheckoutReview) return null
+  // The auth flow (sign-up wizard, login) is a focused, full-screen journey with
+  // its own primary CTAs at the bottom of each step. The global bottom nav both
+  // competes with those CTAs and — via its protruding centre button — overlaps
+  // centred form fields, so it is suppressed across /auth/*. Same rationale and
+  // pattern as the giveaway-detail and checkout-review suppressions above.
+  const isAuthFlow = pathname.startsWith("/auth")
+  if (isGiveawayDetail || isCheckoutReview || isAuthFlow) return null
 
   const renderNavItem = (item: typeof leftItems[0], isCenter = false) => {
     const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href))
