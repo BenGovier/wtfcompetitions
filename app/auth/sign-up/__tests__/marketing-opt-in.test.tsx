@@ -27,8 +27,10 @@ if (!(globalThis as any).ResizeObserver) {
   }
 }
 
-// Capture every signUp call so we can assert the metadata it received.
-const signUpMock = vi.fn(async () => ({
+// Capture every signUp call so we can assert the metadata it received. The
+// `_args: any` parameter gives `mock.calls[0]` a typed first element so the
+// metadata assertions below type-check under strict tuple typing.
+const signUpMock = vi.fn(async (_args: any) => ({
   // Email-confirmation flow: no session yet, user not confirmed -> the page
   // shows the "Check your email" success screen (i.e. signup succeeded).
   data: { session: null, user: { confirmed_at: null } },
@@ -64,17 +66,34 @@ function isChecked(el: HTMLElement) {
   return el.getAttribute('aria-checked') === 'true'
 }
 
-async function fillRequiredFields(user: ReturnType<typeof userEvent.setup>) {
+// The signup UI is now a 4-step wizard: only the active step's fields are
+// mounted, so we fill each step and click Continue to advance. This lands on
+// Step 4 (the confirm step) where the marketing checkbox and the final
+// "Create my account" action live. Behaviour under test is unchanged.
+async function advanceToConsentStep(user: ReturnType<typeof userEvent.setup>) {
+  // Step 1 — name
   await user.type(screen.getByLabelText(/first name/i), 'Jane')
   await user.type(screen.getByLabelText(/last name/i), 'Doe')
+  await user.click(screen.getByRole('button', { name: /continue/i }))
+
+  // Step 2 — contact
+  await user.type(await screen.findByLabelText(/email address/i), 'jane@example.com')
   await user.type(screen.getByLabelText(/mobile number/i), '+44 7700 900000')
-  await user.type(screen.getByLabelText(/^email$/i), 'jane@example.com')
-  await user.type(screen.getByLabelText(/^password$/i), 'supersecret')
+  await user.click(screen.getByRole('button', { name: /continue/i }))
+
+  // Step 3 — account
+  await user.type(await screen.findByLabelText(/^password$/i), 'supersecret')
+  await user.click(screen.getByRole('button', { name: /continue/i }))
+
+  // Now on Step 4 — confirm (marketing consent + final submit).
+  await screen.findByRole('button', { name: /create my account/i })
 }
 
 describe('signup marketing consent checkbox', () => {
-  it('renders checked by default on the initial signup screen', () => {
+  it('renders checked by default on the consent step', async () => {
+    const user = userEvent.setup()
     render(<SignUpPage />)
+    await advanceToConsentStep(user)
     expect(isChecked(getMarketingCheckbox())).toBe(true)
   })
 
@@ -82,13 +101,13 @@ describe('signup marketing consent checkbox', () => {
     const user = userEvent.setup()
     render(<SignUpPage />)
 
+    await advanceToConsentStep(user)
     expect(isChecked(getMarketingCheckbox())).toBe(true)
 
-    await fillRequiredFields(user)
-    await user.click(screen.getByRole('button', { name: /create free account/i }))
+    await user.click(screen.getByRole('button', { name: /create my account/i }))
 
     await waitFor(() => expect(signUpMock).toHaveBeenCalledTimes(1))
-    expect(signUpMock.mock.calls[0][0].options.data.marketing_opt_in).toBe(true)
+    expect(signUpMock.mock.calls[0]?.[0].options.data.marketing_opt_in).toBe(true)
 
     // Signup succeeded -> confirmation screen is shown.
     expect(await screen.findByText(/check your email/i)).toBeTruthy()
@@ -98,6 +117,8 @@ describe('signup marketing consent checkbox', () => {
     const user = userEvent.setup()
     render(<SignUpPage />)
 
+    await advanceToConsentStep(user)
+
     const checkbox = getMarketingCheckbox()
     expect(isChecked(checkbox)).toBe(true)
 
@@ -105,11 +126,10 @@ describe('signup marketing consent checkbox', () => {
     await user.click(checkbox)
     expect(isChecked(checkbox)).toBe(false)
 
-    await fillRequiredFields(user)
-    await user.click(screen.getByRole('button', { name: /create free account/i }))
+    await user.click(screen.getByRole('button', { name: /create my account/i }))
 
     await waitFor(() => expect(signUpMock).toHaveBeenCalledTimes(1))
-    expect(signUpMock.mock.calls[0][0].options.data.marketing_opt_in).toBe(false)
+    expect(signUpMock.mock.calls[0]?.[0].options.data.marketing_opt_in).toBe(false)
 
     // Signup still succeeds even with consent declined.
     expect(await screen.findByText(/check your email/i)).toBeTruthy()
