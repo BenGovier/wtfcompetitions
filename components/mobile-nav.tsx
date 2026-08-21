@@ -27,7 +27,11 @@ export function MobileNav() {
   // suppressed there to avoid two stacked fixed bars. The /giveaways index and
   // all other pages keep the nav. Scoped here so nothing global changes.
   const isGiveawayDetail = pathname.startsWith("/giveaways/") && pathname !== "/giveaways"
-  if (isGiveawayDetail) return null
+  // On the checkout Review page the checkout-specific sticky Pay CTA owns the
+  // bottom of the viewport, so the global nav is suppressed to keep checkout
+  // focused and remove unnecessary exit points. Only this exact route changes.
+  const isCheckoutReview = pathname === "/checkout/review" || pathname === "/dev-qa-boost"
+  if (isGiveawayDetail || isCheckoutReview) return null
 
   const renderNavItem = (item: typeof leftItems[0], isCenter = false) => {
     const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href))
