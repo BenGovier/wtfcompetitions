@@ -3,7 +3,11 @@ import { redirect } from 'next/navigation'
 import { AlertCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { createPublicClient } from '@/lib/supabase/public'
-import { CheckoutReviewClient, type ReviewOption } from '@/components/checkout/checkout-review-client'
+import {
+  CheckoutReviewClient,
+  type ReviewOption,
+  type InstantWinSummary,
+} from '@/components/checkout/checkout-review-client'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,6 +30,58 @@ const isNonNegInt = (v: unknown): v is number =>
 
 const PAGE_BG =
   'min-h-[calc(100vh-4rem)] bg-[radial-gradient(circle_at_top,_#3a0f4f_0%,_#1b0b2b_40%,_#0e0618_100%)] text-white'
+
+// ---- Read-only instant-win commercial summary --------------------------------
+// Derived PURELY from the already-fetched detail-snapshot payload (payload.
+// instant_wins). No extra query, no new source. It only ever produces aggregate
+// display facts for the checkout upsell copy — never ticket numbers, slots,
+// winning positions, award identities or any prize configuration.
+//
+// A hero CASH prize is claimed ONLY when it is unambiguous: remaining > 0, the
+// title literally contains an amount AND the word "CASH", and does NOT mention
+// credit/wallet (so "£10 Site Credit" can never be labelled cash). Anything
+// below £250 is not treated as a hero. Everything is defensive and total-safe.
+const HERO_CASH_MIN_PENCE = 25000
+const CASH_AMOUNT_RE = /£\s?([\d,]+(?:\.\d{1,2})?)/
+const CASH_WORD_RE = /\bcash\b/i
+const CREDIT_WORD_RE = /credit|wallet/i
+
+function deriveInstantWinSummary(rows: unknown[]): InstantWinSummary {
+  let remainingCount = 0
+  let heroPence = 0
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue
+    const o = row as Record<string, unknown>
+    const remainingRaw = Number(o.remaining_count)
+    if (!Number.isFinite(remainingRaw) || remainingRaw <= 0) continue
+    remainingCount += Math.max(0, Math.floor(remainingRaw))
+
+    const title = typeof o.title === 'string' ? o.title : ''
+    if (!title) continue
+    // Exclude anything that could be site credit / wallet credit.
+    if (CREDIT_WORD_RE.test(title)) continue
+    // Must explicitly be CASH and carry a parseable amount.
+    if (!CASH_WORD_RE.test(title)) continue
+    const m = CASH_AMOUNT_RE.exec(title)
+    if (!m) continue
+    const value = Number.parseFloat(m[1].replace(/,/g, ''))
+    if (!Number.isFinite(value) || value <= 0) continue
+    const pence = Math.round(value * 100)
+    if (pence < HERO_CASH_MIN_PENCE) continue
+    if (pence > heroPence) heroPence = pence
+  }
+
+  let heroCashLabel: string | null = null
+  if (heroPence >= HERO_CASH_MIN_PENCE) {
+    const pounds = heroPence / 100
+    const formatted = Number.isInteger(pounds)
+      ? pounds.toLocaleString('en-GB')
+      : pounds.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    heroCashLabel = `£${formatted} CASH`
+  }
+
+  return { remainingCount, heroCashLabel }
+}
 
 /** Clean, self-contained "invalid" state. Never creates an intent. */
 function InvalidState() {
@@ -215,6 +271,8 @@ export default async function CheckoutReviewPage({ searchParams }: ReviewPagePro
   let heroImageUrl: string | null = null
   let prizeTitle: string | null = null
   let prizeValueText: string | null = null
+  // Read-only upsell summary from the SAME snapshot payload (no extra query).
+  let instantWinSummary: InstantWinSummary | null = null
 
   const campaignSlug = typeof campaign.slug === 'string' && campaign.slug.length > 0 ? campaign.slug : null
   if (campaignSlug) {
@@ -244,6 +302,11 @@ export default async function CheckoutReviewPage({ searchParams }: ReviewPagePro
           typeof snap.prize_value_text === 'string' && snap.prize_value_text.length > 0
             ? snap.prize_value_text
             : null
+
+        // Aggregate instant-win facts for the upsell (already in the payload).
+        if (Array.isArray(snap.instant_wins)) {
+          instantWinSummary = deriveInstantWinSummary(snap.instant_wins as unknown[])
+        }
       }
     } catch (e) {
       // Imagery is decorative — never fail checkout because of it.
@@ -264,6 +327,7 @@ export default async function CheckoutReviewPage({ searchParams }: ReviewPagePro
         options={options}
         initialKey={initialKey}
         availableWalletPence={availableWalletPence}
+        instantWins={instantWinSummary}
       />
     </div>
   )
