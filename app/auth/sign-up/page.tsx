@@ -190,7 +190,6 @@ export default function SignUpPage() {
 
   // ---- Step navigation (client-side only, never submits) -------------------
   function goToStep(next: number, dir: 'fwd' | 'back') {
-    console.log('[v0] goToStep', next, dir)
     setDirection(dir)
     setStep(Math.min(Math.max(next, 1), TOTAL_STEPS))
   }
