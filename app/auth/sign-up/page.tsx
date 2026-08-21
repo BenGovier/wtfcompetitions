@@ -190,6 +190,7 @@ export default function SignUpPage() {
 
   // ---- Step navigation (client-side only, never submits) -------------------
   function goToStep(next: number, dir: 'fwd' | 'back') {
+    console.log('[v0] goToStep', next, dir)
     setDirection(dir)
     setStep(Math.min(Math.max(next, 1), TOTAL_STEPS))
   }
@@ -267,7 +268,7 @@ export default function SignUpPage() {
 
   if (confirmMessage) {
     return (
-      <div className="relative flex min-h-svh w-full items-center justify-center overflow-hidden bg-[#080312] px-6 pt-10 pb-28 md:p-10">
+      <div className="relative flex min-h-svh w-full items-start justify-center overflow-x-hidden bg-[#080312] px-6 pt-10 pb-10 md:items-center md:p-10">
         <WizardBackdrop />
         <div className="relative z-10 w-full max-w-[520px]">
           <div className="flex flex-col items-center">
@@ -295,7 +296,7 @@ export default function SignUpPage() {
   }
 
   return (
-    <div className="relative flex min-h-svh w-full items-center justify-center overflow-hidden bg-[#080312] px-4 pt-8 pb-28 md:py-12">
+    <div className="relative flex min-h-svh w-full items-start justify-center overflow-x-hidden bg-[#080312] px-4 pt-8 pb-10 md:items-center md:py-12">
       <style dangerouslySetInnerHTML={{ __html: WIZARD_STYLES }} />
       <WizardBackdrop />
 
@@ -566,7 +567,15 @@ export default function SignUpPage() {
               )}
 
               {step < TOTAL_STEPS ? (
+                // NOTE: distinct `key`s on the two branches are load-bearing.
+                // Without them React reuses the same <button> DOM node across
+                // the ternary and merely flips type="button" -> "submit" in
+                // place; a single click on Continue then advances to step 4 AND
+                // the morphed submit button catches the same pointer event,
+                // auto-submitting the form. Distinct keys force a fresh node so
+                // the in-flight click cannot land on the submit button.
                 <button
+                  key="wizard-continue"
                   type="button"
                   onClick={goNext}
                   className="group flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-fuchsia-600 via-purple-600 to-fuchsia-600 text-base font-bold tracking-wide text-white shadow-[0_0_22px_rgba(217,70,239,0.4)] ring-1 ring-fuchsia-300/40 transition-[transform,box-shadow] duration-150 hover:shadow-[0_0_30px_rgba(217,70,239,0.6)] active:scale-[0.985]"
@@ -576,6 +585,7 @@ export default function SignUpPage() {
                 </button>
               ) : (
                 <button
+                  key="wizard-submit"
                   type="submit"
                   disabled={isLoading}
                   className="group flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-fuchsia-600 via-purple-600 to-fuchsia-600 text-base font-bold tracking-wide text-white shadow-[0_0_24px_rgba(217,70,239,0.45)] ring-1 ring-fuchsia-300/40 transition-[transform,box-shadow] duration-150 hover:shadow-[0_0_34px_rgba(217,70,239,0.65)] active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-60"
