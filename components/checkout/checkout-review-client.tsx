@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useReducer, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -25,11 +25,14 @@ import {
   ArrowLeft,
   Check,
   ChevronDown,
+  Crown,
+  Flame,
   Lock,
   Sparkles,
   Ticket,
   Trophy,
   Wallet,
+  X,
   Zap,
 } from 'lucide-react'
 
@@ -213,8 +216,9 @@ function ExclusiveChanceBoost({
 
         <div className="ecb-inner flex flex-col items-center text-center">
           {/* Gold exclusivity pill */}
-          <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-black shadow-[0_0_16px_rgba(247,166,0,0.5)]">
-            ★ Selected for you ★
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-black shadow-[0_0_16px_rgba(247,166,0,0.5)]">
+            <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+            Selected for you
           </span>
 
           {/* Headline */}
@@ -228,13 +232,15 @@ function ExclusiveChanceBoost({
           {/* Campaign / instant-win hook */}
           {instantState === 'hero_cash' && heroCashLabel && (
             <p className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-pink-400/40 bg-pink-500/15 px-3 py-1 text-xs font-bold text-pink-100 sm:text-sm">
-              {`🔥 ${heroCashLabel} INSTANT STILL LIVE`}
+              <Flame className="h-3.5 w-3.5 text-pink-300" aria-hidden="true" />
+              {`${heroCashLabel} INSTANT STILL LIVE`}
             </p>
           )}
           {instantState === 'generic' && (
             <div className="mt-3">
               <p className="inline-flex items-center gap-1.5 rounded-full border border-pink-400/40 bg-pink-500/15 px-3 py-1 text-xs font-bold text-pink-100 sm:text-sm">
-                ⚡ INSTANT WINS STILL LIVE
+                <Zap className="h-3.5 w-3.5 text-pink-300" aria-hidden="true" />
+                INSTANT WINS STILL LIVE
               </p>
               {remainingCount > 0 && (
                 <p className="mt-1 text-xs text-purple-200/90">
@@ -246,7 +252,8 @@ function ExclusiveChanceBoost({
           {instantState === 'none' && (
             <div className="mt-3">
               <p className="inline-flex items-center gap-1.5 rounded-full border border-yellow-400/40 bg-yellow-500/15 px-3 py-1 text-xs font-bold text-yellow-100 sm:text-sm">
-                🏆 MORE CHANCES AT THE FINAL PRIZE
+                <Trophy className="h-3.5 w-3.5 text-yellow-300" aria-hidden="true" />
+                MORE CHANCES AT THE FINAL PRIZE
               </p>
               <p className="mt-1 text-xs text-purple-200/90">
                 Every extra ticket gives you another entry into the final draw.
@@ -303,31 +310,294 @@ function ExclusiveChanceBoost({
             type="button"
             onClick={onUnlock}
             disabled={disabled}
-            className="mt-4 w-full rounded-xl bg-gradient-to-b from-[#FFE49A] via-[#FBC53D] to-[#F7A600] px-4 py-3.5 text-base font-extrabold uppercase tracking-wide text-[#3a2600] shadow-[0_0_26px_rgba(247,166,0,0.55)] ring-1 ring-[#FFE9A8]/70 transition-transform duration-200 hover:-translate-y-px hover:shadow-[0_0_34px_rgba(247,166,0,0.75)] active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60"
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-[#FFE49A] via-[#FBC53D] to-[#F7A600] px-4 py-3.5 text-base font-extrabold uppercase tracking-wide text-[#3a2600] shadow-[0_0_26px_rgba(247,166,0,0.55)] ring-1 ring-[#FFE9A8]/70 transition-transform duration-200 hover:-translate-y-px hover:shadow-[0_0_34px_rgba(247,166,0,0.75)] active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {`♛ Unlock my ${targetQty} ${targetUnitLower}`}
+            <Crown className="h-4 w-4" aria-hidden="true" />
+            {`Unlock my ${targetQty} ${targetUnitLower}`}
           </button>
 
           {/* Benefit row */}
           <div className="mt-3 flex w-full flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[11px] text-purple-200/90">
             {instantsRemain && (
               <span className="inline-flex items-center gap-1">
-                <span className="text-yellow-300" aria-hidden="true">
-                  ⚡
-                </span>{' '}
+                <Zap className="h-3 w-3 text-yellow-300" aria-hidden="true" />
                 Instant win chance
               </span>
             )}
             <span className="inline-flex items-center gap-1">
-              <span className="text-yellow-300" aria-hidden="true">
-                🏆
-              </span>{' '}
+              <Trophy className="h-3 w-3 text-yellow-300" aria-hidden="true" />
               Every ticket enters the final draw
             </span>
           </div>
         </div>
       </div>
     </>
+  )
+}
+
+/**
+ * CSS-ONLY entrance for the mobile boost sheet: backdrop opacity fade + panel
+ * slide-up. No JS animation loop, no library. Reduced-motion users get an
+ * instant (non-sliding) appearance and keep the static neon glow (the moving
+ * perimeter/pulse is disabled by ECB_STYLES' own reduced-motion rule).
+ */
+const SHEET_STYLES = `
+.boost-backdrop { opacity: 0; transition: opacity 300ms ease; }
+.boost-backdrop[data-visible="true"] { opacity: 1; }
+.boost-panel { transform: translateY(100%); transition: transform 440ms cubic-bezier(0.22,1,0.36,1); will-change: transform; }
+.boost-panel[data-visible="true"] { transform: translateY(0); }
+@media (prefers-reduced-motion: reduce) {
+  .boost-backdrop { transition: opacity 120ms ease; }
+  .boost-panel { transition: none; transform: translateY(0); }
+}
+`
+
+/**
+ * Mobile-only "Exclusive Chance Boost" bottom sheet. Pure presentation: it holds
+ * NO pricing or checkout logic. Accepting calls onUnlock (wired by the parent to
+ * the existing selectOption()); dismissing / close / backdrop / ESC all call
+ * onDismiss. Body scroll is locked while mounted and focus is moved into the
+ * panel, then restored on unmount. The parent gates the mount to mobile only.
+ */
+function MobileBoostSheet({
+  visible,
+  success,
+  currentQty,
+  targetQty,
+  incrementalLabel,
+  savingsPence,
+  instantState,
+  remainingCount,
+  heroCashLabel,
+  disabled,
+  onUnlock,
+  onDismiss,
+}: {
+  visible: boolean
+  success: boolean
+  currentQty: number
+  targetQty: number
+  incrementalLabel: string | null
+  savingsPence: number
+  instantState: InstantHookState
+  remainingCount: number
+  heroCashLabel: string | null
+  disabled: boolean
+  onUnlock: () => void
+  onDismiss: () => void
+}) {
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    // Lock body scroll and trap focus while the sheet is mounted. The parent
+    // only mounts this on mobile, so desktop scroll is never affected.
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const previouslyFocused = document.activeElement as HTMLElement | null
+    const focusTimer = window.setTimeout(() => panelRef.current?.focus(), 60)
+    const onKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        onDismiss()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.body.style.overflow = prevOverflow
+      document.removeEventListener('keydown', onKeyDown)
+      window.clearTimeout(focusTimer)
+      previouslyFocused?.focus?.()
+    }
+  }, [onDismiss])
+
+  const currentUnit = currentQty === 1 ? 'CHANCE' : 'CHANCES'
+  const targetUnit = targetQty === 1 ? 'CHANCE' : 'CHANCES'
+  const targetUnitLower = targetUnit.toLowerCase()
+  const declineUnit = currentQty === 1 ? 'chance' : 'chances'
+  const instantsRemain = instantState === 'hero_cash' || instantState === 'generic'
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] lg:hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Exclusive Chance Boost"
+    >
+      <style dangerouslySetInnerHTML={{ __html: ECB_STYLES + SHEET_STYLES }} />
+
+      {/* Backdrop — tap to dismiss */}
+      <button
+        type="button"
+        aria-label="Close offer"
+        onClick={onDismiss}
+        data-visible={visible}
+        className="boost-backdrop absolute inset-0 h-full w-full cursor-default bg-black/70 backdrop-blur-sm"
+      />
+
+      {/* Sheet panel — anchored bottom, capped height so checkout stays visible */}
+      <div
+        ref={panelRef}
+        tabIndex={-1}
+        data-visible={visible}
+        className="boost-panel ecb-card absolute inset-x-0 bottom-0 max-h-[62vh] overflow-hidden rounded-t-3xl bg-[#0b0416] outline-none"
+        style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}
+      >
+        {/* Radial illumination */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background:
+              'radial-gradient(circle at 50% 18%, rgba(255,47,179,0.18), rgba(139,92,246,0.06) 45%, transparent 68%)',
+          }}
+        />
+
+        {/* Close control — z-20 keeps it above the neon ring (::before z-1) and
+            the ecb-inner content (z-2); it must NOT use ecb-inner, whose
+            position:relative would cancel this absolute placement. */}
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Close offer"
+          className="absolute right-3 top-3 z-20 flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-purple-200 transition-colors hover:bg-white/20 hover:text-white"
+        >
+          <X className="h-4 w-4" aria-hidden="true" />
+        </button>
+
+        <div className="ecb-inner flex flex-col items-center px-5 pt-5 text-center">
+          {success ? (
+            <div className="flex min-h-[220px] flex-col items-center justify-center gap-2 py-8">
+              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-300 shadow-[0_0_28px_rgba(16,185,129,0.5)]">
+                <Check className="h-7 w-7" aria-hidden="true" />
+              </span>
+              <p className="mt-1 text-lg font-extrabold uppercase tracking-wide text-white">Boost unlocked</p>
+              <p className="text-sm text-purple-100">
+                You now have{' '}
+                <span className="font-bold text-white">
+                  {targetQty} {targetUnitLower}
+                </span>
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Gold exclusivity pill */}
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#F7A600] via-[#FFD46A] to-[#F7A600] px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-black shadow-[0_0_16px_rgba(247,166,0,0.5)]">
+                <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                Selected for you
+              </span>
+
+              <h2 className="mt-2.5 text-xl font-extrabold uppercase tracking-tight text-white">
+                Exclusive Chance Boost
+              </h2>
+              <p className="mt-1 text-xs text-purple-200/90">
+                You&apos;ve unlocked a special upgrade before checkout
+              </p>
+
+              {/* Instant-win hook (same safe logic as the desktop card) */}
+              {instantState === 'hero_cash' && heroCashLabel && (
+                <p className="mt-2.5 inline-flex items-center gap-1.5 rounded-full border border-pink-400/40 bg-pink-500/15 px-3 py-1 text-xs font-bold text-pink-100">
+                  <Flame className="h-3.5 w-3.5 text-pink-300" aria-hidden="true" />
+                  {`${heroCashLabel} INSTANT STILL LIVE`}
+                </p>
+              )}
+              {instantState === 'generic' && (
+                <p className="mt-2.5 inline-flex items-center gap-1.5 rounded-full border border-pink-400/40 bg-pink-500/15 px-3 py-1 text-xs font-bold text-pink-100">
+                  <Zap className="h-3.5 w-3.5 text-pink-300" aria-hidden="true" />
+                  {remainingCount > 0
+                    ? `INSTANT WINS STILL LIVE · ${remainingCount} left`
+                    : 'INSTANT WINS STILL LIVE'}
+                </p>
+              )}
+              {instantState === 'none' && (
+                <p className="mt-2.5 inline-flex items-center gap-1.5 rounded-full border border-yellow-400/40 bg-yellow-500/15 px-3 py-1 text-xs font-bold text-yellow-100">
+                  <Trophy className="h-3.5 w-3.5 text-yellow-300" aria-hidden="true" />
+                  MORE CHANCES AT THE FINAL PRIZE
+                </p>
+              )}
+
+              {/* Quantity comparison — the focal point */}
+              <div className="mt-4 flex w-full items-stretch justify-center gap-3">
+                <div className="flex min-w-[76px] flex-col items-center justify-center rounded-xl border border-purple-500/30 bg-white/5 px-3 py-2">
+                  <span className="text-2xl font-extrabold leading-none tabular-nums text-purple-100">
+                    {currentQty}
+                  </span>
+                  <span className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-purple-300">
+                    {currentUnit}
+                  </span>
+                </div>
+                <div className="flex items-center">
+                  <span
+                    aria-hidden="true"
+                    className="text-2xl font-black text-pink-300 drop-shadow-[0_0_10px_rgba(255,47,179,0.7)]"
+                  >
+                    →
+                  </span>
+                </div>
+                <div className="flex min-w-[76px] flex-col items-center justify-center rounded-xl border border-pink-400/60 bg-gradient-to-br from-pink-500/25 to-purple-500/15 px-3 py-2 shadow-[0_0_20px_rgba(255,47,179,0.35)]">
+                  <span className="text-3xl font-black leading-none tabular-nums text-white drop-shadow-[0_0_12px_rgba(255,47,179,0.7)]">
+                    {targetQty}
+                  </span>
+                  <span className="mt-1 text-[10px] font-bold uppercase tracking-wider text-pink-200">
+                    {targetUnit}
+                  </span>
+                </div>
+              </div>
+
+              {/* Price nudge */}
+              <p className="mt-3 text-sm text-purple-100">
+                {incrementalLabel ? (
+                  <>
+                    Only <span className="text-lg font-extrabold text-white">{incrementalLabel}</span> more
+                  </>
+                ) : (
+                  <>
+                    Upgrade to {targetQty} {targetUnitLower}
+                  </>
+                )}
+                {savingsPence > 0 && (
+                  <span className="ml-1 text-emerald-300">· save {formatGBP(savingsPence)}</span>
+                )}
+              </p>
+
+              {/* Gold unlock CTA */}
+              <button
+                type="button"
+                onClick={onUnlock}
+                disabled={disabled}
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-[#FFE49A] via-[#FBC53D] to-[#F7A600] px-4 py-3.5 text-base font-extrabold uppercase tracking-wide text-[#3a2600] shadow-[0_0_26px_rgba(247,166,0,0.55)] ring-1 ring-[#FFE9A8]/70 transition-transform duration-200 hover:-translate-y-px active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Crown className="h-4 w-4" aria-hidden="true" />
+                {`Unlock my ${targetQty} ${targetUnitLower}`}
+              </button>
+
+              {/* Respectful decline */}
+              <button
+                type="button"
+                onClick={onDismiss}
+                disabled={disabled}
+                className="mt-2.5 text-xs font-medium text-purple-300 underline underline-offset-2 transition-colors hover:text-white disabled:opacity-50"
+              >
+                No thanks — keep my {currentQty} {declineUnit}
+              </button>
+
+              {/* Compact benefit strip */}
+              <div className="mt-3 flex w-full flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-purple-200/90">
+                {instantsRemain && (
+                  <span className="inline-flex items-center gap-1">
+                    <Zap className="h-3 w-3 text-yellow-300" aria-hidden="true" />
+                    Instant win chance
+                  </span>
+                )}
+                <span className="inline-flex items-center gap-1">
+                  <Trophy className="h-3 w-3 text-yellow-300" aria-hidden="true" />
+                  Every ticket enters the final draw
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -386,6 +656,25 @@ export function CheckoutReviewClient({
   // Local, non-persisted: once the customer accepts the boost we do not offer it
   // again for this Review visit (one upsell per visit). Nothing is stored.
   const [upsellAccepted, setUpsellAccepted] = useState(false)
+
+  // ---- Mobile Exclusive Chance Boost sheet (presentation only) -------------
+  // sheetMounted = in DOM; sheetVisible = transition target (drives slide/fade);
+  // sheetDecided = accepted or dismissed this visit (never auto-reopens);
+  // sheetSuccess = brief "✓ Boost unlocked" state before auto-close. All local,
+  // no persistence, no requests.
+  const [sheetMounted, setSheetMounted] = useState(false)
+  const [sheetVisible, setSheetVisible] = useState(false)
+  const [sheetDecided, setSheetDecided] = useState(false)
+  const [sheetSuccess, setSheetSuccess] = useState(false)
+  // The offer is FROZEN when the sheet opens (the "from" qty + the target
+  // option), so accepting — which changes `selected` and re-derives
+  // `recommended` to the next tier — never mutates the offer the customer is
+  // currently looking at. This is what the sheet renders.
+  const [sheetOffer, setSheetOffer] = useState<{
+    fromQty: number
+    option: ReviewOption
+    incrementalLabel: string | null
+  } | null>(null)
 
   // ---- Discount code -------------------------------------------------------
   // All apply / remove / invalidation / idempotency-key logic lives in the pure
@@ -609,6 +898,53 @@ export function CheckoutReviewClient({
     if (!recommended || submitting || nameFormOpen) return
     selectOption(recommended.key)
     setUpsellAccepted(true)
+  }
+
+  // Auto-present the mobile boost sheet ~400ms after render (mobile only). The
+  // small delay lets the Review page settle first, so the offer feels unlocked
+  // rather than injected. Desktop uses the inline card and never opens a sheet.
+  useEffect(() => {
+    if (sheetDecided || upsellAccepted || !recommended) return
+    if (typeof window === 'undefined') return
+    if (!window.matchMedia('(max-width: 1023px)').matches) return
+    const openTimer = window.setTimeout(() => {
+      // Freeze the offer at open time (from-qty + target option + the price
+      // nudge) so later recomputation of `recommended`/`selected` never shifts
+      // what the sheet shows. The sheet auto-opens before any discount/credit
+      // entry, so the captured label is accurate for this offer.
+      setSheetOffer({ fromQty: qty, option: recommended, incrementalLabel: boostIncrementalLabel })
+      setSheetMounted(true)
+      // Commit the off-screen transform for two frames so the slide-up plays.
+      requestAnimationFrame(() => requestAnimationFrame(() => setSheetVisible(true)))
+    }, 400)
+    return () => window.clearTimeout(openTimer)
+    // Intentionally runs once for the initial recommendation; acceptance/dismissal
+    // set the guards above so it never re-triggers during this visit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  /** Dismiss the sheet (close / decline / backdrop / ESC). Never reopens. */
+  function dismissBoostSheet() {
+    setSheetVisible(false)
+    setSheetDecided(true)
+    window.setTimeout(() => setSheetMounted(false), 320)
+  }
+
+  /**
+   * Accept from the sheet: identical to acceptBoost() (existing selectOption()
+   * only) but against the FROZEN offer, then show a brief success state and
+   * auto-close. No request, no new quantity mechanism.
+   */
+  function acceptBoostFromSheet() {
+    if (!sheetOffer || submitting || nameFormOpen) return
+    selectOption(sheetOffer.option.key)
+    setUpsellAccepted(true)
+    setSheetSuccess(true)
+    window.setTimeout(() => {
+      setSheetVisible(false)
+      setSheetDecided(true)
+      window.setTimeout(() => setSheetMounted(false), 320)
+    }, 600)
   }
 
   function onDiscountInputChange(value: string) {
@@ -1117,7 +1453,7 @@ export function CheckoutReviewClient({
   return (
     <div
       className="mx-auto w-full max-w-5xl px-4 py-5 pb-[var(--checkout-pad)] lg:py-10 lg:pb-10"
-      style={{ '--checkout-pad': 'calc(17rem + env(safe-area-inset-bottom))' } as CSSProperties}
+      style={{ '--checkout-pad': 'calc(11rem + env(safe-area-inset-bottom))' } as CSSProperties}
     >
       {/* Progress indicator — compact on mobile */}
       <ol className="mx-auto mb-5 flex max-w-md items-center justify-center gap-1.5 text-[11px] font-semibold sm:gap-2 sm:text-xs">
@@ -1254,11 +1590,13 @@ export function CheckoutReviewClient({
               </span>
             </div>
 
-            {/* EXCLUSIVE CHANCE BOOST — the single upsell, positioned directly
-                below Order total and above Ways to save. Read-only + local: it
-                only calls the existing selectOption() via onUnlock. */}
+            {/* EXCLUSIVE CHANCE BOOST — DESKTOP ONLY. Positioned directly below
+                Order total and above Ways to save. Read-only + local: it only
+                calls the existing selectOption() via onUnlock. On mobile the
+                same offer is presented as an auto-opening bottom sheet instead
+                (hidden here so the two never appear together). */}
             {boostVisible && recommended && (
-              <div className="mt-4">
+              <div className="mt-4 hidden lg:block">
                 <ExclusiveChanceBoost
                   currentQty={qty}
                   targetQty={recommended.qty}
@@ -1480,18 +1818,39 @@ export function CheckoutReviewClient({
         </section>
       </div>
 
-      {/* Mobile sticky CTA — sits fully ABOVE the bottom nav (h-20 = 80px) and
-          its elevated centre button (-mt-6 = 24px protrusion), plus the device
-          safe-area inset. Never bottom:0. */}
+      {/* Mobile sticky CTA — the global bottom nav is suppressed on this route
+          (see MobileNav), so the Pay control now owns the bottom safe area and
+          sits just above the device inset. */}
       <div
         className="fixed inset-x-0 z-40 px-3 lg:hidden"
-        style={{ bottom: 'calc(5rem + 2rem + env(safe-area-inset-bottom))' }}
+        style={{ bottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}
       >
         <div className="mx-auto max-w-5xl space-y-2 rounded-2xl border border-purple-500/30 bg-[#0e0618]/95 p-3 shadow-[0_-4px_30px_rgba(0,0,0,0.5)] backdrop-blur">
           {nameFormOpen ? nameForm : primaryButton}
           {trustRow}
         </div>
       </div>
+
+      {/* Mobile-only auto-opening bottom sheet — same offer as the desktop
+          inline card, driven entirely by the existing selectOption(). Sits
+          above the sticky Pay bar (z-[60] > z-40) so the customer makes one
+          clear decision. */}
+      {sheetMounted && sheetOffer && (
+        <MobileBoostSheet
+          visible={sheetVisible}
+          success={sheetSuccess}
+          currentQty={sheetOffer.fromQty}
+          targetQty={sheetOffer.option.qty}
+          incrementalLabel={sheetOffer.incrementalLabel}
+          savingsPence={sheetOffer.option.savingsPence}
+          instantState={instantState}
+          remainingCount={instantRemaining}
+          heroCashLabel={instantHeroLabel}
+          disabled={submitting || nameFormOpen}
+          onUnlock={acceptBoostFromSheet}
+          onDismiss={dismissBoostSheet}
+        />
+      )}
     </div>
   )
 }
